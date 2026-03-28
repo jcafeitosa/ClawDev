@@ -1,8 +1,16 @@
-import { and, eq, gte, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
-import { agents, approvals, companies, costEvents, issues } from "@clawdev/db";
+import { agents, approvals, companies, issues } from "@clawdev/db";
 import { notFound } from "../errors.js";
 import { budgetService } from "./budgets.js";
+
+/**
+ * Continuous aggregate view references.
+ * costs_monthly: monthly cost totals per company + provider + biller (006).
+ * The aggregate has a 1-day end_offset, so we combine it with recent base-table data.
+ */
+const CAGG_COSTS_MONTHLY = sql.raw("costs_monthly");
+const MONTHLY_LAG_HOURS = 24;
 
 export function dashboardService(db: Db) {
   const budgets = budgetService(db);
@@ -61,21 +69,29 @@ export function dashboardService(db: Db) {
         if (row.status !== "done" && row.status !== "cancelled") taskCounts.open += count;
       }
 
+      // Month spend: use costs_monthly aggregate for the materialized portion
+      // and the base table for the recent unmaterialized tail (1-day lag).
       const now = new Date();
-      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-      const [{ monthSpend }] = await db
-        .select({
-          monthSpend: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
-        })
-        .from(costEvents)
-        .where(
-          and(
-            eq(costEvents.companyId, companyId),
-            gte(costEvents.occurredAt, monthStart),
-          ),
-        );
+      const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+      const lagBoundary = new Date(Date.now() - MONTHLY_LAG_HOURS * 60 * 60 * 1000);
 
-      const monthSpendCents = Number(monthSpend);
+      const [monthRow] = await db.execute<{ total: number }>(sql`
+        SELECT coalesce(agg.total, 0) + coalesce(recent.total, 0) AS total
+        FROM (
+          SELECT sum(total_cost_cents)::int AS total
+          FROM ${CAGG_COSTS_MONTHLY}
+          WHERE company_id = ${companyId}
+            AND bucket >= ${monthStart}
+        ) agg,
+        (
+          SELECT coalesce(sum(cost_cents), 0)::int AS total
+          FROM cost_events
+          WHERE company_id = ${companyId}
+            AND occurred_at >= ${lagBoundary}
+        ) recent
+      `);
+
+      const monthSpendCents = Number(monthRow?.total ?? 0);
       const utilization =
         company.budgetMonthlyCents > 0
           ? (monthSpendCents / company.budgetMonthlyCents) * 100

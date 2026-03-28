@@ -594,7 +594,7 @@ export async function startServer(): Promise<StartedServer> {
     return new Request(url, {
       method: nodeReq.method ?? "GET",
       headers: webHeaders,
-      body,
+      body: body as BodyInit | null | undefined,
     });
   }
 
@@ -634,8 +634,8 @@ export async function startServer(): Promise<StartedServer> {
     const passthrough = new PassThrough();
     passthrough.end(body);
     // Replace the readable state so Express reads the buffered body
-    (nodeReq as any)._readableState = passthrough._readableState;
-    (nodeReq as any)._read = passthrough._read.bind(passthrough);
+    (nodeReq as any)._readableState = (passthrough as any)._readableState;
+    (nodeReq as any)._read = (passthrough as any)._read.bind(passthrough);
   }
 
   const expressHandler = expressApp as unknown as (

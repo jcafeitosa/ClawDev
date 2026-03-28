@@ -167,14 +167,20 @@ export async function createApp(
         const { Queue } = await import("bullmq");
         const { getRedis } = await import("./redis.js");
 
+        const { PLUGIN_JOBS_QUEUE_NAME } = await import("./services/plugin-job-scheduler.js");
+
         const connection = getRedis();
         const schedulerQueue = new Queue("clawdev:scheduler", { connection });
+        const pluginJobsQueue = new Queue(PLUGIN_JOBS_QUEUE_NAME, { connection });
 
         const serverAdapter = new ExpressAdapter();
         serverAdapter.setBasePath("/api/admin/queues");
 
         createBullBoard({
-          queues: [new BullMQAdapter(schedulerQueue)],
+          queues: [
+            new BullMQAdapter(schedulerQueue),
+            new BullMQAdapter(pluginJobsQueue),
+          ],
           serverAdapter,
         });
 
@@ -344,6 +350,7 @@ export async function createApp(
     hostServiceCleanup.teardown();
   });
   process.once("beforeExit", () => {
+    void scheduler.shutdown();
     void flushPluginLogBuffer();
   });
 

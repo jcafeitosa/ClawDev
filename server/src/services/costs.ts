@@ -12,6 +12,42 @@ export interface CostDateRange {
 const METERED_BILLING_TYPE = "metered_api";
 const SUBSCRIPTION_BILLING_TYPES = ["subscription_included", "subscription_overage"] as const;
 
+/**
+ * Continuous aggregate view references for raw SQL queries.
+ * These materialized views are defined in the TimescaleDB migrations
+ * (005_cost_continuous_aggregates.sql, 006_summary_continuous_aggregates.sql)
+ * and are not part of the Drizzle schema.
+ */
+const CAGG = {
+  /** Daily costs by company + agent + provider + biller (006) */
+  costsDailyView: sql.raw("costs_daily"),
+  /** Monthly costs by company + provider + biller (006) */
+  costsMonthlyView: sql.raw("costs_monthly"),
+  /** Daily costs by company (005) - lightweight, no agent/provider breakdown */
+  costDailyByCompanyView: sql.raw("cost_daily_by_company"),
+  /** Daily costs by company + provider + biller + billing_type + model (005) */
+  costDailyByProviderView: sql.raw("cost_daily_by_provider"),
+  /** Hourly costs by company + agent + provider + biller + billing_type + model (005) */
+  costHourlyByAgentView: sql.raw("cost_hourly_by_agent"),
+} as const;
+
+/**
+ * The continuous aggregate refresh policies leave a gap for recent data:
+ * - costs_monthly: end_offset = 1 day
+ * - costs_daily / cost_daily_by_*: end_offset = 1 hour
+ * - cost_hourly_by_agent: end_offset = 2 hours
+ *
+ * For queries that require up-to-the-minute accuracy (e.g. budget enforcement
+ * after inserting a cost event), we use a "materialized + recent" strategy:
+ * query the aggregate for the materialized window, then UNION ALL with the
+ * base table for the recent unmaterialized tail.
+ */
+const AGGREGATE_LAG = {
+  monthly: { hours: 24 },
+  daily: { hours: 1 },
+  hourly: { hours: 2 },
+} as const;
+
 function currentUtcMonthWindow(now = new Date()) {
   const year = now.getUTCFullYear();
   const month = now.getUTCMonth();
@@ -21,25 +57,58 @@ function currentUtcMonthWindow(now = new Date()) {
   };
 }
 
+/**
+ * Returns the current month spend using costs_monthly aggregate for the
+ * materialized portion and the base table for the recent unmaterialized tail.
+ *
+ * When an agentId is provided, falls back entirely to the base table because
+ * costs_monthly does not include the agent_id dimension.
+ */
 async function getMonthlySpendTotal(
   db: Db,
   scope: { companyId: string; agentId?: string | null },
 ) {
   const { start, end } = currentUtcMonthWindow();
-  const conditions = [
-    eq(costEvents.companyId, scope.companyId),
-    gte(costEvents.occurredAt, start),
-    lt(costEvents.occurredAt, end),
-  ];
+
+  // costs_monthly does not have agent_id - fall back to base table for agent-scoped queries
   if (scope.agentId) {
-    conditions.push(eq(costEvents.agentId, scope.agentId));
+    const [row] = await db
+      .select({
+        total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+      })
+      .from(costEvents)
+      .where(
+        and(
+          eq(costEvents.companyId, scope.companyId),
+          eq(costEvents.agentId, scope.agentId),
+          gte(costEvents.occurredAt, start),
+          lt(costEvents.occurredAt, end),
+        ),
+      );
+    return Number(row?.total ?? 0);
   }
-  const [row] = await db
-    .select({
-      total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
-    })
-    .from(costEvents)
-    .where(and(...conditions));
+
+  // Combine materialized aggregate + recent unmaterialized data from base table.
+  // The aggregate lag boundary ensures no double-counting.
+  const lagBoundary = new Date(Date.now() - AGGREGATE_LAG.monthly.hours * 60 * 60 * 1000);
+
+  const [row] = await db.execute<{ total: number }>(sql`
+    SELECT coalesce(agg.total, 0) + coalesce(recent.total, 0) AS total
+    FROM (
+      SELECT sum(total_cost_cents)::int AS total
+      FROM ${CAGG.costsMonthlyView}
+      WHERE company_id = ${scope.companyId}
+        AND bucket >= ${start}
+        AND bucket < ${end}
+    ) agg,
+    (
+      SELECT coalesce(sum(cost_cents), 0)::int AS total
+      FROM cost_events
+      WHERE company_id = ${scope.companyId}
+        AND occurred_at >= ${lagBoundary}
+        AND occurred_at < ${end}
+    ) recent
+  `);
   return Number(row?.total ?? 0);
 }
 
@@ -105,18 +174,33 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
 
       if (!company) throw notFound("Company not found");
 
-      const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
-      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
-      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+      // Use cost_daily_by_company aggregate for date-range queries.
+      // The aggregate has a 1-hour lag, so we add the recent tail from the base table.
+      const lagBoundary = new Date(Date.now() - AGGREGATE_LAG.daily.hours * 60 * 60 * 1000);
+      const from = range?.from ?? null;
+      const to = range?.to ?? null;
 
-      const [{ total }] = await db
-        .select({
-          total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
-        })
-        .from(costEvents)
-        .where(and(...conditions));
+      const [row] = await db.execute<{ total: number }>(sql`
+        SELECT coalesce(agg.total, 0) + coalesce(recent.total, 0) AS total
+        FROM (
+          SELECT sum(total_cost_cents)::int AS total
+          FROM ${CAGG.costDailyByCompanyView}
+          WHERE company_id = ${companyId}
+            ${from ? sql`AND bucket >= ${from}` : sql``}
+            ${to ? sql`AND bucket <= ${to}` : sql``}
+            AND bucket < ${lagBoundary}
+        ) agg,
+        (
+          SELECT coalesce(sum(cost_cents), 0)::int AS total
+          FROM cost_events
+          WHERE company_id = ${companyId}
+            AND occurred_at >= ${lagBoundary}
+            ${from ? sql`AND occurred_at >= ${from}` : sql``}
+            ${to ? sql`AND occurred_at <= ${to}` : sql``}
+        ) recent
+      `);
 
-      const spendCents = Number(total);
+      const spendCents = Number(row?.total ?? 0);
       const utilization =
         company.budgetMonthlyCents > 0
           ? (spendCents / company.budgetMonthlyCents) * 100
@@ -163,35 +247,90 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
     },
 
     byProvider: async (companyId: string, range?: CostDateRange) => {
-      const conditions: ReturnType<typeof eq>[] = [eq(costEvents.companyId, companyId)];
-      if (range?.from) conditions.push(gte(costEvents.occurredAt, range.from));
-      if (range?.to) conditions.push(lte(costEvents.occurredAt, range.to));
+      // cost_daily_by_provider has: provider, biller, billing_type, model, total_cost_cents,
+      // total_input_tokens, total_cached_input_tokens, total_output_tokens.
+      // It does NOT have heartbeat_run_id, so run-count columns need the base table.
+      // Strategy: aggregate from the view for materialized data, UNION ALL with
+      // the recent tail from the base table, then group the combined result.
+      const lagBoundary = new Date(Date.now() - AGGREGATE_LAG.daily.hours * 60 * 60 * 1000);
+      const from = range?.from ?? null;
+      const to = range?.to ?? null;
 
-      return db
-        .select({
-          provider: costEvents.provider,
-          biller: costEvents.biller,
-          billingType: costEvents.billingType,
-          model: costEvents.model,
-          costCents: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
-          inputTokens: sql<number>`coalesce(sum(${costEvents.inputTokens}), 0)::int`,
-          cachedInputTokens: sql<number>`coalesce(sum(${costEvents.cachedInputTokens}), 0)::int`,
-          outputTokens: sql<number>`coalesce(sum(${costEvents.outputTokens}), 0)::int`,
-          apiRunCount:
-            sql<number>`count(distinct case when ${costEvents.billingType} = ${METERED_BILLING_TYPE} then ${costEvents.heartbeatRunId} end)::int`,
-          subscriptionRunCount:
-            sql<number>`count(distinct case when ${costEvents.billingType} in (${sql.join(SUBSCRIPTION_BILLING_TYPES.map((value) => sql`${value}`), sql`, `)}) then ${costEvents.heartbeatRunId} end)::int`,
-          subscriptionCachedInputTokens:
-            sql<number>`coalesce(sum(case when ${costEvents.billingType} in (${sql.join(SUBSCRIPTION_BILLING_TYPES.map((value) => sql`${value}`), sql`, `)}) then ${costEvents.cachedInputTokens} else 0 end), 0)::int`,
-          subscriptionInputTokens:
-            sql<number>`coalesce(sum(case when ${costEvents.billingType} in (${sql.join(SUBSCRIPTION_BILLING_TYPES.map((value) => sql`${value}`), sql`, `)}) then ${costEvents.inputTokens} else 0 end), 0)::int`,
-          subscriptionOutputTokens:
-            sql<number>`coalesce(sum(case when ${costEvents.billingType} in (${sql.join(SUBSCRIPTION_BILLING_TYPES.map((value) => sql`${value}`), sql`, `)}) then ${costEvents.outputTokens} else 0 end), 0)::int`,
-        })
-        .from(costEvents)
-        .where(and(...conditions))
-        .groupBy(costEvents.provider, costEvents.biller, costEvents.billingType, costEvents.model)
-        .orderBy(desc(sql`coalesce(sum(${costEvents.costCents}), 0)::int`));
+      const subscriptionTypes = sql.join(
+        SUBSCRIPTION_BILLING_TYPES.map((v) => sql`${v}`),
+        sql`, `,
+      );
+
+      return db.execute<{
+        provider: string;
+        biller: string;
+        billingType: string;
+        model: string;
+        costCents: number;
+        inputTokens: number;
+        cachedInputTokens: number;
+        outputTokens: number;
+        apiRunCount: number;
+        subscriptionRunCount: number;
+        subscriptionCachedInputTokens: number;
+        subscriptionInputTokens: number;
+        subscriptionOutputTokens: number;
+      }>(sql`
+        WITH combined AS (
+          -- Materialized data from the continuous aggregate
+          SELECT
+            provider,
+            biller,
+            billing_type,
+            model,
+            total_cost_cents AS cost_cents,
+            total_input_tokens AS input_tokens,
+            total_cached_input_tokens AS cached_input_tokens,
+            total_output_tokens AS output_tokens,
+            NULL::uuid AS heartbeat_run_id
+          FROM ${CAGG.costDailyByProviderView}
+          WHERE company_id = ${companyId}
+            AND bucket < ${lagBoundary}
+            ${from ? sql`AND bucket >= ${from}` : sql``}
+            ${to ? sql`AND bucket <= ${to}` : sql``}
+
+          UNION ALL
+
+          -- Recent unmaterialized data from the base table
+          SELECT
+            provider,
+            biller,
+            billing_type,
+            model,
+            cost_cents,
+            input_tokens,
+            cached_input_tokens,
+            output_tokens,
+            heartbeat_run_id
+          FROM cost_events
+          WHERE company_id = ${companyId}
+            AND occurred_at >= ${lagBoundary}
+            ${from ? sql`AND occurred_at >= ${from}` : sql``}
+            ${to ? sql`AND occurred_at <= ${to}` : sql``}
+        )
+        SELECT
+          provider AS "provider",
+          biller AS "biller",
+          billing_type AS "billingType",
+          model AS "model",
+          coalesce(sum(cost_cents), 0)::int AS "costCents",
+          coalesce(sum(input_tokens), 0)::int AS "inputTokens",
+          coalesce(sum(cached_input_tokens), 0)::int AS "cachedInputTokens",
+          coalesce(sum(output_tokens), 0)::int AS "outputTokens",
+          count(distinct case when billing_type = ${METERED_BILLING_TYPE} then heartbeat_run_id end)::int AS "apiRunCount",
+          count(distinct case when billing_type in (${subscriptionTypes}) then heartbeat_run_id end)::int AS "subscriptionRunCount",
+          coalesce(sum(case when billing_type in (${subscriptionTypes}) then cached_input_tokens else 0 end), 0)::int AS "subscriptionCachedInputTokens",
+          coalesce(sum(case when billing_type in (${subscriptionTypes}) then input_tokens else 0 end), 0)::int AS "subscriptionInputTokens",
+          coalesce(sum(case when billing_type in (${subscriptionTypes}) then output_tokens else 0 end), 0)::int AS "subscriptionOutputTokens"
+        FROM combined
+        GROUP BY provider, biller, billing_type, model
+        ORDER BY coalesce(sum(cost_cents), 0)::int DESC
+      `);
     },
 
     byBiller: async (companyId: string, range?: CostDateRange) => {
@@ -226,20 +365,89 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
     },
 
     /**
-     * aggregates cost_events by provider for each of three rolling windows:
+     * Aggregates cost_events by provider for each of three rolling windows:
      * last 5 hours, last 24 hours, last 7 days.
-     * purely internal consumption data, no external rate-limit sources.
+     * Purely internal consumption data, no external rate-limit sources.
+     *
+     * For the 7-day window, uses cost_hourly_by_agent aggregate (grouped by
+     * provider) for the materialized portion, with a base-table tail for the
+     * 2-hour unmaterialized lag. Shorter windows (5h, 24h) query the base
+     * table directly since the aggregate lag is a significant portion.
      */
     windowSpend: async (companyId: string) => {
       const windows = [
-        { label: "5h", hours: 5 },
-        { label: "24h", hours: 24 },
-        { label: "7d", hours: 168 },
+        { label: "5h", hours: 5, useAggregate: false },
+        { label: "24h", hours: 24, useAggregate: false },
+        { label: "7d", hours: 168, useAggregate: true },
       ] as const;
 
+      const lagBoundary = new Date(Date.now() - AGGREGATE_LAG.hourly.hours * 60 * 60 * 1000);
+
       const results = await Promise.all(
-        windows.map(async ({ label, hours }) => {
+        windows.map(async ({ label, hours, useAggregate }) => {
           const since = new Date(Date.now() - hours * 60 * 60 * 1000);
+
+          if (useAggregate) {
+            // Combine hourly aggregate + recent base-table tail
+            const rows = await db.execute<{
+              provider: string;
+              biller: string;
+              costCents: number;
+              inputTokens: number;
+              cachedInputTokens: number;
+              outputTokens: number;
+            }>(sql`
+              WITH combined AS (
+                SELECT
+                  provider,
+                  biller,
+                  total_cost_cents AS cost_cents,
+                  total_input_tokens AS input_tokens,
+                  total_cached_input_tokens AS cached_input_tokens,
+                  total_output_tokens AS output_tokens
+                FROM ${CAGG.costHourlyByAgentView}
+                WHERE company_id = ${companyId}
+                  AND bucket >= ${since}
+                  AND bucket < ${lagBoundary}
+
+                UNION ALL
+
+                SELECT
+                  provider,
+                  biller,
+                  cost_cents,
+                  input_tokens,
+                  cached_input_tokens,
+                  output_tokens
+                FROM cost_events
+                WHERE company_id = ${companyId}
+                  AND occurred_at >= ${lagBoundary}
+              )
+              SELECT
+                provider AS "provider",
+                case when count(distinct biller) = 1 then min(biller) else 'mixed' end AS "biller",
+                coalesce(sum(cost_cents), 0)::int AS "costCents",
+                coalesce(sum(input_tokens), 0)::int AS "inputTokens",
+                coalesce(sum(cached_input_tokens), 0)::int AS "cachedInputTokens",
+                coalesce(sum(output_tokens), 0)::int AS "outputTokens"
+              FROM combined
+              GROUP BY provider
+              ORDER BY coalesce(sum(cost_cents), 0)::int DESC
+            `);
+
+            return rows.map((row) => ({
+              provider: row.provider,
+              biller: row.biller,
+              window: label as string,
+              windowHours: hours,
+              costCents: row.costCents,
+              inputTokens: row.inputTokens,
+              cachedInputTokens: row.cachedInputTokens,
+              outputTokens: row.outputTokens,
+            }));
+          }
+
+          // Short windows: query the base table directly
           const rows = await db
             .select({
               provider: costEvents.provider,
