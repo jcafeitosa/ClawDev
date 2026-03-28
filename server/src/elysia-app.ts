@@ -18,6 +18,7 @@ import { instanceSettingsService } from "./services/instance-settings.js";
 import { serverVersion } from "./version.js";
 import { elysiaErrorHandler } from "./elysia-plugins/error-handler.js";
 import { elysiaAuth } from "./elysia-plugins/auth.js";
+import type { StorageService } from "./storage/types.js";
 
 export function createElysiaApp(
   db: Db,
@@ -26,6 +27,7 @@ export function createElysiaApp(
     deploymentExposure: DeploymentExposure;
     authReady: boolean;
     companyDeletionEnabled: boolean;
+    storageService?: StorageService;
     resolveSession?: (headers: Headers) => Promise<{ user?: { id: string } | null } | null>;
   },
 ) {
