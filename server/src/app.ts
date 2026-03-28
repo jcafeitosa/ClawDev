@@ -11,9 +11,14 @@
  */
 
 import { Elysia } from "elysia";
+import { node } from "@elysiajs/node";
 import { cors } from "@elysiajs/cors";
 import { openapi } from "@elysiajs/openapi";
-import { staticPlugin } from "@elysiajs/static";
+import { boardMutationGuard } from "./plugins/board-mutation-guard.js";
+import { privateHostnameGuard } from "./plugins/private-hostname-guard.js";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+import fs from "node:fs";
 import type { Db } from "@clawdev/db";
 import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { heartbeatRuns, instanceUserRoles, invites } from "@clawdev/db";
@@ -26,6 +31,23 @@ import { serverVersion } from "./version.js";
 import { errorHandler } from "./plugins/error-handler.js";
 import { authPlugin } from "./plugins/auth.js";
 import type { StorageService } from "./storage/types.js";
+import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
+import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
+import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
+import { pluginJobStore } from "./services/plugin-job-store.js";
+import { createPluginToolDispatcher } from "./services/plugin-tool-dispatcher.js";
+import { pluginLifecycleManager } from "./services/plugin-lifecycle.js";
+import { createPluginJobCoordinator } from "./services/plugin-job-coordinator.js";
+import { buildHostServices, flushPluginLogBuffer } from "./services/plugin-host-services.js";
+import { createPluginEventBus } from "./services/plugin-event-bus.js";
+import { setPluginEventBus } from "./services/activity-log.js";
+import { createPluginDevWatcher } from "./services/plugin-dev-watcher.js";
+import { createPluginHostServiceCleanup } from "./services/plugin-host-service-cleanup.js";
+import { pluginRegistryService } from "./services/plugin-registry.js";
+import { createHostClientHandlers } from "@clawdev/plugin-sdk";
+import { logger } from "./middleware/logger.js";
+import { applyUiBranding } from "./ui-branding.js";
+import type { PluginRouteJobDeps, PluginRouteWebhookDeps, PluginRouteToolDeps, PluginRouteBridgeDeps } from "./routes/plugins.js";
 
 // Route modules
 import { dashboardRoutes } from "./routes/dashboard.js";
@@ -64,6 +86,11 @@ export interface AppOptions {
   companyDeletionEnabled: boolean;
   storageService?: StorageService;
   serveUi?: boolean;
+  bindHost?: string;
+  allowedHostnames?: string[];
+  localPluginDir?: string;
+  instanceId?: string;
+  hostVersion?: string;
   resolveSession?: (headers: Headers) => Promise<{ user?: { id: string } | null } | null>;
   /** better-auth instance — mounted via .mount(auth.handler) for native Web API auth */
   betterAuth?: { handler: (request: Request) => Promise<Response> | Response };
@@ -81,16 +108,27 @@ export function createApp(opts: AppOptions) {
     authReady,
     companyDeletionEnabled,
     storageService,
+    bindHost = "127.0.0.1",
+    allowedHostnames = [],
+    localPluginDir = DEFAULT_LOCAL_PLUGIN_DIR,
     resolveSession,
   } = opts;
 
   const auth = authPlugin({ db, deploymentMode, resolveSession });
 
+  const serverPort = Number(process.env.PORT) || 3101;
+
   const app = new Elysia({ prefix: "/api" })
     // -- Global plugins --
     .use(cors({ credentials: true }))
     .use(errorHandler)
+    .use(privateHostnameGuard({
+      enabled: deploymentExposure === "private",
+      allowedHostnames,
+      bindHost,
+    }))
     .use(auth)
+    .use(boardMutationGuard({ serverPort }))
     .use(
       openapi({
         documentation: {
@@ -174,20 +212,105 @@ export function createApp(opts: AppOptions) {
     .use(costRoutes(db, auth))
     .use(companyRoutes(db, auth, storageService))
     .use(agentRoutes(db, auth))
-    .use(issueRoutes(db, auth))
-    .use(accessRoutes(db, auth))
+    .use(issueRoutes(db, auth, storageService!))
+    .use(accessRoutes(db, auth, {
+      deploymentMode,
+      deploymentExposure,
+      bindHost,
+      allowedHostnames,
+    }))
     .use(companySkillRoutes(db, auth))
-    .use(assetRoutes(db, auth, storageService))
-    .use(pluginRoutes(db, auth))
-    .use(pluginUiStaticRoutes(db));
+    .use(assetRoutes(db, auth, storageService));
+
+  // -- Plugin lifecycle initialization --
+  const hostServicesDisposers = new Map<string, () => void>();
+  const workerManager = createPluginWorkerManager();
+  const pluginRegistry = pluginRegistryService(db);
+  const eventBus = createPluginEventBus();
+  setPluginEventBus(eventBus);
+  const jobStoreInstance = pluginJobStore(db);
+  const lifecycle = pluginLifecycleManager(db, { workerManager });
+  const scheduler = createPluginJobScheduler({ db, jobStore: jobStoreInstance, workerManager });
+  const toolDispatcher = createPluginToolDispatcher({ workerManager, lifecycleManager: lifecycle, db });
+  const jobCoordinator = createPluginJobCoordinator({ db, lifecycle, scheduler, jobStore: jobStoreInstance });
+  const hostServiceCleanup = createPluginHostServiceCleanup(lifecycle, hostServicesDisposers);
+  const loader = pluginLoader(
+    db,
+    { localPluginDir },
+    {
+      workerManager,
+      eventBus,
+      jobScheduler: scheduler,
+      jobStore: jobStoreInstance,
+      toolDispatcher,
+      lifecycleManager: lifecycle,
+      instanceInfo: {
+        instanceId: opts.instanceId ?? "default",
+        hostVersion: opts.hostVersion ?? serverVersion,
+      },
+      buildHostHandlers: (pluginId: string, manifest: { id: string; capabilities: string[] }) => {
+        const notifyWorker = (method: string, params: unknown) => {
+          const handle = workerManager.getWorker(pluginId);
+          if (handle) handle.notify(method, params);
+        };
+        const services = buildHostServices(db, pluginId, manifest.id, eventBus, notifyWorker);
+        hostServicesDisposers.set(pluginId, () => services.dispose());
+        return createHostClientHandlers({ pluginId, capabilities: manifest.capabilities, services });
+      },
+    },
+  );
+
+  const pluginJobDeps: PluginRouteJobDeps = { scheduler, jobStore: jobStoreInstance };
+  const pluginWebhookDeps: PluginRouteWebhookDeps = { workerManager };
+  const pluginToolDeps: PluginRouteToolDeps = { toolDispatcher };
+  const pluginBridgeDeps: PluginRouteBridgeDeps = { workerManager };
+
+  app
+    .use(pluginRoutes(db, auth, loader, pluginJobDeps, pluginWebhookDeps, pluginToolDeps, pluginBridgeDeps))
+    .use(pluginUiStaticRoutes(db, { localPluginDir }));
+
+  // Start plugin services
+  jobCoordinator.start();
+  scheduler.start();
+  void toolDispatcher.initialize().catch((err: unknown) => {
+    logger.error({ err }, "Failed to initialize plugin tool dispatcher");
+  });
+  const devWatcher = createPluginDevWatcher(
+    lifecycle,
+    async (pluginId: string) => (await pluginRegistry.getById(pluginId))?.packagePath ?? null,
+  );
+  void loader.loadAll().then((result: { results: Array<{ success: boolean; plugin: { id: string; packagePath?: string | null } }> } | null) => {
+    if (!result) return;
+    for (const loaded of result.results) {
+      if (loaded.success && loaded.plugin.packagePath) {
+        devWatcher.watch(loaded.plugin.id, loaded.plugin.packagePath);
+      }
+    }
+  }).catch((err: unknown) => {
+    logger.error({ err }, "Failed to load ready plugins on startup");
+  });
+  process.once("exit", () => {
+    devWatcher?.close();
+    hostServiceCleanup.disposeAll();
+    hostServiceCleanup.teardown();
+  });
+  process.once("beforeExit", () => {
+    void flushPluginLogBuffer();
+  });
 
   // -- Root-level app (auth handler + WebSocket + static UI) --
-  const rootApp = new Elysia()
+  // Use node() adapter only when running under Node.js; Bun runs natively.
+  const isBun = typeof globalThis.Bun !== "undefined";
+  const rootApp = new Elysia(isBun ? {} : { adapter: node() })
     .use(cors({ credentials: true }));
 
-  // Mount better-auth handler at /api/auth/* (native Web API — no Node.js conversion)
+  // Mount better-auth handler at /api/auth/* (native Web API — passes full request)
   if (opts.betterAuth) {
-    rootApp.mount("/api/auth", opts.betterAuth.handler);
+    const authHandler = opts.betterAuth.handler;
+    rootApp.all("/api/auth/*", async ({ request }) => {
+      const response = await authHandler(request);
+      return response;
+    });
   }
 
   rootApp
@@ -196,15 +319,43 @@ export function createApp(opts: AppOptions) {
 
   // -- Static UI serving (SPA fallback) --
   if (opts.serveUi !== false) {
-    rootApp.use(
-      staticPlugin({
-        assets: "ui-dist",
-        prefix: "/",
-        alwaysStatic: true,
-        noCache: false,
-        indexHTML: true,
-      }),
-    );
+    const uiDistDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../ui-dist");
+    const MIME_TYPES: Record<string, string> = {
+      ".html": "text/html", ".js": "application/javascript", ".css": "text/css",
+      ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png",
+      ".ico": "image/x-icon", ".woff": "font/woff", ".woff2": "font/woff2",
+      ".ttf": "font/ttf", ".webp": "image/webp", ".avif": "image/avif",
+    };
+    // Pre-compute branded index.html at startup
+    const indexHtmlPath = path.join(uiDistDir, "index.html");
+    const brandedIndexHtml = fs.existsSync(indexHtmlPath)
+      ? applyUiBranding(fs.readFileSync(indexHtmlPath, "utf-8"))
+      : null;
+
+    rootApp.get("/*", ({ request }) => {
+      const url = new URL(request.url);
+      if (url.pathname.startsWith("/api/")) return;
+      let filePath = path.join(uiDistDir, url.pathname);
+      if (!fs.existsSync(filePath) || fs.statSync(filePath).isDirectory()) {
+        const withIndex = path.join(filePath, "index.html");
+        if (fs.existsSync(withIndex)) { filePath = withIndex; }
+        else {
+          // SPA fallback — serve branded index.html
+          if (brandedIndexHtml) return new Response(brandedIndexHtml, { headers: { "content-type": "text/html" } });
+          filePath = path.join(uiDistDir, "index.html");
+        }
+      }
+      if (!fs.existsSync(filePath)) return new Response("Not Found", { status: 404 });
+      const ext = path.extname(filePath);
+      const contentType = MIME_TYPES[ext] || "application/octet-stream";
+      // Apply branding to HTML files
+      if (ext === ".html") {
+        const html = applyUiBranding(fs.readFileSync(filePath, "utf-8"));
+        return new Response(html, { headers: { "content-type": "text/html" } });
+      }
+      const body = fs.readFileSync(filePath);
+      return new Response(body, { headers: { "content-type": contentType } });
+    });
   }
 
   return rootApp;
