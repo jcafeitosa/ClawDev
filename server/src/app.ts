@@ -32,6 +32,7 @@ import { pluginRoutes } from "./routes/plugins.js";
 import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { applyUiBranding } from "./ui-branding.js";
 import { logger } from "./middleware/logger.js";
+import { isRedisConfigured } from "./redis.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR, pluginLoader } from "./services/plugin-loader.js";
 import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
@@ -155,6 +156,36 @@ export async function createApp(
   api.use(dashboardRoutes(db));
   api.use(sidebarBadgeRoutes(db));
   api.use(instanceSettingsRoutes(db));
+
+  // BullMQ dashboard (only when Redis is configured)
+  if (isRedisConfigured()) {
+    void (async () => {
+      try {
+        const { createBullBoard } = await import("@bull-board/api");
+        const { BullMQAdapter } = await import("@bull-board/api/bullMQAdapter");
+        const { ExpressAdapter } = await import("@bull-board/express");
+        const { Queue } = await import("bullmq");
+        const { getRedis } = await import("./redis.js");
+
+        const connection = getRedis();
+        const schedulerQueue = new Queue("clawdev:scheduler", { connection });
+
+        const serverAdapter = new ExpressAdapter();
+        serverAdapter.setBasePath("/api/admin/queues");
+
+        createBullBoard({
+          queues: [new BullMQAdapter(schedulerQueue)],
+          serverAdapter,
+        });
+
+        api.use("/admin/queues", serverAdapter.getRouter());
+        logger.info("BullMQ dashboard available at /api/admin/queues");
+      } catch (err: unknown) {
+        logger.warn({ err }, "Failed to initialize BullMQ dashboard");
+      }
+    })();
+  }
+
   const hostServicesDisposers = new Map<string, () => void>();
   const workerManager = createPluginWorkerManager();
   const pluginRegistry = pluginRegistryService(db);
