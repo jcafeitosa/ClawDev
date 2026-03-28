@@ -41,6 +41,7 @@ import type { PluginJobStore } from "./plugin-job-store.js";
 import type { PluginWorkerManager } from "./plugin-worker-manager.js";
 import { parseCron, nextCronTick, validateCron } from "./cron.js";
 import { logger } from "../middleware/logger.js";
+import { registerRepeatingJob } from "./scheduler.js";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -695,9 +696,13 @@ export function createPluginJobScheduler(
     }
 
     running = true;
-    tickTimer = setInterval(() => {
-      void tick();
-    }, tickIntervalMs);
+
+    // Use BullMQ scheduler when Redis is available, otherwise setInterval
+    void registerRepeatingJob({
+      name: "plugin-job-tick",
+      intervalMs: tickIntervalMs,
+      handler: async () => { await tick(); },
+    });
 
     log.info(
       { tickIntervalMs, maxConcurrentJobs },
