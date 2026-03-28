@@ -1,0 +1,1 @@
+export { default as component } from "../../../../src/routes/[companyPrefix]/org/chart/+page.svelte";

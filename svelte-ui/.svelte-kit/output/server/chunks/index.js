@@ -1,5 +1,5 @@
 import { clsx as clsx$1 } from "clsx";
-import { i as is_primitive, g as get_type, D as DevalueError, a as is_plain_object, e as enumerable_symbols, s as stringify_key, b as stringify_string, v as valid_array_indices, c as escaped, B as BROWSER } from "./utils.js";
+import { i as is_primitive, g as get_type, D as DevalueError, a as is_plain_object, e as enumerable_symbols, s as stringify_key, c as stringify_string, v as valid_array_indices, d as escaped, b as browser } from "./utils.js";
 const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_$";
 const unsafe_chars = /[<\b\f\n\r\t\0\u2028\u2029]/g;
 const reserved = /^(?:do|if|in|for|int|let|new|try|var|byte|case|char|else|enum|goto|long|this|void|with|await|break|catch|class|const|final|float|short|super|throw|while|yield|delete|double|export|import|native|return|switch|throws|typeof|boolean|default|extends|finally|package|private|abstract|continue|debugger|function|volatile|interface|protected|transient|implements|instanceof|synchronized)$/;
@@ -116,7 +116,7 @@ function uneval(value, replacer) {
   Array.from(counts).filter((entry) => entry[1] > 1).sort((a, b) => b[1] - a[1]).forEach((entry, i) => {
     names.set(entry[0], get_name(i));
   });
-  function stringify(thing) {
+  function stringify2(thing) {
     if (names.has(thing)) {
       return names.get(thing);
     }
@@ -131,7 +131,7 @@ function uneval(value, replacer) {
       case "Number":
       case "String":
       case "Boolean":
-        return `Object(${stringify(thing.valueOf())})`;
+        return `Object(${stringify2(thing.valueOf())})`;
       case "RegExp":
         return `new RegExp(${stringify_string(thing.source)}, "${thing.flags}")`;
       case "Date":
@@ -146,7 +146,7 @@ function uneval(value, replacer) {
         for (let i = 0; i < thing.length; i += 1) {
           if (i > 0) result += ",";
           if (Object.hasOwn(thing, i)) {
-            result += stringify(thing[i]);
+            result += stringify2(thing[i]);
           } else if (!has_holes) {
             const populated_keys = valid_array_indices(
               /** @type {any[]} */
@@ -157,7 +157,7 @@ function uneval(value, replacer) {
             const hole_cost = thing.length + 2;
             const sparse_cost = 25 + d + population * (d + 2);
             if (hole_cost > sparse_cost) {
-              const entries = populated_keys.map((k) => `${k}:${stringify(thing[k])}`).join(",");
+              const entries = populated_keys.map((k) => `${k}:${stringify2(thing[k])}`).join(",");
               return `Object.assign(Array(${thing.length}),{${entries}})`;
             }
             has_holes = true;
@@ -169,7 +169,7 @@ function uneval(value, replacer) {
       }
       case "Set":
       case "Map":
-        return `new ${type}([${Array.from(thing).map(stringify).join(",")}])`;
+        return `new ${type}([${Array.from(thing).map(stringify2).join(",")}])`;
       case "Int8Array":
       case "Uint8Array":
       case "Uint8ClampedArray":
@@ -186,7 +186,7 @@ function uneval(value, replacer) {
           const array = new thing.constructor(thing.buffer);
           str2 += `([${array}])`;
         } else {
-          str2 += `([${stringify(thing.buffer)}])`;
+          str2 += `([${stringify2(thing.buffer)}])`;
         }
         const a = thing.byteOffset;
         const b = a + thing.byteLength;
@@ -211,7 +211,7 @@ function uneval(value, replacer) {
         return `${type}.from(${stringify_string(thing.toString())})`;
       default:
         const keys2 = Object.keys(thing);
-        const obj = keys2.map((key) => `${safe_key(key)}:${stringify(thing[key])}`).join(",");
+        const obj = keys2.map((key) => `${safe_key(key)}:${stringify2(thing[key])}`).join(",");
         const proto = Object.getPrototypeOf(thing);
         if (proto === null) {
           return keys2.length > 0 ? `{${obj},__proto__:null}` : `{__proto__:null}`;
@@ -219,7 +219,7 @@ function uneval(value, replacer) {
         return `{${obj}}`;
     }
   }
-  const str = stringify(value);
+  const str = stringify2(value);
   if (names.size) {
     const params = [];
     const statements = [];
@@ -242,7 +242,7 @@ function uneval(value, replacer) {
         case "Number":
         case "String":
         case "Boolean":
-          values.push(`Object(${stringify(thing.valueOf())})`);
+          values.push(`Object(${stringify2(thing.valueOf())})`);
           break;
         case "RegExp":
           values.push(thing.toString());
@@ -253,19 +253,19 @@ function uneval(value, replacer) {
         case "Array":
           values.push(`Array(${thing.length})`);
           thing.forEach((v, i) => {
-            statements.push(`${name}[${i}]=${stringify(v)}`);
+            statements.push(`${name}[${i}]=${stringify2(v)}`);
           });
           break;
         case "Set":
           values.push(`new Set`);
           statements.push(
-            `${name}.${Array.from(thing).map((v) => `add(${stringify(v)})`).join(".")}`
+            `${name}.${Array.from(thing).map((v) => `add(${stringify2(v)})`).join(".")}`
           );
           break;
         case "Map":
           values.push(`new Map`);
           statements.push(
-            `${name}.${Array.from(thing).map(([k, v]) => `set(${stringify(k)}, ${stringify(v)})`).join(".")}`
+            `${name}.${Array.from(thing).map(([k, v]) => `set(${stringify2(k)}, ${stringify2(v)})`).join(".")}`
           );
           break;
         case "ArrayBuffer":
@@ -279,7 +279,7 @@ function uneval(value, replacer) {
           );
           Object.keys(thing).forEach((key) => {
             statements.push(
-              `${name}${safe_prop(key)}=${stringify(thing[key])}`
+              `${name}${safe_prop(key)}=${stringify2(thing[key])}`
             );
           });
       }
@@ -2139,7 +2139,7 @@ function update_effect(effect) {
     effect.teardown = typeof teardown === "function" ? teardown : null;
     effect.wv = write_version;
     var dep;
-    if (BROWSER && tracing_mode_flag && (effect.f & DIRTY) !== 0 && effect.deps !== null) ;
+    if (browser && tracing_mode_flag && (effect.f & DIRTY) !== 0 && effect.deps !== null) ;
   } finally {
     is_updating_effect = was_updating_effect;
     active_effect = previous_effect;
@@ -2522,6 +2522,13 @@ https://svelte.dev/e/invalid_csp`);
   error.name = "Svelte error";
   throw error;
 }
+function lifecycle_function_unavailable(name) {
+  const error = new Error(`lifecycle_function_unavailable
+\`${name}(...)\` is not available on the server
+https://svelte.dev/e/lifecycle_function_unavailable`);
+  error.name = "Svelte error";
+  throw error;
+}
 function server_context_required() {
   const error = new Error(`server_context_required
 Could not resolve \`render\` context.
@@ -2544,6 +2551,12 @@ function getContext(key) {
 function setContext(key, context) {
   get_or_init_context_map().set(key, context);
   return context;
+}
+function hasContext(key) {
+  return get_or_init_context_map().has(key);
+}
+function getAllContexts() {
+  return get_or_init_context_map();
 }
 function get_or_init_context_map(name) {
   if (ssr_context === null) {
@@ -3422,9 +3435,16 @@ function spread_props(props) {
   }
   return merged_props;
 }
+function stringify(value) {
+  return typeof value === "string" ? value : value == null ? "" : value + "";
+}
 function attr_class(value, hash, directives) {
   var result = to_class(value, hash, directives);
   return result ? ` class="${escape_html(result, true)}"` : "";
+}
+function attr_style(value, directives) {
+  var result = to_style(value, directives);
+  return result ? ` style="${escape_html(result, true)}"` : "";
 }
 function store_get(store_values, store_name, store) {
   if (store_name in store_values && store_values[store_name][0] === store) {
@@ -3507,76 +3527,86 @@ function derived(fn) {
   };
 }
 export {
-  get_first_child as $,
-  active_effect as A,
-  BOUNDARY_EFFECT as B,
+  EFFECT_TRANSPARENT as $,
+  source as A,
+  untrack as B,
   COMMENT_NODE as C,
-  block as D,
-  branch as E,
-  create_text as F,
-  pause_effect as G,
+  increment as D,
+  queue_micro_task as E,
+  active_effect as F,
+  BOUNDARY_EFFECT as G,
   HYDRATION_ERROR as H,
-  current_batch as I,
-  move_effect as J,
-  defer_effect as K,
-  set_active_effect as L,
-  set_active_reaction as M,
-  set_component_context as N,
-  Batch as O,
-  handle_error as P,
-  active_reaction as Q,
-  component_context as R,
-  internal_set as S,
-  destroy_effect as T,
-  invoke_error_boundary as U,
-  svelte_boundary_reset_onerror as V,
-  HYDRATION_START_FAILED as W,
-  EFFECT_TRANSPARENT as X,
-  EFFECT_PRESERVED as Y,
-  define_property as Z,
-  init_operations as _,
+  block as I,
+  branch as J,
+  create_text as K,
+  pause_effect as L,
+  current_batch as M,
+  move_effect as N,
+  defer_effect as O,
+  set_active_effect as P,
+  set_active_reaction as Q,
+  set_component_context as R,
+  Batch as S,
+  handle_error as T,
+  active_reaction as U,
+  component_context as V,
+  internal_set as W,
+  destroy_effect as X,
+  invoke_error_boundary as Y,
+  svelte_boundary_reset_onerror as Z,
+  HYDRATION_START_FAILED as _,
   sanitize_props as a,
-  hydration_failed as a0,
-  clear_text_content as a1,
-  component_root as a2,
-  array_from as a3,
-  is_passive_event as a4,
-  push$1 as a5,
-  pop$1 as a6,
-  set as a7,
-  LEGACY_PROPS as a8,
-  flushSync as a9,
-  mutable_source as aa,
-  render as ab,
-  setContext as ac,
-  rest_props as ad,
-  fallback as ae,
-  attributes as af,
-  element as ag,
-  bind_props as ah,
+  EFFECT_PRESERVED as a0,
+  define_property as a1,
+  without_reactive_context as a2,
+  init_operations as a3,
+  get_first_child as a4,
+  hydration_failed as a5,
+  clear_text_content as a6,
+  component_root as a7,
+  array_from as a8,
+  is_passive_event as a9,
+  push$1 as aa,
+  pop$1 as ab,
+  set as ac,
+  LEGACY_PROPS as ad,
+  flushSync as ae,
+  mutable_source as af,
+  render as ag,
+  setContext as ah,
+  ssr_context as ai,
+  lifecycle_function_unavailable as aj,
+  rest_props as ak,
+  fallback as al,
+  element as am,
+  hasContext as an,
+  getAllContexts as ao,
+  is_array as ap,
+  get_prototype_of as aq,
+  object_prototype as ar,
   spread_props as b,
   slot as c,
   attr_class as d,
   escape_html as e,
   clsx as f,
   getContext as g,
-  ensure_array_like as h,
-  attr as i,
-  derived as j,
+  attr_style as h,
+  ensure_array_like as i,
+  attr as j,
   store_get as k,
   unsubscribe_stores as l,
-  HYDRATION_END as m,
+  derived as m,
   noop as n,
-  HYDRATION_START as o,
-  HYDRATION_START_ELSE as p,
-  get_next_sibling as q,
-  effect_tracking as r,
+  stringify as o,
+  bind_props as p,
+  attributes as q,
+  HYDRATION_END as r,
   safe_not_equal as s,
-  get as t,
+  HYDRATION_START as t,
   uneval as u,
-  render_effect as v,
-  source as w,
-  untrack as x,
-  increment as y,
-  queue_micro_task as z
+  HYDRATION_START_ELSE as v,
+  get_next_sibling as w,
+  effect_tracking as x,
+  get as y,
+  render_effect as z
 };

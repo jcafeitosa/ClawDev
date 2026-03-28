@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="../favicon.svg" />
+    <title>ClawDev</title>
+    <script>
+      // Restore theme before first paint to prevent flash
+      (function () {
+        var stored = localStorage.getItem('paperclip.theme');
+        // Also check legacy key
+        if (!stored) stored = localStorage.getItem('clawdev.theme');
+        var theme = stored === 'light' ? 'light' : stored === 'dark' ? 'dark' : 'light';
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
+    <link href="../_app/immutable/entry/start.BhZCc83i.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/R66MwjyA.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/CnU8mnEz.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/BSIspAl0.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/Cp_94M0a.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/yW07mADH.js" rel="modulepreload">
+		<link href="../_app/immutable/entry/app.CBJZ3eRm.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/DlhN6X_b.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/5NMuA5Ut.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/DXa51RsP.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/Bzak7iHL.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/CrEqN3lB.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/C-1Wk0r7.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/f2LqGyhV.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/DDgAFMIo.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/BxXsfR4t.js" rel="modulepreload">
+		<link href="../_app/immutable/chunks/B_T3PCa2.js" rel="modulepreload">
+		
+  </head>
+  <body data-sveltekit-preload-data="hover">
+    <div style="display: contents">
+			<script>
+				{
+					__sveltekit_oyho4y = {
+						base: new URL("..", location).pathname.slice(0, -1)
+					};
+
+					const element = document.currentScript.parentElement;
+
+					Promise.all([
+						import("../_app/immutable/entry/start.BhZCc83i.js"),
+						import("../_app/immutable/entry/app.CBJZ3eRm.js")
+					]).then(([kit, app]) => {
+						kit.start(app, element);
+					});
+				}
+			</script>
+		</div>
+  </body>
+</html>

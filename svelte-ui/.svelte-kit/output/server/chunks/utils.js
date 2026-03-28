@@ -1,4 +1,4 @@
-const BROWSER = false;
+const browser = false;
 const escaped = {
   "<": "\\u003C",
   "\\": "\\\\",
@@ -110,11 +110,11 @@ function valid_array_indices(array) {
   return keys;
 }
 export {
-  BROWSER as B,
   DevalueError as D,
   is_plain_object as a,
-  stringify_string as b,
-  escaped as c,
+  browser as b,
+  stringify_string as c,
+  escaped as d,
   enumerable_symbols as e,
   get_type as g,
   is_primitive as i,
