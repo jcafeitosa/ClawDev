@@ -53,7 +53,7 @@ import {
   inspectBoardClaimChallenge
 } from "../board-claim.js";
 
-function hashToken(token: string) {
+export function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
@@ -63,7 +63,7 @@ const INVITE_TOKEN_SUFFIX_LENGTH = 8;
 const INVITE_TOKEN_MAX_RETRIES = 5;
 const COMPANY_INVITE_TTL_MS = 10 * 60 * 1000;
 
-function createInviteToken() {
+export function createInviteToken() {
   const bytes = randomBytes(INVITE_TOKEN_SUFFIX_LENGTH);
   let suffix = "";
   for (let idx = 0; idx < INVITE_TOKEN_SUFFIX_LENGTH; idx += 1) {
@@ -72,7 +72,7 @@ function createInviteToken() {
   return `${INVITE_TOKEN_PREFIX}${suffix}`;
 }
 
-function createClaimSecret() {
+export function createClaimSecret() {
   return `pcp_claim_${randomBytes(24).toString("hex")}`;
 }
 
@@ -80,7 +80,7 @@ export function companyInviteExpiresAt(nowMs: number = Date.now()) {
   return new Date(nowMs + COMPANY_INVITE_TTL_MS);
 }
 
-function tokenHashesMatch(left: string, right: string) {
+export function tokenHashesMatch(left: string, right: string) {
   const leftBytes = Buffer.from(left, "utf8");
   const rightBytes = Buffer.from(right, "utf8");
   return (
@@ -98,11 +98,11 @@ function requestBaseUrl(req: Request) {
   return `${proto}://${host}`;
 }
 
-function buildCliAuthApprovalPath(challengeId: string, token: string) {
+export function buildCliAuthApprovalPath(challengeId: string, token: string) {
   return `/cli-auth/${challengeId}?token=${encodeURIComponent(token)}`;
 }
 
-function readSkillMarkdown(skillName: string): string | null {
+export function readSkillMarkdown(skillName: string): string | null {
   const normalized = skillName.trim().toLowerCase();
   if (
     normalized !== "clawdev" &&
@@ -164,14 +164,14 @@ function parseSkillFrontmatter(markdown: string): { description: string } {
   };
 }
 
-interface AvailableSkill {
+export interface AvailableSkill {
   name: string;
   description: string;
   isClawDevManaged: boolean;
 }
 
 /** Discover all available Claude Code skills from ~/.claude/skills/. */
-function listAvailableSkills(): AvailableSkill[] {
+export function listAvailableSkills(): AvailableSkill[] {
   const homeDir = process.env.HOME || process.env.USERPROFILE || "";
   const claudeSkillsDir = path.join(homeDir, ".claude", "skills");
   const clawdevSkillsDir = resolveClawDevSkillsDir();
@@ -211,7 +211,7 @@ function listAvailableSkills(): AvailableSkill[] {
   return skills;
 }
 
-function toJoinRequestResponse(row: typeof joinRequests.$inferSelect) {
+export function toJoinRequestResponse(row: typeof joinRequests.$inferSelect) {
   const { claimSecretHash: _claimSecretHash, ...safe } = row;
   return safe;
 }
@@ -223,7 +223,7 @@ type JoinDiagnostic = {
   hint?: string;
 };
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
+export function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
@@ -563,7 +563,7 @@ function summarizeSecretForLog(
   };
 }
 
-function summarizeOpenClawGatewayDefaultsForLog(defaultsPayload: unknown) {
+export function summarizeOpenClawGatewayDefaultsForLog(defaultsPayload: unknown) {
   const defaults = isPlainObject(defaultsPayload)
     ? (defaultsPayload as Record<string, unknown>)
     : null;
@@ -988,7 +988,7 @@ function buildOnboardingConnectionCandidates(input: {
   return Array.from(candidates);
 }
 
-function buildInviteOnboardingManifest(
+export function buildInviteOnboardingManifest(
   req: Request,
   token: string,
   invite: typeof invites.$inferSelect,
@@ -1356,7 +1356,7 @@ function requestIp(req: Request) {
   return req.ip || "unknown";
 }
 
-function inviteExpired(invite: typeof invites.$inferSelect) {
+export function inviteExpired(invite: typeof invites.$inferSelect) {
   return invite.expiresAt.getTime() <= Date.now();
 }
 
@@ -1376,7 +1376,7 @@ async function resolveActorEmail(db: Db, req: Request): Promise<string | null> {
   return user?.email ?? null;
 }
 
-function grantsFromDefaults(
+export function grantsFromDefaults(
   defaultsPayload: Record<string, unknown> | null | undefined,
   key: "human" | "agent"
 ): Array<{
@@ -1449,7 +1449,7 @@ export function resolveJoinRequestAgentManagerId(
   return (rootCeo ?? ceoCandidates[0] ?? null)?.id ?? null;
 }
 
-function isInviteTokenHashCollisionError(error: unknown) {
+export function isInviteTokenHashCollisionError(error: unknown) {
   const candidates = [
     error,
     (error as { cause?: unknown } | null)?.cause ?? null
@@ -1487,7 +1487,7 @@ type InviteResolutionProbe = {
   message: string;
 };
 
-async function probeInviteResolutionTarget(
+export async function probeInviteResolutionTarget(
   url: URL,
   timeoutMs: number
 ): Promise<InviteResolutionProbe> {
