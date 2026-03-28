@@ -3,7 +3,7 @@ import type {
   InstanceGeneralSettings,
   PatchInstanceGeneralSettings,
   PatchInstanceExperimentalSettings,
-} from "@paperclipai/shared";
+} from "@clawdev/shared";
 import { api } from "./client";
 
 export const instanceSettingsApi = {

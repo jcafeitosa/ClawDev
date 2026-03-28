@@ -1,4 +1,4 @@
-# @paperclipai/shared
+# @clawdev/shared
 
 ## 0.3.1
 

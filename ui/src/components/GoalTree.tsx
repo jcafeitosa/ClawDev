@@ -1,4 +1,4 @@
-import type { Goal } from "@paperclipai/shared";
+import type { Goal } from "@clawdev/shared";
 import { Link } from "@/lib/router";
 import { StatusBadge } from "./StatusBadge";
 import { ChevronRight } from "lucide-react";
