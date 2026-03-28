@@ -39,7 +39,7 @@
       {#each features as f}
         <div class="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
           <div><p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{f.label}</p><p class="text-xs text-zinc-500">{f.desc}</p></div>
-          <button onclick={() => toggle(f.key)} class="relative h-6 w-11 rounded-full transition-colors {settings[f.key] ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}">
+          <button onclick={() => toggle(f.key)} aria-label="Toggle {f.label}" class="relative h-6 w-11 rounded-full transition-colors {settings[f.key] ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}">
             <span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform {settings[f.key] ? 'translate-x-5' : ''}"></span>
           </button>
         </div>

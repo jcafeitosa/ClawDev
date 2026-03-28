@@ -1,13 +1,8 @@
 <script lang="ts">
-  import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
-  import { onMount } from "svelte";
-
-  onMount(() => breadcrumbStore.set([{ label: "Org Chart" }]));
+  import { goto } from '$app/navigation';
+  import { page } from '$app/stores';
+  import { onMount } from 'svelte';
+  onMount(() => goto(`/${$page.params.companyPrefix}/org/chart`, { replaceState: true }));
 </script>
 
-<div class="p-6">
-  <div class="flex items-center justify-between mb-6">
-    <h1 class="text-xl font-semibold">Org Chart</h1>
-  </div>
-  <p class="text-muted-foreground text-sm">Organization chart — migration in progress.</p>
-</div>
+<div class="p-6"><p class="text-sm text-zinc-500">Redirecting...</p></div>

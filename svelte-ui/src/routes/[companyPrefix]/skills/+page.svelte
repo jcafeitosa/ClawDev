@@ -9,7 +9,7 @@
 
   let skills = $state<any[]>([]);
   let loading = $state(true);
-  let companyId = $derived(companyStore.current?.id);
+  let companyId = $derived(companyStore.selectedCompany?.id);
 
   $effect(() => {
     if (!companyId) return;
@@ -36,7 +36,7 @@
             <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{skill.name}</p>
             <p class="text-xs text-zinc-500">{skill.description ?? ''}</p>
           </div>
-          <button onclick={() => toggle(skill)} class="relative h-6 w-11 rounded-full transition-colors {skill.enabled ? 'bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}">
+          <button onclick={() => toggle(skill)} aria-label="Toggle {skill.name}" class="relative h-6 w-11 rounded-full transition-colors {skill.enabled ? 'bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}">
             <span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform {skill.enabled ? 'translate-x-5' : ''}"></span>
           </button>
         </div>
