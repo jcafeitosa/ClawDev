@@ -15,12 +15,25 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+
   server:
     build: .
     ports:
       - "3100:3100"
     environment:
       DATABASE_URL: postgres://clawdev:clawdev@db:5432/clawdev
+      REDIS_URL: redis://redis:6379
       PORT: "3100"
       SERVE_UI: "true"
       CLAWDEV_DEPLOYMENT_MODE: "authenticated"
@@ -32,7 +45,10 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      redis:
+        condition: service_healthy
 
 volumes:
   pgdata:
+  redisdata:
   clawdev-data:
