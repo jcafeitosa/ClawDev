@@ -78,6 +78,51 @@ const env = {
   CLAWDEV_UI_DEV_MIDDLEWARE: "true",
 };
 
+// Auto-detect local Redis if not explicitly configured
+if (!env.REDIS_URL && !env.CLAWDEV_REDIS_URL) {
+  try {
+    const { execSync } = await import("node:child_process");
+    execSync("redis-cli ping", { stdio: "pipe", timeout: 2000 });
+    env.REDIS_URL = "redis://localhost:6379";
+    console.log("[clawdev] auto-detected local Redis at redis://localhost:6379");
+  } catch {
+    // Redis not available — server will use setInterval fallback
+  }
+}
+
+// Auto-generate Agent JWT secret if not configured
+// Persists to the instance .env file so agents get stable API keys across restarts
+if (!env.CLAWDEV_AGENT_JWT_SECRET) {
+  const { randomBytes } = await import("node:crypto");
+  const { existsSync, readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
+  const { join, dirname } = await import("node:path");
+  const { homedir } = await import("node:os");
+  const envFilePath = join(homedir(), ".clawdev", "instances", "default", ".env");
+
+  // Check if already persisted in instance .env
+  let existingSecret = null;
+  if (existsSync(envFilePath)) {
+    const content = readFileSync(envFilePath, "utf-8");
+    const match = content.match(/^CLAWDEV_AGENT_JWT_SECRET=(.+)$/m);
+    if (match) existingSecret = match[1].trim();
+  }
+
+  if (existingSecret) {
+    env.CLAWDEV_AGENT_JWT_SECRET = existingSecret;
+  } else {
+    const secret = randomBytes(32).toString("hex");
+    env.CLAWDEV_AGENT_JWT_SECRET = secret;
+    mkdirSync(dirname(envFilePath), { recursive: true });
+    const line = `CLAWDEV_AGENT_JWT_SECRET=${secret}\n`;
+    if (existsSync(envFilePath)) {
+      writeFileSync(envFilePath, readFileSync(envFilePath, "utf-8") + line);
+    } else {
+      writeFileSync(envFilePath, line);
+    }
+    console.log("[clawdev] generated Agent JWT secret and saved to", envFilePath);
+  }
+}
+
 if (mode === "dev") {
   env.CLAWDEV_DEV_SERVER_STATUS_FILE = devServerStatusFilePath;
 }
@@ -455,7 +500,23 @@ async function stopChildForRestart() {
 async function startServerChild() {
   await buildPluginSdk();
 
-  const serverScript = mode === "watch" ? "dev:watch" : "dev";
+  // Prefer Bun runtime when available — native Elysia support, WebSocket, better perf
+  let hasBun = false;
+  try {
+    const { execSync } = await import("node:child_process");
+    execSync("bun --version", { stdio: "pipe", timeout: 2000 });
+    hasBun = true;
+  } catch { /* Bun not available */ }
+
+  let serverScript;
+  if (hasBun) {
+    serverScript = mode === "watch" ? "dev:bun:watch" : "dev:bun";
+    console.log("[clawdev] using Bun runtime (native Elysia + WebSocket)");
+  } else {
+    serverScript = mode === "watch" ? "dev:watch" : "dev";
+    console.log("[clawdev] using Node.js/tsx runtime");
+  }
+
   child = spawn(
     pnpmBin,
     ["--filter", "@clawdev/server", serverScript, ...forwardedArgs],

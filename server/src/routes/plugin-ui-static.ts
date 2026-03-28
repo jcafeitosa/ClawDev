@@ -4,7 +4,6 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Db } from "@clawdev/db";
 import { pluginRegistryService } from "../services/plugin-registry.js";
-import { resolvePluginUiDir } from "../routes/plugin-ui-static.js";
 import { logger } from "../middleware/logger.js";
 
 const log = logger.child({ module: "plugin-ui-static" });
@@ -27,6 +26,65 @@ const MIME_TYPES: Record<string, string> = {
 
 function computeETag(size: number, mtimeMs: number): string {
   return `"${createHash("md5").update(`${size}-${mtimeMs}`).digest("hex").slice(0, 16)}"`;
+}
+
+/**
+ * Resolve a plugin's UI directory from its package location.
+ *
+ * @param localPluginDir - The plugin installation directory
+ * @param packageName - The npm package name
+ * @param entrypointsUi - The UI entrypoint path from the manifest (e.g., "./dist/ui/")
+ * @param packagePath - Optional persisted package path for local-path installs
+ * @returns Absolute path to the UI directory, or null if not found
+ */
+export function resolvePluginUiDir(
+  localPluginDir: string,
+  packageName: string,
+  entrypointsUi: string,
+  packagePath?: string | null,
+): string | null {
+  // For local-path installs, prefer the persisted package path.
+  if (packagePath) {
+    const resolvedPackagePath = path.resolve(packagePath);
+    if (fs.existsSync(resolvedPackagePath)) {
+      const uiDirFromPackagePath = path.resolve(resolvedPackagePath, entrypointsUi);
+      if (
+        uiDirFromPackagePath.startsWith(resolvedPackagePath)
+        && fs.existsSync(uiDirFromPackagePath)
+      ) {
+        return uiDirFromPackagePath;
+      }
+    }
+  }
+
+  // Resolve the package root within the local plugin directory's node_modules.
+  let packageRoot: string;
+  if (packageName.startsWith("@")) {
+    // Scoped package: @scope/name -> node_modules/@scope/name
+    packageRoot = path.join(localPluginDir, "node_modules", ...packageName.split("/"));
+  } else {
+    packageRoot = path.join(localPluginDir, "node_modules", packageName);
+  }
+
+  if (!fs.existsSync(packageRoot)) {
+    // For local-path installs, check if the package exists directly at the
+    // localPluginDir level.
+    const directPath = path.join(localPluginDir, packageName);
+    if (fs.existsSync(directPath)) {
+      packageRoot = directPath;
+    } else {
+      return null;
+    }
+  }
+
+  // Resolve the UI directory relative to the package root
+  const uiDir = path.resolve(packageRoot, entrypointsUi);
+
+  if (!fs.existsSync(uiDir)) {
+    return null;
+  }
+
+  return uiDir;
 }
 
 export interface ElysiaPluginUiStaticOptions {

@@ -61,15 +61,53 @@ async function resolveActor(
 ): Promise<Actor> {
   const runIdHeader = headers.get("x-clawdev-run-id") ?? undefined;
 
-  // Local trusted mode: implicit board access
+  // Local trusted mode: try session-based auth first, fall back to implicit board access
   if (opts.deploymentMode === "local_trusted") {
-    return {
-      type: "board",
-      userId: "local-board",
-      isInstanceAdmin: true,
-      runId: runIdHeader,
-      source: "local_implicit",
-    };
+    // Check for agent bearer token first (agents still need explicit auth)
+    const authHeader = headers.get("authorization");
+    if (authHeader?.toLowerCase().startsWith("bearer ")) {
+      // Fall through to bearer token handling below
+    } else if (opts.resolveSession) {
+      // Try better-auth session — allows real user login in local_trusted mode
+      try {
+        const session = await opts.resolveSession(headers);
+        if (session?.user?.id) {
+          const userId = session.user.id;
+          const memberships = await opts.db
+              .select({ companyId: companyMemberships.companyId })
+              .from(companyMemberships)
+              .where(
+                and(
+                  eq(companyMemberships.principalType, "user"),
+                  eq(companyMemberships.principalId, userId),
+                  eq(companyMemberships.status, "active"),
+                ),
+              );
+          return {
+            type: "board",
+            userId,
+            companyIds: memberships.map((row: { companyId: string }) => row.companyId),
+            // In local_trusted mode, all session users are implicitly instance admins
+            isInstanceAdmin: true,
+            runId: runIdHeader,
+            source: "session",
+          };
+        }
+      } catch {
+        // Session resolution failed — fall through to implicit
+      }
+    }
+
+    // No bearer token and no session — use implicit board access
+    if (!authHeader?.toLowerCase().startsWith("bearer ")) {
+      return {
+        type: "board",
+        userId: "local-board",
+        isInstanceAdmin: true,
+        runId: runIdHeader,
+        source: "local_implicit",
+      };
+    }
   }
 
   const authHeader = headers.get("authorization");

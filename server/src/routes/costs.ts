@@ -179,15 +179,15 @@ export function costRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
       }, actor.userId ?? "board");
       return company;
     })
-    .patch("/agents/:agentId/budgets", async ({ params, body, actor }) => {
+    .patch("/agents/:id/budgets", async ({ params, body, actor }) => {
       const parsed = updateBudgetSchema.parse(body);
-      const agent = await agents.getById(params.agentId);
+      const agent = await agents.getById(params.id);
       if (!agent) throw notFound("Agent not found");
       assertCompanyAccess(actor, agent.companyId);
-      if (actor.type === "agent" && actor.agentId !== params.agentId) {
+      if (actor.type === "agent" && actor.agentId !== params.id) {
         throw forbidden("Agent can only change its own budget");
       }
-      const updated = await agents.update(params.agentId, { budgetMonthlyCents: parsed.budgetMonthlyCents });
+      const updated = await agents.update(params.id, { budgetMonthlyCents: parsed.budgetMonthlyCents });
       if (!updated) throw notFound("Agent not found");
       const actorInfo = getActorInfo(actor);
       await logActivity(db, {

@@ -456,27 +456,56 @@ export async function startServer(): Promise<StartedServer> {
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
-  if (config.deploymentMode === "authenticated") {
+
+  // Initialize better-auth for both authenticated AND local_trusted modes.
+  // In local_trusted, this enables real user login (sign-in/sign-up) alongside
+  // the implicit board access fallback, so the UI auth flow works correctly.
+  if (config.deploymentMode === "authenticated" || config.deploymentMode === "local_trusted") {
     const {
-      createBetterAuthHandler,
       createBetterAuthInstance,
       deriveAuthTrustedOrigins,
-      resolveBetterAuthSession,
       resolveBetterAuthSessionFromHeaders,
     } = await import("./auth/better-auth.js");
+
+    // In local_trusted mode, derive a stable secret from the instance data directory
+    // so sessions survive restarts without requiring manual configuration.
+    const { createHash } = await import("node:crypto");
+    const derivedLocalSecret = config.deploymentMode === "local_trusted"
+      ? createHash("sha256").update(`clawdev:${config.dataDir ?? process.cwd()}`).digest("hex")
+      : undefined;
     const betterAuthSecret =
-      process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.CLAWDEV_AGENT_JWT_SECRET?.trim();
+      process.env.BETTER_AUTH_SECRET?.trim()
+      ?? process.env.CLAWDEV_AGENT_JWT_SECRET?.trim()
+      ?? derivedLocalSecret;
     if (!betterAuthSecret) {
       throw new Error(
         "authenticated mode requires BETTER_AUTH_SECRET (or CLAWDEV_AGENT_JWT_SECRET) to be set",
       );
     }
+    // Ensure the secret is set for better-auth to pick up
+    if (!process.env.BETTER_AUTH_SECRET) {
+      process.env.BETTER_AUTH_SECRET = betterAuthSecret;
+    }
+
     const derivedTrustedOrigins = deriveAuthTrustedOrigins(config);
     const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
       .split(",")
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
-    const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins]));
+
+    // In local_trusted mode, ensure the local server origin is trusted
+    const localOrigins: string[] = [];
+    if (config.deploymentMode === "local_trusted") {
+      const localBaseUrl = `http://${config.host ?? "127.0.0.1"}:${config.port}`;
+      localOrigins.push(localBaseUrl, `http://localhost:${config.port}`);
+      // Set base URL so better-auth knows where it lives
+      if (!config.authPublicBaseUrl) {
+        config.authPublicBaseUrl = localBaseUrl;
+        config.authBaseUrlMode = "explicit";
+      }
+    }
+
+    const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins, ...localOrigins]));
     logger.info(
       {
         authBaseUrlMode: config.authBaseUrlMode,
@@ -485,14 +514,17 @@ export async function startServer(): Promise<StartedServer> {
         trustedOriginsSource: {
           derived: derivedTrustedOrigins.length,
           env: envTrustedOrigins.length,
+          local: localOrigins.length,
         },
       },
-      "Authenticated mode auth origin configuration",
+      `${config.deploymentMode} mode auth origin configuration`,
     );
     const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
     resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
     betterAuthHandler = auth;
-    await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
+    if (config.deploymentMode === "authenticated") {
+      await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
+    }
     authReady = true;
   }
   

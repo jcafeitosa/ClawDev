@@ -58,7 +58,7 @@ import { isRedisConfigured, getRedis } from "../redis.js";
 // ---------------------------------------------------------------------------
 
 /** Queue name for plugin job executions. */
-export const PLUGIN_JOBS_QUEUE_NAME = "clawdev:plugin-jobs";
+export const PLUGIN_JOBS_QUEUE_NAME = "clawdev-plugin-jobs";
 
 /** Default interval between scheduler ticks (30 seconds). Fallback only. */
 const DEFAULT_TICK_INTERVAL_MS = 30_000;

@@ -1,273 +1,174 @@
+/**
+ * Live events WebSocket — Elysia port.
+ *
+ * Uses Elysia's native WebSocket support (backed by Bun's native WS or uWS)
+ * instead of the `ws` npm package + manual HTTP upgrade handling.
+ *
+ * Clients connect to: /api/companies/:companyId/events/ws
+ * Auth: Bearer token (agent API key) or session cookie (board user)
+ *
+ * The Elysia ws plugin provides:
+ * - Built-in ping/pong keepalive
+ * - Schema validation for params
+ * - Typed context with derive
+ * - Automatic connection cleanup
+ */
+
 import { createHash } from "node:crypto";
-import type { IncomingMessage, Server as HttpServer } from "node:http";
-import { createRequire } from "node:module";
-import type { Duplex } from "node:stream";
-import { and, eq, isNull } from "drizzle-orm";
+import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { agentApiKeys, companyMemberships, instanceUserRoles } from "@clawdev/db";
+import { and, eq, isNull } from "drizzle-orm";
 import type { DeploymentMode } from "@clawdev/shared";
 import type { BetterAuthSessionResult } from "../auth/better-auth.js";
 import { logger } from "../middleware/logger.js";
 import { subscribeCompanyLiveEvents } from "../services/live-events.js";
 
-interface WsSocket {
-  readyState: number;
-  ping(): void;
-  send(data: string): void;
-  terminate(): void;
-  close(code?: number, reason?: string): void;
-  on(event: "pong", listener: () => void): void;
-  on(event: "close", listener: () => void): void;
-  on(event: "error", listener: (err: Error) => void): void;
-}
-
-interface WsServer {
-  clients: Set<WsSocket>;
-  on(event: "connection", listener: (socket: WsSocket, req: IncomingMessage) => void): void;
-  on(event: "close", listener: () => void): void;
-  handleUpgrade(
-    req: IncomingMessage,
-    socket: Duplex,
-    head: Buffer,
-    callback: (ws: WsSocket) => void,
-  ): void;
-  emit(event: "connection", ws: WsSocket, req: IncomingMessage): boolean;
-}
-
-const require = createRequire(import.meta.url);
-const { WebSocket, WebSocketServer } = require("ws") as {
-  WebSocket: { OPEN: number };
-  WebSocketServer: new (opts: { noServer: boolean }) => WsServer;
-};
-
-interface UpgradeContext {
-  companyId: string;
-  actorType: "board" | "agent";
-  actorId: string;
-}
-
-interface IncomingMessageWithContext extends IncomingMessage {
-  clawdevUpgradeContext?: UpgradeContext;
-}
+const log = logger.child({ service: "live-events-ws" });
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-function rejectUpgrade(socket: Duplex, statusLine: string, message: string) {
-  const safe = message.replace(/[\r\n]+/g, " ").trim();
-  socket.write(`HTTP/1.1 ${statusLine}\r\nConnection: close\r\nContent-Type: text/plain\r\n\r\n${safe}`);
-  socket.destroy();
+interface WsUpgradeContext {
+  companyId: string;
+  actorType: "board" | "agent";
+  actorId: string;
 }
 
-function parseCompanyId(pathname: string) {
-  const match = pathname.match(/^\/api\/companies\/([^/]+)\/events\/ws$/);
-  if (!match) return null;
-
-  try {
-    return decodeURIComponent(match[1] ?? "");
-  } catch {
-    return null;
-  }
-}
-
-function parseBearerToken(rawAuth: string | string[] | undefined) {
-  const auth = Array.isArray(rawAuth) ? rawAuth[0] : rawAuth;
-  if (!auth) return null;
-  if (!auth.toLowerCase().startsWith("bearer ")) return null;
-  const token = auth.slice("bearer ".length).trim();
-  return token.length > 0 ? token : null;
-}
-
-function headersFromIncomingMessage(req: IncomingMessage): Headers {
-  const headers = new Headers();
-  for (const [key, raw] of Object.entries(req.headers)) {
-    if (!raw) continue;
-    if (Array.isArray(raw)) {
-      for (const value of raw) headers.append(key, value);
-      continue;
-    }
-    headers.set(key, raw);
-  }
-  return headers;
-}
-
-async function authorizeUpgrade(
-  db: Db,
-  req: IncomingMessage,
-  companyId: string,
-  url: URL,
-  opts: {
-    deploymentMode: DeploymentMode;
-    resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
-  },
-): Promise<UpgradeContext | null> {
-  const queryToken = url.searchParams.get("token")?.trim() ?? "";
-  const authToken = parseBearerToken(req.headers.authorization);
-  const token = authToken ?? (queryToken.length > 0 ? queryToken : null);
-
-  // Browser board context has no bearer token in local_trusted and authenticated modes.
-  if (!token) {
-    if (opts.deploymentMode === "local_trusted") {
-      return {
-        companyId,
-        actorType: "board",
-        actorId: "board",
-      };
-    }
-
-    if (opts.deploymentMode !== "authenticated" || !opts.resolveSessionFromHeaders) {
-      return null;
-    }
-
-    const session = await opts.resolveSessionFromHeaders(headersFromIncomingMessage(req));
-    const userId = session?.user?.id;
-    if (!userId) return null;
-
-    const [roleRow, memberships] = await Promise.all([
-      db
-        .select({ id: instanceUserRoles.id })
-        .from(instanceUserRoles)
-        .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
-        .then((rows) => rows[0] ?? null),
-      db
-        .select({ companyId: companyMemberships.companyId })
-        .from(companyMemberships)
-        .where(
-          and(
-            eq(companyMemberships.principalType, "user"),
-            eq(companyMemberships.principalId, userId),
-            eq(companyMemberships.status, "active"),
-          ),
-        ),
-    ]);
-
-    const hasCompanyMembership = memberships.some((row) => row.companyId === companyId);
-    if (!roleRow && !hasCompanyMembership) return null;
-
-    return {
-      companyId,
-      actorType: "board",
-      actorId: userId,
-    };
-  }
-
-  const tokenHash = hashToken(token);
-  const key = await db
-    .select()
-    .from(agentApiKeys)
-    .where(and(eq(agentApiKeys.keyHash, tokenHash), isNull(agentApiKeys.revokedAt)))
-    .then((rows) => rows[0] ?? null);
-
-  if (!key || key.companyId !== companyId) {
-    return null;
-  }
-
-  await db
-    .update(agentApiKeys)
-    .set({ lastUsedAt: new Date() })
-    .where(eq(agentApiKeys.id, key.id));
-
-  return {
-    companyId,
-    actorType: "agent",
-    actorId: key.agentId,
-  };
-}
-
-export function setupLiveEventsWebSocketServer(
-  server: HttpServer,
+export function liveEventsWs(
   db: Db,
   opts: {
     deploymentMode: DeploymentMode;
     resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
   },
 ) {
-  const wss = new WebSocketServer({ noServer: true });
-  const cleanupByClient = new Map<WsSocket, () => void>();
-  const aliveByClient = new Map<WsSocket, boolean>();
+  /** Map of WebSocket ID → cleanup function (live event unsubscribe) */
+  const cleanupMap = new Map<string, () => void>();
 
-  const pingInterval = setInterval(() => {
-    for (const socket of wss.clients) {
-      if (!aliveByClient.get(socket)) {
-        socket.terminate();
-        continue;
-      }
-      aliveByClient.set(socket, false);
-      socket.ping();
-    }
-  }, 30000);
+  return new Elysia()
+    .ws("/api/companies/:companyId/events/ws", {
+      params: t.Object({ companyId: t.String() }),
 
-  wss.on("connection", (socket: WsSocket, req: IncomingMessage) => {
-    const context = (req as IncomingMessageWithContext).clawdevUpgradeContext;
-    if (!context) {
-      socket.close(1008, "missing context");
-      return;
-    }
+      // Auth runs before the upgrade completes
+      async beforeHandle({ params, request, set }) {
+        const { companyId } = params;
+        const authHeader = request.headers.get("authorization");
+        const url = new URL(request.url);
+        const queryToken = url.searchParams.get("token")?.trim() ?? "";
 
-    const unsubscribe = subscribeCompanyLiveEvents(context.companyId, (event) => {
-      if (socket.readyState !== WebSocket.OPEN) return;
-      socket.send(JSON.stringify(event));
-    });
-
-    cleanupByClient.set(socket, unsubscribe);
-    aliveByClient.set(socket, true);
-
-    socket.on("pong", () => {
-      aliveByClient.set(socket, true);
-    });
-
-    socket.on("close", () => {
-      const cleanup = cleanupByClient.get(socket);
-      if (cleanup) cleanup();
-      cleanupByClient.delete(socket);
-      aliveByClient.delete(socket);
-    });
-
-    socket.on("error", (err: Error) => {
-      logger.warn({ err, companyId: context.companyId }, "live websocket client error");
-    });
-  });
-
-  wss.on("close", () => {
-    clearInterval(pingInterval);
-  });
-
-  server.on("upgrade", (req, socket, head) => {
-    if (!req.url) {
-      rejectUpgrade(socket, "400 Bad Request", "missing url");
-      return;
-    }
-
-    const url = new URL(req.url, "http://localhost");
-    const companyId = parseCompanyId(url.pathname);
-    if (!companyId) {
-      socket.destroy();
-      return;
-    }
-
-    void authorizeUpgrade(db, req, companyId, url, {
-      deploymentMode: opts.deploymentMode,
-      resolveSessionFromHeaders: opts.resolveSessionFromHeaders,
-    })
-      .then((context) => {
-        if (!context) {
-          rejectUpgrade(socket, "403 Forbidden", "forbidden");
-          return;
+        // Extract bearer token
+        let token: string | null = null;
+        if (authHeader?.toLowerCase().startsWith("bearer ")) {
+          token = authHeader.slice("bearer ".length).trim() || null;
+        }
+        if (!token && queryToken.length > 0) {
+          token = queryToken;
         }
 
-        const reqWithContext = req as IncomingMessageWithContext;
-        reqWithContext.clawdevUpgradeContext = context;
+        // No token — check board context
+        if (!token) {
+          if (opts.deploymentMode === "local_trusted") {
+            return; // allow
+          }
 
-        wss.handleUpgrade(req, socket, head, (ws: WsSocket) => {
-          wss.emit("connection", ws, reqWithContext);
+          if (opts.deploymentMode === "authenticated" && opts.resolveSessionFromHeaders) {
+            const session = await opts.resolveSessionFromHeaders(request.headers as unknown as Headers);
+            const userId = session?.user?.id;
+            if (!userId) {
+              set.status = 403;
+              return "Forbidden";
+            }
+
+            // Verify user has access to this company
+            const [roleRow, memberships] = await Promise.all([
+              db
+                .select({ id: instanceUserRoles.id })
+                .from(instanceUserRoles)
+                .where(and(eq(instanceUserRoles.userId, userId), eq(instanceUserRoles.role, "instance_admin")))
+                .then((rows) => rows[0] ?? null),
+              db
+                .select({ companyId: companyMemberships.companyId })
+                .from(companyMemberships)
+                .where(
+                  and(
+                    eq(companyMemberships.principalType, "user"),
+                    eq(companyMemberships.principalId, userId),
+                    eq(companyMemberships.status, "active"),
+                  ),
+                ),
+            ]);
+
+            const hasAccess = !!roleRow || memberships.some((r) => r.companyId === companyId);
+            if (!hasAccess) {
+              set.status = 403;
+              return "Forbidden";
+            }
+            return; // allow
+          }
+
+          set.status = 403;
+          return "Forbidden";
+        }
+
+        // Token-based auth (agent API key)
+        const tokenHash = hashToken(token);
+        const key = await db
+          .select()
+          .from(agentApiKeys)
+          .where(and(eq(agentApiKeys.keyHash, tokenHash), isNull(agentApiKeys.revokedAt)))
+          .then((rows) => rows[0] ?? null);
+
+        if (!key || key.companyId !== companyId) {
+          set.status = 403;
+          return "Forbidden";
+        }
+
+        // Update last used
+        await db
+          .update(agentApiKeys)
+          .set({ lastUsedAt: new Date() })
+          .where(eq(agentApiKeys.id, key.id));
+      },
+
+      open(ws) {
+        const companyId = ws.data.params.companyId;
+        const wsId = ws.id ?? crypto.randomUUID();
+
+        log.info({ companyId, wsId }, "WebSocket connected");
+
+        // Subscribe to live events for this company
+        const unsubscribe = subscribeCompanyLiveEvents(companyId, (event) => {
+          try {
+            ws.send(JSON.stringify(event));
+          } catch {
+            // Client may have disconnected
+          }
         });
-      })
-      .catch((err) => {
-        logger.error({ err, path: req.url }, "failed websocket upgrade authorization");
-        rejectUpgrade(socket, "500 Internal Server Error", "upgrade failed");
-      });
-  });
 
-  return wss;
+        cleanupMap.set(wsId, unsubscribe);
+        // Store wsId on the ws object for close handler
+        (ws as unknown as Record<string, string>).__wsId = wsId;
+      },
+
+      close(ws) {
+        const wsId = (ws as unknown as Record<string, string>).__wsId;
+        if (wsId) {
+          const cleanup = cleanupMap.get(wsId);
+          if (cleanup) cleanup();
+          cleanupMap.delete(wsId);
+        }
+
+        const companyId = ws.data.params.companyId;
+        log.info({ companyId }, "WebSocket disconnected");
+      },
+
+      error(ws, error) {
+        const companyId = ws.data.params.companyId;
+        log.warn({ err: error, companyId }, "WebSocket error");
+      },
+
+      // Send ping every 30s to keep connection alive
+      idleTimeout: 60,
+    });
 }

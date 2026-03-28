@@ -74,7 +74,10 @@ export function createBetterAuthInstance(
   trustedOrigins?: string[],
 ): BetterAuthInstance {
   const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
-  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.CLAWDEV_AGENT_JWT_SECRET ?? "clawdev-dev-secret";
+  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.CLAWDEV_AGENT_JWT_SECRET;
+  if (!secret) {
+    throw new Error("BETTER_AUTH_SECRET must be set before creating the auth instance");
+  }
   const effectiveTrustedOrigins = trustedOrigins ?? deriveAuthTrustedOrigins(config);
 
   const publicUrl = process.env.CLAWDEV_PUBLIC_URL ?? baseUrl;

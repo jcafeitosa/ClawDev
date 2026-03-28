@@ -8,7 +8,7 @@ import { Queue, Worker, type Job } from "bullmq";
 import { isRedisConfigured, getRedis } from "../redis.js";
 import { logger } from "../middleware/logger.js";
 
-const QUEUE_NAME = "clawdev:scheduler";
+const QUEUE_NAME = "clawdev-scheduler";
 
 let queue: Queue | null = null;
 let worker: Worker | null = null;

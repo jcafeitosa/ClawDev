@@ -35,7 +35,10 @@ export function getRedis(): IORedis.Redis {
 
 export async function connectRedis(): Promise<IORedis.Redis> {
   const redis = getRedis();
-  await redis.connect();
+  // Only connect if not already connected or connecting
+  if (redis.status === "wait" || redis.status === "close" || redis.status === "end") {
+    await redis.connect();
+  }
   return redis;
 }
 

@@ -723,7 +723,13 @@ export function agentRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
       assertCompanyAccess(actor, params.companyId);
       const q = query as Record<string, string>;
       const limit = q.limit ? Math.max(1, Math.min(1000, parseInt(q.limit, 10) || 200)) : undefined;
-      return heartbeat.list(params.companyId, q.agentId, limit);
+      const rows = await heartbeat.list(params.companyId, q.agentId, limit);
+      // Apply status filter if provided
+      if (q.status) {
+        const statuses = q.status.split(",").map((s) => s.trim().toLowerCase());
+        return rows.filter((r) => statuses.includes(r.status));
+      }
+      return rows;
     })
     .get("/companies/:companyId/live-runs", async ({ params, query, actor }) => {
       assertCompanyAccess(actor, params.companyId);
@@ -789,16 +795,16 @@ export function agentRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
     })
 
     // === Issue live runs ===
-    .get("/issues/:issueId/live-runs", async ({ params, actor }) => {
-      const rawId = params.issueId;
+    .get("/issues/:id/live-runs", async ({ params, actor }) => {
+      const rawId = params.id;
       const issueSvc = issueService(db);
       const issue = /^[A-Z]+-\d+$/i.test(rawId) ? await issueSvc.getByIdentifier(rawId) : await issueSvc.getById(rawId);
       if (!issue) throw notFound("Issue not found");
       assertCompanyAccess(actor, issue.companyId);
       return db.select({ id: heartbeatRuns.id, status: heartbeatRuns.status, invocationSource: heartbeatRuns.invocationSource, triggerDetail: heartbeatRuns.triggerDetail, startedAt: heartbeatRuns.startedAt, finishedAt: heartbeatRuns.finishedAt, createdAt: heartbeatRuns.createdAt, agentId: heartbeatRuns.agentId, agentName: agentsTable.name, adapterType: agentsTable.adapterType }).from(heartbeatRuns).innerJoin(agentsTable, eq(heartbeatRuns.agentId, agentsTable.id)).where(and(eq(heartbeatRuns.companyId, issue.companyId), inArray(heartbeatRuns.status, ["queued", "running"]), sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = ${issue.id}`)).orderBy(desc(heartbeatRuns.createdAt));
     })
-    .get("/issues/:issueId/active-run", async ({ params, actor }) => {
-      const rawId = params.issueId;
+    .get("/issues/:id/active-run", async ({ params, actor }) => {
+      const rawId = params.id;
       const issueSvc = issueService(db);
       const issue = /^[A-Z]+-\d+$/i.test(rawId) ? await issueSvc.getByIdentifier(rawId) : await issueSvc.getById(rawId);
       if (!issue) throw notFound("Issue not found");

@@ -41,12 +41,37 @@ const CAGG = {
  * after inserting a cost event), we use a "materialized + recent" strategy:
  * query the aggregate for the materialized window, then UNION ALL with the
  * base table for the recent unmaterialized tail.
+ *
+ * When TimescaleDB is not available (e.g. embedded Postgres), queries fall back
+ * to the base cost_events table directly.
  */
 const AGGREGATE_LAG = {
   monthly: { hours: 24 },
   daily: { hours: 1 },
   hourly: { hours: 2 },
 } as const;
+
+// ---------------------------------------------------------------------------
+// TimescaleDB availability detection
+// ---------------------------------------------------------------------------
+
+let _timescaleAvailable: boolean | null = null;
+
+/**
+ * Check (once, lazily) whether TimescaleDB continuous aggregates are available.
+ * When running embedded Postgres without TimescaleDB extension, the materialized
+ * views won't exist, and queries must fall back to the base table.
+ */
+async function isTimescaleAvailable(db: Db): Promise<boolean> {
+  if (_timescaleAvailable !== null) return _timescaleAvailable;
+  try {
+    await db.execute(sql`SELECT 1 FROM costs_monthly LIMIT 0`);
+    _timescaleAvailable = true;
+  } catch {
+    _timescaleAvailable = false;
+  }
+  return _timescaleAvailable;
+}
 
 function currentUtcMonthWindow(now = new Date()) {
   const year = now.getUTCFullYear();
@@ -81,6 +106,25 @@ async function getMonthlySpendTotal(
         and(
           eq(costEvents.companyId, scope.companyId),
           eq(costEvents.agentId, scope.agentId),
+          gte(costEvents.occurredAt, start),
+          lt(costEvents.occurredAt, end),
+        ),
+      );
+    return Number(row?.total ?? 0);
+  }
+
+  const hasTimescale = await isTimescaleAvailable(db);
+
+  // Without TimescaleDB, query the base table directly
+  if (!hasTimescale) {
+    const [row] = await db
+      .select({
+        total: sql<number>`coalesce(sum(${costEvents.costCents}), 0)::int`,
+      })
+      .from(costEvents)
+      .where(
+        and(
+          eq(costEvents.companyId, scope.companyId),
           gte(costEvents.occurredAt, start),
           lt(costEvents.occurredAt, end),
         ),
@@ -174,31 +218,46 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
 
       if (!company) throw notFound("Company not found");
 
-      // Use cost_daily_by_company aggregate for date-range queries.
-      // The aggregate has a 1-hour lag, so we add the recent tail from the base table.
-      const lagBoundary = new Date(Date.now() - AGGREGATE_LAG.daily.hours * 60 * 60 * 1000);
+      // Use cost_daily_by_company aggregate when available (TimescaleDB),
+      // otherwise fall back to querying the base cost_events table directly.
       const from = range?.from ?? null;
       const to = range?.to ?? null;
 
-      const [row] = await db.execute<{ total: number }>(sql`
-        SELECT coalesce(agg.total, 0) + coalesce(recent.total, 0) AS total
-        FROM (
-          SELECT sum(total_cost_cents)::int AS total
-          FROM ${CAGG.costDailyByCompanyView}
-          WHERE company_id = ${companyId}
-            ${from ? sql`AND bucket >= ${from}` : sql``}
-            ${to ? sql`AND bucket <= ${to}` : sql``}
-            AND bucket < ${lagBoundary}
-        ) agg,
-        (
+      let spendRow: { total: number } | undefined;
+      try {
+        const lagBoundary = new Date(Date.now() - AGGREGATE_LAG.daily.hours * 60 * 60 * 1000);
+        const [row] = await db.execute<{ total: number }>(sql`
+          SELECT coalesce(agg.total, 0) + coalesce(recent.total, 0) AS total
+          FROM (
+            SELECT sum(total_cost_cents)::int AS total
+            FROM ${CAGG.costDailyByCompanyView}
+            WHERE company_id = ${companyId}
+              ${from ? sql`AND bucket >= ${from}` : sql``}
+              ${to ? sql`AND bucket <= ${to}` : sql``}
+              AND bucket < ${lagBoundary}
+          ) agg,
+          (
+            SELECT coalesce(sum(cost_cents), 0)::int AS total
+            FROM cost_events
+            WHERE company_id = ${companyId}
+              AND occurred_at >= ${lagBoundary}
+              ${from ? sql`AND occurred_at >= ${from}` : sql``}
+              ${to ? sql`AND occurred_at <= ${to}` : sql``}
+          ) recent
+        `);
+        spendRow = row;
+      } catch {
+        // Fallback: aggregate view not available (no TimescaleDB) — query base table
+        const [row] = await db.execute<{ total: number }>(sql`
           SELECT coalesce(sum(cost_cents), 0)::int AS total
           FROM cost_events
           WHERE company_id = ${companyId}
-            AND occurred_at >= ${lagBoundary}
             ${from ? sql`AND occurred_at >= ${from}` : sql``}
             ${to ? sql`AND occurred_at <= ${to}` : sql``}
-        ) recent
-      `);
+        `);
+        spendRow = row;
+      }
+      const row = spendRow;
 
       const spendCents = Number(row?.total ?? 0);
       const utilization =
@@ -247,12 +306,6 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
     },
 
     byProvider: async (companyId: string, range?: CostDateRange) => {
-      // cost_daily_by_provider has: provider, biller, billing_type, model, total_cost_cents,
-      // total_input_tokens, total_cached_input_tokens, total_output_tokens.
-      // It does NOT have heartbeat_run_id, so run-count columns need the base table.
-      // Strategy: aggregate from the view for materialized data, UNION ALL with
-      // the recent tail from the base table, then group the combined result.
-      const lagBoundary = new Date(Date.now() - AGGREGATE_LAG.daily.hours * 60 * 60 * 1000);
       const from = range?.from ?? null;
       const to = range?.to ?? null;
 
@@ -261,7 +314,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         sql`, `,
       );
 
-      return db.execute<{
+      type ByProviderRow = {
         provider: string;
         biller: string;
         billingType: string;
@@ -275,49 +328,58 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         subscriptionCachedInputTokens: number;
         subscriptionInputTokens: number;
         subscriptionOutputTokens: number;
-      }>(sql`
-        WITH combined AS (
-          -- Materialized data from the continuous aggregate
-          SELECT
-            provider,
-            biller,
-            billing_type,
-            model,
-            total_cost_cents AS cost_cents,
-            total_input_tokens AS input_tokens,
-            total_cached_input_tokens AS cached_input_tokens,
-            total_output_tokens AS output_tokens,
-            NULL::uuid AS heartbeat_run_id
-          FROM ${CAGG.costDailyByProviderView}
-          WHERE company_id = ${companyId}
-            AND bucket < ${lagBoundary}
-            ${from ? sql`AND bucket >= ${from}` : sql``}
-            ${to ? sql`AND bucket <= ${to}` : sql``}
+      };
 
-          UNION ALL
+      const hasTs = await isTimescaleAvailable(db);
 
-          -- Recent unmaterialized data from the base table
+      if (hasTs) {
+        // cost_daily_by_provider aggregate + recent base-table tail
+        const lagBoundary = new Date(Date.now() - AGGREGATE_LAG.daily.hours * 60 * 60 * 1000);
+        return db.execute<ByProviderRow>(sql`
+          WITH combined AS (
+            SELECT
+              provider, biller, billing_type, model,
+              total_cost_cents AS cost_cents,
+              total_input_tokens AS input_tokens,
+              total_cached_input_tokens AS cached_input_tokens,
+              total_output_tokens AS output_tokens,
+              NULL::uuid AS heartbeat_run_id
+            FROM ${CAGG.costDailyByProviderView}
+            WHERE company_id = ${companyId}
+              AND bucket < ${lagBoundary}
+              ${from ? sql`AND bucket >= ${from}` : sql``}
+              ${to ? sql`AND bucket <= ${to}` : sql``}
+            UNION ALL
+            SELECT
+              provider, biller, billing_type, model,
+              cost_cents, input_tokens, cached_input_tokens, output_tokens, heartbeat_run_id
+            FROM cost_events
+            WHERE company_id = ${companyId}
+              AND occurred_at >= ${lagBoundary}
+              ${from ? sql`AND occurred_at >= ${from}` : sql``}
+              ${to ? sql`AND occurred_at <= ${to}` : sql``}
+          )
           SELECT
-            provider,
-            biller,
-            billing_type,
-            model,
-            cost_cents,
-            input_tokens,
-            cached_input_tokens,
-            output_tokens,
-            heartbeat_run_id
-          FROM cost_events
-          WHERE company_id = ${companyId}
-            AND occurred_at >= ${lagBoundary}
-            ${from ? sql`AND occurred_at >= ${from}` : sql``}
-            ${to ? sql`AND occurred_at <= ${to}` : sql``}
-        )
+            provider AS "provider", biller AS "biller", billing_type AS "billingType", model AS "model",
+            coalesce(sum(cost_cents), 0)::int AS "costCents",
+            coalesce(sum(input_tokens), 0)::int AS "inputTokens",
+            coalesce(sum(cached_input_tokens), 0)::int AS "cachedInputTokens",
+            coalesce(sum(output_tokens), 0)::int AS "outputTokens",
+            count(distinct case when billing_type = ${METERED_BILLING_TYPE} then heartbeat_run_id end)::int AS "apiRunCount",
+            count(distinct case when billing_type in (${subscriptionTypes}) then heartbeat_run_id end)::int AS "subscriptionRunCount",
+            coalesce(sum(case when billing_type in (${subscriptionTypes}) then cached_input_tokens else 0 end), 0)::int AS "subscriptionCachedInputTokens",
+            coalesce(sum(case when billing_type in (${subscriptionTypes}) then input_tokens else 0 end), 0)::int AS "subscriptionInputTokens",
+            coalesce(sum(case when billing_type in (${subscriptionTypes}) then output_tokens else 0 end), 0)::int AS "subscriptionOutputTokens"
+          FROM combined
+          GROUP BY provider, biller, billing_type, model
+          ORDER BY coalesce(sum(cost_cents), 0)::int DESC
+        `);
+      }
+
+      // Fallback: query base table directly (no TimescaleDB)
+      return db.execute<ByProviderRow>(sql`
         SELECT
-          provider AS "provider",
-          biller AS "biller",
-          billing_type AS "billingType",
-          model AS "model",
+          provider AS "provider", biller AS "biller", billing_type AS "billingType", model AS "model",
           coalesce(sum(cost_cents), 0)::int AS "costCents",
           coalesce(sum(input_tokens), 0)::int AS "inputTokens",
           coalesce(sum(cached_input_tokens), 0)::int AS "cachedInputTokens",
@@ -327,7 +389,10 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
           coalesce(sum(case when billing_type in (${subscriptionTypes}) then cached_input_tokens else 0 end), 0)::int AS "subscriptionCachedInputTokens",
           coalesce(sum(case when billing_type in (${subscriptionTypes}) then input_tokens else 0 end), 0)::int AS "subscriptionInputTokens",
           coalesce(sum(case when billing_type in (${subscriptionTypes}) then output_tokens else 0 end), 0)::int AS "subscriptionOutputTokens"
-        FROM combined
+        FROM cost_events
+        WHERE company_id = ${companyId}
+          ${from ? sql`AND occurred_at >= ${from}` : sql``}
+          ${to ? sql`AND occurred_at <= ${to}` : sql``}
         GROUP BY provider, biller, billing_type, model
         ORDER BY coalesce(sum(cost_cents), 0)::int DESC
       `);
@@ -387,7 +452,7 @@ export function costService(db: Db, budgetHooks: BudgetServiceHooks = {}) {
         windows.map(async ({ label, hours, useAggregate }) => {
           const since = new Date(Date.now() - hours * 60 * 60 * 1000);
 
-          if (useAggregate) {
+          if (useAggregate && await isTimescaleAvailable(db)) {
             // Combine hourly aggregate + recent base-table tail
             const rows = await db.execute<{
               provider: string;
