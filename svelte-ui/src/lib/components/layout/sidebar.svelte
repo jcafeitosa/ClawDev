@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores";
+  import { goto } from "$app/navigation";
   import { sidebarStore } from "$stores/sidebar.svelte.js";
   import { companyStore } from "$stores/company.svelte.js";
   import { cn } from "$utils/index.js";
@@ -19,13 +20,16 @@
     Settings,
     Zap,
     ChevronRight,
+    ChevronDown,
     Plus,
     X,
     Cog,
+    Play,
   } from "lucide-svelte";
 
   const prefix = $derived(companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? "");
   const companyName = $derived(companyStore.selectedCompany?.name ?? "ClawDev");
+  const hasMultipleCompanies = $derived(companyStore.companies.length > 1);
 
   // ---------------------------------------------------------------------------
   // Types
@@ -49,6 +53,7 @@
   // ---------------------------------------------------------------------------
   let inboxUnread = $state(0);
   let issueCount = $state<number | null>(null);
+  let activeRunCount = $state<number | null>(null);
 
   $effect(() => {
     if (!prefix) return;
@@ -77,6 +82,40 @@
       .catch(() => {});
   });
 
+  // Fetch active run count for badge
+  $effect(() => {
+    if (!companyStore.selectedCompanyId) return;
+    fetch(`/api/companies/${companyStore.selectedCompanyId}/runs?status=running&limit=0`)
+      .then((r) => {
+        if (r.ok) return r.json();
+        return null;
+      })
+      .then((data) => {
+        if (data?.total != null) activeRunCount = data.total;
+        else if (Array.isArray(data)) activeRunCount = data.length;
+        else activeRunCount = null;
+      })
+      .catch(() => { activeRunCount = null; });
+  });
+
+  // Fetch recent projects for sidebar list
+  let recentProjects = $state<any[]>([]);
+
+  $effect(() => {
+    if (!companyStore.selectedCompanyId) return;
+    fetch(`/api/companies/${companyStore.selectedCompanyId}/projects?limit=5&sort=updatedAt:desc`)
+      .then((r) => {
+        if (r.ok) return r.json();
+        return null;
+      })
+      .then((data) => {
+        if (Array.isArray(data)) recentProjects = data.slice(0, 5);
+        else if (data?.projects) recentProjects = data.projects.slice(0, 5);
+        else recentProjects = [];
+      })
+      .catch(() => { recentProjects = []; });
+  });
+
   // ---------------------------------------------------------------------------
   // Sections
   // ---------------------------------------------------------------------------
@@ -96,6 +135,7 @@
       defaultOpen: true,
       items: [
         { label: "Issues", href: "issues", icon: ListTodo, badge: () => issueCount },
+        { label: "Runs", href: "runs", icon: Play, badge: () => activeRunCount != null && activeRunCount > 0 ? activeRunCount : null },
         { label: "Routines", href: "routines", icon: RotateCcw },
         { label: "Goals", href: "goals", icon: Target },
       ],
@@ -125,15 +165,55 @@
   ];
 
   // ---------------------------------------------------------------------------
-  // Collapsible state
+  // Collapsible state — persisted in localStorage
   // ---------------------------------------------------------------------------
-  let sectionOpen = $state<Record<string, boolean>>(
-    Object.fromEntries(sections.map((s) => [s.key, s.defaultOpen]))
-  );
+  const SECTION_STORAGE_KEY = "clawdev.sidebar.sections";
+
+  function loadSectionState(): Record<string, boolean> {
+    if (typeof window === "undefined") {
+      return Object.fromEntries(sections.map((s) => [s.key, s.defaultOpen]));
+    }
+    try {
+      const stored = localStorage.getItem(SECTION_STORAGE_KEY);
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        // Merge with defaults so new sections get their default
+        return Object.fromEntries(
+          sections.map((s) => [s.key, parsed[s.key] ?? s.defaultOpen])
+        );
+      }
+    } catch { /* ignore */ }
+    return Object.fromEntries(sections.map((s) => [s.key, s.defaultOpen]));
+  }
+
+  let sectionOpen = $state<Record<string, boolean>>(loadSectionState());
 
   function toggleSection(key: string) {
     sectionOpen[key] = !sectionOpen[key];
+    try {
+      localStorage.setItem(SECTION_STORAGE_KEY, JSON.stringify(sectionOpen));
+    } catch { /* ignore */ }
   }
+
+  // ---------------------------------------------------------------------------
+  // Company switcher
+  // ---------------------------------------------------------------------------
+  let companySwitcherOpen = $state(false);
+
+  function switchCompany(c: any) {
+    companyStore.select(c.id, "manual");
+    companySwitcherOpen = false;
+    goto(`/${c.slug ?? c.id}/dashboard`);
+  }
+
+  // Close company switcher on outside click
+  $effect(() => {
+    if (companySwitcherOpen) {
+      const handler = () => { companySwitcherOpen = false; };
+      document.addEventListener("click", handler, { once: true });
+      return () => document.removeEventListener("click", handler);
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -160,13 +240,60 @@
     "transition-transform duration-200",
   )}
 >
-  <!-- Header: Company name -->
+  <!-- Header: Company name with optional switcher -->
   <div class="flex h-14 items-center justify-between px-4 border-b border-[var(--clawdev-bg-surface-border)]">
-    <div class="flex items-center gap-2 min-w-0">
-      <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--clawdev-primary)] text-[10px] font-bold text-white uppercase">
-        {companyName.charAt(0)}
-      </div>
-      <span class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">{companyName}</span>
+    <div class="relative flex items-center gap-2 min-w-0 flex-1">
+      {#if hasMultipleCompanies}
+        <button
+          class="flex items-center gap-2 min-w-0 hover:opacity-80 transition-opacity"
+          onclick={(e) => { e.stopPropagation(); companySwitcherOpen = !companySwitcherOpen; }}
+          aria-label="Switch company"
+        >
+          <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--clawdev-primary)] text-[10px] font-bold text-white uppercase">
+            {companyName.charAt(0)}
+          </div>
+          <span class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">{companyName}</span>
+          <ChevronDown class={cn("size-3.5 shrink-0 text-[var(--clawdev-text-muted)] transition-transform duration-150", companySwitcherOpen && "rotate-180")} />
+        </button>
+
+        {#if companySwitcherOpen}
+          <div class="absolute top-full left-0 mt-1 w-56 rounded-lg border border-[var(--clawdev-bg-surface-border)] bg-[#11111a] shadow-xl z-50 py-1" onclick={(e) => e.stopPropagation()}>
+            <div class="px-3 py-1.5 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest">
+              Companies
+            </div>
+            {#each companyStore.companies as c (c.id)}
+              <button
+                class={cn(
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors",
+                  c.id === companyStore.selectedCompanyId
+                    ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
+                    : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
+                )}
+                onclick={() => switchCompany(c)}
+              >
+                <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded bg-[var(--clawdev-primary)]/20 text-[8px] font-bold text-white uppercase">
+                  {c.name.charAt(0)}
+                </div>
+                <span class="truncate">{c.name}</span>
+              </button>
+            {/each}
+            <div class="border-t border-[var(--clawdev-bg-surface-border)] mt-1 pt-1">
+              <a
+                href="/companies"
+                class="flex items-center gap-2 px-3 py-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+              >
+                <Plus class="size-3" />
+                Manage Companies
+              </a>
+            </div>
+          </div>
+        {/if}
+      {:else}
+        <div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-[var(--clawdev-primary)] text-[10px] font-bold text-white uppercase">
+          {companyName.charAt(0)}
+        </div>
+        <span class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">{companyName}</span>
+      {/if}
     </div>
     {#if sidebarStore.isMobile}
       <button
@@ -227,13 +354,38 @@
                 {#if item.badge}
                   {@const badgeValue = item.badge()}
                   {#if badgeValue != null}
-                    <span class="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full bg-[rgba(255,255,255,0.08)] px-1.5 text-[10px] font-medium text-[var(--clawdev-text-muted)] tabular-nums">
+                    <span class={cn(
+                      "ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-medium tabular-nums",
+                      item.href === "runs"
+                        ? "bg-[rgba(34,197,94,0.15)] text-[#4ade80]"
+                        : "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-muted)]",
+                    )}>
                       {formatBadge(badgeValue)}
                     </span>
                   {/if}
                 {/if}
               </a>
             {/each}
+
+            <!-- Inline recent projects under Manage > Projects -->
+            {#if section.key === "manage" && recentProjects.length > 0}
+              <div class="pl-7 mt-1 space-y-px">
+                {#each recentProjects as proj (proj.id)}
+                  <a
+                    href={`/${prefix}/projects/${proj.id}`}
+                    class={cn(
+                      "flex items-center gap-2 rounded-md px-2 py-1 text-xs transition-colors truncate",
+                      $page.url.pathname.includes(`/projects/${proj.id}`)
+                        ? "text-[var(--clawdev-text-primary)] font-medium"
+                        : "text-[var(--clawdev-text-muted)]/70 hover:text-[var(--clawdev-text-muted)]",
+                    )}
+                  >
+                    <span class="w-1.5 h-1.5 rounded-full shrink-0" style:background={proj.color ?? '#475569'}></span>
+                    <span class="truncate">{proj.name}</span>
+                  </a>
+                {/each}
+              </div>
+            {/if}
           </div>
         {/if}
       </div>

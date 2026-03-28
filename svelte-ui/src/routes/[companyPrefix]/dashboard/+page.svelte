@@ -7,6 +7,7 @@
 
   import StatusBadge from '$lib/components/status-badge.svelte';
   import TimeAgo from '$lib/components/time-ago.svelte';
+  import ActivityCharts from '$lib/components/charts/activity-charts.svelte';
   import { Tabs, TabsList, TabsTrigger, TabsContent, Skeleton } from '$lib/components/ui/index.js';
 
   import {
@@ -422,6 +423,11 @@
       <ArrowRight size={14} class="text-[--dash-muted] opacity-0 transition-opacity group-hover/qa:opacity-100" />
     </a>
   </div>
+
+  <!-- ── Activity Charts ────────────────────────────────────────────── -->
+  {#if companyId}
+    <ActivityCharts {companyId} />
+  {/if}
 
   <!-- ── Tabbed Section ──────────────────────────────────────────────── -->
   <div class="dash-card !p-0">

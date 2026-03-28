@@ -7,3 +7,7 @@ export { default as PageSkeleton } from './page-skeleton.svelte';
 export { default as EmptyState } from './empty-state.svelte';
 export { default as TimeAgo } from './time-ago.svelte';
 export { default as CommandPalette } from './command-palette.svelte';
+export { default as MarkdownBody } from './markdown-body.svelte';
+export { default as InlineEditor } from './inline-editor.svelte';
+export { default as NewIssueDialog } from './new-issue-dialog.svelte';
+export { openNewIssueDialog } from './new-issue-dialog.svelte';
