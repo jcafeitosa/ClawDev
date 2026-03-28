@@ -5,11 +5,10 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
 
-  import StatusBadge from '$lib/components/status-badge.svelte';
   import TimeAgo from '$lib/components/time-ago.svelte';
   import ActivityCharts from '$lib/components/charts/activity-charts.svelte';
   import ActiveAgentsPanel from '$lib/components/active-agents-panel.svelte';
-  import { Tabs, TabsList, TabsTrigger, TabsContent, Skeleton } from '$lib/components/ui/index.js';
+  import { Skeleton } from '$lib/components/ui/index.js';
 
   import {
     Bot,
@@ -24,11 +23,10 @@
     GitCommit,
     MessageSquare,
     Zap,
-    BarChart3,
     TrendingUp,
     Wallet,
+    ShieldCheck,
 
-    Maximize2,
     Plus,
     ArrowRight,
   } from 'lucide-svelte';
@@ -43,6 +41,10 @@
   let heartbeatRuns = $state<any[]>([]);
   let costSummary = $state<any>(null);
   let budgetIncidents = $state<any[]>([]);
+  let dashboardApprovals = $state(0);
+  let recentActivity = $state<any[]>([]);
+  let recentActivityLoading = $state(true);
+  let recentIssues = $state<any[]>([]);
 
   let companyId = $derived(companyStore.selectedCompany?.id);
   let companyName = $derived(companyStore.selectedCompany?.name ?? 'Company');
@@ -56,11 +58,31 @@
   );
   let monthSpend = $derived(costSummary?.totalCost ?? costSummary?.total ?? 0);
   let pendingApprovals = $derived(
-    issues.filter((i) => i.status === 'pending' || i.status === 'in_review').length,
+    dashboardApprovals > 0
+      ? dashboardApprovals
+      : issues.filter((i) => i.status === 'pending' || i.status === 'in_review').length,
   );
   let runningAgents = $derived(
     agents.filter((a) => a.status === 'active' || a.status === 'running'),
   );
+  let pausedAgents = $derived(
+    agents.filter((a) => a.status === 'paused' || a.status === 'disabled' || a.status === 'idle' || a.status === 'enabled').length,
+  );
+  let errorAgents = $derived(
+    agents.filter((a) => a.status === 'error' || a.status === 'failed').length,
+  );
+  let openIssues = $derived(
+    issues.filter((i) => i.status === 'open' || i.status === 'backlog' || i.status === 'in_progress' || i.status === 'in_review').length,
+  );
+  let blockedIssues = $derived(
+    issues.filter((i) => i.status === 'blocked').length,
+  );
+  let budgetStatusText = $derived.by(() => {
+    if (!costSummary) return 'No budget data';
+    const limit = costSummary.budget ?? costSummary.limit ?? 0;
+    if (limit <= 0) return 'Unlimited budget';
+    return `${formatCurrency(monthSpend)} of ${formatCurrency(limit)} used`;
+  });
   let pendingIncidents = $derived(
     budgetIncidents.filter((inc) => inc.status === 'pending'),
   );
@@ -158,6 +180,8 @@
           heartbeatRuns: dashData.heartbeatRuns ?? dashData.runs ?? [],
           costs: dashData.costs ?? dashData.costSummary ?? null,
         });
+        // Extract pending approvals count from dashboard summary
+        dashboardApprovals = dashData.pendingApprovals ?? 0;
       })
       .catch(() => {
         // Fallback: fetch individual endpoints
@@ -190,6 +214,20 @@
     safeFetch<any>(`/api/companies/${companyId}/budgets/overview`, null).then((data) => {
       budgetIncidents = data?.incidents ?? data?.budgetIncidents ?? [];
     });
+
+    // Recent activity for the dedicated section (non-blocking)
+    recentActivityLoading = true;
+    safeFetch<any>(`/api/companies/${companyId}/activity?limit=10`, []).then((data) => {
+      const items = Array.isArray(data) ? data : data?.activities ?? data?.data ?? [];
+      recentActivity = items.slice(0, 10);
+      recentActivityLoading = false;
+    });
+
+    // Recent issues for the dedicated section (non-blocking)
+    safeFetch<any>(`/api/companies/${companyId}/issues?limit=10&sort=createdAt&order=desc`, []).then((data) => {
+      const items = Array.isArray(data) ? data : data?.issues ?? data?.data ?? [];
+      recentIssues = items.slice(0, 10);
+    });
   });
 
   // ── Helpers ────────────────────────────────────────────────────────
@@ -217,13 +255,18 @@
   <!-- Header -->
   <div class="flex items-end justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-[--dash-text]">Dashboard</h1>
-      <p class="text-sm text-[--dash-muted]">{companyName} overview</p>
+      <h1 class="text-xs font-semibold uppercase tracking-widest text-[--dash-muted]">Dashboard</h1>
+      <p class="mt-1 text-lg font-bold text-[--dash-text]">{companyName}</p>
     </div>
   </div>
 
-  <!-- ── Top Widget Cards (3-column) ────────────────────────────────── -->
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+  <!-- ── Active Agents Panel (top) ─────────────────────────────────── -->
+  {#if companyId}
+    <ActiveAgentsPanel companyId={companyId ?? ''} {prefix} />
+  {/if}
+
+  <!-- ── Top Widget Cards (4-column) ────────────────────────────────── -->
+  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
 
     <!-- Widget 1: Issue Status -->
     <div class="dash-card group">
@@ -232,7 +275,7 @@
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-[--dash-primary]/10">
             <ListTodo size={14} color="var(--dash-primary)" />
           </div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Issue Status</h3>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Tasks In Progress</h3>
         </div>
         <a href="/{prefix}/issues" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
           View all
@@ -250,8 +293,8 @@
         </div>
       {:else}
         <div class="mt-3">
-          <p class="text-3xl font-bold text-[--dash-text]">{issues.length}</p>
-          <p class="text-xs text-[--dash-muted]">total issues</p>
+          <p class="text-3xl font-bold text-[--dash-text]">{tasksInProgress}</p>
+          <p class="text-xs text-[--dash-muted]">{openIssues} open, {blockedIssues} blocked</p>
         </div>
 
         <!-- Stacked bar chart -->
@@ -285,11 +328,11 @@
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10">
             <Bot size={14} color="#10b981" />
           </div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Active Agents</h3>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Agents Enabled</h3>
         </div>
-        <button class="opacity-0 transition-opacity group-hover:opacity-60">
-          <Maximize2 size={12} color="var(--dash-muted)" />
-        </button>
+        <a href="/{prefix}/agents" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+          View all
+        </a>
       </div>
 
       {#if loading}
@@ -304,10 +347,10 @@
         </div>
       {:else}
         <div class="mt-3 flex items-baseline gap-2">
-          <p class="text-3xl font-bold text-[--dash-text]">{runningAgents.length}</p>
+          <p class="text-3xl font-bold text-[--dash-text]">{enabledAgents}</p>
           <span class="text-sm text-[--dash-muted]">/ {agents.length}</span>
         </div>
-        <p class="text-xs text-[--dash-muted]">{runningAgents.length > 0 ? 'running now' : 'no agents running'}</p>
+        <p class="text-xs text-[--dash-muted]">{runningAgents.length} running, {pausedAgents} paused, {errorAgents} errors</p>
 
         <!-- Agent status dots -->
         <div class="mt-4 flex flex-wrap gap-2">
@@ -361,7 +404,7 @@
       {:else}
         <div class="mt-3">
           <p class="text-3xl font-bold text-[--dash-text]">{formatCurrency(monthSpend)}</p>
-          <p class="text-xs text-[--dash-muted]">LLM usage costs</p>
+          <p class="text-xs text-[--dash-muted]">{budgetStatusText}</p>
         </div>
 
         <!-- Budget utilization bar -->
@@ -379,6 +422,52 @@
           <p class="mt-1.5 text-[11px] text-[--dash-muted]">
             {formatCurrency(monthSpend)} of {formatCurrency(budgetLimit)} budget
           </p>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Widget 4: Pending Approvals -->
+    <div class="dash-card group">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10">
+            <ShieldCheck size={14} color="#8b5cf6" />
+          </div>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Pending Approvals</h3>
+        </div>
+        <a href="/{prefix}/approvals" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+          View all
+        </a>
+      </div>
+
+      {#if loading}
+        <div class="mt-4 space-y-3">
+          <Skeleton class="h-8 w-16 bg-white/5" />
+          <Skeleton class="h-3 w-24 bg-white/5" />
+        </div>
+      {:else}
+        <div class="mt-3">
+          <p class="text-3xl font-bold text-[--dash-text]">{pendingApprovals}</p>
+          <p class="text-xs text-[--dash-muted]">Awaiting board review</p>
+        </div>
+
+        <!-- Approval status indicator -->
+        <div class="mt-4">
+          {#if pendingApprovals > 0}
+            <a
+              href="/{prefix}/approvals"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/[0.08] px-3 py-1.5 text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/[0.15]"
+            >
+              <ShieldCheck size={12} />
+              Review now
+              <ArrowRight size={10} />
+            </a>
+          {:else}
+            <div class="flex items-center gap-1.5 text-[11px] text-[--dash-muted]">
+              <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
+              All clear — no pending approvals
+            </div>
+          {/if}
         </div>
       {/if}
     </div>
@@ -420,10 +509,6 @@
     </div>
   {/if}
 
-  <!-- ── Active Agents Panel ────────────────────────────────────────── -->
-  {#if companyId}
-    <ActiveAgentsPanel companyId={companyId ?? ''} {prefix} />
-  {/if}
 
   <!-- ── Quick Actions ─────────────────────────────────────────────── -->
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -481,207 +566,169 @@
     <ActivityCharts {companyId} />
   {/if}
 
-  <!-- ── Tabbed Section ──────────────────────────────────────────────── -->
-  <div class="dash-card !p-0">
-    <Tabs value="board" class="w-full">
-      <div class="flex items-center justify-between border-b px-5 pt-4 pb-0" style="border-color: rgba(255,255,255,0.08);">
-        <TabsList class="bg-transparent p-0 h-auto gap-0">
-          <TabsTrigger
-            value="board"
-            class="rounded-none border-b-2 border-transparent px-4 pb-3 pt-1 text-sm font-medium text-[--dash-muted] data-[state=active]:border-[--dash-primary] data-[state=active]:text-[--dash-text] data-[state=active]:bg-transparent hover:text-[--dash-text] transition-colors"
-          >
-            <BarChart3 size={14} class="mr-1.5" />
-            Board
-          </TabsTrigger>
-          <TabsTrigger
-            value="activity"
-            class="rounded-none border-b-2 border-transparent px-4 pb-3 pt-1 text-sm font-medium text-[--dash-muted] data-[state=active]:border-[--dash-primary] data-[state=active]:text-[--dash-text] data-[state=active]:bg-transparent hover:text-[--dash-text] transition-colors"
-          >
-            <Activity size={14} class="mr-1.5" />
-            Activity
-          </TabsTrigger>
-          <TabsTrigger
-            value="agents"
-            class="rounded-none border-b-2 border-transparent px-4 pb-3 pt-1 text-sm font-medium text-[--dash-muted] data-[state=active]:border-[--dash-primary] data-[state=active]:text-[--dash-text] data-[state=active]:bg-transparent hover:text-[--dash-text] transition-colors"
-          >
-            <Bot size={14} class="mr-1.5" />
-            Agents
-          </TabsTrigger>
-        </TabsList>
+  <!-- ── Recent Activity & Recent Tasks (2-column) ────────────────── -->
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+
+    <!-- Recent Activity -->
+    <div class="dash-card !p-0">
+      <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: rgba(255,255,255,0.08);">
+        <div class="flex items-center gap-2">
+          <Activity size={14} color="var(--dash-primary)" />
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Recent Activity</h3>
+        </div>
+        <a href="/{prefix}/activity" class="text-[11px] font-medium text-[--dash-primary] hover:underline">
+          View all
+        </a>
       </div>
-
-      <!-- Board Tab -->
-      <TabsContent value="board" class="p-5">
-        {#if loading}
-          <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div class="px-5 py-3">
+        {#if recentActivityLoading}
+          <div class="space-y-3 py-2">
             {#each Array(5) as _}
-              <div class="space-y-2">
-                <Skeleton class="h-4 w-20 bg-white/5" />
-                <Skeleton class="h-20 w-full bg-white/5" />
-              </div>
-            {/each}
-          </div>
-        {:else if boardColumns.length === 0}
-          <div class="flex flex-col items-center justify-center py-12">
-            <CircleDot size={32} class="mb-3 opacity-30" color="var(--dash-muted)" />
-            <p class="text-sm text-[--dash-muted]">No issues to display</p>
-            <a href="/{prefix}/issues" class="mt-2 text-xs font-medium text-[--dash-primary] hover:underline">
-              Create your first issue
-            </a>
-          </div>
-        {:else}
-          <div class="grid auto-cols-fr grid-flow-col gap-3 overflow-x-auto" style="grid-template-columns: repeat({boardColumns.length}, minmax(160px, 1fr));">
-            {#each boardColumns as col}
-              <div class="min-w-0">
-                <!-- Column header -->
-                <div class="mb-2.5 flex items-center gap-2">
-                  <span class="h-2.5 w-2.5 rounded-full" style="background-color: {col.color};"></span>
-                  <span class="text-xs font-semibold text-[--dash-text]">{col.label}</span>
-                  <span class="ml-auto rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-bold text-[--dash-muted]">{col.count}</span>
-                </div>
-                <!-- Mini issue cards -->
-                <div class="space-y-1.5">
-                  {#each col.items as issue}
-                    <a
-                      href="/{prefix}/issues/{issue.id}"
-                      class="block rounded-lg border px-3 py-2 transition-colors hover:border-white/[0.14]"
-                      style="background-color: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.06);"
-                    >
-                      {#if issue.identifier ?? issue.slug ?? issue.number}
-                        <p class="mb-0.5 font-mono text-[10px] text-[--dash-muted]">
-                          {issue.identifier ?? issue.slug ?? `#${issue.number}`}
-                        </p>
-                      {/if}
-                      <p class="truncate text-xs text-[--dash-text]">{issue.title ?? issue.name ?? 'Untitled'}</p>
-                    </a>
-                  {/each}
-                  {#if col.count > 3}
-                    <a
-                      href="/{prefix}/issues"
-                      class="block py-1 text-center text-[10px] font-medium text-[--dash-primary] hover:underline"
-                    >
-                      +{col.count - 3} more
-                    </a>
-                  {/if}
-                </div>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </TabsContent>
-
-      <!-- Activity Tab -->
-      <TabsContent value="activity" class="p-5">
-        {#if loading}
-          <div class="space-y-3">
-            {#each Array(6) as _}
-              <div class="flex items-start gap-3">
-                <Skeleton class="mt-1 h-6 w-6 rounded-full bg-white/5" />
-                <div class="flex-1 space-y-2">
+              <div class="flex items-center gap-3">
+                <Skeleton class="h-7 w-7 shrink-0 rounded-full bg-white/5" />
+                <div class="flex-1 space-y-1.5">
                   <Skeleton class="h-3 w-3/4 bg-white/5" />
-                  <Skeleton class="h-2 w-1/3 bg-white/5" />
+                  <Skeleton class="h-2 w-1/4 bg-white/5" />
                 </div>
               </div>
             {/each}
           </div>
-        {:else if activityFeed.length === 0}
-          <div class="flex flex-col items-center justify-center py-12">
-            <Clock size={32} class="mb-3 opacity-30" color="var(--dash-muted)" />
-            <p class="text-sm text-[--dash-muted]">No recent activity</p>
+        {:else if recentActivity.length === 0}
+          <div class="flex flex-col items-center justify-center py-10">
+            <Clock size={28} class="mb-2 opacity-30" color="var(--dash-muted)" />
+            <p class="text-xs text-[--dash-muted]">No recent activity</p>
           </div>
         {:else}
-          <div class="space-y-0.5">
-            {#each activityFeed.slice(0, 15) as item, i}
+          <div class="divide-y divide-white/[0.04]">
+            {#each recentActivity as item}
               {@const IconComp = activityIcon(item.type ?? item.entityType ?? 'activity')}
-              <div
-                class="flex items-start gap-3 rounded-lg px-2 py-2.5"
-                style={i < activityFeed.length - 1 ? 'border-bottom: 1px solid rgba(255,255,255,0.04);' : ''}
-              >
+              {@const agentName = item.actor ?? item.agentName ?? item.userName ?? item.user ?? 'System'}
+              {@const actionText = item.action ?? item.description ?? item.message ?? 'performed an action'}
+              {@const entityName = item.entityName ?? item.entityId ?? ''}
+              <div class="flex items-start gap-3 py-2.5">
                 <div
                   class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
                   style="background-color: rgba(255,255,255,0.06);"
                 >
-                  <IconComp size={13} color="var(--dash-muted)" />
+                  {#if item.agentAvatar ?? item.actorAvatar}
+                    <img
+                      src={item.agentAvatar ?? item.actorAvatar}
+                      alt={agentName}
+                      class="h-7 w-7 rounded-full object-cover"
+                    />
+                  {:else}
+                    <IconComp size={13} color="var(--dash-muted)" />
+                  {/if}
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p class="text-sm leading-snug text-[--dash-text]">
-                    {#if item.actor ?? item.userName ?? item.user}
-                      <span class="font-medium text-[--dash-primary]">
-                        {item.actor ?? item.userName ?? item.user}
-                      </span>
-                      {' '}
+                  <p class="text-xs leading-snug text-[--dash-text]">
+                    <span class="font-semibold text-[--dash-primary]">{agentName}</span>
+                    {' '}<span class="text-[--dash-muted]">{actionText}</span>
+                    {#if entityName}
+                      {' '}<span class="text-[--dash-muted]">on</span>{' '}
+                      <span class="font-medium text-[--dash-text]">{entityName}</span>
                     {/if}
-                    <span>{item.action ?? item.description ?? item.message ?? 'Activity recorded'}</span>
                   </p>
-                  <TimeAgo date={item.createdAt ?? item.timestamp ?? item.date} class="text-xs text-[--dash-muted]" />
+                  <TimeAgo date={item.createdAt ?? item.timestamp ?? item.date} class="text-[10px] text-[--dash-muted]" />
                 </div>
               </div>
             {/each}
           </div>
         {/if}
-      </TabsContent>
+      </div>
+    </div>
 
-      <!-- Agents Tab -->
-      <TabsContent value="agents" class="p-5">
+    <!-- Recent Tasks -->
+    <div class="dash-card !p-0">
+      <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: rgba(255,255,255,0.08);">
+        <div class="flex items-center gap-2">
+          <ListTodo size={14} color="var(--dash-primary)" />
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Recent Tasks</h3>
+        </div>
+        <a href="/{prefix}/issues" class="text-[11px] font-medium text-[--dash-primary] hover:underline">
+          View all
+        </a>
+      </div>
+      <div class="px-5 py-3">
         {#if loading}
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {#each Array(3) as _}
-              <div class="flex items-center gap-3 rounded-lg p-3" style="background-color: rgba(255,255,255,0.03);">
-                <Skeleton class="h-9 w-9 rounded-full bg-white/5" />
-                <div class="flex-1 space-y-2">
-                  <Skeleton class="h-3 w-28 bg-white/5" />
-                  <Skeleton class="h-2 w-20 bg-white/5" />
+          <div class="space-y-3 py-2">
+            {#each Array(5) as _}
+              <div class="flex items-center gap-3">
+                <Skeleton class="h-2.5 w-2.5 shrink-0 rounded-full bg-white/5" />
+                <Skeleton class="h-3 w-16 bg-white/5" />
+                <div class="flex-1">
+                  <Skeleton class="h-3 w-3/4 bg-white/5" />
                 </div>
               </div>
             {/each}
           </div>
-        {:else if agents.length === 0}
-          <div class="flex flex-col items-center justify-center py-12">
-            <Bot size={32} class="mb-3 opacity-30" color="var(--dash-muted)" />
-            <p class="text-sm text-[--dash-muted]">No agents registered</p>
-            <a href="/{prefix}/agents" class="mt-2 text-xs font-medium text-[--dash-primary] hover:underline">
-              Set up your first agent
+        {:else if recentIssues.length === 0}
+          <div class="flex flex-col items-center justify-center py-10">
+            <CircleDot size={28} class="mb-2 opacity-30" color="var(--dash-muted)" />
+            <p class="text-xs text-[--dash-muted]">No issues yet</p>
+            <a href="/{prefix}/issues?new=true" class="mt-1.5 text-[11px] font-medium text-[--dash-primary] hover:underline">
+              Create first issue
             </a>
           </div>
         {:else}
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {#each agents as agent}
-              {@const isActive = agent.status === 'active' || agent.status === 'running'}
+          <div class="divide-y divide-white/[0.04]">
+            {#each recentIssues as issue}
+              {@const statusColor = STATUS_CONFIG.find((s) => s.key === (issue.status ?? 'open'))?.color ?? '#64748b'}
+              {@const identifier = issue.identifier ?? issue.slug ?? (issue.number ? `#${issue.number}` : '')}
+              {@const agentName = issue.assigneeName ?? issue.agentName ?? issue.agent?.name ?? ''}
               <a
-                href="/{prefix}/agents/{agent.id}"
-                class="group/agent flex items-center gap-3 rounded-lg border p-3.5 transition-all hover:border-white/[0.14]"
-                style="background-color: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.06);"
+                href="/{prefix}/issues/{issue.id}"
+                class="flex items-center gap-3 py-2.5 transition-colors hover:bg-white/[0.02] -mx-2 px-2 rounded"
               >
-                <div class="relative shrink-0">
-                  <div
-                    class="flex h-10 w-10 items-center justify-center rounded-full"
-                    style="background-color: {isActive ? 'rgba(37,99,235,0.12)' : 'rgba(255,255,255,0.04)'};"
-                  >
-                    <Bot size={16} color={isActive ? '#2563eb' : '#64748b'} />
-                  </div>
-                  {#if isActive}
-                    <span class="absolute -right-0.5 -top-0.5 flex h-3 w-3">
-                      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-blue-500 opacity-75"></span>
-                      <span class="relative inline-flex h-3 w-3 rounded-full bg-blue-500"></span>
-                    </span>
+                <!-- Status dot -->
+                <span
+                  class="h-2.5 w-2.5 shrink-0 rounded-full"
+                  style="background-color: {statusColor};"
+                  title={issue.status ?? 'open'}
+                ></span>
+
+                <!-- Identifier -->
+                {#if identifier}
+                  <span class="shrink-0 font-mono text-[10px] font-semibold text-[--dash-muted]">
+                    {identifier}
+                  </span>
+                {/if}
+
+                <!-- Agent avatar / icon -->
+                <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style="background-color: rgba(255,255,255,0.06);">
+                  {#if issue.assigneeAvatar ?? issue.agentAvatar}
+                    <img
+                      src={issue.assigneeAvatar ?? issue.agentAvatar}
+                      alt={agentName}
+                      class="h-5 w-5 rounded-full object-cover"
+                    />
+                  {:else}
+                    <Bot size={10} color="var(--dash-muted)" />
                   {/if}
                 </div>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium text-[--dash-text]">
-                    {agent.name ?? agent.slug ?? 'Agent'}
-                  </p>
-                  <p class="truncate text-xs text-[--dash-muted]">
-                    {agent.model ?? agent.type ?? 'Idle'}
-                  </p>
-                </div>
-                <StatusBadge status={agent.status ?? 'idle'} />
+
+                <!-- Agent name (if any) -->
+                {#if agentName}
+                  <span class="shrink-0 text-[10px] font-medium text-[--dash-muted] max-w-[60px] truncate">
+                    {agentName}
+                  </span>
+                {/if}
+
+                <!-- Time ago -->
+                <TimeAgo date={issue.createdAt ?? issue.updatedAt} class="shrink-0 !text-[10px] !text-[--dash-muted]" />
+
+                <!-- Title -->
+                <span class="min-w-0 flex-1 truncate text-xs text-[--dash-text]">
+                  {issue.title ?? issue.name ?? 'Untitled'}
+                </span>
               </a>
             {/each}
           </div>
         {/if}
-      </TabsContent>
-    </Tabs>
+      </div>
+    </div>
   </div>
+
 </div>
 
 <style>
