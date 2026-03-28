@@ -743,6 +743,15 @@
     background-color: var(--dash-bg);
   }
 
+  :global(:root:not(.dark)) .dashboard-root {
+    --dash-bg: #F9FAFB;
+    --dash-card: #FFFFFF;
+    --dash-border: #E5E7EB;
+    --dash-primary: #2563EB;
+    --dash-text: #111827;
+    --dash-muted: #6B7280;
+  }
+
   .dash-card {
     background-color: var(--dash-card);
     border: 1px solid var(--dash-border);
@@ -751,6 +760,9 @@
     transition: border-color 0.15s ease;
   }
   .dash-card:hover {
+    border-color: rgba(0, 0, 0, 0.12);
+  }
+  :global(.dark) .dash-card:hover {
     border-color: rgba(255, 255, 255, 0.14);
   }
 </style>
