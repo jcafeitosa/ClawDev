@@ -12,3 +12,5 @@ export { default as InlineEditor } from './inline-editor.svelte';
 export { default as NewIssueDialog } from './new-issue-dialog.svelte';
 export { openNewIssueDialog } from './new-issue-dialog.svelte';
 export { default as LiveRunWidget } from './live-run-widget.svelte';
+export { default as ActiveAgentsPanel } from './active-agents-panel.svelte';
+export { default as IssueWorkspaceCard } from './issue-workspace-card.svelte';

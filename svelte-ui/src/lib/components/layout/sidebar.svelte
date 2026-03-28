@@ -26,6 +26,7 @@
     X,
     Cog,
     Play,
+    Search,
   } from "lucide-svelte";
 
   const prefix = $derived(companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? "");
@@ -83,8 +84,10 @@
       .catch(() => {});
   });
 
-  // Fetch active run count for badge
-  $effect(() => {
+  // Fetch active run count for badge (with periodic refresh)
+  let runBadgeInterval: ReturnType<typeof setInterval> | undefined;
+
+  function fetchActiveRunCount() {
     if (!companyStore.selectedCompanyId) return;
     fetch(`/api/companies/${companyStore.selectedCompanyId}/runs?status=running&limit=0`)
       .then((r) => {
@@ -97,6 +100,13 @@
         else activeRunCount = null;
       })
       .catch(() => { activeRunCount = null; });
+  }
+
+  $effect(() => {
+    if (!companyStore.selectedCompanyId) return;
+    fetchActiveRunCount();
+    runBadgeInterval = setInterval(fetchActiveRunCount, 15_000);
+    return () => { if (runBadgeInterval) clearInterval(runBadgeInterval); };
   });
 
   // Fetch recent projects for sidebar list
@@ -229,6 +239,10 @@
     if (num >= 1000) return `${(num / 1000).toFixed(1)}k`;
     return String(num);
   }
+
+  function openSearch() {
+    document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+  }
 </script>
 
 <aside
@@ -296,15 +310,25 @@
         <span class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">{companyName}</span>
       {/if}
     </div>
-    {#if sidebarStore.isMobile}
+    <div class="flex items-center gap-1">
       <button
-        class="text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] p-1 rounded-md"
-        onclick={() => sidebarStore.set(false)}
-        aria-label="Close sidebar"
+        onclick={openSearch}
+        class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+        aria-label="Search (Ctrl+K)"
+        title="Search (Ctrl+K)"
       >
-        <X class="size-4" />
+        <Search class="size-4" />
       </button>
-    {/if}
+      {#if sidebarStore.isMobile}
+        <button
+          class="text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] p-1 rounded-md"
+          onclick={() => sidebarStore.set(false)}
+          aria-label="Close sidebar"
+        >
+          <X class="size-4" />
+        </button>
+      {/if}
+    </div>
   </div>
 
   <!-- New Issue button -->

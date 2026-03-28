@@ -8,6 +8,7 @@
   import StatusBadge from '$lib/components/status-badge.svelte';
   import TimeAgo from '$lib/components/time-ago.svelte';
   import ActivityCharts from '$lib/components/charts/activity-charts.svelte';
+  import ActiveAgentsPanel from '$lib/components/active-agents-panel.svelte';
   import { Tabs, TabsList, TabsTrigger, TabsContent, Skeleton } from '$lib/components/ui/index.js';
 
   import {
@@ -417,6 +418,11 @@
         </a>
       </div>
     </div>
+  {/if}
+
+  <!-- ── Active Agents Panel ────────────────────────────────────────── -->
+  {#if companyId}
+    <ActiveAgentsPanel companyId={companyId ?? ''} {prefix} />
   {/if}
 
   <!-- ── Quick Actions ─────────────────────────────────────────────── -->

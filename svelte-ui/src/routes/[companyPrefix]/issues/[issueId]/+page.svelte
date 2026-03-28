@@ -11,6 +11,7 @@
   import MarkdownBody from "$lib/components/markdown-body.svelte";
   import LiveRunWidget from "$lib/components/live-run-widget.svelte";
   import CommentThread from "$lib/components/comment-thread.svelte";
+  import IssueWorkspaceCard from "$lib/components/issue-workspace-card.svelte";
   import { onMount } from "svelte";
   import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag } from "lucide-svelte";
 
@@ -867,6 +868,14 @@
                   {/if}
                 </CardContent>
               </Card>
+
+              <!-- Execution Workspace -->
+              {#if (issue as any)?.executionWorkspace ?? (issue as any)?.workspace ?? ((issue as any)?.workspaces?.[0])}
+                <IssueWorkspaceCard
+                  workspace={(issue as any).executionWorkspace ?? (issue as any).workspace ?? (issue as any).workspaces[0]}
+                  {prefix}
+                />
+              {/if}
             </div>
           </TabsContent>
 

@@ -2,20 +2,36 @@
   import { Sidebar } from "$components/layout/index.js";
   import { BreadcrumbBar } from "$components/layout/index.js";
   import { ToastViewport } from "$components/layout/index.js";
+  import DevBanner from "$components/layout/dev-banner.svelte";
   import MobileBottomNav from "$components/layout/mobile-bottom-nav.svelte";
   import { NewIssueDialog } from "$components/index.js";
   import { sidebarStore } from "$stores/sidebar.svelte.js";
   import { companyStore } from "$stores/company.svelte.js";
   import { themeStore } from "$stores/theme.svelte.js";
+  import { liveEventsStore } from "$stores/live-events.svelte.js";
+  import { keyboardShortcutsStore } from "$stores/keyboard-shortcuts.svelte.js";
   import { page } from "$app/stores";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
 
   let { children } = $props();
 
   onMount(() => {
     themeStore.init();
     sidebarStore.init();
+    keyboardShortcutsStore.init();
+    liveEventsStore.init();
     loadCompanies();
+  });
+
+  // Reconnect live events when company changes
+  $effect(() => {
+    const id = companyStore.selectedCompanyId;
+    if (id) liveEventsStore.reconnect(id);
+  });
+
+  onDestroy(() => {
+    keyboardShortcutsStore.destroy();
+    liveEventsStore.disconnect();
   });
 
   // Sync company from route param
@@ -48,7 +64,10 @@
   }
 </script>
 
-<div class="flex h-full overflow-hidden bg-[var(--clawdev-bg-base)]">
+<div class="flex h-full flex-col overflow-hidden bg-[var(--clawdev-bg-base)]">
+  <DevBanner />
+
+  <div class="flex flex-1 overflow-hidden">
   <!-- Sidebar -->
   {#if sidebarStore.open || !sidebarStore.isMobile}
     <Sidebar />
@@ -60,6 +79,7 @@
     <main class="flex-1 overflow-y-auto bg-[var(--clawdev-bg-base)] pb-16 md:pb-0">
       {@render children()}
     </main>
+  </div>
   </div>
 </div>
 

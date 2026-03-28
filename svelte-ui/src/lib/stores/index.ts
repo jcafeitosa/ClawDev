@@ -6,3 +6,4 @@ export { companyStore, type Company } from "./company.svelte.js";
 export { breadcrumbStore, type Breadcrumb } from "./breadcrumb.svelte.js";
 export { panelStore } from "./panel.svelte.js";
 export { liveEventsStore, type LiveEvent } from "./live-events.svelte.js";
+export { keyboardShortcutsStore } from "./keyboard-shortcuts.svelte.js";
