@@ -28,18 +28,16 @@
   async function fetchActiveRuns() {
     if (!companyId) return;
     try {
-      const res = await api(`/api/companies/${companyId}/heartbeat-runs?status=running&limit=10`);
-      if (!res.ok) {
-        // Fallback to runs endpoint
-        const fallback = await api(`/api/companies/${companyId}/runs?status=running&limit=10`);
-        if (fallback.ok) {
-          const data = await fallback.json();
-          runs = Array.isArray(data) ? data : data.runs ?? data.data ?? [];
-        }
-        return;
+      // Use /live-runs which properly filters by queued/running status
+      const res = await api(`/api/companies/${companyId}/live-runs?minCount=0`);
+      if (res.ok) {
+        const data = await res.json();
+        // Only keep actually running/queued runs
+        const allRuns = Array.isArray(data) ? data : data.runs ?? data.data ?? [];
+        runs = allRuns.filter((r: any) => r.status === 'running' || r.status === 'queued');
+      } else {
+        runs = [];
       }
-      const data = await res.json();
-      runs = Array.isArray(data) ? data : data.runs ?? data.data ?? [];
     } catch {
       runs = [];
     } finally {

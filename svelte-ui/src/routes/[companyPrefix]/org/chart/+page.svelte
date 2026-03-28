@@ -10,7 +10,7 @@
 
   let agents = $state<any[]>([]);
   let loading = $state(true);
-  let companyId = $derived(companyStore.current?.id);
+  let companyId = $derived(companyStore.selectedCompany?.id);
 
   $effect(() => {
     if (!companyId) return;

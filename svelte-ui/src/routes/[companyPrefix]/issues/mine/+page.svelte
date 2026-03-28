@@ -14,7 +14,7 @@
   let loading = $state(true);
 
   $effect(() => {
-    api('/api/agents/me/inbox-lite').then(r => r.json()).then(d => { issues = Array.isArray(d) ? d : d.issues ?? []; }).finally(() => { loading = false; });
+    api('/api/agents/me/inbox-lite').then(r => { if (!r.ok) return []; return r.json(); }).then(d => { issues = Array.isArray(d) ? d : d.issues ?? []; }).catch(() => { issues = []; }).finally(() => { loading = false; });
   });
 </script>
 

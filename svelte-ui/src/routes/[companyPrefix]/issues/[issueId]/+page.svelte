@@ -14,7 +14,7 @@
   import IssueWorkspaceCard from "$lib/components/issue-workspace-card.svelte";
   import ScrollToBottom from "$lib/components/scroll-to-bottom.svelte";
   import { onMount } from "svelte";
-  import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag } from "lucide-svelte";
+  import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag, PanelRightOpen, PanelRightClose, ChevronRight, User, Calendar, Clock } from "lucide-svelte";
 
   // ---------------------------------------------------------------------------
   // Types
@@ -33,10 +33,14 @@
     parentId?: string | null;
     companyId: string;
     checkedOutBy?: string | null;
+    createdByAgentId?: string | null;
+    createdByUserId?: string | null;
+    startedAt?: string | null;
+    completedAt?: string | null;
     labels?: Array<{ id: string; name: string; color?: string }> | null;
     createdAt?: string;
     updatedAt?: string;
-    project?: { id: string; name: string } | null;
+    project?: { id: string; name: string; status?: string } | null;
     goal?: { id: string; title: string } | null;
     ancestors?: Array<{ id: string; identifier?: string; title: string; status: string }>;
     workProducts?: WorkProduct[];
@@ -183,6 +187,10 @@
   let newSubIssueTitle = $state("");
   let submittingSubIssue = $state(false);
 
+  // -- Properties panel state
+  let showPropertiesPanel = $state(true);
+  let agentMap = $state<Record<string, string>>({});
+
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
@@ -205,10 +213,22 @@
         throw new Error(await res.text());
       }
       issue = (await res.json()) as Issue;
-      breadcrumbStore.set([
+      // Build breadcrumb with ancestor chain
+      const crumbs: Array<{ label: string; href?: string }> = [
         { label: "Issues", href: `/${$page.params.companyPrefix}/issues` },
-        { label: issue.identifier ?? issue.title },
-      ]);
+      ];
+      if (issue.ancestors && issue.ancestors.length > 0) {
+        // ancestors come in parent-first order (nearest first)
+        const reversed = [...issue.ancestors].reverse();
+        for (const a of reversed) {
+          crumbs.push({
+            label: a.identifier ?? a.title,
+            href: `/${$page.params.companyPrefix}/issues/${a.id}`,
+          });
+        }
+      }
+      crumbs.push({ label: issue.identifier ?? issue.title });
+      breadcrumbStore.set(crumbs);
     } catch (err: any) {
       if (!notFound) {
         toastStore.push({ title: "Failed to load issue", body: err?.message, tone: "error" });
@@ -253,6 +273,9 @@
     try {
       const res = await api(`/api/companies/${companyId}/agents`);
       agents = res.ok ? ((await res.json()) as Agent[]) ?? [] : [];
+      const map: Record<string, string> = {};
+      for (const a of agents) map[a.id] = a.name;
+      agentMap = map;
     } catch {
       agents = [];
     }
@@ -340,7 +363,6 @@
     editPriority = issue.priority ?? "";
     editAssigneeAgentId = issue.assigneeAgentId ?? "";
     editing = true;
-    if (agents.length === 0) loadAgents();
   }
 
   function cancelEdit() {
@@ -592,12 +614,89 @@
     }
   }
 
+  function formatActivityDetails(details: unknown): string {
+    if (typeof details === 'string') return details;
+    if (typeof details !== 'object' || details === null) return String(details);
+    const d = details as Record<string, unknown>;
+    if (d.oldStatus && d.newStatus) return `${d.oldStatus} → ${d.newStatus}`;
+    if (d.identifier) return String(d.identifier);
+    if (d.title) return String(d.title);
+    if (d.message) return String(d.message);
+    const strs = Object.values(d).filter(v => typeof v === 'string').slice(0, 2);
+    return strs.length > 0 ? strs.join(', ') : JSON.stringify(d);
+  }
+
   function formatFileSize(bytes?: number): string {
     if (bytes == null) return "";
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   }
+
+  // ---------------------------------------------------------------------------
+  // Status dot color helper
+  // ---------------------------------------------------------------------------
+  function statusDotColor(status: string): string {
+    const map: Record<string, string> = {
+      backlog: "bg-zinc-400",
+      todo: "bg-zinc-400",
+      open: "bg-blue-500",
+      in_progress: "bg-amber-500",
+      in_review: "bg-purple-500",
+      blocked: "bg-red-500",
+      completed: "bg-green-500",
+      done: "bg-green-500",
+      closed: "bg-zinc-500",
+      cancelled: "bg-zinc-500",
+    };
+    return map[status] ?? "bg-zinc-400";
+  }
+
+  // ---------------------------------------------------------------------------
+  // Priority config for properties panel
+  // ---------------------------------------------------------------------------
+  function priorityConfig(p: string | null | undefined): { icon: string; color: string; label: string } {
+    const map: Record<string, { icon: string; color: string; label: string }> = {
+      critical: { icon: "triangle-alert", color: "text-red-500", label: "Critical" },
+      urgent: { icon: "triangle-alert", color: "text-red-500", label: "Urgent" },
+      high: { icon: "arrow-up", color: "text-orange-500", label: "High" },
+      medium: { icon: "minus", color: "text-blue-500", label: "Medium" },
+      low: { icon: "arrow-down", color: "text-zinc-400", label: "Low" },
+    };
+    return map[p ?? "medium"] ?? { icon: "minus", color: "text-zinc-400", label: p ?? "Medium" };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Date formatter for properties panel
+  // ---------------------------------------------------------------------------
+  function formatDate(d: string | Date | null | undefined): string {
+    if (!d) return "—";
+    return new Date(d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Agent name resolver
+  // ---------------------------------------------------------------------------
+  function agentName(agentId: string | null | undefined): string | null {
+    if (!agentId) return null;
+    return agentMap[agentId] ?? null;
+  }
+
+  function agentInitials(name: string): string {
+    return name
+      .split(/\s+/)
+      .map((w) => w[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Parent issue display (from ancestors)
+  // ---------------------------------------------------------------------------
+  let parentAncestor = $derived(
+    issue?.ancestors && issue.ancestors.length > 0 ? issue.ancestors[0] : null
+  );
 
   // ---------------------------------------------------------------------------
   // Label color helper
@@ -616,6 +715,7 @@
     loadComments();
     loadDocuments();
     loadAttachments();
+    loadAgents();
     loadSubIssues();
     loadActivity();
     loadRuns();
@@ -639,7 +739,20 @@
       <div class="min-w-0 flex-1">
         <div class="flex items-center gap-3 mb-1">
           {#if issue.identifier}
-            <span class="text-sm font-mono text-zinc-500 dark:text-zinc-400 shrink-0">{issue.identifier}</span>
+            <div class="inline-flex items-center gap-1.5 shrink-0">
+              <span class="size-2.5 rounded-full {statusDotColor(issue.status)}"></span>
+              <span class="text-sm font-mono text-zinc-500 dark:text-zinc-400">{issue.identifier}</span>
+              <button
+                class="p-0.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                title="Copy identifier"
+                onclick={() => {
+                  navigator.clipboard.writeText(issue?.identifier ?? '');
+                  toastStore.push({ title: 'Copied identifier', tone: 'success' });
+                }}
+              >
+                <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+              </button>
+            </div>
           {/if}
           <InlineEditor
             value={issue.title}
@@ -649,18 +762,29 @@
             placeholder="Issue title..."
           />
         </div>
-        <!-- Ancestors -->
+        <!-- Ancestor breadcrumb -->
         {#if issue.ancestors && issue.ancestors.length > 0}
-          <div class="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 mt-1">
-            {#each issue.ancestors as ancestor, i}
-              <a href="/{prefix}/issues/{ancestor.id}" class="hover:text-primary hover:underline">
+          <nav class="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 mt-1.5 overflow-x-auto">
+            {#if issue.project}
+              <a href="/{prefix}/projects/{issue.project.id}" class="inline-flex items-center gap-1 hover:text-primary transition-colors shrink-0">
+                <span class="size-2 rounded-full bg-primary shrink-0"></span>
+                {issue.project.name}
+              </a>
+              <ChevronRight class="size-3 text-zinc-400 shrink-0" />
+            {/if}
+            {#each [...issue.ancestors].reverse() as ancestor}
+              <a
+                href="/{prefix}/issues/{ancestor.id}"
+                class="inline-flex items-center gap-1 hover:text-primary transition-colors shrink-0 max-w-[200px] truncate"
+                title={ancestor.title}
+              >
+                <span class="size-2 rounded-full {statusDotColor(ancestor.status)} shrink-0"></span>
                 {ancestor.identifier ?? ancestor.title}
               </a>
-              {#if i < issue.ancestors.length - 1}
-                <span>/</span>
-              {/if}
+              <ChevronRight class="size-3 text-zinc-400 shrink-0" />
             {/each}
-          </div>
+            <span class="text-zinc-600 dark:text-zinc-300 font-medium shrink-0">{issue.identifier ?? issue.title}</span>
+          </nav>
         {/if}
       </div>
       <div class="flex items-center gap-2 shrink-0 flex-wrap">
@@ -701,6 +825,18 @@
         {/if}
         <Button variant="outline" size="sm" href="/{prefix}/issues">
           Back
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          onclick={() => showPropertiesPanel = !showPropertiesPanel}
+          title={showPropertiesPanel ? "Hide properties" : "Show properties"}
+        >
+          {#if showPropertiesPanel}
+            <PanelRightClose class="size-3.5" />
+          {:else}
+            <PanelRightOpen class="size-3.5" />
+          {/if}
         </Button>
       </div>
     </div>
@@ -987,7 +1123,7 @@
                               </span>
                               <span class="text-zinc-400">{entry.action}</span>
                               {#if entry.details}
-                                <span class="text-zinc-500">&mdash; {entry.details}</span>
+                                <span class="text-zinc-500">&mdash; {formatActivityDetails(entry.details)}</span>
                               {/if}
                             </div>
                             {#if entry.createdAt}
@@ -1218,79 +1354,222 @@
         </Tabs>
       </div>
 
-      <!-- Sidebar properties -->
-      <PropertiesPanel>
-        <PropertyRow label="Status">
-          <StatusBadge status={issue.status} />
-        </PropertyRow>
-        <Separator />
-        <PropertyRow label="Priority">
-          <div class="flex items-center gap-1.5">
-            <PriorityIcon priority={issue.priority} />
-            <span class="capitalize">{issue.priority ?? "normal"}</span>
-          </div>
-        </PropertyRow>
-        {#if issue.labels && issue.labels.length > 0}
-          <Separator />
-          <PropertyRow label="Labels">
-            <div class="flex flex-wrap gap-1.5">
-              {#each issue.labels as label}
-                <span
-                  class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium"
-                  style={labelStyle(label.color)}
-                >
-                  <Tag class="size-3" />
-                  {label.name}
-                </span>
-              {/each}
+      <!-- Properties drawer panel -->
+      {#if showPropertiesPanel}
+        <aside class="w-full lg:w-80 shrink-0">
+          <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 sticky top-4">
+            <!-- Panel header -->
+            <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
+              <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Properties</span>
+              <button
+                onclick={() => showPropertiesPanel = false}
+                class="rounded p-1 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                title="Close properties panel"
+              >
+                <X class="size-4" />
+              </button>
             </div>
-          </PropertyRow>
-        {/if}
-        {#if issue.assigneeAgentId}
-          <Separator />
-          <PropertyRow label="Assignee (Agent)">
-            <a href="/{prefix}/agents/{issue.assigneeAgentId}" class="text-primary hover:underline text-xs font-mono">
-              {issue.assigneeAgentId.slice(0, 8)}...
-            </a>
-          </PropertyRow>
-        {/if}
-        {#if issue.project}
-          <Separator />
-          <PropertyRow label="Project">
-            <a href="/{prefix}/projects/{issue.project.id}" class="text-primary hover:underline">
-              {issue.project.name}
-            </a>
-          </PropertyRow>
-        {/if}
-        {#if issue.goal}
-          <Separator />
-          <PropertyRow label="Goal">
-            <a href="/{prefix}/goals/{issue.goal.id}" class="text-primary hover:underline">
-              {issue.goal.title}
-            </a>
-          </PropertyRow>
-        {/if}
-        {#if issue.parentId}
-          <Separator />
-          <PropertyRow label="Parent">
-            <a href="/{prefix}/issues/{issue.parentId}" class="text-primary hover:underline text-xs font-mono">
-              {issue.parentId.slice(0, 8)}...
-            </a>
-          </PropertyRow>
-        {/if}
-        <Separator />
-        <PropertyRow label="Created">
-          <TimeAgo date={issue.createdAt} class="text-xs" />
-        </PropertyRow>
-        <Separator />
-        <PropertyRow label="Updated">
-          <TimeAgo date={issue.updatedAt} class="text-xs" />
-        </PropertyRow>
-        <Separator />
-        <PropertyRow label="ID">
-          <span class="font-mono text-xs break-all">{issue.id}</span>
-        </PropertyRow>
-      </PropertiesPanel>
+
+            <div class="p-4 space-y-0.5">
+              <!-- Status -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Status</span>
+                <div class="flex items-center gap-2">
+                  <span class="size-2.5 rounded-full {statusDotColor(issue.status)}"></span>
+                  <span class="capitalize text-zinc-900 dark:text-zinc-100">{issue.status.replace(/_/g, " ")}</span>
+                </div>
+              </div>
+
+              <!-- Priority -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Priority</span>
+                <div class="flex items-center gap-1.5">
+                  <PriorityIcon priority={issue.priority} />
+                  <span class="capitalize text-zinc-900 dark:text-zinc-100">{priorityConfig(issue.priority).label}</span>
+                </div>
+              </div>
+
+              <!-- Labels -->
+              <div class="flex items-start justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400 pt-0.5">Labels</span>
+                <div class="text-right">
+                  {#if issue.labels && issue.labels.length > 0}
+                    <div class="flex flex-wrap gap-1.5 justify-end">
+                      {#each issue.labels as label}
+                        <span
+                          class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium"
+                          style={labelStyle(label.color)}
+                        >
+                          <Tag class="size-3" />
+                          {label.name}
+                        </span>
+                      {/each}
+                    </div>
+                  {:else}
+                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">No labels</span>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Assignee -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Assignee</span>
+                <div class="text-right">
+                  {#if issue.assigneeAgentId}
+                    {@const name = agentName(issue.assigneeAgentId)}
+                    <a
+                      href="/{prefix}/agents/{issue.assigneeAgentId}"
+                      class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors"
+                    >
+                      <span class="inline-flex items-center justify-center size-5 rounded-full bg-primary/15 text-[10px] font-bold text-primary shrink-0">
+                        {agentInitials(name ?? "AG")}
+                      </span>
+                      <span class="text-sm">{name ?? issue.assigneeAgentId.slice(0, 8)}</span>
+                      <ChevronRight class="size-3 text-zinc-400" />
+                    </a>
+                  {:else if issue.assigneeUserId}
+                    <span class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                      <User class="size-3.5 text-zinc-400" />
+                      <span class="text-sm">{issue.assigneeUserId.slice(0, 12)}</span>
+                    </span>
+                  {:else}
+                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">Unassigned</span>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Project -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Project</span>
+                <div class="text-right">
+                  {#if issue.project}
+                    <a
+                      href="/{prefix}/projects/{issue.project.id}"
+                      class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors"
+                    >
+                      <span class="size-2.5 rounded-full bg-primary shrink-0"></span>
+                      <span class="text-sm">{issue.project.name}</span>
+                      <ChevronRight class="size-3 text-zinc-400" />
+                    </a>
+                  {:else}
+                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">No project</span>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Goal -->
+              {#if issue.goal}
+                <div class="flex items-center justify-between py-2 text-sm">
+                  <span class="text-zinc-500 dark:text-zinc-400">Goal</span>
+                  <a
+                    href="/{prefix}/goals/{issue.goal.id}"
+                    class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors"
+                  >
+                    <span class="text-sm truncate max-w-[160px]">{issue.goal.title}</span>
+                    <ChevronRight class="size-3 text-zinc-400" />
+                  </a>
+                </div>
+              {/if}
+
+              <!-- Parent issue -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Parent</span>
+                <div class="text-right">
+                  {#if parentAncestor}
+                    <a
+                      href="/{prefix}/issues/{parentAncestor.id}"
+                      class="text-sm text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors truncate max-w-[180px] block"
+                      title={parentAncestor.title}
+                    >
+                      {parentAncestor.identifier ?? parentAncestor.title}
+                    </a>
+                  {:else if issue.parentId}
+                    <a
+                      href="/{prefix}/issues/{issue.parentId}"
+                      class="text-sm text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors font-mono"
+                    >
+                      {issue.parentId.slice(0, 8)}...
+                    </a>
+                  {:else}
+                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">No parent</span>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Separator before metadata -->
+              <div class="border-t border-zinc-100 dark:border-zinc-800 my-2"></div>
+
+              <!-- Created by -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Created by</span>
+                <div class="text-right">
+                  {#if issue.createdByAgentId}
+                    {@const name = agentName(issue.createdByAgentId)}
+                    <a
+                      href="/{prefix}/agents/{issue.createdByAgentId}"
+                      class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors"
+                    >
+                      <span class="inline-flex items-center justify-center size-5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-[10px] font-bold text-zinc-600 dark:text-zinc-300 shrink-0">
+                        {agentInitials(name ?? "AG")}
+                      </span>
+                      <span class="text-sm">{name ?? issue.createdByAgentId.slice(0, 8)}</span>
+                    </a>
+                  {:else if issue.createdByUserId}
+                    <span class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                      <User class="size-3.5 text-zinc-400" />
+                      <span class="text-sm">{issue.createdByUserId.slice(0, 12)}</span>
+                    </span>
+                  {:else}
+                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">System</span>
+                  {/if}
+                </div>
+              </div>
+
+              <!-- Started -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Started</span>
+                <span class="text-zinc-900 dark:text-zinc-100 text-sm">
+                  {#if issue.startedAt}
+                    {formatDate(issue.startedAt)}
+                  {:else}
+                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">Not started</span>
+                  {/if}
+                </span>
+              </div>
+
+              <!-- Created -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Created</span>
+                <span class="text-zinc-900 dark:text-zinc-100 text-sm">{formatDate(issue.createdAt)}</span>
+              </div>
+
+              <!-- Updated -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">Updated</span>
+                <TimeAgo date={issue.updatedAt} class="text-sm" />
+              </div>
+
+              <!-- Separator before ID -->
+              <div class="border-t border-zinc-100 dark:border-zinc-800 my-2"></div>
+
+              <!-- ID -->
+              <div class="flex items-center justify-between py-2 text-sm">
+                <span class="text-zinc-500 dark:text-zinc-400">ID</span>
+                <button
+                  class="font-mono text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors cursor-pointer truncate max-w-[180px]"
+                  title="Click to copy: {issue.id}"
+                  onclick={() => {
+                    navigator.clipboard.writeText(issue?.id ?? '');
+                    toastStore.push({ title: 'Copied issue ID', tone: 'success' });
+                  }}
+                >
+                  {issue.id.slice(0, 12)}...
+                </button>
+              </div>
+            </div>
+          </div>
+        </aside>
+      {/if}
     </div>
   </div>
   <ScrollToBottom />

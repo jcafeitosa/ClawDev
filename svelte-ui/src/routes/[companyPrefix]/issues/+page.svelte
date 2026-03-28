@@ -13,6 +13,12 @@
   // ---------------------------------------------------------------------------
   // Types
   // ---------------------------------------------------------------------------
+  interface IssueActiveRun {
+    id: string;
+    status: string;
+    agentId: string;
+  }
+
   interface Issue {
     id: string;
     identifier?: string | null;
@@ -27,6 +33,7 @@
     updatedAt?: string;
     projectId?: string | null;
     labels?: Array<{ id: string; name: string; color?: string | null }>;
+    activeRun?: IssueActiveRun | null;
     [key: string]: unknown;
   }
 
@@ -171,12 +178,30 @@
     return `${days}d ago`;
   }
 
+  function formatDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  }
+
   function assigneeLabel(issue: Issue): string {
     if (issue.assigneeName) return issue.assigneeName;
     if (issue.agentName) return issue.agentName;
     if (issue.assigneeAgentId) return 'Agent';
     if (issue.assigneeUserId) return 'User';
     return '';
+  }
+
+  function assigneeInitials(issue: Issue): string {
+    const name = assigneeLabel(issue);
+    if (!name) return '';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  }
+
+  function hasActiveRun(issue: Issue): boolean {
+    return issue.activeRun != null && (issue.activeRun.status === 'queued' || issue.activeRun.status === 'running');
   }
 
   function selectedStatusLabel(): string {
@@ -388,7 +413,7 @@
       {#each filteredIssues as issue, i (issue.id)}
         <a
           href="/{$page.params.companyPrefix}/issues/{issue.id}"
-          class="flex items-center gap-4 px-5 py-3.5 transition hover:bg-white/[0.03]
+          class="flex items-center gap-3 px-5 py-3 transition hover:bg-white/[0.03]
             {i < filteredIssues.length - 1 ? 'border-b border-white/[0.05]' : ''}"
         >
           <!-- Status dot -->
@@ -398,6 +423,14 @@
           {#if issue.identifier}
             <span class="text-xs font-mono text-[#94A3B8] shrink-0 w-20 truncate">
               {issue.identifier}
+            </span>
+          {/if}
+
+          <!-- Live badge -->
+          {#if hasActiveRun(issue)}
+            <span class="live-badge">
+              <span class="live-dot"></span>
+              Live
             </span>
           {/if}
 
@@ -430,16 +463,19 @@
             </div>
           {/if}
 
-          <!-- Assignee -->
-          {#if assigneeLabel(issue)}
-            <span class="hidden sm:inline-block text-xs text-[#94A3B8] shrink-0 max-w-[100px] truncate">
-              {assigneeLabel(issue)}
+          <!-- Assignee initials badge -->
+          {#if assigneeInitials(issue)}
+            <span
+              class="assignee-badge"
+              title={assigneeLabel(issue)}
+            >
+              {assigneeInitials(issue)}
             </span>
           {/if}
 
-          <!-- Created time -->
-          <span class="text-xs text-[#94A3B8] shrink-0 tabular-nums w-16 text-right">
-            {timeAgo(issue.createdAt)}
+          <!-- Formatted date -->
+          <span class="text-xs text-[#94A3B8] shrink-0 tabular-nums text-right hidden sm:block" style="min-width: 6.5rem;">
+            {formatDate(issue.updatedAt || issue.createdAt)}
           </span>
         </a>
       {/each}
@@ -451,3 +487,53 @@
     </p>
   {/if}
 </div>
+
+<style>
+  .live-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.125rem 0.5rem;
+    border-radius: 9999px;
+    background: rgba(16, 185, 129, 0.12);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    color: #34d399;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    line-height: 1;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+
+  .live-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: #34d399;
+    animation: live-pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes live-pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.5; transform: scale(0.75); }
+  }
+
+  .assignee-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #94a3b8;
+    font-size: 0.625rem;
+    font-weight: 600;
+    flex-shrink: 0;
+    letter-spacing: 0.02em;
+    cursor: default;
+  }
+</style>

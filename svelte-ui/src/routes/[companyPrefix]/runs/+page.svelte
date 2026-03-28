@@ -92,13 +92,39 @@
     return `/api/companies/${companyId}/heartbeat-runs${qs ? `?${qs}` : ''}`;
   }
 
+  /** Agent name cache: agentId → name */
+  let agentNames = $state<Record<string, string>>({});
+
+  async function loadAgentNames() {
+    if (!companyId) return;
+    try {
+      const res = await api(`/api/companies/${companyId}/agents`);
+      if (res.ok) {
+        const agents = await res.json();
+        const map: Record<string, string> = {};
+        for (const a of (Array.isArray(agents) ? agents : [])) {
+          if (a.id && a.name) map[a.id] = a.name;
+        }
+        agentNames = map;
+      }
+    } catch { /* ignore */ }
+  }
+
+  function resolveAgentName(run: Run): string {
+    if (run.agentName) return run.agentName;
+    if (run.agentId && agentNames[run.agentId]) return agentNames[run.agentId];
+    return 'Unknown Agent';
+  }
+
   function loadRuns() {
     if (!companyId) return;
     loading = true;
     error = null;
-    api(buildUrl())
-      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
-      .then(d => { runs = (Array.isArray(d) ? d : d.runs ?? []) as Run[]; })
+    Promise.all([
+      api(buildUrl()).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
+      Object.keys(agentNames).length === 0 ? loadAgentNames() : Promise.resolve(),
+    ])
+      .then(([d]) => { runs = (Array.isArray(d) ? d : d.runs ?? []) as Run[]; })
       .catch(e => { error = e.message ?? 'Failed to load runs'; })
       .finally(() => { loading = false; });
   }
@@ -293,7 +319,7 @@
 
           <!-- Agent name -->
           <span class="text-sm text-[#F8FAFC] truncate flex-1 min-w-0">
-            {run.agentName ?? 'Unknown Agent'}
+            {resolveAgentName(run)}
           </span>
 
           <!-- Source badge -->

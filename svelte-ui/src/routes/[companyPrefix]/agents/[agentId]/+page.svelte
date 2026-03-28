@@ -8,7 +8,7 @@
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
   import { onMount } from "svelte";
-  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check } from "lucide-svelte";
+  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check, FolderOpen, Loader2, ExternalLink, BookOpen } from "lucide-svelte";
   import AgentIconPicker from '$lib/components/agent-icon-picker.svelte';
   import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
   import MarkdownBody from '$lib/components/markdown-body.svelte';
@@ -48,6 +48,54 @@
   let budgetInputDollars = $state('');
   let budgetSaving = $state(false);
 
+  // Instructions tab state
+  type InstructionsBundle = {
+    mode: "managed" | "external";
+    rootPath: string;
+    managedRootPath?: string;
+    entryFile: string;
+    files: { path: string; size: number; isEntryFile?: boolean; deprecated?: boolean }[];
+    warnings: string[];
+    legacyPromptTemplateActive?: boolean;
+    legacyBootstrapPromptTemplateActive?: boolean;
+  };
+  type InstructionsFileDetail = { path: string; content: string; language?: string };
+
+  let instructionsBundle = $state<InstructionsBundle | null>(null);
+  let instructionsBundleLoading = $state(false);
+  let selectedFile = $state("AGENTS.md");
+  let selectedFileContent = $state("");
+  let selectedFileLoading = $state(false);
+  let instructionsDraft = $state<string | null>(null);
+  let instructionsSaving = $state(false);
+  let advancedOpen = $state(false);
+  let bundleDraftMode = $state<"managed" | "external" | null>(null);
+  let bundleDraftRootPath = $state<string | null>(null);
+  let bundleDraftEntryFile = $state<string | null>(null);
+  let newFilePath = $state("");
+  let showNewFileInput = $state(false);
+
+  // Skills tab state
+  type SkillSnapshot = {
+    mode: "persistent" | "ephemeral" | "unsupported";
+    entries: { key: string; required?: boolean; requiredReason?: string; detail?: string; locationLabel?: string; originLabel?: string; runtimeName?: string }[];
+    desiredSkills: string[];
+    warnings: string[];
+  };
+  type CompanySkill = { id: string; key: string; name: string; description?: string };
+
+  let skillSnapshot = $state<SkillSnapshot | null>(null);
+  let skillSnapshotLoading = $state(false);
+  let companySkills = $state<CompanySkill[]>([]);
+  let skillDraft = $state<string[]>([]);
+  let skillLastSaved = $state<string[]>([]);
+  let skillSyncing = $state(false);
+  let skillSyncTimeout = $state<ReturnType<typeof setTimeout> | null>(null);
+
+  // Budget tab state
+  let budgetTabDollars = $state('');
+  let budgetTabSaving = $state(false);
+
   const ROLES = ["general", "ceo", "cto", "engineer", "designer", "marketer", "custom"];
   const STATUSES = ["idle", "waiting", "running", "paused", "error"];
 
@@ -67,6 +115,99 @@
   );
   let budgetBarColor = $derived(
     budgetPct > 85 ? '#ef4444' : budgetPct > 60 ? '#f59e0b' : '#10b981'
+  );
+
+  // Instructions derived
+  let isLocalAdapter = $derived(
+    agent?.adapterType === "claude_local" ||
+    agent?.adapterType === "codex_local" ||
+    agent?.adapterType === "opencode_local" ||
+    agent?.adapterType === "pi_local" ||
+    agent?.adapterType === "hermes_local" ||
+    agent?.adapterType === "cursor"
+  );
+  let currentMode = $derived(bundleDraftMode ?? instructionsBundle?.mode ?? "managed");
+  let currentEntryFile = $derived(bundleDraftEntryFile ?? instructionsBundle?.entryFile ?? "AGENTS.md");
+  let currentRootPath = $derived(bundleDraftRootPath ?? (instructionsBundle?.mode === "managed" ? (instructionsBundle?.managedRootPath ?? instructionsBundle?.rootPath ?? "") : (instructionsBundle?.rootPath ?? "")));
+  let fileOptions = $derived(instructionsBundle?.files.map(f => f.path) ?? []);
+  let selectedFileExists = $derived(fileOptions.includes(selectedFile));
+  let selectedFileMeta = $derived(instructionsBundle?.files.find(f => f.path === selectedFile) ?? null);
+  let displayContent = $derived(instructionsDraft ?? selectedFileContent);
+  let instructionsBundleDirty = $derived(
+    bundleDraftMode !== null || bundleDraftRootPath !== null || bundleDraftEntryFile !== null
+  );
+  let instructionsFileDirty = $derived(instructionsDraft !== null && instructionsDraft !== selectedFileContent);
+  let instructionsAnyDirty = $derived(instructionsBundleDirty || instructionsFileDirty);
+
+  // Skills derived
+  let companySkillByKey = $derived(new Map(companySkills.map(s => [s.key, s])));
+  let companySkillKeys = $derived(new Set(companySkills.map(s => s.key)));
+  let adapterEntryByKey = $derived(new Map((skillSnapshot?.entries ?? []).map(e => [e.key, e])));
+  let optionalSkillRows = $derived(
+    companySkills
+      .filter(s => !adapterEntryByKey.get(s.key)?.required)
+      .map(s => ({
+        id: s.id, key: s.key, name: s.name, description: s.description ?? null,
+        detail: adapterEntryByKey.get(s.key)?.detail ?? null,
+        locationLabel: adapterEntryByKey.get(s.key)?.locationLabel ?? null,
+        originLabel: adapterEntryByKey.get(s.key)?.originLabel ?? null,
+        readOnly: false, required: false,
+        adapterEntry: adapterEntryByKey.get(s.key) ?? null,
+      }))
+  );
+  let requiredSkillRows = $derived(
+    (skillSnapshot?.entries ?? [])
+      .filter(e => e.required)
+      .map(e => {
+        const cs = companySkillByKey.get(e.key);
+        return {
+          id: cs?.id ?? `required:${e.key}`, key: e.key, name: cs?.name ?? e.key,
+          description: cs?.description ?? null, detail: e.detail ?? null,
+          locationLabel: e.locationLabel ?? null, originLabel: e.originLabel ?? null,
+          readOnly: false, required: true, adapterEntry: e,
+        };
+      })
+  );
+  let unmanagedSkillRows = $derived(
+    (skillSnapshot?.entries ?? [])
+      .filter(e => {
+        if (e.required) return false;
+        if (companySkillKeys.has(e.key)) return false;
+        return true;
+      })
+      .map(e => ({
+        id: `external:${e.key}`, key: e.key, name: e.runtimeName ?? e.key,
+        description: null, detail: e.detail ?? null,
+        locationLabel: e.locationLabel ?? null, originLabel: e.originLabel ?? null,
+        readOnly: true, required: false, adapterEntry: e,
+      }))
+  );
+  let skillApplicationLabel = $derived(
+    skillSnapshot?.mode === "persistent" ? "Kept in the workspace" :
+    skillSnapshot?.mode === "ephemeral" ? "Applied when the agent runs" :
+    skillSnapshot?.mode === "unsupported" ? "Tracked only" : "Unknown"
+  );
+  let unsupportedSkillMessage = $derived(
+    skillSnapshot?.mode !== "unsupported" ? null :
+    agent?.adapterType === "openclaw_gateway"
+      ? "ClawDev cannot manage OpenClaw skills here. Visit your OpenClaw instance to manage this agent's skills."
+      : "ClawDev cannot manage skills for this adapter yet. Manage them in the adapter directly."
+  );
+  let skillsHaveUnsaved = $derived(
+    JSON.stringify(skillDraft.slice().sort()) !== JSON.stringify(skillLastSaved.slice().sort())
+  );
+
+  // Budget tab derived
+  let budgetTabPct = $derived(
+    agent?.budgetMonthlyCents && agent.budgetMonthlyCents > 0
+      ? Math.min(100, Math.round(((agent.spentMonthlyCents ?? 0) / agent.budgetMonthlyCents) * 100))
+      : 0
+  );
+  let budgetTabBarColor = $derived(budgetTabPct > 85 ? '#ef4444' : budgetTabPct > 60 ? '#f59e0b' : '#10b981');
+  let budgetTabStatus = $derived(
+    !agent?.budgetMonthlyCents || agent.budgetMonthlyCents <= 0 ? 'no_budget' :
+    (agent.spentMonthlyCents ?? 0) >= agent.budgetMonthlyCents ? 'over_budget' :
+    budgetTabPct > 80 ? 'warning' : 'ok'
   );
 
   // ---------------------------------------------------------------------------
@@ -124,6 +265,185 @@
     } catch { issues = []; }
   }
 
+  // Instructions data fetching
+  async function loadInstructionsBundle() {
+    if (!agentId || !companyId || !isLocalAdapter) return;
+    instructionsBundleLoading = true;
+    try {
+      const res = await api(`/api/agents/${agentId}/instructions-bundle?companyId=${companyId}`);
+      if (!res.ok) { instructionsBundle = null; return; }
+      instructionsBundle = await res.json();
+      bundleDraftMode = null;
+      bundleDraftRootPath = null;
+      bundleDraftEntryFile = null;
+    } catch { instructionsBundle = null; }
+    finally { instructionsBundleLoading = false; }
+  }
+
+  async function loadInstructionsFile(path: string) {
+    if (!agentId || !companyId || !isLocalAdapter) return;
+    selectedFileLoading = true;
+    try {
+      const res = await api(`/api/agents/${agentId}/instructions-bundle/file?path=${encodeURIComponent(path)}&companyId=${companyId}`);
+      if (!res.ok) { selectedFileContent = ""; return; }
+      const detail: InstructionsFileDetail = await res.json();
+      selectedFileContent = detail.content ?? "";
+      instructionsDraft = null;
+    } catch { selectedFileContent = ""; }
+    finally { selectedFileLoading = false; }
+  }
+
+  async function saveInstructionsFile() {
+    if (!agentId || !companyId) return;
+    instructionsSaving = true;
+    try {
+      // Save bundle settings if changed
+      if (instructionsBundleDirty) {
+        const bundlePayload: Record<string, any> = {};
+        if (bundleDraftMode !== null) bundlePayload.mode = bundleDraftMode;
+        if (bundleDraftRootPath !== null) bundlePayload.rootPath = bundleDraftMode === "external" ? bundleDraftRootPath : null;
+        if (bundleDraftEntryFile !== null) bundlePayload.entryFile = bundleDraftEntryFile;
+        await api(`/api/agents/${agentId}/instructions-bundle?companyId=${companyId}`, {
+          method: "PATCH",
+          body: JSON.stringify(bundlePayload),
+        });
+      }
+      // Save file content if changed
+      if (instructionsFileDirty) {
+        const shouldClearLegacy = Boolean(instructionsBundle?.legacyPromptTemplateActive || instructionsBundle?.legacyBootstrapPromptTemplateActive);
+        await api(`/api/agents/${agentId}/instructions-bundle/file?companyId=${companyId}`, {
+          method: "PUT",
+          body: JSON.stringify({ path: selectedFile, content: displayContent, clearLegacyPromptTemplate: shouldClearLegacy }),
+        });
+      }
+      toastStore.push({ title: "Instructions saved", body: "Changes saved successfully.", tone: "success" });
+      await loadInstructionsBundle();
+      await loadInstructionsFile(selectedFile);
+    } catch (err: any) {
+      toastStore.push({ title: "Save failed", body: err?.message, tone: "error" });
+    } finally {
+      instructionsSaving = false;
+    }
+  }
+
+  async function deleteInstructionsFileAction(path: string) {
+    if (!agentId || !companyId) return;
+    instructionsSaving = true;
+    try {
+      await api(`/api/agents/${agentId}/instructions-bundle/file?path=${encodeURIComponent(path)}&companyId=${companyId}`, { method: "DELETE" });
+      toastStore.push({ title: "File deleted", body: `${path} has been removed.`, tone: "success" });
+      selectedFile = currentEntryFile;
+      instructionsDraft = null;
+      await loadInstructionsBundle();
+      await loadInstructionsFile(currentEntryFile);
+    } catch (err: any) {
+      toastStore.push({ title: "Delete failed", body: err?.message, tone: "error" });
+    } finally {
+      instructionsSaving = false;
+    }
+  }
+
+  function cancelInstructionsEdit() {
+    instructionsDraft = null;
+    bundleDraftMode = null;
+    bundleDraftRootPath = null;
+    bundleDraftEntryFile = null;
+  }
+
+  function addNewInstructionsFile() {
+    if (!newFilePath.trim()) return;
+    const path = newFilePath.trim().endsWith('.md') ? newFilePath.trim() : newFilePath.trim() + '.md';
+    selectedFile = path;
+    selectedFileContent = "";
+    instructionsDraft = "";
+    newFilePath = "";
+    showNewFileInput = false;
+  }
+
+  // Skills data fetching
+  async function loadSkillSnapshot() {
+    if (!agentId || !companyId) return;
+    skillSnapshotLoading = true;
+    try {
+      const res = await api(`/api/agents/${agentId}/skills?companyId=${companyId}`);
+      if (!res.ok) { skillSnapshot = null; return; }
+      const snap: SkillSnapshot = await res.json();
+      skillSnapshot = snap;
+      skillDraft = [...snap.desiredSkills];
+      skillLastSaved = [...snap.desiredSkills];
+    } catch { skillSnapshot = null; }
+    finally { skillSnapshotLoading = false; }
+  }
+
+  async function loadCompanySkills() {
+    if (!companyId) return;
+    try {
+      const res = await api(`/api/companies/${companyId}/company-skills`);
+      if (!res.ok) return;
+      companySkills = await res.json() ?? [];
+    } catch { companySkills = []; }
+  }
+
+  async function syncSkillsToServer() {
+    if (!agentId || !companyId || skillSyncing) return;
+    skillSyncing = true;
+    try {
+      const res = await api(`/api/agents/${agentId}/skills/sync?companyId=${companyId}`, {
+        method: "POST",
+        body: JSON.stringify({ desiredSkills: skillDraft }),
+      });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const snap: SkillSnapshot = await res.json();
+      skillSnapshot = snap;
+      skillLastSaved = [...snap.desiredSkills];
+    } catch (err: any) {
+      toastStore.push({ title: "Skill sync failed", body: err?.message, tone: "error" });
+    } finally {
+      skillSyncing = false;
+    }
+  }
+
+  function toggleSkill(key: string, checked: boolean) {
+    if (checked) {
+      skillDraft = [...new Set([...skillDraft, key])];
+    } else {
+      skillDraft = skillDraft.filter(k => k !== key);
+    }
+    // Debounced auto-save
+    if (skillSyncTimeout) clearTimeout(skillSyncTimeout);
+    skillSyncTimeout = setTimeout(() => {
+      const sortedDraft = [...skillDraft].sort();
+      const sortedSaved = [...skillLastSaved].sort();
+      if (JSON.stringify(sortedDraft) !== JSON.stringify(sortedSaved)) {
+        syncSkillsToServer();
+      }
+    }, 500);
+  }
+
+  // Budget tab save
+  async function saveBudgetTab() {
+    if (!agentId) return;
+    const dollars = parseFloat(budgetTabDollars);
+    if (isNaN(dollars) || dollars < 0) {
+      toastStore.push({ title: "Invalid amount", body: "Enter a valid dollar amount.", tone: "error" });
+      return;
+    }
+    budgetTabSaving = true;
+    try {
+      const res = await api(`/api/agents/${agentId}/budgets`, {
+        method: "PATCH",
+        body: JSON.stringify({ budgetMonthlyCents: Math.round(dollars * 100) }),
+      });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      toastStore.push({ title: "Budget updated", body: `Monthly budget set to $${dollars.toFixed(2)}.`, tone: "success" });
+      await loadAgent();
+    } catch (err: any) {
+      toastStore.push({ title: "Budget update failed", body: err?.message, tone: "error" });
+    } finally {
+      budgetTabSaving = false;
+    }
+  }
+
   onMount(() => {
     loadAgent();
     loadHeartbeats();
@@ -133,6 +453,29 @@
   // Load issues after agent is loaded (need agent.id for UUID-based lookup)
   $effect(() => {
     if (agent?.id && companyId) loadAgentIssues();
+  });
+
+  // Load tab-specific data when switching tabs
+  $effect(() => {
+    if (activeTab === "instructions" && agentId && companyId && isLocalAdapter && !instructionsBundle && !instructionsBundleLoading) {
+      loadInstructionsBundle();
+    }
+  });
+  $effect(() => {
+    if (activeTab === "instructions" && selectedFile && selectedFileExists && agentId && companyId) {
+      loadInstructionsFile(selectedFile);
+    }
+  });
+  $effect(() => {
+    if (activeTab === "agent-skills" && agentId && companyId && !skillSnapshot && !skillSnapshotLoading) {
+      loadSkillSnapshot();
+      loadCompanySkills();
+    }
+  });
+  $effect(() => {
+    if (activeTab === "budget" && agent) {
+      budgetTabDollars = agent.budgetMonthlyCents ? (agent.budgetMonthlyCents / 100).toFixed(2) : '';
+    }
   });
 
   // ---------------------------------------------------------------------------
@@ -556,9 +899,12 @@
         <Tabs bind:value={activeTab}>
           <TabsList>
             <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="instructions">Instructions</TabsTrigger>
+            <TabsTrigger value="agent-skills">Skills</TabsTrigger>
             <TabsTrigger value="issues">Issues ({issues.length})</TabsTrigger>
             <TabsTrigger value="runs">Runs ({heartbeats.length})</TabsTrigger>
             <TabsTrigger value="config">Configuration</TabsTrigger>
+            <TabsTrigger value="budget">Budget</TabsTrigger>
             <TabsTrigger value="keys">API Keys</TabsTrigger>
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
           </TabsList>
@@ -650,6 +996,465 @@
                   </CardContent>
                 </Card>
               {/if}
+            </div>
+          </TabsContent>
+
+          <!-- INSTRUCTIONS TAB -->
+          <TabsContent value="instructions">
+            <div class="space-y-4 mt-4 max-w-6xl">
+              {#if !isLocalAdapter}
+                <div class="border border-white/[0.08] rounded-lg p-6">
+                  <p class="text-sm text-[#94A3B8]">Instructions bundles are only available for local adapters.</p>
+                </div>
+              {:else if instructionsBundleLoading && !instructionsBundle}
+                <PageSkeleton lines={6} />
+              {:else}
+                <!-- Warnings -->
+                {#if instructionsBundle?.warnings?.length}
+                  <div class="space-y-2">
+                    {#each instructionsBundle.warnings as warning}
+                      <div class="rounded-md border border-sky-500/25 bg-sky-500/10 px-3 py-2 text-xs text-sky-200">{warning}</div>
+                    {/each}
+                  </div>
+                {/if}
+
+                <!-- Save / Cancel bar -->
+                {#if instructionsAnyDirty}
+                  <div class="sticky top-4 z-10 flex items-center justify-end gap-2">
+                    <div class="flex items-center gap-2 bg-[#0f172a]/90 backdrop-blur-sm border border-white/[0.08] rounded-lg px-3 py-1.5 shadow-lg">
+                      <Button variant="ghost" size="sm" onclick={cancelInstructionsEdit} disabled={instructionsSaving}>Cancel</Button>
+                      <Button size="sm" onclick={saveInstructionsFile} disabled={instructionsSaving}>
+                        {instructionsSaving ? "Saving..." : "Save"}
+                      </Button>
+                    </div>
+                  </div>
+                {/if}
+
+                <!-- Advanced collapsible -->
+                <div>
+                  <button
+                    class="flex items-center gap-1 text-xs text-[#94A3B8] hover:text-white transition-colors"
+                    onclick={() => advancedOpen = !advancedOpen}
+                  >
+                    <ChevronRight size={12} class="transition-transform {advancedOpen ? 'rotate-90' : ''}" />
+                    Advanced
+                  </button>
+                  {#if advancedOpen}
+                    <div class="pt-4 pb-6 grid gap-x-6 gap-y-4 sm:grid-cols-3">
+                      <!-- Mode -->
+                      <div class="space-y-1.5">
+                        <span class="text-xs font-medium text-[#94A3B8]">Mode</span>
+                        <div class="flex gap-2">
+                          <Button
+                            size="sm"
+                            variant={currentMode === "managed" ? "default" : "outline"}
+                            onclick={() => {
+                              bundleDraftMode = "managed";
+                              bundleDraftRootPath = instructionsBundle?.managedRootPath ?? currentRootPath;
+                            }}
+                          >
+                            Managed
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={currentMode === "external" ? "default" : "outline"}
+                            onclick={() => {
+                              bundleDraftMode = "external";
+                              if (!bundleDraftRootPath) bundleDraftRootPath = instructionsBundle?.rootPath ?? "";
+                            }}
+                          >
+                            External
+                          </Button>
+                        </div>
+                      </div>
+                      <!-- Root path -->
+                      <div class="space-y-1.5 min-w-0">
+                        <span class="text-xs font-medium text-[#94A3B8]">Root path</span>
+                        {#if currentMode === "managed"}
+                          <div class="flex items-center gap-1.5 font-mono text-xs text-[#94A3B8] pt-1.5">
+                            <span class="min-w-0 truncate" title={currentRootPath || undefined}>{currentRootPath || "(managed)"}</span>
+                            {#if currentRootPath}
+                              <button class="shrink-0 text-[#94A3B8] hover:text-white" onclick={() => { navigator.clipboard.writeText(currentRootPath); toastStore.push({ title: "Copied", tone: "success" }); }}>
+                                <Copy size={12} />
+                              </button>
+                            {/if}
+                          </div>
+                        {:else}
+                          <input
+                            type="text"
+                            value={currentRootPath}
+                            oninput={(e) => bundleDraftRootPath = (e.target as HTMLInputElement).value}
+                            class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                            placeholder="/absolute/path/to/agent/prompts"
+                          />
+                        {/if}
+                      </div>
+                      <!-- Entry file -->
+                      <div class="space-y-1.5 min-w-0">
+                        <span class="text-xs font-medium text-[#94A3B8]">Entry file</span>
+                        <input
+                          type="text"
+                          value={currentEntryFile}
+                          oninput={(e) => bundleDraftEntryFile = (e.target as HTMLInputElement).value}
+                          class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm font-mono focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                          placeholder="AGENTS.md"
+                        />
+                      </div>
+                    </div>
+                  {/if}
+                </div>
+
+                <!-- File browser + editor -->
+                <div class="grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+                  <!-- Left panel: file list -->
+                  <div class="border border-white/[0.08] rounded-lg p-3 space-y-3">
+                    <div class="flex items-center justify-between">
+                      <span class="text-xs font-medium text-[#94A3B8]">Files</span>
+                      <Button variant="ghost" size="sm" onclick={() => showNewFileInput = !showNewFileInput}>
+                        <Plus size={14} />
+                      </Button>
+                    </div>
+
+                    {#if showNewFileInput}
+                      <div class="flex items-center gap-1">
+                        <input
+                          type="text"
+                          bind:value={newFilePath}
+                          placeholder="new-file.md"
+                          class="flex-1 rounded-md border border-white/[0.08] bg-white/[0.03] px-2 py-1 text-xs font-mono focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                          onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') addNewInstructionsFile(); if (e.key === 'Escape') { showNewFileInput = false; newFilePath = ''; } }}
+                        />
+                        <Button variant="ghost" size="sm" onclick={addNewInstructionsFile}>
+                          <Check size={12} />
+                        </Button>
+                      </div>
+                    {/if}
+
+                    <div class="space-y-0.5">
+                      {#each [...new Set([currentEntryFile, ...fileOptions])] as filePath}
+                        {@const isSelected = filePath === selectedFile}
+                        {@const fileMeta = instructionsBundle?.files.find(f => f.path === filePath)}
+                        <button
+                          class="w-full flex items-center justify-between gap-2 px-2 py-1.5 rounded-md text-left text-sm transition-colors {isSelected ? 'bg-[#2563EB]/20 text-white' : 'text-[#94A3B8] hover:bg-white/[0.04] hover:text-white'}"
+                          onclick={() => { selectedFile = filePath; instructionsDraft = null; }}
+                        >
+                          <div class="flex items-center gap-2 min-w-0">
+                            <FileText size={14} class="shrink-0 {isSelected ? 'text-[#60a5fa]' : ''}" />
+                            <span class="truncate font-mono text-xs">{filePath}</span>
+                          </div>
+                          <span class="shrink-0 rounded border border-white/[0.08] text-[#94A3B8] px-1.5 py-0.5 text-[10px] uppercase tracking-wide">
+                            {fileMeta?.isEntryFile ? "entry" : fileMeta?.size ? `${fileMeta.size}b` : "new"}
+                          </span>
+                        </button>
+                      {/each}
+                    </div>
+                  </div>
+
+                  <!-- Right panel: editor -->
+                  <div class="border border-white/[0.08] rounded-lg p-4 space-y-3 min-w-0">
+                    <div class="flex items-center justify-between gap-3">
+                      <div class="min-w-0">
+                        <h4 class="text-sm font-medium font-mono truncate">{selectedFile}</h4>
+                        <p class="text-xs text-[#94A3B8]">
+                          {selectedFileExists
+                            ? selectedFileMeta?.deprecated ? "Deprecated virtual file" : "markdown file"
+                            : "New file in this bundle"}
+                        </p>
+                      </div>
+                      {#if selectedFileExists && selectedFile !== currentEntryFile}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onclick={() => { if (confirm(`Delete ${selectedFile}?`)) deleteInstructionsFileAction(selectedFile); }}
+                          disabled={instructionsSaving}
+                        >
+                          <Trash2 size={14} class="mr-1" /> Delete
+                        </Button>
+                      {/if}
+                    </div>
+
+                    {#if selectedFileLoading}
+                      <PageSkeleton lines={10} />
+                    {:else}
+                      <textarea
+                        value={displayContent}
+                        oninput={(e) => instructionsDraft = (e.target as HTMLTextAreaElement).value}
+                        class="min-h-[420px] w-full rounded-md border border-white/[0.08] bg-white/[0.03] px-3 py-2 font-mono text-sm outline-none focus:ring-1 focus:ring-[#2563EB] resize-y"
+                        placeholder="# Agent instructions"
+                      ></textarea>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </TabsContent>
+
+          <!-- SKILLS TAB -->
+          <TabsContent value="agent-skills">
+            <div class="space-y-5 mt-4 max-w-4xl">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <a
+                  href="/{prefix}/skills"
+                  class="text-sm font-medium underline-offset-4 transition-colors hover:underline text-[#60a5fa] hover:text-[#93c5fd]"
+                >
+                  View company skills library
+                </a>
+                {#if skillSyncing}
+                  <div class="flex items-center gap-2 text-xs text-[#94A3B8]">
+                    <Loader2 size={14} class="animate-spin" />
+                    <span>Saving changes...</span>
+                  </div>
+                {:else if skillsHaveUnsaved}
+                  <div class="flex items-center gap-2 text-xs text-[#94A3B8]">
+                    <span>Saving soon...</span>
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Warnings -->
+              {#if skillSnapshot?.warnings?.length}
+                <div class="space-y-1 rounded-xl border border-amber-500/30 bg-amber-950/20 px-4 py-3 text-sm text-amber-200">
+                  {#each skillSnapshot.warnings as warning}
+                    <div>{warning}</div>
+                  {/each}
+                </div>
+              {/if}
+
+              {#if unsupportedSkillMessage}
+                <div class="rounded-xl border border-white/[0.08] px-4 py-3 text-sm text-[#94A3B8]">{unsupportedSkillMessage}</div>
+              {/if}
+
+              {#if skillSnapshotLoading}
+                <PageSkeleton lines={5} />
+              {:else}
+                {#if optionalSkillRows.length === 0 && requiredSkillRows.length === 0 && unmanagedSkillRows.length === 0}
+                  <div class="border-y border-white/[0.08] px-3 py-6 text-sm text-[#94A3B8]">
+                    Import skills into the company library first, then attach them here.
+                  </div>
+                {:else}
+                  <!-- Optional skills -->
+                  {#if optionalSkillRows.length > 0}
+                    <div class="border border-white/[0.08] rounded-lg divide-y divide-white/[0.06]">
+                      {#each optionalSkillRows as skill}
+                        {@const checked = skill.required || skillDraft.includes(skill.key)}
+                        {@const disabled = skill.required || skillSnapshot?.mode === "unsupported"}
+                        <label class="flex items-start gap-3 px-3 py-3 text-sm hover:bg-white/[0.03] cursor-pointer transition-colors">
+                          <input
+                            type="checkbox"
+                            {checked}
+                            {disabled}
+                            onchange={(e) => toggleSkill(skill.key, (e.target as HTMLInputElement).checked)}
+                            class="mt-0.5 accent-[#2563EB] disabled:cursor-not-allowed disabled:opacity-60"
+                          />
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-center justify-between gap-3">
+                              <span class="truncate font-medium">{skill.name}</span>
+                              <a href="/{prefix}/skills" class="shrink-0 text-xs text-[#94A3B8] no-underline hover:text-white">View</a>
+                            </div>
+                            {#if skill.description}
+                              <p class="mt-1 text-xs text-[#94A3B8]">{skill.description}</p>
+                            {/if}
+                            {#if skill.detail}
+                              <p class="mt-1 text-xs text-[#94A3B8]">{skill.detail}</p>
+                            {/if}
+                          </div>
+                        </label>
+                      {/each}
+                    </div>
+                  {/if}
+
+                  <!-- Required skills -->
+                  {#if requiredSkillRows.length > 0}
+                    <div class="border border-white/[0.08] rounded-lg overflow-hidden">
+                      <div class="border-b border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                        <span class="text-xs font-medium text-[#94A3B8]">Required by ClawDev</span>
+                      </div>
+                      <div class="divide-y divide-white/[0.06]">
+                        {#each requiredSkillRows as skill}
+                          <label class="flex items-start gap-3 px-3 py-3 text-sm cursor-not-allowed">
+                            <input
+                              type="checkbox"
+                              checked={true}
+                              disabled
+                              class="mt-0.5 accent-[#2563EB] disabled:cursor-not-allowed disabled:opacity-60"
+                            />
+                            <div class="min-w-0 flex-1">
+                              <div class="flex items-center justify-between gap-3">
+                                <span class="truncate font-medium">{skill.name}</span>
+                              </div>
+                              {#if skill.description}
+                                <p class="mt-1 text-xs text-[#94A3B8]">{skill.description}</p>
+                              {/if}
+                              {#if skill.adapterEntry?.requiredReason}
+                                <p class="mt-1 text-xs text-[#f59e0b]">{skill.adapterEntry.requiredReason}</p>
+                              {/if}
+                              {#if skill.detail}
+                                <p class="mt-1 text-xs text-[#94A3B8]">{skill.detail}</p>
+                              {/if}
+                            </div>
+                          </label>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+
+                  <!-- Unmanaged / user-installed skills -->
+                  {#if unmanagedSkillRows.length > 0}
+                    <div class="border border-white/[0.08] rounded-lg overflow-hidden">
+                      <div class="border-b border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                        <span class="text-xs font-medium text-[#94A3B8]">User-installed skills, not managed by ClawDev</span>
+                      </div>
+                      <div class="divide-y divide-white/[0.06]">
+                        {#each unmanagedSkillRows as skill}
+                          <div class="flex items-start gap-3 px-3 py-3 text-sm bg-white/[0.01]">
+                            <span class="mt-1 h-2 w-2 rounded-full bg-[#475569] shrink-0"></span>
+                            <div class="min-w-0 flex-1">
+                              <span class="truncate font-medium">{skill.name}</span>
+                              {#if skill.originLabel}
+                                <p class="mt-1 text-xs text-[#94A3B8]">{skill.originLabel}</p>
+                              {/if}
+                              {#if skill.locationLabel}
+                                <p class="mt-1 text-xs text-[#94A3B8]">Location: {skill.locationLabel}</p>
+                              {/if}
+                              {#if skill.detail}
+                                <p class="mt-1 text-xs text-[#94A3B8]">{skill.detail}</p>
+                              {/if}
+                            </div>
+                          </div>
+                        {/each}
+                      </div>
+                    </div>
+                  {/if}
+                {/if}
+
+                <!-- Skill summary footer -->
+                <div class="border-t border-white/[0.08] pt-4">
+                  <div class="grid gap-2 text-sm sm:grid-cols-2">
+                    <div class="flex items-center justify-between gap-3 border-b border-white/[0.06] py-2">
+                      <span class="text-[#94A3B8]">Adapter</span>
+                      <span class="font-medium">{adapterLabel(agent?.adapterType ?? '')}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 border-b border-white/[0.06] py-2">
+                      <span class="text-[#94A3B8]">Skills applied</span>
+                      <span>{skillApplicationLabel}</span>
+                    </div>
+                    <div class="flex items-center justify-between gap-3 border-b border-white/[0.06] py-2">
+                      <span class="text-[#94A3B8]">Selected skills</span>
+                      <span>{skillDraft.length}</span>
+                    </div>
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </TabsContent>
+
+          <!-- BUDGET TAB -->
+          <TabsContent value="budget">
+            <div class="space-y-6 mt-4 max-w-3xl">
+              <Card>
+                <CardHeader>
+                  <div class="flex items-center justify-between">
+                    <CardTitle>Agent Budget Policy</CardTitle>
+                    <Badge variant={budgetTabStatus === 'over_budget' ? 'destructive' : budgetTabStatus === 'warning' ? 'outline' : 'secondary'}>
+                      {budgetTabStatus === 'no_budget' ? 'No budget set' : budgetTabStatus === 'over_budget' ? 'Over budget' : budgetTabStatus === 'warning' ? `${budgetTabPct}% used` : `${budgetTabPct}% used`}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div class="space-y-6">
+                    <!-- Current spend overview -->
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div class="border border-white/[0.08] rounded-lg p-4">
+                        <p class="text-xs text-[#94A3B8] mb-1">Monthly Budget</p>
+                        <p class="text-2xl font-semibold">{budgetFormatted}</p>
+                      </div>
+                      <div class="border border-white/[0.08] rounded-lg p-4">
+                        <p class="text-xs text-[#94A3B8] mb-1">Current Spend</p>
+                        <p class="text-2xl font-semibold">{spentFormatted}</p>
+                      </div>
+                      <div class="border border-white/[0.08] rounded-lg p-4">
+                        <p class="text-xs text-[#94A3B8] mb-1">Remaining</p>
+                        <p class="text-2xl font-semibold">
+                          {agent?.budgetMonthlyCents
+                            ? formatCents(Math.max(0, agent.budgetMonthlyCents - (agent.spentMonthlyCents ?? 0)))
+                            : '$0.00'}
+                        </p>
+                      </div>
+                    </div>
+
+                    <!-- Utilization bar -->
+                    {#if agent?.budgetMonthlyCents && agent.budgetMonthlyCents > 0}
+                      <div>
+                        <div class="flex items-center justify-between mb-2">
+                          <span class="text-xs text-[#94A3B8]">Budget utilization</span>
+                          <span class="text-sm font-semibold" style="color: {budgetTabBarColor};">{budgetTabPct}%</span>
+                        </div>
+                        <div class="h-3 rounded-full bg-white/[0.06] overflow-hidden">
+                          <div
+                            class="h-full rounded-full transition-all duration-500"
+                            style="width: {budgetTabPct}%; background-color: {budgetTabBarColor};"
+                          ></div>
+                        </div>
+                        <p class="mt-1 text-xs text-[#94A3B8]">{spentFormatted} of {budgetFormatted} used this period</p>
+                      </div>
+                    {/if}
+
+                    <Separator />
+
+                    <!-- Edit budget amount -->
+                    <div class="space-y-3">
+                      <h4 class="text-sm font-medium">Set Monthly Budget</h4>
+                      <p class="text-xs text-[#94A3B8]">
+                        Define a monthly spending cap for this agent. When the budget is reached the agent will be paused automatically.
+                      </p>
+                      <div class="flex items-end gap-3">
+                        <div class="flex-1 max-w-xs">
+                          <label for="budget-tab-amount" class="block text-xs text-[#94A3B8] mb-1">Amount (USD)</label>
+                          <div class="relative">
+                            <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#94A3B8]">$</span>
+                            <input
+                              id="budget-tab-amount"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              bind:value={budgetTabDollars}
+                              class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] pl-7 pr-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                              placeholder="0.00"
+                              onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') saveBudgetTab(); }}
+                            />
+                          </div>
+                        </div>
+                        <Button size="sm" onclick={saveBudgetTab} disabled={budgetTabSaving}>
+                          <Save size={14} class="mr-1" /> {budgetTabSaving ? "Saving..." : "Save Budget"}
+                        </Button>
+                      </div>
+                    </div>
+
+                    <!-- Budget behavior info -->
+                    <div class="border border-white/[0.08] rounded-lg p-4 space-y-2">
+                      <h5 class="text-xs font-medium text-[#94A3B8] uppercase tracking-wider">Budget behavior</h5>
+                      <div class="grid gap-2 text-sm">
+                        <div class="flex items-center justify-between">
+                          <span class="text-[#94A3B8]">Window</span>
+                          <span>Calendar month (UTC)</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                          <span class="text-[#94A3B8]">Hard stop</span>
+                          <Badge variant="outline">Enabled</Badge>
+                        </div>
+                        <div class="flex items-center justify-between">
+                          <span class="text-[#94A3B8]">Notifications</span>
+                          <Badge variant="outline">Enabled</Badge>
+                        </div>
+                        <div class="flex items-center justify-between">
+                          <span class="text-[#94A3B8]">Warning threshold</span>
+                          <span>80%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
 

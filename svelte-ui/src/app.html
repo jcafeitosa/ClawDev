@@ -1,10 +1,21 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="icon" href="%sveltekit.assets%/favicon.svg" />
     <title>ClawDev</title>
+    <script>
+      // Restore theme before first paint to prevent flash
+      (function () {
+        var stored = localStorage.getItem('paperclip.theme');
+        // Also check legacy key
+        if (!stored) stored = localStorage.getItem('clawdev.theme');
+        var theme = stored === 'light' ? 'light' : stored === 'dark' ? 'dark' : 'light';
+        if (theme === 'dark') document.documentElement.classList.add('dark');
+        document.documentElement.style.colorScheme = theme;
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">
