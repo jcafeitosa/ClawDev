@@ -1,106 +1,80 @@
-import { Router } from "express";
+import { Elysia } from "elysia";
 import type { Db } from "@clawdev/db";
 import { createGoalSchema, updateGoalSchema } from "@clawdev/shared";
-import { validate } from "../middleware/validate.js";
+import { notFound } from "../errors.js";
 import { goalService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { elysiaAuth } from "../plugins/auth.js";
 
-export function goalRoutes(db: Db) {
-  const router = Router();
+export function elysiaGoalRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
   const svc = goalService(db);
 
-  router.get("/companies/:companyId/goals", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const result = await svc.list(companyId);
-    res.json(result);
-  });
-
-  router.get("/goals/:id", async (req, res) => {
-    const id = req.params.id as string;
-    const goal = await svc.getById(id);
-    if (!goal) {
-      res.status(404).json({ error: "Goal not found" });
-      return;
-    }
-    assertCompanyAccess(req, goal.companyId);
-    res.json(goal);
-  });
-
-  router.post("/companies/:companyId/goals", validate(createGoalSchema), async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const goal = await svc.create(companyId, req.body);
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "goal.created",
-      entityType: "goal",
-      entityId: goal.id,
-      details: { title: goal.title },
+  return new Elysia()
+    .use(authPlugin)
+    .get("/companies/:companyId/goals", async ({ params, actor }) => {
+      assertCompanyAccess(actor, params.companyId);
+      return svc.list(params.companyId);
+    })
+    .get("/goals/:id", async ({ params, actor }) => {
+      const goal = await svc.getById(params.id);
+      if (!goal) throw notFound("Goal not found");
+      assertCompanyAccess(actor, goal.companyId);
+      return goal;
+    })
+    .post("/companies/:companyId/goals", async ({ params, body, actor, set }) => {
+      assertCompanyAccess(actor, params.companyId);
+      const parsed = createGoalSchema.parse(body);
+      const goal = await svc.create(params.companyId, parsed);
+      const actorInfo = getActorInfo(actor);
+      await logActivity(db, {
+        companyId: params.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "goal.created",
+        entityType: "goal",
+        entityId: goal.id,
+        details: { title: goal.title },
+      });
+      set.status = 201;
+      return goal;
+    })
+    .patch("/goals/:id", async ({ params, body, actor }) => {
+      const existing = await svc.getById(params.id);
+      if (!existing) throw notFound("Goal not found");
+      assertCompanyAccess(actor, existing.companyId);
+      const parsed = updateGoalSchema.parse(body);
+      const goal = await svc.update(params.id, parsed);
+      if (!goal) throw notFound("Goal not found");
+      const actorInfo = getActorInfo(actor);
+      await logActivity(db, {
+        companyId: goal.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "goal.updated",
+        entityType: "goal",
+        entityId: goal.id,
+        details: parsed,
+      });
+      return goal;
+    })
+    .delete("/goals/:id", async ({ params, actor }) => {
+      const existing = await svc.getById(params.id);
+      if (!existing) throw notFound("Goal not found");
+      assertCompanyAccess(actor, existing.companyId);
+      const goal = await svc.remove(params.id);
+      if (!goal) throw notFound("Goal not found");
+      const actorInfo = getActorInfo(actor);
+      await logActivity(db, {
+        companyId: goal.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "goal.deleted",
+        entityType: "goal",
+        entityId: goal.id,
+      });
+      return goal;
     });
-    res.status(201).json(goal);
-  });
-
-  router.patch("/goals/:id", validate(updateGoalSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const existing = await svc.getById(id);
-    if (!existing) {
-      res.status(404).json({ error: "Goal not found" });
-      return;
-    }
-    assertCompanyAccess(req, existing.companyId);
-    const goal = await svc.update(id, req.body);
-    if (!goal) {
-      res.status(404).json({ error: "Goal not found" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId: goal.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "goal.updated",
-      entityType: "goal",
-      entityId: goal.id,
-      details: req.body,
-    });
-
-    res.json(goal);
-  });
-
-  router.delete("/goals/:id", async (req, res) => {
-    const id = req.params.id as string;
-    const existing = await svc.getById(id);
-    if (!existing) {
-      res.status(404).json({ error: "Goal not found" });
-      return;
-    }
-    assertCompanyAccess(req, existing.companyId);
-    const goal = await svc.remove(id);
-    if (!goal) {
-      res.status(404).json({ error: "Goal not found" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId: goal.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "goal.deleted",
-      entityType: "goal",
-      entityId: goal.id,
-    });
-
-    res.json(goal);
-  });
-
-  return router;
 }

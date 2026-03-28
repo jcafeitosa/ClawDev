@@ -1,5 +1,4 @@
-import { Router, type Request, type Response } from "express";
-import multer from "multer";
+import { Elysia } from "elysia";
 import createDOMPurify from "dompurify";
 import { JSDOM } from "jsdom";
 import type { Db } from "@clawdev/db";
@@ -7,7 +6,10 @@ import { createAssetImageMetadataSchema } from "@clawdev/shared";
 import type { StorageService } from "../storage/types.js";
 import { assetService, logActivity } from "../services/index.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
+import { badRequest, notFound, unprocessable } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import { elysiaAuth } from "../plugins/auth.js";
+
 const SVG_CONTENT_TYPE = "image/svg+xml";
 const ALLOWED_COMPANY_LOGO_CONTENT_TYPES = new Set([
   "image/png",
@@ -23,18 +25,14 @@ function sanitizeSvgBuffer(input: Buffer): Buffer | null {
   if (!raw) return null;
 
   const baseDom = new JSDOM("");
-  const domPurify = createDOMPurify(
-    baseDom.window as unknown as Parameters<typeof createDOMPurify>[0],
-  );
+  const domPurify = createDOMPurify(baseDom.window as unknown as Parameters<typeof createDOMPurify>[0]);
   domPurify.addHook("uponSanitizeAttribute", (_node, data) => {
     const attrName = data.attrName.toLowerCase();
     const attrValue = (data.attrValue ?? "").trim();
-
     if (attrName.startsWith("on")) {
       data.keepAttr = false;
       return;
     }
-
     if ((attrName === "href" || attrName === "xlink:href") && attrValue && !attrValue.startsWith("#")) {
       data.keepAttr = false;
     }
@@ -82,259 +80,199 @@ function sanitizeSvgBuffer(input: Buffer): Buffer | null {
   }
 }
 
-export function assetRoutes(db: Db, storage: StorageService) {
-  const router = Router();
-  const svc = assetService(db);
-  const assetUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
-  });
-  const companyLogoUpload = multer({
-    storage: multer.memoryStorage(),
-    limits: { fileSize: MAX_ATTACHMENT_BYTES, files: 1 },
-  });
+async function extractFileFromRequest(request: Request): Promise<{
+  buffer: Buffer;
+  contentType: string;
+  originalName: string;
+} | null> {
+  const formData = await request.formData();
+  const file = formData.get("file");
+  if (!file || !(file instanceof File)) return null;
+  const arrayBuffer = await file.arrayBuffer();
+  return {
+    buffer: Buffer.from(arrayBuffer),
+    contentType: (file.type || "").toLowerCase(),
+    originalName: file.name || "upload",
+  };
+}
 
-  async function runSingleFileUpload(
-    upload: ReturnType<typeof multer>,
-    req: Request,
-    res: Response,
-  ) {
-    await new Promise<void>((resolve, reject) => {
-      upload.single("file")(req, res, (err: unknown) => {
-        if (err) reject(err);
-        else resolve();
+export function elysiaAssetRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>, storage: StorageService) {
+  const svc = assetService(db);
+
+  return new Elysia()
+    .use(authPlugin)
+    .post("/companies/:companyId/assets/images", async ({ params, request, actor, set }) => {
+      assertCompanyAccess(actor, params.companyId);
+      const file = await extractFileFromRequest(request);
+      if (!file) throw badRequest("Missing file field 'file'");
+      if (file.buffer.length > MAX_ATTACHMENT_BYTES) throw unprocessable(`File exceeds ${MAX_ATTACHMENT_BYTES} bytes`);
+
+      const parsedMeta = createAssetImageMetadataSchema.safeParse(
+        Object.fromEntries((await request.clone().formData()).entries()),
+      );
+      if (!parsedMeta.success) throw badRequest("Invalid image metadata");
+
+      const namespaceSuffix = parsedMeta.data.namespace ?? "general";
+      if (file.contentType !== SVG_CONTENT_TYPE && !isAllowedContentType(file.contentType)) {
+        throw unprocessable(`Unsupported file type: ${file.contentType || "unknown"}`);
+      }
+
+      let fileBody = file.buffer;
+      if (file.contentType === SVG_CONTENT_TYPE) {
+        const sanitized = sanitizeSvgBuffer(file.buffer);
+        if (!sanitized || sanitized.length <= 0) throw unprocessable("SVG could not be sanitized");
+        fileBody = sanitized;
+      }
+      if (fileBody.length <= 0) throw unprocessable("Image is empty");
+
+      const actorInfo = getActorInfo(actor);
+      const stored = await storage.putFile({
+        companyId: params.companyId,
+        namespace: `assets/${namespaceSuffix}`,
+        originalFilename: file.originalName || null,
+        contentType: file.contentType,
+        body: fileBody,
+      });
+
+      const asset = await svc.create(params.companyId, {
+        provider: stored.provider,
+        objectKey: stored.objectKey,
+        contentType: stored.contentType,
+        byteSize: stored.byteSize,
+        sha256: stored.sha256,
+        originalFilename: stored.originalFilename,
+        createdByAgentId: actorInfo.agentId,
+        createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: params.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        runId: actorInfo.runId,
+        action: "asset.created",
+        entityType: "asset",
+        entityId: asset.id,
+        details: { originalFilename: asset.originalFilename, contentType: asset.contentType, byteSize: asset.byteSize },
+      });
+
+      set.status = 201;
+      return {
+        assetId: asset.id,
+        companyId: asset.companyId,
+        provider: asset.provider,
+        objectKey: asset.objectKey,
+        contentType: asset.contentType,
+        byteSize: asset.byteSize,
+        sha256: asset.sha256,
+        originalFilename: asset.originalFilename,
+        createdByAgentId: asset.createdByAgentId,
+        createdByUserId: asset.createdByUserId,
+        createdAt: asset.createdAt,
+        updatedAt: asset.updatedAt,
+        contentPath: `/api/assets/${asset.id}/content`,
+      };
+    })
+    .post("/companies/:companyId/logo", async ({ params, request, actor, set }) => {
+      assertCompanyAccess(actor, params.companyId);
+      const file = await extractFileFromRequest(request);
+      if (!file) throw badRequest("Missing file field 'file'");
+      if (file.buffer.length > MAX_ATTACHMENT_BYTES) throw unprocessable(`Image exceeds ${MAX_ATTACHMENT_BYTES} bytes`);
+      if (!ALLOWED_COMPANY_LOGO_CONTENT_TYPES.has(file.contentType)) {
+        throw unprocessable(`Unsupported image type: ${file.contentType || "unknown"}`);
+      }
+
+      let fileBody = file.buffer;
+      if (file.contentType === SVG_CONTENT_TYPE) {
+        const sanitized = sanitizeSvgBuffer(file.buffer);
+        if (!sanitized || sanitized.length <= 0) throw unprocessable("SVG could not be sanitized");
+        fileBody = sanitized;
+      }
+      if (fileBody.length <= 0) throw unprocessable("Image is empty");
+
+      const actorInfo = getActorInfo(actor);
+      const stored = await storage.putFile({
+        companyId: params.companyId,
+        namespace: "assets/companies",
+        originalFilename: file.originalName || null,
+        contentType: file.contentType,
+        body: fileBody,
+      });
+
+      const asset = await svc.create(params.companyId, {
+        provider: stored.provider,
+        objectKey: stored.objectKey,
+        contentType: stored.contentType,
+        byteSize: stored.byteSize,
+        sha256: stored.sha256,
+        originalFilename: stored.originalFilename,
+        createdByAgentId: actorInfo.agentId,
+        createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+      });
+
+      await logActivity(db, {
+        companyId: params.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        runId: actorInfo.runId,
+        action: "asset.created",
+        entityType: "asset",
+        entityId: asset.id,
+        details: { originalFilename: asset.originalFilename, contentType: asset.contentType, byteSize: asset.byteSize, namespace: "assets/companies" },
+      });
+
+      set.status = 201;
+      return {
+        assetId: asset.id,
+        companyId: asset.companyId,
+        provider: asset.provider,
+        objectKey: asset.objectKey,
+        contentType: asset.contentType,
+        byteSize: asset.byteSize,
+        sha256: asset.sha256,
+        originalFilename: asset.originalFilename,
+        createdByAgentId: asset.createdByAgentId,
+        createdByUserId: asset.createdByUserId,
+        createdAt: asset.createdAt,
+        updatedAt: asset.updatedAt,
+        contentPath: `/api/assets/${asset.id}/content`,
+      };
+    })
+    .get("/assets/:assetId/content", async ({ params, actor, set }) => {
+      const asset = await svc.getById(params.assetId);
+      if (!asset) throw notFound("Asset not found");
+      assertCompanyAccess(actor, asset.companyId);
+
+      const object = await storage.getObject(asset.companyId, asset.objectKey);
+      const responseContentType = asset.contentType || object.contentType || "application/octet-stream";
+
+      set.headers["content-type"] = responseContentType;
+      set.headers["content-length"] = String(asset.byteSize || object.contentLength || 0);
+      set.headers["cache-control"] = "private, max-age=60";
+      set.headers["x-content-type-options"] = "nosniff";
+      if (responseContentType === SVG_CONTENT_TYPE) {
+        set.headers["content-security-policy"] = "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'";
+      }
+      const filename = asset.originalFilename ?? "asset";
+      set.headers["content-disposition"] = `inline; filename="${filename.replaceAll('"', '')}"`;
+
+      // Convert Node readable stream to Web ReadableStream for Elysia
+      const nodeStream = object.stream;
+      const webStream = new ReadableStream({
+        start(controller) {
+          nodeStream.on("data", (chunk: Buffer) => controller.enqueue(new Uint8Array(chunk)));
+          nodeStream.on("end", () => controller.close());
+          nodeStream.on("error", (err: Error) => controller.error(err));
+        },
+      });
+
+      return new Response(webStream, {
+        status: 200,
+        headers: Object.fromEntries(
+          Object.entries(set.headers).filter((entry): entry is [string, string] => typeof entry[1] === "string"),
+        ),
       });
     });
-  }
-
-  router.post("/companies/:companyId/assets/images", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-
-    try {
-      await runSingleFileUpload(assetUpload, req, res);
-    } catch (err) {
-      if (err instanceof multer.MulterError) {
-        if (err.code === "LIMIT_FILE_SIZE") {
-          res.status(422).json({ error: `File exceeds ${MAX_ATTACHMENT_BYTES} bytes` });
-          return;
-        }
-        res.status(400).json({ error: err.message });
-        return;
-      }
-      throw err;
-    }
-
-    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
-    if (!file) {
-      res.status(400).json({ error: "Missing file field 'file'" });
-      return;
-    }
-
-    const parsedMeta = createAssetImageMetadataSchema.safeParse(req.body ?? {});
-    if (!parsedMeta.success) {
-      res.status(400).json({ error: "Invalid image metadata", details: parsedMeta.error.issues });
-      return;
-    }
-
-    const namespaceSuffix = parsedMeta.data.namespace ?? "general";
-    const contentType = (file.mimetype || "").toLowerCase();
-    if (contentType !== SVG_CONTENT_TYPE && !isAllowedContentType(contentType)) {
-      res.status(422).json({ error: `Unsupported file type: ${contentType || "unknown"}` });
-      return;
-    }
-    let fileBody = file.buffer;
-    if (contentType === SVG_CONTENT_TYPE) {
-      const sanitized = sanitizeSvgBuffer(file.buffer);
-      if (!sanitized || sanitized.length <= 0) {
-        res.status(422).json({ error: "SVG could not be sanitized" });
-        return;
-      }
-      fileBody = sanitized;
-    }
-    if (fileBody.length <= 0) {
-      res.status(422).json({ error: "Image is empty" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    const stored = await storage.putFile({
-      companyId,
-      namespace: `assets/${namespaceSuffix}`,
-      originalFilename: file.originalname || null,
-      contentType,
-      body: fileBody,
-    });
-
-    const asset = await svc.create(companyId, {
-      provider: stored.provider,
-      objectKey: stored.objectKey,
-      contentType: stored.contentType,
-      byteSize: stored.byteSize,
-      sha256: stored.sha256,
-      originalFilename: stored.originalFilename,
-      createdByAgentId: actor.agentId,
-      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
-    });
-
-    await logActivity(db, {
-      companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      action: "asset.created",
-      entityType: "asset",
-      entityId: asset.id,
-      details: {
-        originalFilename: asset.originalFilename,
-        contentType: asset.contentType,
-        byteSize: asset.byteSize,
-      },
-    });
-
-    res.status(201).json({
-      assetId: asset.id,
-      companyId: asset.companyId,
-      provider: asset.provider,
-      objectKey: asset.objectKey,
-      contentType: asset.contentType,
-      byteSize: asset.byteSize,
-      sha256: asset.sha256,
-      originalFilename: asset.originalFilename,
-      createdByAgentId: asset.createdByAgentId,
-      createdByUserId: asset.createdByUserId,
-      createdAt: asset.createdAt,
-      updatedAt: asset.updatedAt,
-      contentPath: `/api/assets/${asset.id}/content`,
-    });
-  });
-
-  router.post("/companies/:companyId/logo", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-
-    try {
-      await runSingleFileUpload(companyLogoUpload, req, res);
-    } catch (err) {
-      if (err instanceof multer.MulterError) {
-        if (err.code === "LIMIT_FILE_SIZE") {
-          res.status(422).json({ error: `Image exceeds ${MAX_ATTACHMENT_BYTES} bytes` });
-          return;
-        }
-        res.status(400).json({ error: err.message });
-        return;
-      }
-      throw err;
-    }
-
-    const file = (req as Request & { file?: { mimetype: string; buffer: Buffer; originalname: string } }).file;
-    if (!file) {
-      res.status(400).json({ error: "Missing file field 'file'" });
-      return;
-    }
-
-    const contentType = (file.mimetype || "").toLowerCase();
-    if (!ALLOWED_COMPANY_LOGO_CONTENT_TYPES.has(contentType)) {
-      res.status(422).json({ error: `Unsupported image type: ${contentType || "unknown"}` });
-      return;
-    }
-
-    let fileBody = file.buffer;
-    if (contentType === SVG_CONTENT_TYPE) {
-      const sanitized = sanitizeSvgBuffer(file.buffer);
-      if (!sanitized || sanitized.length <= 0) {
-        res.status(422).json({ error: "SVG could not be sanitized" });
-        return;
-      }
-      fileBody = sanitized;
-    }
-
-    if (fileBody.length <= 0) {
-      res.status(422).json({ error: "Image is empty" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    const stored = await storage.putFile({
-      companyId,
-      namespace: "assets/companies",
-      originalFilename: file.originalname || null,
-      contentType,
-      body: fileBody,
-    });
-
-    const asset = await svc.create(companyId, {
-      provider: stored.provider,
-      objectKey: stored.objectKey,
-      contentType: stored.contentType,
-      byteSize: stored.byteSize,
-      sha256: stored.sha256,
-      originalFilename: stored.originalFilename,
-      createdByAgentId: actor.agentId,
-      createdByUserId: actor.actorType === "user" ? actor.actorId : null,
-    });
-
-    await logActivity(db, {
-      companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      runId: actor.runId,
-      action: "asset.created",
-      entityType: "asset",
-      entityId: asset.id,
-      details: {
-        originalFilename: asset.originalFilename,
-        contentType: asset.contentType,
-        byteSize: asset.byteSize,
-        namespace: "assets/companies",
-      },
-    });
-
-    res.status(201).json({
-      assetId: asset.id,
-      companyId: asset.companyId,
-      provider: asset.provider,
-      objectKey: asset.objectKey,
-      contentType: asset.contentType,
-      byteSize: asset.byteSize,
-      sha256: asset.sha256,
-      originalFilename: asset.originalFilename,
-      createdByAgentId: asset.createdByAgentId,
-      createdByUserId: asset.createdByUserId,
-      createdAt: asset.createdAt,
-      updatedAt: asset.updatedAt,
-      contentPath: `/api/assets/${asset.id}/content`,
-    });
-  });
-
-  router.get("/assets/:assetId/content", async (req, res, next) => {
-    const assetId = req.params.assetId as string;
-    const asset = await svc.getById(assetId);
-    if (!asset) {
-      res.status(404).json({ error: "Asset not found" });
-      return;
-    }
-    assertCompanyAccess(req, asset.companyId);
-
-    const object = await storage.getObject(asset.companyId, asset.objectKey);
-    const responseContentType = asset.contentType || object.contentType || "application/octet-stream";
-    res.setHeader("Content-Type", responseContentType);
-    res.setHeader("Content-Length", String(asset.byteSize || object.contentLength || 0));
-    res.setHeader("Cache-Control", "private, max-age=60");
-    res.setHeader("X-Content-Type-Options", "nosniff");
-    if (responseContentType === SVG_CONTENT_TYPE) {
-      res.setHeader("Content-Security-Policy", "sandbox; default-src 'none'; img-src 'self' data:; style-src 'unsafe-inline'");
-    }
-    const filename = asset.originalFilename ?? "asset";
-    res.setHeader("Content-Disposition", `inline; filename=\"${filename.replaceAll("\"", "")}\"`);
-
-    object.stream.on("error", (err) => {
-      next(err);
-    });
-    object.stream.pipe(res);
-  });
-
-  return router;
 }

@@ -1,52 +1,55 @@
-import type { Request } from "express";
+/**
+ * Elysia authorization helpers — equivalent to Express routes/authz.ts
+ */
+import type { Actor } from "../plugins/auth.js";
 import { forbidden, unauthorized } from "../errors.js";
 
-export function assertBoard(req: Request) {
-  if (req.actor.type !== "board") {
+export function assertBoard(actor: Actor) {
+  if (actor.type !== "board") {
     throw forbidden("Board access required");
   }
 }
 
-export function assertInstanceAdmin(req: Request) {
-  assertBoard(req);
-  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
+export function assertInstanceAdmin(actor: Actor) {
+  assertBoard(actor);
+  if (actor.source === "local_implicit" || actor.isInstanceAdmin) {
     return;
   }
   throw forbidden("Instance admin access required");
 }
 
-export function assertCompanyAccess(req: Request, companyId: string) {
-  if (req.actor.type === "none") {
+export function assertCompanyAccess(actor: Actor, companyId: string) {
+  if (actor.type === "none") {
     throw unauthorized();
   }
-  if (req.actor.type === "agent" && req.actor.companyId !== companyId) {
+  if (actor.type === "agent" && actor.companyId !== companyId) {
     throw forbidden("Agent key cannot access another company");
   }
-  if (req.actor.type === "board" && req.actor.source !== "local_implicit" && !req.actor.isInstanceAdmin) {
-    const allowedCompanies = req.actor.companyIds ?? [];
+  if (actor.type === "board" && actor.source !== "local_implicit" && !actor.isInstanceAdmin) {
+    const allowedCompanies = actor.companyIds ?? [];
     if (!allowedCompanies.includes(companyId)) {
       throw forbidden("User does not have access to this company");
     }
   }
 }
 
-export function getActorInfo(req: Request) {
-  if (req.actor.type === "none") {
+export function getActorInfo(actor: Actor) {
+  if (actor.type === "none") {
     throw unauthorized();
   }
-  if (req.actor.type === "agent") {
+  if (actor.type === "agent") {
     return {
       actorType: "agent" as const,
-      actorId: req.actor.agentId ?? "unknown-agent",
-      agentId: req.actor.agentId ?? null,
-      runId: req.actor.runId ?? null,
+      actorId: actor.agentId ?? "unknown-agent",
+      agentId: actor.agentId ?? null,
+      runId: actor.runId ?? null,
     };
   }
 
   return {
     actorType: "user" as const,
-    actorId: req.actor.userId ?? "board",
+    actorId: actor.userId ?? "board",
     agentId: null,
-    runId: req.actor.runId ?? null,
+    runId: actor.runId ?? null,
   };
 }

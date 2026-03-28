@@ -1,4 +1,4 @@
-import { Router, type Request } from "express";
+import { Elysia } from "elysia";
 import type { Db } from "@clawdev/db";
 import {
   createProjectSchema,
@@ -7,34 +7,30 @@ import {
   updateProjectSchema,
   updateProjectWorkspaceSchema,
 } from "@clawdev/shared";
-import { validate } from "../middleware/validate.js";
+import { conflict, notFound, unprocessable } from "../errors.js";
 import { projectService, logActivity } from "../services/index.js";
-import { conflict } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
+import type { Actor } from "../plugins/auth.js";
+import { elysiaAuth } from "../plugins/auth.js";
 
-export function projectRoutes(db: Db) {
-  const router = Router();
+export function elysiaProjectRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
   const svc = projectService(db);
 
-  async function resolveCompanyIdForProjectReference(req: Request) {
-    const companyIdQuery = req.query.companyId;
-    const requestedCompanyId =
-      typeof companyIdQuery === "string" && companyIdQuery.trim().length > 0
-        ? companyIdQuery.trim()
-        : null;
+  async function resolveCompanyIdForProjectReference(actor: Actor, query: Record<string, string>) {
+    const requestedCompanyId = query.companyId?.trim() || null;
     if (requestedCompanyId) {
-      assertCompanyAccess(req, requestedCompanyId);
+      assertCompanyAccess(actor, requestedCompanyId);
       return requestedCompanyId;
     }
-    if (req.actor.type === "agent" && req.actor.companyId) {
-      return req.actor.companyId;
+    if (actor.type === "agent" && actor.companyId) {
+      return actor.companyId;
     }
     return null;
   }
 
-  async function normalizeProjectReference(req: Request, rawId: string) {
+  async function normalizeProjectReference(actor: Actor, rawId: string, query: Record<string, string>) {
     if (isUuidLike(rawId)) return rawId;
-    const companyId = await resolveCompanyIdForProjectReference(req);
+    const companyId = await resolveCompanyIdForProjectReference(actor, query);
     if (!companyId) return rawId;
     const resolved = await svc.resolveByReference(companyId, rawId);
     if (resolved.ambiguous) {
@@ -43,252 +39,170 @@ export function projectRoutes(db: Db) {
     return resolved.project?.id ?? rawId;
   }
 
-  router.param("id", async (req, _res, next, rawId) => {
-    try {
-      req.params.id = await normalizeProjectReference(req, rawId);
-      next();
-    } catch (err) {
-      next(err);
-    }
-  });
+  return new Elysia()
+    .use(authPlugin)
+    .get("/companies/:companyId/projects", async ({ params, actor }) => {
+      assertCompanyAccess(actor, params.companyId);
+      return svc.list(params.companyId);
+    })
+    .get("/projects/:id", async ({ params, query, actor }) => {
+      const id = await normalizeProjectReference(actor, params.id, query as Record<string, string>);
+      const project = await svc.getById(id);
+      if (!project) throw notFound("Project not found");
+      assertCompanyAccess(actor, project.companyId);
+      return project;
+    })
+    .post("/companies/:companyId/projects", async ({ params, body, actor, set }) => {
+      assertCompanyAccess(actor, params.companyId);
+      const parsed = createProjectSchema.parse(body) as Parameters<typeof svc.create>[1] & {
+        workspace?: Parameters<typeof svc.createWorkspace>[1];
+      };
+      const { workspace, ...projectData } = parsed;
+      const project = await svc.create(params.companyId, projectData);
 
-  router.get("/companies/:companyId/projects", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const result = await svc.list(companyId);
-    res.json(result);
-  });
-
-  router.get("/projects/:id", async (req, res) => {
-    const id = req.params.id as string;
-    const project = await svc.getById(id);
-    if (!project) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    assertCompanyAccess(req, project.companyId);
-    res.json(project);
-  });
-
-  router.post("/companies/:companyId/projects", validate(createProjectSchema), async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    type CreateProjectPayload = Parameters<typeof svc.create>[1] & {
-      workspace?: Parameters<typeof svc.createWorkspace>[1];
-    };
-
-    const { workspace, ...projectData } = req.body as CreateProjectPayload;
-    const project = await svc.create(companyId, projectData);
-    let createdWorkspaceId: string | null = null;
-    if (workspace) {
-      const createdWorkspace = await svc.createWorkspace(project.id, workspace);
-      if (!createdWorkspace) {
-        await svc.remove(project.id);
-        res.status(422).json({ error: "Invalid project workspace payload" });
-        return;
+      let createdWorkspaceId: string | null = null;
+      if (workspace) {
+        const createdWorkspace = await svc.createWorkspace(project.id, workspace);
+        if (!createdWorkspace) {
+          await svc.remove(project.id);
+          throw unprocessable("Invalid project workspace payload");
+        }
+        createdWorkspaceId = createdWorkspace.id;
       }
-      createdWorkspaceId = createdWorkspace.id;
-    }
-    const hydratedProject = workspace ? await svc.getById(project.id) : project;
 
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "project.created",
-      entityType: "project",
-      entityId: project.id,
-      details: {
-        name: project.name,
-        workspaceId: createdWorkspaceId,
-      },
-    });
-    res.status(201).json(hydratedProject ?? project);
-  });
-
-  router.patch("/projects/:id", validate(updateProjectSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const existing = await svc.getById(id);
-    if (!existing) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    assertCompanyAccess(req, existing.companyId);
-    const body = { ...req.body };
-    if (typeof body.archivedAt === "string") {
-      body.archivedAt = new Date(body.archivedAt);
-    }
-    const project = await svc.update(id, body);
-    if (!project) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId: project.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "project.updated",
-      entityType: "project",
-      entityId: project.id,
-      details: req.body,
-    });
-
-    res.json(project);
-  });
-
-  router.get("/projects/:id/workspaces", async (req, res) => {
-    const id = req.params.id as string;
-    const existing = await svc.getById(id);
-    if (!existing) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    assertCompanyAccess(req, existing.companyId);
-    const workspaces = await svc.listWorkspaces(id);
-    res.json(workspaces);
-  });
-
-  router.post("/projects/:id/workspaces", validate(createProjectWorkspaceSchema), async (req, res) => {
-    const id = req.params.id as string;
-    const existing = await svc.getById(id);
-    if (!existing) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    assertCompanyAccess(req, existing.companyId);
-    const workspace = await svc.createWorkspace(id, req.body);
-    if (!workspace) {
-      res.status(422).json({ error: "Invalid project workspace payload" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId: existing.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "project.workspace_created",
-      entityType: "project",
-      entityId: id,
-      details: {
-        workspaceId: workspace.id,
-        name: workspace.name,
-        cwd: workspace.cwd,
-        isPrimary: workspace.isPrimary,
-      },
-    });
-
-    res.status(201).json(workspace);
-  });
-
-  router.patch(
-    "/projects/:id/workspaces/:workspaceId",
-    validate(updateProjectWorkspaceSchema),
-    async (req, res) => {
-      const id = req.params.id as string;
-      const workspaceId = req.params.workspaceId as string;
+      const hydratedProject = workspace ? await svc.getById(project.id) : project;
+      const actorInfo = getActorInfo(actor);
+      await logActivity(db, {
+        companyId: params.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "project.created",
+        entityType: "project",
+        entityId: project.id,
+        details: { name: project.name, workspaceId: createdWorkspaceId },
+      });
+      set.status = 201;
+      return hydratedProject ?? project;
+    })
+    .patch("/projects/:id", async ({ params, query, body, actor }) => {
+      const id = await normalizeProjectReference(actor, params.id, query as Record<string, string>);
       const existing = await svc.getById(id);
-      if (!existing) {
-        res.status(404).json({ error: "Project not found" });
-        return;
+      if (!existing) throw notFound("Project not found");
+      assertCompanyAccess(actor, existing.companyId);
+      const parsed = updateProjectSchema.parse(body) as Record<string, unknown>;
+      if (typeof parsed.archivedAt === "string") {
+        parsed.archivedAt = new Date(parsed.archivedAt as string);
       }
-      assertCompanyAccess(req, existing.companyId);
-      const workspaceExists = (await svc.listWorkspaces(id)).some((workspace) => workspace.id === workspaceId);
-      if (!workspaceExists) {
-        res.status(404).json({ error: "Project workspace not found" });
-        return;
-      }
-      const workspace = await svc.updateWorkspace(id, workspaceId, req.body);
-      if (!workspace) {
-        res.status(422).json({ error: "Invalid project workspace payload" });
-        return;
-      }
-
-      const actor = getActorInfo(req);
+      const project = await svc.update(id, parsed);
+      if (!project) throw notFound("Project not found");
+      const actorInfo = getActorInfo(actor);
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "project.updated",
+        entityType: "project",
+        entityId: project.id,
+        details: parsed,
+      });
+      return project;
+    })
+    .get("/projects/:id/workspaces", async ({ params, query, actor }) => {
+      const id = await normalizeProjectReference(actor, params.id, query as Record<string, string>);
+      const existing = await svc.getById(id);
+      if (!existing) throw notFound("Project not found");
+      assertCompanyAccess(actor, existing.companyId);
+      return svc.listWorkspaces(id);
+    })
+    .post("/projects/:id/workspaces", async ({ params, query, body, actor, set }) => {
+      const id = await normalizeProjectReference(actor, params.id, query as Record<string, string>);
+      const existing = await svc.getById(id);
+      if (!existing) throw notFound("Project not found");
+      assertCompanyAccess(actor, existing.companyId);
+      const parsed = createProjectWorkspaceSchema.parse(body);
+      const workspace = await svc.createWorkspace(id, parsed);
+      if (!workspace) throw unprocessable("Invalid project workspace payload");
+      const actorInfo = getActorInfo(actor);
       await logActivity(db, {
         companyId: existing.companyId,
-        actorType: actor.actorType,
-        actorId: actor.actorId,
-        agentId: actor.agentId,
-        action: "project.workspace_updated",
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "project.workspace_created",
         entityType: "project",
         entityId: id,
         details: {
           workspaceId: workspace.id,
-          changedKeys: Object.keys(req.body).sort(),
+          name: workspace.name,
+          cwd: workspace.cwd,
+          isPrimary: workspace.isPrimary,
         },
       });
-
-      res.json(workspace);
-    },
-  );
-
-  router.delete("/projects/:id/workspaces/:workspaceId", async (req, res) => {
-    const id = req.params.id as string;
-    const workspaceId = req.params.workspaceId as string;
-    const existing = await svc.getById(id);
-    if (!existing) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    assertCompanyAccess(req, existing.companyId);
-    const workspace = await svc.removeWorkspace(id, workspaceId);
-    if (!workspace) {
-      res.status(404).json({ error: "Project workspace not found" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId: existing.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "project.workspace_deleted",
-      entityType: "project",
-      entityId: id,
-      details: {
-        workspaceId: workspace.id,
-        name: workspace.name,
-      },
+      set.status = 201;
+      return workspace;
+    })
+    .patch("/projects/:id/workspaces/:workspaceId", async ({ params, query, body, actor }) => {
+      const id = await normalizeProjectReference(actor, params.id, query as Record<string, string>);
+      const existing = await svc.getById(id);
+      if (!existing) throw notFound("Project not found");
+      assertCompanyAccess(actor, existing.companyId);
+      const workspaceExists = (await svc.listWorkspaces(id)).some((w) => w.id === params.workspaceId);
+      if (!workspaceExists) throw notFound("Project workspace not found");
+      const parsed = updateProjectWorkspaceSchema.parse(body);
+      const workspace = await svc.updateWorkspace(id, params.workspaceId, parsed);
+      if (!workspace) throw unprocessable("Invalid project workspace payload");
+      const actorInfo = getActorInfo(actor);
+      await logActivity(db, {
+        companyId: existing.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "project.workspace_updated",
+        entityType: "project",
+        entityId: id,
+        details: { workspaceId: workspace.id, changedKeys: Object.keys(parsed).sort() },
+      });
+      return workspace;
+    })
+    .delete("/projects/:id/workspaces/:workspaceId", async ({ params, query, actor }) => {
+      const id = await normalizeProjectReference(actor, params.id, query as Record<string, string>);
+      const existing = await svc.getById(id);
+      if (!existing) throw notFound("Project not found");
+      assertCompanyAccess(actor, existing.companyId);
+      const workspace = await svc.removeWorkspace(id, params.workspaceId);
+      if (!workspace) throw notFound("Project workspace not found");
+      const actorInfo = getActorInfo(actor);
+      await logActivity(db, {
+        companyId: existing.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "project.workspace_deleted",
+        entityType: "project",
+        entityId: id,
+        details: { workspaceId: workspace.id, name: workspace.name },
+      });
+      return workspace;
+    })
+    .delete("/projects/:id", async ({ params, query, actor }) => {
+      const id = await normalizeProjectReference(actor, params.id, query as Record<string, string>);
+      const existing = await svc.getById(id);
+      if (!existing) throw notFound("Project not found");
+      assertCompanyAccess(actor, existing.companyId);
+      const project = await svc.remove(id);
+      if (!project) throw notFound("Project not found");
+      const actorInfo = getActorInfo(actor);
+      await logActivity(db, {
+        companyId: project.companyId,
+        actorType: actorInfo.actorType,
+        actorId: actorInfo.actorId,
+        agentId: actorInfo.agentId,
+        action: "project.deleted",
+        entityType: "project",
+        entityId: project.id,
+      });
+      return project;
     });
-
-    res.json(workspace);
-  });
-
-  router.delete("/projects/:id", async (req, res) => {
-    const id = req.params.id as string;
-    const existing = await svc.getById(id);
-    if (!existing) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-    assertCompanyAccess(req, existing.companyId);
-    const project = await svc.remove(id);
-    if (!project) {
-      res.status(404).json({ error: "Project not found" });
-      return;
-    }
-
-    const actor = getActorInfo(req);
-    await logActivity(db, {
-      companyId: project.companyId,
-      actorType: actor.actorType,
-      actorId: actor.actorId,
-      agentId: actor.agentId,
-      action: "project.deleted",
-      entityType: "project",
-      entityId: project.id,
-    });
-
-    res.json(project);
-  });
-
-  return router;
 }

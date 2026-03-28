@@ -1,94 +1,74 @@
-import { Router, type Request } from "express";
+import { Elysia } from "elysia";
 import type { Db } from "@clawdev/db";
 import { patchInstanceExperimentalSettingsSchema, patchInstanceGeneralSettingsSchema } from "@clawdev/shared";
 import { forbidden } from "../errors.js";
-import { validate } from "../middleware/validate.js";
 import { instanceSettingsService, logActivity } from "../services/index.js";
 import { getActorInfo } from "./authz.js";
+import { elysiaAuth, type Actor } from "../plugins/auth.js";
 
-function assertCanManageInstanceSettings(req: Request) {
-  if (req.actor.type !== "board") {
-    throw forbidden("Board access required");
-  }
-  if (req.actor.source === "local_implicit" || req.actor.isInstanceAdmin) {
-    return;
-  }
+function assertCanManageInstanceSettings(actor: Actor) {
+  if (actor.type !== "board") throw forbidden("Board access required");
+  if (actor.source === "local_implicit" || actor.isInstanceAdmin) return;
   throw forbidden("Instance admin access required");
 }
 
-export function instanceSettingsRoutes(db: Db) {
-  const router = Router();
+export function elysiaInstanceSettingsRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
   const svc = instanceSettingsService(db);
 
-  router.get("/instance/settings/general", async (req, res) => {
-    assertCanManageInstanceSettings(req);
-    res.json(await svc.getGeneral());
-  });
-
-  router.patch(
-    "/instance/settings/general",
-    validate(patchInstanceGeneralSettingsSchema),
-    async (req, res) => {
-      assertCanManageInstanceSettings(req);
-      const updated = await svc.updateGeneral(req.body);
-      const actor = getActorInfo(req);
+  return new Elysia()
+    .use(authPlugin)
+    .get("/instance/settings/general", async ({ actor }) => {
+      assertCanManageInstanceSettings(actor);
+      return svc.getGeneral();
+    })
+    .patch("/instance/settings/general", async ({ body, actor }) => {
+      assertCanManageInstanceSettings(actor);
+      const parsed = patchInstanceGeneralSettingsSchema.parse(body);
+      const updated = await svc.updateGeneral(parsed);
+      const actorInfo = getActorInfo(actor);
       const companyIds = await svc.listCompanyIds();
       await Promise.all(
         companyIds.map((companyId) =>
           logActivity(db, {
             companyId,
-            actorType: actor.actorType,
-            actorId: actor.actorId,
-            agentId: actor.agentId,
-            runId: actor.runId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
             action: "instance.settings.general_updated",
             entityType: "instance_settings",
             entityId: updated.id,
-            details: {
-              general: updated.general,
-              changedKeys: Object.keys(req.body).sort(),
-            },
+            details: { general: updated.general, changedKeys: Object.keys(parsed).sort() },
           }),
         ),
       );
-      res.json(updated.general);
-    },
-  );
-
-  router.get("/instance/settings/experimental", async (req, res) => {
-    assertCanManageInstanceSettings(req);
-    res.json(await svc.getExperimental());
-  });
-
-  router.patch(
-    "/instance/settings/experimental",
-    validate(patchInstanceExperimentalSettingsSchema),
-    async (req, res) => {
-      assertCanManageInstanceSettings(req);
-      const updated = await svc.updateExperimental(req.body);
-      const actor = getActorInfo(req);
+      return updated.general;
+    })
+    .get("/instance/settings/experimental", async ({ actor }) => {
+      assertCanManageInstanceSettings(actor);
+      return svc.getExperimental();
+    })
+    .patch("/instance/settings/experimental", async ({ body, actor }) => {
+      assertCanManageInstanceSettings(actor);
+      const parsed = patchInstanceExperimentalSettingsSchema.parse(body);
+      const updated = await svc.updateExperimental(parsed);
+      const actorInfo = getActorInfo(actor);
       const companyIds = await svc.listCompanyIds();
       await Promise.all(
         companyIds.map((companyId) =>
           logActivity(db, {
             companyId,
-            actorType: actor.actorType,
-            actorId: actor.actorId,
-            agentId: actor.agentId,
-            runId: actor.runId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
             action: "instance.settings.experimental_updated",
             entityType: "instance_settings",
             entityId: updated.id,
-            details: {
-              experimental: updated.experimental,
-              changedKeys: Object.keys(req.body).sort(),
-            },
+            details: { experimental: updated.experimental, changedKeys: Object.keys(parsed).sort() },
           }),
         ),
       );
-      res.json(updated.experimental);
-    },
-  );
-
-  return router;
+      return updated.experimental;
+    });
 }

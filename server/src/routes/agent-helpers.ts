@@ -36,7 +36,7 @@ import {
   loadDefaultAgentInstructionsBundle,
   resolveDefaultAgentInstructionsBundleRole,
 } from "../services/default-agent-instructions.js";
-import type { Actor } from "../elysia-plugins/auth.js";
+import type { Actor } from "../plugins/auth.js";
 
 export const DEFAULT_INSTRUCTIONS_PATH_KEYS: Record<string, string> = {
   claude_local: "instructionsFilePath",

@@ -1,18 +1,17 @@
-import { Router } from "express";
+import { Elysia } from "elysia";
 import type { Db } from "@clawdev/db";
 import { dashboardService } from "../services/dashboard.js";
 import { assertCompanyAccess } from "./authz.js";
+import { elysiaAuth } from "../plugins/auth.js";
+import type { DeploymentMode } from "@clawdev/shared";
 
-export function dashboardRoutes(db: Db) {
-  const router = Router();
+export function elysiaDashboardRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
   const svc = dashboardService(db);
 
-  router.get("/companies/:companyId/dashboard", async (req, res) => {
-    const companyId = req.params.companyId as string;
-    assertCompanyAccess(req, companyId);
-    const summary = await svc.summary(companyId);
-    res.json(summary);
-  });
-
-  return router;
+  return new Elysia()
+    .use(authPlugin)
+    .get("/companies/:companyId/dashboard", async ({ params, actor }) => {
+      assertCompanyAccess(actor, params.companyId);
+      return svc.summary(params.companyId);
+    });
 }

@@ -16,24 +16,24 @@ import type { DeploymentExposure, DeploymentMode } from "@clawdev/shared";
 import { readPersistedDevServerStatus, toDevServerHealthStatus } from "./dev-server-status.js";
 import { instanceSettingsService } from "./services/instance-settings.js";
 import { serverVersion } from "./version.js";
-import { elysiaErrorHandler } from "./elysia-plugins/error-handler.js";
-import { elysiaAuth } from "./elysia-plugins/auth.js";
+import { elysiaErrorHandler } from "./plugins/error-handler.js";
+import { elysiaAuth } from "./plugins/auth.js";
 import type { StorageService } from "./storage/types.js";
 
 // Elysia route modules
-import { elysiaDashboardRoutes } from "./elysia-routes/dashboard.js";
-import { elysiaSidebarBadgeRoutes } from "./elysia-routes/sidebar-badges.js";
-import { elysiaGoalRoutes } from "./elysia-routes/goals.js";
-import { elysiaActivityRoutes } from "./elysia-routes/activity.js";
-import { elysiaSecretRoutes } from "./elysia-routes/secrets.js";
-import { elysiaProjectRoutes } from "./elysia-routes/projects.js";
-import { elysiaRoutineRoutes } from "./elysia-routes/routines.js";
-import { elysiaInstanceSettingsRoutes } from "./elysia-routes/instance-settings.js";
-import { elysiaLlmRoutes } from "./elysia-routes/llms.js";
-import { elysiaApprovalRoutes } from "./elysia-routes/approvals.js";
-import { elysiaExecutionWorkspaceRoutes } from "./elysia-routes/execution-workspaces.js";
-import { elysiaCostRoutes } from "./elysia-routes/costs.js";
-import { elysiaCompanyRoutes } from "./elysia-routes/companies.js";
+import { elysiaDashboardRoutes } from "./routes/dashboard.js";
+import { elysiaSidebarBadgeRoutes } from "./routes/sidebar-badges.js";
+import { elysiaGoalRoutes } from "./routes/goals.js";
+import { elysiaActivityRoutes } from "./routes/activity.js";
+import { elysiaSecretRoutes } from "./routes/secrets.js";
+import { elysiaProjectRoutes } from "./routes/projects.js";
+import { elysiaRoutineRoutes } from "./routes/routines.js";
+import { elysiaInstanceSettingsRoutes } from "./routes/instance-settings.js";
+import { elysiaLlmRoutes } from "./routes/llms.js";
+import { elysiaApprovalRoutes } from "./routes/approvals.js";
+import { elysiaExecutionWorkspaceRoutes } from "./routes/execution-workspaces.js";
+import { elysiaCostRoutes } from "./routes/costs.js";
+import { elysiaCompanyRoutes } from "./routes/companies.js";
 
 export function createElysiaApp(
   db: Db,
