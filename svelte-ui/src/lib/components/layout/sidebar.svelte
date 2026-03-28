@@ -241,7 +241,7 @@
   <!-- Footer -->
   <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-1.5">
     <a
-      href={`/${prefix}/settings`}
+      href="/settings/general"
       class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors"
     >
       <Cog class="size-3.5" />
