@@ -12,7 +12,10 @@
     "clean": "rm -rf .svelte-kit build"
   },
   "dependencies": {
-    "@clawdev/shared": "workspace:*"
+    "@clawdev/shared": "workspace:*",
+    "echarts": "^6.0.0",
+    "svelte-echarts": "^1.0.0",
+    "svelte-motion": "^0.12.2"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.8",
