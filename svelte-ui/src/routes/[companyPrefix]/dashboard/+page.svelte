@@ -678,7 +678,7 @@
               {@const agentName = issue.assigneeName ?? issue.agentName ?? issue.agent?.name ?? ''}
               <a
                 href="/{prefix}/issues/{issue.id}"
-                class="flex items-center gap-3 py-2.5 transition-colors hover:bg-white/[0.02] -mx-2 px-2 rounded"
+                class="flex items-center gap-3 py-2.5 transition-colors hover:bg-accent/25 -mx-2 px-2 rounded"
               >
                 <!-- Status dot -->
                 <span

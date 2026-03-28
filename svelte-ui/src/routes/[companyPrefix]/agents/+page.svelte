@@ -237,7 +237,7 @@
   {@const isTree = options?.isTree ?? false}
   <a
     href="/{$page.params.companyPrefix}/agents/{agent.urlKey ?? agent.id}"
-    class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-white/[0.03]"
+    class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-accent/40"
     style={isTree ? `padding-left: ${20 + indent * 24}px` : ''}
   >
     <!-- Tree connector line -->
@@ -246,7 +246,7 @@
         class="absolute left-0 top-0 bottom-0"
         style="width: {20 + (indent - 1) * 24 + 12}px"
       >
-        <div class="absolute right-0 top-0 bottom-0 w-px bg-white/[0.06]"></div>
+        <div class="absolute right-0 top-0 bottom-0 w-px bg-accent/75"></div>
       </div>
     {/if}
 
@@ -263,18 +263,18 @@
     <!-- Name, role, title -->
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
-        <span class="text-sm font-semibold text-[#F8FAFC] truncate">{agent.name}</span>
+        <span class="text-sm font-semibold text-foreground truncate">{agent.name}</span>
         <span class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {roleBadgeColor(agent.role)}">
           {agent.role}
         </span>
       </div>
       {#if agent.title}
-        <p class="text-xs text-[#64748B] mt-0.5 truncate">{agent.title}</p>
+        <p class="text-xs text-muted-foreground mt-0.5 truncate">{agent.title}</p>
       {/if}
     </div>
 
     <!-- Adapter type -->
-    <span class="hidden sm:inline-flex items-center rounded-md bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 text-[11px] text-[#94A3B8] font-mono shrink-0">
+    <span class="hidden sm:inline-flex items-center rounded-md bg-accent/50 border border-border/50 px-2 py-0.5 text-[11px] text-muted-foreground font-mono shrink-0">
       {adapterDisplayName(agent.adapterType)}
     </span>
 
@@ -291,7 +291,7 @@
     {/if}
 
     <!-- Heartbeat -->
-    <span class="text-[11px] text-[#64748B] shrink-0 tabular-nums w-16 text-right">
+    <span class="text-[11px] text-muted-foreground shrink-0 tabular-nums w-16 text-right">
       {timeAgo(agent.lastHeartbeatAt)}
     </span>
   </a>
@@ -306,7 +306,7 @@
           class="absolute top-0 bottom-0 pointer-events-none"
           style="left: {20 + (depth - 1) * 24}px; width: 1px"
         >
-          <div class="w-px h-full bg-white/[0.06]"></div>
+          <div class="w-px h-full bg-accent/75"></div>
         </div>
       {/if}
     </div>
@@ -320,7 +320,7 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div class="flex items-center gap-3">
-      <h1 class="text-xl font-semibold text-[#F8FAFC]">Agents</h1>
+      <h1 class="text-xl font-semibold text-foreground">Agents</h1>
     </div>
     <a
       href="/{$page.params.companyPrefix}/agents/new"
@@ -341,7 +341,7 @@
           class="rounded-lg px-3 py-1.5 text-sm font-medium transition
             {activeFilter === status
               ? 'bg-[#2563EB] text-white'
-              : 'bg-white/[0.05] text-[#94A3B8] hover:bg-white/[0.08] hover:text-[#F8FAFC]'}"
+              : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
         >
           {statusLabel(status)}
           <span class="ml-1 text-xs opacity-70">({countByStatus(status)})</span>
@@ -352,17 +352,17 @@
     <!-- Search + view toggle + filters button -->
     <div class="flex items-center gap-2">
       <!-- View toggle -->
-      <div class="flex items-center rounded-lg border border-white/[0.08] bg-[#121218] overflow-hidden">
+      <div class="flex items-center rounded-lg border border-border bg-card overflow-hidden">
         <button
           onclick={() => { viewMode = 'list'; }}
-          class="p-2 transition {viewMode === 'list' ? 'bg-white/[0.1] text-[#F8FAFC]' : 'text-[#64748B] hover:text-[#94A3B8]'}"
+          class="p-2 transition {viewMode === 'list' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-muted-foreground'}"
           title="List view"
         >
           <List class="w-4 h-4" />
         </button>
         <button
           onclick={() => { viewMode = 'tree'; }}
-          class="p-2 transition {viewMode === 'tree' ? 'bg-white/[0.1] text-[#F8FAFC]' : 'text-[#64748B] hover:text-[#94A3B8]'}"
+          class="p-2 transition {viewMode === 'tree' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-muted-foreground'}"
           title="Org tree view"
         >
           <Network class="w-4 h-4" />
@@ -372,8 +372,8 @@
       <!-- Filters button -->
       <button
         onclick={() => { showFilters = !showFilters; }}
-        class="inline-flex items-center gap-1.5 rounded-lg border border-white/[0.08] bg-[#121218] px-3 py-2 text-sm transition
-          {showFilters ? 'text-[#F8FAFC] border-[#2563EB]/50' : 'text-[#64748B] hover:text-[#94A3B8]'}"
+        class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-2 text-sm transition
+          {showFilters ? 'text-foreground border-[#2563EB]/50' : 'text-muted-foreground hover:text-muted-foreground'}"
       >
         <SlidersHorizontal class="w-3.5 h-3.5" />
         Filters
@@ -381,12 +381,12 @@
 
       <!-- Search -->
       <div class="relative">
-        <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+        <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
         <input
           type="text"
           placeholder="Search agents..."
           bind:value={searchQuery}
-          class="w-full sm:w-56 rounded-lg border border-white/[0.08] bg-[#121218] pl-9 pr-3 py-2 text-sm text-[#F8FAFC] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#2563EB] transition"
+          class="w-full sm:w-56 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
         />
       </div>
     </div>
@@ -394,12 +394,12 @@
 
   <!-- Expanded filters panel -->
   {#if showFilters}
-    <div class="flex items-center gap-4 rounded-lg border border-white/[0.08] bg-[#121218] px-4 py-3">
-      <label class="flex items-center gap-2 text-sm text-[#94A3B8] cursor-pointer select-none">
+    <div class="flex items-center gap-4 rounded-lg border border-border bg-card px-4 py-3">
+      <label class="flex items-center gap-2 text-sm text-muted-foreground cursor-pointer select-none">
         <input
           type="checkbox"
           bind:checked={showTerminated}
-          class="w-4 h-4 rounded border-white/20 bg-white/[0.05] text-[#2563EB] focus:ring-[#2563EB] focus:ring-offset-0 cursor-pointer"
+          class="w-4 h-4 rounded border-white/20 bg-accent/60 text-[#2563EB] focus:ring-[#2563EB] focus:ring-offset-0 cursor-pointer"
         />
         Show terminated agents
       </label>
@@ -408,14 +408,14 @@
 
   <!-- Agent count -->
   {#if !loading && !error}
-    <p class="text-xs text-[#64748B]">{filteredAgents.length} agent{filteredAgents.length !== 1 ? 's' : ''}</p>
+    <p class="text-xs text-muted-foreground">{filteredAgents.length} agent{filteredAgents.length !== 1 ? 's' : ''}</p>
   {/if}
 
   <!-- Loading skeleton -->
   {#if loading}
     <div class="space-y-3">
       {#each Array(6) as _}
-        <div class="h-[64px] animate-pulse rounded-xl bg-[#121218] border border-white/[0.08]"></div>
+        <div class="h-[64px] animate-pulse rounded-xl bg-card border border-border"></div>
       {/each}
     </div>
 
@@ -434,11 +434,11 @@
   <!-- Empty -->
   {:else if filteredAgents.length === 0}
     <div class="flex flex-col items-center justify-center py-16 text-center">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <Bot class="w-8 h-8 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <Bot class="w-8 h-8 text-muted-foreground" />
       </div>
       {#if agents.length === 0}
-        <p class="text-[#94A3B8] text-sm">No agents yet.</p>
+        <p class="text-muted-foreground text-sm">No agents yet.</p>
         <a
           href="/{$page.params.companyPrefix}/agents/new"
           class="mt-3 text-sm text-[#2563EB] hover:underline"
@@ -446,13 +446,13 @@
           Create your first agent
         </a>
       {:else}
-        <p class="text-[#94A3B8] text-sm">No agents match the current filters.</p>
+        <p class="text-muted-foreground text-sm">No agents match the current filters.</p>
       {/if}
     </div>
 
   <!-- Agent list / tree -->
   {:else}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden divide-y divide-white/[0.05]">
+    <div class="rounded-xl border border-border bg-card overflow-hidden divide-y divide-border/50">
       {#if viewMode === 'tree'}
         <!-- Org Tree View -->
         {@render treeNodes(agentTree, 0)}

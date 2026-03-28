@@ -43,7 +43,7 @@
 
 <nav
   class="fixed bottom-0 inset-x-0 z-50 flex md:hidden items-center justify-around
-         bg-[#0a0a0f] border-t border-white/[0.08]
+         bg-background border-t border-border
          pb-[env(safe-area-inset-bottom,0px)]"
   aria-label="Mobile navigation"
 >

@@ -229,8 +229,8 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-[#F8FAFC]">Budget Policies</h1>
-      <p class="mt-1 text-sm text-[#94A3B8]">Manage spending limits across agents, projects, and company</p>
+      <h1 class="text-2xl font-bold text-foreground">Budget Policies</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Manage spending limits across agents, projects, and company</p>
     </div>
     <button
       onclick={() => (showCreate = !showCreate)}
@@ -245,54 +245,54 @@
   {#if loading}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       {#each Array(3) as _}
-        <div class="h-28 animate-pulse rounded-xl border border-white/[0.08] bg-[#121218]"></div>
+        <div class="h-28 animate-pulse rounded-xl border border-border bg-card"></div>
       {/each}
     </div>
   {:else}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <!-- Total Budget -->
-      <div class="rounded-xl border border-white/[0.08] bg-[#121218] p-5">
+      <div class="rounded-xl border border-border bg-card p-5">
         <div class="flex items-center gap-3 mb-3">
           <div class="rounded-lg bg-blue-500/10 p-2">
             <Wallet class="h-5 w-5 text-blue-400" />
           </div>
-          <span class="text-sm font-medium text-[#94A3B8]">Total Budget</span>
+          <span class="text-sm font-medium text-muted-foreground">Total Budget</span>
         </div>
-        <p class="text-2xl font-bold text-[#F8FAFC]">{formatCents(totalBudget)}</p>
-        <p class="mt-1 text-xs text-[#94A3B8]">{policies.length} active {policies.length === 1 ? 'policy' : 'policies'}</p>
+        <p class="text-2xl font-bold text-foreground">{formatCents(totalBudget)}</p>
+        <p class="mt-1 text-xs text-muted-foreground">{policies.length} active {policies.length === 1 ? 'policy' : 'policies'}</p>
       </div>
 
       <!-- Current Spend -->
-      <div class="rounded-xl border border-white/[0.08] bg-[#121218] p-5">
+      <div class="rounded-xl border border-border bg-card p-5">
         <div class="flex items-center gap-3 mb-3">
           <div class="rounded-lg bg-emerald-500/10 p-2">
             <DollarSign class="h-5 w-5 text-emerald-400" />
           </div>
-          <span class="text-sm font-medium text-[#94A3B8]">Current Spend</span>
+          <span class="text-sm font-medium text-muted-foreground">Current Spend</span>
         </div>
-        <p class="text-2xl font-bold text-[#F8FAFC]">{formatCents(currentSpend)}</p>
+        <p class="text-2xl font-bold text-foreground">{formatCents(currentSpend)}</p>
         {#if totalBudget > 0}
           <div class="mt-2">
-            <div class="h-1.5 rounded-full bg-white/[0.08] overflow-hidden">
+            <div class="h-1.5 rounded-full bg-accent overflow-hidden">
               <div
                 class="h-full rounded-full transition-all {spendBarColor(spendPercent)}"
                 style="width: {Math.min(100, spendPercent)}%"
               ></div>
             </div>
-            <p class="mt-1 text-xs text-[#94A3B8]">{spendPercent}% of total budget</p>
+            <p class="mt-1 text-xs text-muted-foreground">{spendPercent}% of total budget</p>
           </div>
         {/if}
       </div>
 
       <!-- Remaining -->
-      <div class="rounded-xl border border-white/[0.08] bg-[#121218] p-5">
+      <div class="rounded-xl border border-border bg-card p-5">
         <div class="flex items-center gap-3 mb-3">
           <div class="rounded-lg bg-orange-500/10 p-2">
             <TrendingDown class="h-5 w-5 text-orange-400" />
           </div>
-          <span class="text-sm font-medium text-[#94A3B8]">Remaining</span>
+          <span class="text-sm font-medium text-muted-foreground">Remaining</span>
         </div>
-        <p class="text-2xl font-bold text-[#F8FAFC]">{formatCents(remaining)}</p>
+        <p class="text-2xl font-bold text-foreground">{formatCents(remaining)}</p>
         {#if pendingIncidents.length > 0}
           <p class="mt-1 text-xs text-amber-400">
             {pendingIncidents.length} pending {pendingIncidents.length === 1 ? 'incident' : 'incidents'}
@@ -308,14 +308,14 @@
   {#if showCreate}
     <form
       onsubmit={(e) => { e.preventDefault(); createPolicy(); }}
-      class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden"
+      class="rounded-xl border border-border bg-card overflow-hidden"
     >
-      <div class="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
-        <h2 class="text-sm font-semibold text-[#F8FAFC]">New Budget Policy</h2>
+      <div class="flex items-center justify-between px-5 py-4 border-b border-border/50">
+        <h2 class="text-sm font-semibold text-foreground">New Budget Policy</h2>
         <button
           type="button"
           onclick={() => { showCreate = false; resetForm(); }}
-          class="rounded-lg p-1 text-[#94A3B8] hover:bg-white/[0.05] transition-colors"
+          class="rounded-lg p-1 text-muted-foreground hover:bg-accent/60 transition-colors"
         >
           <X class="h-4 w-4" />
         </button>
@@ -325,11 +325,11 @@
         <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <!-- Scope Type -->
           <div>
-            <label for="scope-type" class="block text-sm font-medium text-[#F8FAFC] mb-1">Scope</label>
+            <label for="scope-type" class="block text-sm font-medium text-foreground mb-1">Scope</label>
             <select
               id="scope-type"
               bind:value={formScopeType}
-              class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="company">Company-wide</option>
               <option value="agent">Agent</option>
@@ -340,23 +340,23 @@
           <!-- Scope ID (shown only for agent/project) -->
           {#if formScopeType !== 'company'}
             <div>
-              <label for="scope-id" class="block text-sm font-medium text-[#F8FAFC] mb-1">
+              <label for="scope-id" class="block text-sm font-medium text-foreground mb-1">
                 {formScopeType === 'agent' ? 'Agent ID' : 'Project ID'}
               </label>
               <input
                 id="scope-id"
                 bind:value={formScopeId}
                 placeholder="Enter {formScopeType} identifier"
-                class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
           {/if}
 
           <!-- Amount -->
           <div>
-            <label for="amount" class="block text-sm font-medium text-[#F8FAFC] mb-1">Amount (USD)</label>
+            <label for="amount" class="block text-sm font-medium text-foreground mb-1">Amount (USD)</label>
             <div class="relative">
-              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#94A3B8]">$</span>
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">$</span>
               <input
                 id="amount"
                 type="number"
@@ -364,21 +364,21 @@
                 min="0.01"
                 bind:value={formAmount}
                 placeholder="0.00"
-                class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] pl-7 pr-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                class="w-full rounded-lg border border-border bg-accent/60 pl-7 pr-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
             </div>
-            <p class="mt-1 text-xs text-[#94A3B8]">
+            <p class="mt-1 text-xs text-muted-foreground">
               {formAmount ? `${Math.round(parseFloat(formAmount || '0') * 100)} cents` : 'Enter dollar amount'}
             </p>
           </div>
 
           <!-- Window -->
           <div>
-            <label for="window-kind" class="block text-sm font-medium text-[#F8FAFC] mb-1">Window</label>
+            <label for="window-kind" class="block text-sm font-medium text-foreground mb-1">Window</label>
             <select
               id="window-kind"
               bind:value={formWindowKind}
-              class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="monthly">Monthly</option>
               <option value="annual">Annual</option>
@@ -388,16 +388,16 @@
 
           <!-- Warn Percent -->
           <div>
-            <label for="warn-pct" class="block text-sm font-medium text-[#F8FAFC] mb-1">Warn Threshold (%)</label>
+            <label for="warn-pct" class="block text-sm font-medium text-foreground mb-1">Warn Threshold (%)</label>
             <input
               id="warn-pct"
               type="number"
               min="1"
               max="100"
               bind:value={formWarnPercent}
-              class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
-            <p class="mt-1 text-xs text-[#94A3B8]">Alert when spend reaches this % of budget</p>
+            <p class="mt-1 text-xs text-muted-foreground">Alert when spend reaches this % of budget</p>
           </div>
 
           <!-- Hard Stop -->
@@ -409,7 +409,7 @@
               aria-label="Hard stop enabled"
               onclick={() => (formHardStop = !formHardStop)}
               class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors
-                {formHardStop ? 'bg-blue-600' : 'bg-white/[0.15]'}"
+                {formHardStop ? 'bg-blue-600' : 'bg-accent'}"
             >
               <span
                 class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transition-transform
@@ -417,14 +417,14 @@
               ></span>
             </button>
             <div>
-              <p class="text-sm font-medium text-[#F8FAFC]">Hard Stop</p>
-              <p class="text-xs text-[#94A3B8]">Block operations when budget is exceeded</p>
+              <p class="text-sm font-medium text-foreground">Hard Stop</p>
+              <p class="text-xs text-muted-foreground">Block operations when budget is exceeded</p>
             </div>
           </div>
         </div>
 
         <!-- Actions -->
-        <div class="flex items-center gap-3 pt-2 border-t border-white/[0.05]">
+        <div class="flex items-center gap-3 pt-2 border-t border-border/50">
           <button
             type="submit"
             disabled={creating || !formAmount}
@@ -435,7 +435,7 @@
           <button
             type="button"
             onclick={() => { showCreate = false; resetForm(); }}
-            class="rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#94A3B8] hover:bg-white/[0.03]"
+            class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40"
           >
             Cancel
           </button>
@@ -446,14 +446,14 @@
 
   <!-- Pending Incidents -->
   {#if !loading && pendingIncidents.length > 0}
-    <div class="rounded-xl border border-amber-500/20 bg-[#121218] overflow-hidden">
+    <div class="rounded-xl border border-amber-500/20 bg-card overflow-hidden">
       <div class="flex items-center gap-3 px-5 py-4 border-b border-amber-500/10">
         <div class="rounded-lg bg-amber-500/10 p-2">
           <AlertTriangle class="h-4 w-4 text-amber-400" />
         </div>
         <div>
           <h2 class="text-sm font-semibold text-amber-400">Budget Incidents</h2>
-          <p class="text-xs text-[#94A3B8]">{pendingIncidents.length} pending {pendingIncidents.length === 1 ? 'incident' : 'incidents'} requiring attention</p>
+          <p class="text-xs text-muted-foreground">{pendingIncidents.length} pending {pendingIncidents.length === 1 ? 'incident' : 'incidents'} requiring attention</p>
         </div>
       </div>
 
@@ -463,11 +463,11 @@
             <div class="flex items-center gap-3 min-w-0">
               <ShieldAlert class="h-4 w-4 shrink-0 text-amber-400" />
               <div class="min-w-0">
-                <p class="text-sm text-[#F8FAFC] truncate">
+                <p class="text-sm text-foreground truncate">
                   {incident.message ?? `${incident.type} incident on policy ${incident.policyId}`}
                 </p>
                 {#if incident.createdAt}
-                  <p class="text-xs text-[#94A3B8] mt-0.5">
+                  <p class="text-xs text-muted-foreground mt-0.5">
                     <Clock class="inline h-3 w-3 -mt-0.5" />
                     {new Date(incident.createdAt).toLocaleDateString('en', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                   </p>
@@ -492,16 +492,16 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(4) as _}
-        <div class="h-24 animate-pulse rounded-xl border border-white/[0.08] bg-[#121218]"></div>
+        <div class="h-24 animate-pulse rounded-xl border border-border bg-card"></div>
       {/each}
     </div>
   {:else if policies.length === 0}
     <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <Shield class="h-10 w-10 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <Shield class="h-10 w-10 text-muted-foreground" />
       </div>
-      <h3 class="text-lg font-medium text-[#F8FAFC]">No budget policies</h3>
-      <p class="mt-1 text-sm text-[#94A3B8]">Create policies to control and monitor spending</p>
+      <h3 class="text-lg font-medium text-foreground">No budget policies</h3>
+      <p class="mt-1 text-sm text-muted-foreground">Create policies to control and monitor spending</p>
       <button
         onclick={() => (showCreate = true)}
         class="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -511,15 +511,15 @@
       </button>
     </div>
   {:else}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
-      <div class="px-5 py-4 border-b border-white/[0.05]">
-        <h2 class="text-sm font-semibold text-[#F8FAFC]">Active Policies</h2>
+    <div class="rounded-xl border border-border bg-card overflow-hidden">
+      <div class="px-5 py-4 border-b border-border/50">
+        <h2 class="text-sm font-semibold text-foreground">Active Policies</h2>
       </div>
 
       <div class="divide-y divide-white/[0.05]">
         {#each policies as policy (policy.id)}
           {@const pct = policySpendPct(policy)}
-          <div class="px-5 py-4 hover:bg-white/[0.03] transition-colors">
+          <div class="px-5 py-4 hover:bg-accent/40 transition-colors">
             <div class="flex items-start justify-between gap-4">
               <!-- Left side: scope + details -->
               <div class="min-w-0 flex-1 space-y-2">
@@ -529,9 +529,9 @@
                     {scopeIcon(policy.scopeType)}
                   </span>
                   {#if policy.scopeLabel}
-                    <span class="text-sm font-medium text-[#F8FAFC] truncate">{policy.scopeLabel}</span>
+                    <span class="text-sm font-medium text-foreground truncate">{policy.scopeLabel}</span>
                   {:else if policy.scopeId}
-                    <span class="text-sm font-mono text-[#94A3B8] truncate">{policy.scopeId}</span>
+                    <span class="text-sm font-mono text-muted-foreground truncate">{policy.scopeId}</span>
                   {/if}
                   <!-- Window badge -->
                   <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium {windowBadgeColor(policy.windowKind)}">
@@ -541,19 +541,19 @@
 
                 <!-- Spend progress -->
                 <div class="flex items-center gap-3">
-                  <div class="h-1.5 flex-1 max-w-xs rounded-full bg-white/[0.08] overflow-hidden">
+                  <div class="h-1.5 flex-1 max-w-xs rounded-full bg-accent overflow-hidden">
                     <div
                       class="h-full rounded-full transition-all {spendBarColor(pct)}"
                       style="width: {Math.min(100, pct)}%"
                     ></div>
                   </div>
-                  <span class="shrink-0 text-xs font-medium text-[#94A3B8] tabular-nums">
+                  <span class="shrink-0 text-xs font-medium text-muted-foreground tabular-nums">
                     {formatCents(policy.currentSpend ?? 0)} / {formatCents(policy.amount)}
                   </span>
                 </div>
 
                 <!-- Meta row -->
-                <div class="flex items-center gap-4 text-xs text-[#94A3B8]">
+                <div class="flex items-center gap-4 text-xs text-muted-foreground">
                   <span>Warn at {policy.warnPercent}%</span>
                   <span class="flex items-center gap-1">
                     {#if policy.hardStopEnabled}
@@ -578,8 +578,8 @@
 
               <!-- Right side: amount -->
               <div class="text-right shrink-0">
-                <p class="text-lg font-bold text-[#F8FAFC] tabular-nums">{formatCents(policy.amount)}</p>
-                <p class="text-xs text-[#94A3B8]">per {policy.windowKind === 'lifetime' ? 'lifetime' : policy.windowKind.replace('ly', '')}</p>
+                <p class="text-lg font-bold text-foreground tabular-nums">{formatCents(policy.amount)}</p>
+                <p class="text-xs text-muted-foreground">per {policy.windowKind === 'lifetime' ? 'lifetime' : policy.windowKind.replace('ly', '')}</p>
               </div>
             </div>
           </div>

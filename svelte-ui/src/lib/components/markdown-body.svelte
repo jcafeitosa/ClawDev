@@ -80,7 +80,7 @@
       const langAttr = lang ? ` data-lang="${lang}"` : '';
       const idx = codeBlocks.length;
       codeBlocks.push(
-        `<pre class="bg-[#0a0a0f] rounded-lg p-4 overflow-x-auto my-3"${langAttr}><code class="text-sm font-mono text-[#e2e8f0]">${code.trim()}</code></pre>`
+        `<pre class="bg-background rounded-lg p-4 overflow-x-auto my-3"${langAttr}><code class="text-sm font-mono text-[#e2e8f0]">${code.trim()}</code></pre>`
       );
       return `\n%%CODEBLOCK_${idx}%%\n`;
     });
@@ -102,7 +102,7 @@
 
       // Horizontal rule
       if (/^-{3,}$/.test(trimmed)) {
-        rendered.push('<hr class="border-white/[0.08] my-4" />');
+        rendered.push('<hr class="border-border my-4" />');
         continue;
       }
 
@@ -131,7 +131,7 @@
           .map((l) => processInline(l.replace(/^&gt;\s?/, '')))
           .join('<br />');
         rendered.push(
-          `<blockquote class="border-l-2 border-blue-500 pl-4 my-3 text-[#94A3B8] italic">${quoteContent}</blockquote>`
+          `<blockquote class="border-l-2 border-blue-500 pl-4 my-3 text-muted-foreground italic">${quoteContent}</blockquote>`
         );
         continue;
       }
@@ -179,6 +179,6 @@
   let html = $derived(renderMarkdown(content));
 </script>
 
-<div class="prose prose-sm dark:prose-invert max-w-none text-[#F8FAFC] {className}">
+<div class="prose prose-sm dark:prose-invert max-w-none text-foreground {className}">
   {@html html}
 </div>

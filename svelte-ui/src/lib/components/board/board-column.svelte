@@ -27,14 +27,14 @@
   let { status, label, color, issues, companyPrefix }: Props = $props();
 </script>
 
-<div class="flex h-full w-72 shrink-0 flex-col rounded-xl border border-white/[0.06] bg-[rgba(255,255,255,0.02)]">
+<div class="flex h-full w-72 shrink-0 flex-col rounded-xl border border-border/50 bg-accent/25">
   <!-- Column header -->
-  <div class="flex items-center gap-2.5 px-3 py-2.5 border-b border-white/[0.04]">
+  <div class="flex items-center gap-2.5 px-3 py-2.5 border-b border-border/50">
     <span class="size-2.5 rounded-full shrink-0" style="background-color: {color};"></span>
     <span class="text-xs font-semibold text-[var(--clawdev-text-primary)] uppercase tracking-wide">
       {label}
     </span>
-    <span class="flex h-5 min-w-5 items-center justify-center rounded-full bg-[rgba(255,255,255,0.06)] px-1.5 text-[10px] font-medium text-[var(--clawdev-text-muted)] tabular-nums">
+    <span class="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent/75 px-1.5 text-[10px] font-medium text-[var(--clawdev-text-muted)] tabular-nums">
       {issues.length}
     </span>
   </div>
@@ -53,10 +53,10 @@
   </div>
 
   <!-- Add task footer -->
-  <div class="border-t border-white/[0.04] px-2 py-1.5">
+  <div class="border-t border-border/50 px-2 py-1.5">
     <a
       href="/{companyPrefix}/issues/new?status={status}"
-      class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-[var(--clawdev-text-muted)] transition-colors hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]"
+      class="flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-[var(--clawdev-text-muted)] transition-colors hover:bg-accent/60 hover:text-[var(--clawdev-text-primary)]"
     >
       <Plus class="size-3.5" />
       Add Issue

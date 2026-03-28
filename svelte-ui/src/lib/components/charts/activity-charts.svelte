@@ -335,30 +335,30 @@
 {#if loading}
   <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
     {#each Array(4) as _}
-      <div class="rounded-xl border border-white/[0.08] bg-[#121218] p-4">
-        <div class="mb-3 h-4 w-28 animate-pulse rounded bg-white/[0.06]"></div>
-        <div class="h-[200px] animate-pulse rounded-lg bg-white/[0.03]"></div>
+      <div class="rounded-xl border border-border bg-card p-4">
+        <div class="mb-3 h-4 w-28 animate-pulse rounded bg-accent/75"></div>
+        <div class="h-[200px] animate-pulse rounded-lg bg-accent/40"></div>
       </div>
     {/each}
   </div>
 {:else}
   <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
     <!-- Run Activity -->
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] p-4 transition-colors hover:border-white/[0.14]">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
+    <div class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border">
+      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Run Activity
       </h3>
       <BaseChart option={runActivityOption} height="200px" />
     </div>
 
     <!-- Issues by Priority -->
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] p-4 transition-colors hover:border-white/[0.14]">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
+    <div class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border">
+      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Issues by Priority
       </h3>
       {#if issues.length === 0}
         <div class="flex h-[200px] items-center justify-center">
-          <p class="text-xs text-[#94A3B8]/60">No issues</p>
+          <p class="text-xs text-muted-foreground/60">No issues</p>
         </div>
       {:else}
         <BaseChart option={priorityChartOption} height="200px" />
@@ -366,13 +366,13 @@
     </div>
 
     <!-- Issues by Status -->
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] p-4 transition-colors hover:border-white/[0.14]">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
+    <div class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border">
+      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Issues by Status
       </h3>
       {#if issues.length === 0}
         <div class="flex h-[200px] items-center justify-center">
-          <p class="text-xs text-[#94A3B8]/60">No issues</p>
+          <p class="text-xs text-muted-foreground/60">No issues</p>
         </div>
       {:else}
         <BaseChart option={statusChartOption} height="200px" />
@@ -380,8 +380,8 @@
     </div>
 
     <!-- Success Rate -->
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] p-4 transition-colors hover:border-white/[0.14]">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">
+    <div class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border">
+      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
         Success Rate
       </h3>
       <BaseChart option={successRateOption} height="200px" />

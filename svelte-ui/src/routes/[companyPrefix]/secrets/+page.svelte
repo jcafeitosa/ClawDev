@@ -203,8 +203,8 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-[#F8FAFC]">Secrets</h1>
-      <p class="mt-1 text-sm text-[#94A3B8]">Manage API keys, tokens, and credentials</p>
+      <h1 class="text-2xl font-bold text-foreground">Secrets</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Manage API keys, tokens, and credentials</p>
     </div>
     <button
       onclick={() => { showCreateForm = !showCreateForm; }}
@@ -222,14 +222,14 @@
 
   <!-- Create form -->
   {#if showCreateForm}
-    <section class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
-      <div class="flex items-center gap-3 px-5 py-4 border-b border-white/[0.05]">
+    <section class="rounded-xl border border-border bg-card overflow-hidden">
+      <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50">
         <div class="rounded-lg bg-blue-500/10 p-2">
           <KeyRound class="h-4 w-4 text-blue-400" />
         </div>
         <div>
-          <h2 class="text-sm font-semibold text-[#F8FAFC]">New Secret</h2>
-          <p class="text-xs text-[#94A3B8]">Secret values are encrypted and cannot be viewed after creation</p>
+          <h2 class="text-sm font-semibold text-foreground">New Secret</h2>
+          <p class="text-xs text-muted-foreground">Secret values are encrypted and cannot be viewed after creation</p>
         </div>
       </div>
 
@@ -239,7 +239,7 @@
       >
         <!-- Name -->
         <div>
-          <label for="secret-name" class="block text-sm font-medium text-[#F8FAFC] mb-1">
+          <label for="secret-name" class="block text-sm font-medium text-foreground mb-1">
             Name <span class="text-red-400">*</span>
           </label>
           <input
@@ -248,13 +248,13 @@
             bind:value={newName}
             placeholder="e.g. OPENAI_API_KEY"
             required
-            class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] font-mono placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground font-mono placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <!-- Value -->
         <div>
-          <label for="secret-value" class="block text-sm font-medium text-[#F8FAFC] mb-1">
+          <label for="secret-value" class="block text-sm font-medium text-foreground mb-1">
             Value <span class="text-red-400">*</span>
           </label>
           <div class="relative">
@@ -264,12 +264,12 @@
               bind:value={newValue}
               placeholder="Enter secret value"
               required
-              class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 pr-10 text-sm text-[#F8FAFC] font-mono placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 pr-10 text-sm text-foreground font-mono placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
               type="button"
               onclick={() => { showValue = !showValue; }}
-              class="absolute right-3 top-1/2 -translate-y-1/2 text-[#94A3B8] hover:text-[#F8FAFC] transition-colors"
+              class="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
               title={showValue ? 'Hide value' : 'Show value'}
             >
               {#if showValue}
@@ -279,20 +279,20 @@
               {/if}
             </button>
           </div>
-          <p class="mt-1 text-xs text-[#94A3B8]">This value will be encrypted and cannot be retrieved after saving.</p>
+          <p class="mt-1 text-xs text-muted-foreground">This value will be encrypted and cannot be retrieved after saving.</p>
         </div>
 
         <!-- Description -->
         <div>
-          <label for="secret-description" class="block text-sm font-medium text-[#F8FAFC] mb-1">
-            Description <span class="text-[#94A3B8] font-normal">(optional)</span>
+          <label for="secret-description" class="block text-sm font-medium text-foreground mb-1">
+            Description <span class="text-muted-foreground font-normal">(optional)</span>
           </label>
           <input
             id="secret-description"
             type="text"
             bind:value={newDescription}
             placeholder="What is this secret used for?"
-            class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
@@ -316,7 +316,7 @@
           <button
             type="button"
             onclick={resetCreateForm}
-            class="rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#94A3B8] hover:bg-white/[0.03] transition-colors"
+            class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40 transition-colors"
           >
             Cancel
           </button>
@@ -328,12 +328,12 @@
   <!-- Search -->
   {#if !loading && secrets.length > 0}
     <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
       <input
         type="text"
         placeholder="Search secrets..."
         bind:value={searchQuery}
-        class="w-full sm:w-64 rounded-lg border border-white/[0.08] bg-[#121218] pl-9 pr-3 py-2 text-sm text-[#F8FAFC] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#2563EB] transition"
+        class="w-full sm:w-64 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
       />
     </div>
   {/if}
@@ -342,7 +342,7 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(5) as _}
-        <div class="h-[72px] animate-pulse rounded-xl bg-[#121218] border border-white/[0.08]"></div>
+        <div class="h-[72px] animate-pulse rounded-xl bg-card border border-border"></div>
       {/each}
     </div>
 
@@ -369,12 +369,12 @@
   <!-- Empty -->
   {:else if filteredSecrets.length === 0}
     <div class="flex flex-col items-center justify-center py-16 text-center">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <KeyRound class="w-8 h-8 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <KeyRound class="w-8 h-8 text-muted-foreground" />
       </div>
       {#if secrets.length === 0}
-        <h3 class="text-lg font-medium text-[#F8FAFC]">No secrets yet</h3>
-        <p class="mt-1 text-sm text-[#94A3B8]">Add your first API key or credential to get started.</p>
+        <h3 class="text-lg font-medium text-foreground">No secrets yet</h3>
+        <p class="mt-1 text-sm text-muted-foreground">Add your first API key or credential to get started.</p>
         <button
           onclick={() => { showCreateForm = true; }}
           class="mt-4 text-sm text-[#2563EB] hover:underline"
@@ -382,27 +382,27 @@
           Add your first secret
         </button>
       {:else}
-        <p class="text-[#94A3B8] text-sm">No secrets match your search.</p>
+        <p class="text-muted-foreground text-sm">No secrets match your search.</p>
       {/if}
     </div>
 
   <!-- Secrets list -->
   {:else}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
+    <div class="rounded-xl border border-border bg-card overflow-hidden">
       {#each filteredSecrets as secret, i (secret.id)}
         <div
-          class="flex items-center gap-4 px-5 py-4 transition hover:bg-white/[0.03]
-            {i < filteredSecrets.length - 1 ? 'border-b border-white/[0.05]' : ''}"
+          class="flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
+            {i < filteredSecrets.length - 1 ? 'border-b border-border/50' : ''}"
         >
           <!-- Icon -->
-          <div class="rounded-lg bg-white/[0.05] p-2 shrink-0">
-            <KeyRound class="h-4 w-4 text-[#94A3B8]" />
+          <div class="rounded-lg bg-accent/60 p-2 shrink-0">
+            <KeyRound class="h-4 w-4 text-muted-foreground" />
           </div>
 
           <!-- Name & description -->
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2.5">
-              <span class="text-sm font-semibold text-[#F8FAFC] font-mono truncate">{secret.name}</span>
+              <span class="text-sm font-semibold text-foreground font-mono truncate">{secret.name}</span>
               {#if secret.provider}
                 <span class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {providerBadgeColor(secret.provider)}">
                   {secret.provider}
@@ -410,20 +410,20 @@
               {/if}
             </div>
             {#if secret.description}
-              <p class="text-xs text-[#94A3B8] mt-0.5 truncate">{secret.description}</p>
+              <p class="text-xs text-muted-foreground mt-0.5 truncate">{secret.description}</p>
             {/if}
           </div>
 
           <!-- Value placeholder -->
           <div class="hidden sm:flex items-center gap-1.5 shrink-0">
-            <ShieldAlert class="h-3.5 w-3.5 text-[#94A3B8]" />
-            <span class="text-xs text-[#94A3B8] font-mono">••••••••</span>
+            <ShieldAlert class="h-3.5 w-3.5 text-muted-foreground" />
+            <span class="text-xs text-muted-foreground font-mono">••••••••</span>
           </div>
 
           <!-- Created date -->
           <div class="hidden md:flex items-center gap-1.5 shrink-0">
-            <Clock class="h-3.5 w-3.5 text-[#94A3B8]" />
-            <span class="text-xs text-[#94A3B8] tabular-nums">{formatDate(secret.createdAt)}</span>
+            <Clock class="h-3.5 w-3.5 text-muted-foreground" />
+            <span class="text-xs text-muted-foreground tabular-nums">{formatDate(secret.createdAt)}</span>
           </div>
 
           <!-- Actions -->
@@ -440,7 +440,7 @@
                 </button>
                 <button
                   onclick={() => { confirmRotateId = null; }}
-                  class="rounded-lg border border-white/[0.08] px-2 py-1.5 text-xs text-[#94A3B8] hover:bg-white/[0.03]"
+                  class="rounded-lg border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/40"
                 >
                   Cancel
                 </button>
@@ -456,7 +456,7 @@
                 </button>
                 <button
                   onclick={() => { confirmDeleteId = null; }}
-                  class="rounded-lg border border-white/[0.08] px-2 py-1.5 text-xs text-[#94A3B8] hover:bg-white/[0.03]"
+                  class="rounded-lg border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/40"
                 >
                   Cancel
                 </button>
@@ -466,7 +466,7 @@
                 onclick={() => { confirmRotateId = secret.id; confirmDeleteId = null; }}
                 disabled={rotatingId === secret.id}
                 title="Rotate secret"
-                class="rounded-lg p-2 text-[#94A3B8] transition-colors hover:bg-white/[0.05] hover:text-amber-400 disabled:opacity-50"
+                class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-amber-400 disabled:opacity-50"
               >
                 <RotateCw class="h-4 w-4 {rotatingId === secret.id ? 'animate-spin' : ''}" />
               </button>
@@ -474,7 +474,7 @@
                 onclick={() => { confirmDeleteId = secret.id; confirmRotateId = null; }}
                 disabled={deletingId === secret.id}
                 title="Delete secret"
-                class="rounded-lg p-2 text-[#94A3B8] transition-colors hover:bg-white/[0.05] hover:text-red-400 disabled:opacity-50"
+                class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-red-400 disabled:opacity-50"
               >
                 <Trash2 class="h-4 w-4" />
               </button>
@@ -485,10 +485,10 @@
     </div>
 
     <!-- Summary -->
-    <p class="text-xs text-[#94A3B8] text-center">
+    <p class="text-xs text-muted-foreground text-center">
       {filteredSecrets.length} secret{filteredSecrets.length !== 1 ? 's' : ''} stored
       {#if searchQuery.trim() && filteredSecrets.length !== secrets.length}
-        <span class="text-[#94A3B8]/60">(filtered from {secrets.length} total)</span>
+        <span class="text-muted-foreground/60">(filtered from {secrets.length} total)</span>
       {/if}
     </p>
   {/if}

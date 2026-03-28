@@ -202,8 +202,8 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-[#F8FAFC]">Routines</h1>
-      <p class="mt-1 text-sm text-[#94A3B8]">Scheduled recurring tasks and automations</p>
+      <h1 class="text-2xl font-bold text-foreground">Routines</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Scheduled recurring tasks and automations</p>
     </div>
     <button
       onclick={() => (showCreate = !showCreate)}
@@ -218,38 +218,38 @@
   {#if showCreate}
     <form
       onsubmit={(e) => { e.preventDefault(); createRoutine(); }}
-      class="rounded-xl border border-white/[0.08] bg-[#121218] p-5 space-y-4"
+      class="rounded-xl border border-border bg-card p-5 space-y-4"
     >
       <div>
-        <label for="routine-title" class="block text-sm font-medium text-[#F8FAFC] mb-1">Title</label>
+        <label for="routine-title" class="block text-sm font-medium text-foreground mb-1">Title</label>
         <input
           id="routine-title"
           bind:value={newTitle}
           placeholder="e.g. Nightly code review sweep"
-          class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
       </div>
       <div>
-        <label for="routine-desc" class="block text-sm font-medium text-[#F8FAFC] mb-1">
-          Description <span class="text-[#94A3B8] font-normal">(optional)</span>
+        <label for="routine-desc" class="block text-sm font-medium text-foreground mb-1">
+          Description <span class="text-muted-foreground font-normal">(optional)</span>
         </label>
         <textarea
           id="routine-desc"
           bind:value={newDescription}
           rows={3}
           placeholder="What does this routine do?"
-          class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
         ></textarea>
       </div>
       <div>
-        <label for="routine-agent" class="block text-sm font-medium text-[#F8FAFC] mb-1">
-          Assignee Agent <span class="text-[#94A3B8] font-normal">(optional)</span>
+        <label for="routine-agent" class="block text-sm font-medium text-foreground mb-1">
+          Assignee Agent <span class="text-muted-foreground font-normal">(optional)</span>
         </label>
         <select
           id="routine-agent"
           bind:value={newAssigneeAgentId}
           disabled={agentsLoading}
-          class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
           <option value="">No agent assigned</option>
           {#each agents as agent}
@@ -257,7 +257,7 @@
           {/each}
         </select>
         {#if agentsLoading}
-          <p class="text-xs text-[#94A3B8] mt-1">Loading agents...</p>
+          <p class="text-xs text-muted-foreground mt-1">Loading agents...</p>
         {/if}
       </div>
       <div class="flex items-center gap-3">
@@ -271,7 +271,7 @@
         <button
           type="button"
           onclick={() => { showCreate = false; newTitle = ''; newDescription = ''; newAssigneeAgentId = ''; }}
-          class="rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#94A3B8] hover:bg-white/[0.03]"
+          class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40"
         >
           Cancel
         </button>
@@ -288,7 +288,7 @@
           class="rounded-lg px-3 py-1.5 text-sm font-medium transition
             {activeFilter === filter
               ? 'bg-[#2563EB] text-white'
-              : 'bg-white/[0.05] text-[#94A3B8] hover:bg-white/[0.08] hover:text-[#F8FAFC]'}"
+              : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
         >
           {filterLabel(filter)}
           <span class="ml-1 text-xs opacity-70">({countByFilter(filter)})</span>
@@ -297,12 +297,12 @@
     </div>
 
     <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
       <input
         type="text"
         placeholder="Search routines..."
         bind:value={searchQuery}
-        class="w-full sm:w-64 rounded-lg border border-white/[0.08] bg-[#121218] pl-9 pr-3 py-2 text-sm text-[#F8FAFC] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#2563EB] transition"
+        class="w-full sm:w-64 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
       />
     </div>
   </div>
@@ -311,7 +311,7 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(5) as _}
-        <div class="h-20 animate-pulse rounded-xl border border-white/[0.08] bg-[#121218]"></div>
+        <div class="h-20 animate-pulse rounded-xl border border-border bg-card"></div>
       {/each}
     </div>
 
@@ -330,12 +330,12 @@
   <!-- Empty -->
   {:else if filteredRoutines.length === 0}
     <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <RefreshCw class="h-10 w-10 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <RefreshCw class="h-10 w-10 text-muted-foreground" />
       </div>
       {#if routines.length === 0}
-        <h3 class="text-lg font-medium text-[#F8FAFC]">No routines defined</h3>
-        <p class="mt-1 text-sm text-[#94A3B8]">Create a routine to automate recurring tasks</p>
+        <h3 class="text-lg font-medium text-foreground">No routines defined</h3>
+        <p class="mt-1 text-sm text-muted-foreground">Create a routine to automate recurring tasks</p>
         <button
           onclick={() => (showCreate = true)}
           class="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -344,18 +344,18 @@
           New Routine
         </button>
       {:else}
-        <p class="text-[#94A3B8] text-sm">No routines match the current filters.</p>
+        <p class="text-muted-foreground text-sm">No routines match the current filters.</p>
       {/if}
     </div>
 
   <!-- Routines list -->
   {:else}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
+    <div class="rounded-xl border border-border bg-card overflow-hidden">
       {#each filteredRoutines as routine, i (routine.id)}
         <a
           href="/{prefix}/routines/{routine.id}"
-          class="group flex items-center gap-4 px-5 py-4 transition hover:bg-white/[0.03]
-            {i < filteredRoutines.length - 1 ? 'border-b border-white/[0.05]' : ''}"
+          class="group flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
+            {i < filteredRoutines.length - 1 ? 'border-b border-border/50' : ''}"
         >
           <!-- Status dot -->
           <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(routine.status)}"></span>
@@ -363,7 +363,7 @@
           <!-- Content -->
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-3 mb-0.5">
-              <h3 class="text-sm font-semibold text-[#F8FAFC] truncate group-hover:text-blue-400 transition-colors">
+              <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-blue-400 transition-colors">
                 {routine.title}
               </h3>
               <span class="inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {statusBadgeClass(routine.status)}">
@@ -374,14 +374,14 @@
             <div class="flex items-center gap-3 mt-1">
               <!-- Assignee agent ID -->
               {#if routine.assigneeAgentId || routine.agentName}
-                <span class="text-xs text-[#94A3B8] font-mono truncate max-w-[120px]">
+                <span class="text-xs text-muted-foreground font-mono truncate max-w-[120px]">
                   {routine.agentName ?? truncateId(routine.assigneeAgentId)}
                 </span>
               {/if}
 
               <!-- Schedule -->
               {#if scheduleDisplay(routine)}
-                <span class="inline-flex items-center gap-1 text-xs text-[#94A3B8]">
+                <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
                   <Clock class="w-3 h-3 shrink-0" />
                   <span class="font-mono">{scheduleDisplay(routine)}</span>
                 </span>
@@ -390,18 +390,18 @@
           </div>
 
           <!-- Last run -->
-          <span class="text-xs text-[#94A3B8] shrink-0 tabular-nums w-20 text-right">
+          <span class="text-xs text-muted-foreground shrink-0 tabular-nums w-20 text-right">
             {timeAgo(routine.lastRunAt)}
           </span>
 
           <!-- Arrow -->
-          <ChevronRight class="h-4 w-4 shrink-0 text-[#94A3B8] opacity-0 transition-opacity group-hover:opacity-100" />
+          <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
         </a>
       {/each}
     </div>
 
     <!-- Count -->
-    <p class="text-xs text-[#94A3B8] text-right">
+    <p class="text-xs text-muted-foreground text-right">
       {filteredRoutines.length} routine{filteredRoutines.length !== 1 ? 's' : ''}
     </p>
   {/if}

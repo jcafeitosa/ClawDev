@@ -207,7 +207,7 @@
 </script>
 
 {#if !loading && run}
-  <div class="rounded-lg bg-[#121218] border border-zinc-800 border-l-4 {borderColor} overflow-hidden">
+  <div class="rounded-lg bg-card border border-zinc-800 border-l-4 {borderColor} overflow-hidden">
     <!-- Header -->
     <div class="px-4 py-3 flex items-center justify-between">
       <div class="flex items-center gap-2">

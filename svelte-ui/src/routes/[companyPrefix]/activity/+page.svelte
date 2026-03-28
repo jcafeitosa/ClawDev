@@ -169,17 +169,17 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-[#F8FAFC]">Activity</h1>
-      <p class="mt-1 text-sm text-[#94A3B8]">Recent events across your workspace</p>
+      <h1 class="text-2xl font-bold text-foreground">Activity</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Recent events across your workspace</p>
     </div>
 
     <!-- Filter dropdown -->
     <div class="relative">
       <div class="inline-flex items-center gap-2">
-        <Filter class="h-4 w-4 text-[#94A3B8]" />
+        <Filter class="h-4 w-4 text-muted-foreground" />
         <select
           bind:value={filterType}
-          class="appearance-none rounded-lg border border-white/[0.08] bg-[#121218] px-3 py-2 pr-8 text-sm text-[#F8FAFC] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          class="appearance-none rounded-lg border border-border bg-card px-3 py-2 pr-8 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
           {#each entityTypes as t}
             <option value={t.value}>{t.label}</option>
@@ -193,11 +193,11 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(8) as _}
-        <div class="flex items-center gap-4 rounded-xl border border-white/[0.08] bg-[#121218] p-4">
-          <div class="h-9 w-9 animate-pulse rounded-lg bg-white/[0.05]"></div>
+        <div class="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
+          <div class="h-9 w-9 animate-pulse rounded-lg bg-accent/60"></div>
           <div class="flex-1 space-y-2">
-            <div class="h-4 w-3/4 animate-pulse rounded bg-white/[0.05]"></div>
-            <div class="h-3 w-1/4 animate-pulse rounded bg-white/[0.05]"></div>
+            <div class="h-4 w-3/4 animate-pulse rounded bg-accent/60"></div>
+            <div class="h-3 w-1/4 animate-pulse rounded bg-accent/60"></div>
           </div>
         </div>
       {/each}
@@ -205,11 +205,11 @@
   {:else if activities.length === 0}
     <!-- Empty state -->
     <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <Activity class="h-10 w-10 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <Activity class="h-10 w-10 text-muted-foreground" />
       </div>
-      <h3 class="text-lg font-medium text-[#F8FAFC]">No activity yet</h3>
-      <p class="mt-1 text-sm text-[#94A3B8]">Events will appear here as your team works</p>
+      <h3 class="text-lg font-medium text-foreground">No activity yet</h3>
+      <p class="mt-1 text-sm text-muted-foreground">Events will appear here as your team works</p>
     </div>
   {:else}
     <!-- Activity feed grouped by date -->
@@ -218,8 +218,8 @@
         <!-- Date group header -->
         <div>
           <div class="sticky top-0 z-10 flex items-center gap-3 py-2">
-            <span class="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">{group.label}</span>
-            <div class="h-px flex-1 bg-white/[0.06]"></div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</span>
+            <div class="h-px flex-1 bg-accent/75"></div>
           </div>
 
           <div class="space-y-1">
@@ -227,7 +227,7 @@
               {@const IconComponent = getIcon(item.entityType ?? item.type)}
               {@const colorClass = getIconColor(item.entityType ?? item.type)}
               {@const link = entityLink(item)}
-              <div class="flex items-start gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-white/[0.03] border-b border-white/[0.05] last:border-0">
+              <div class="flex items-start gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-accent/40 border-b border-border/50 last:border-0">
                 <!-- Icon -->
                 <div class="shrink-0 rounded-lg p-2 {colorClass}">
                   <IconComponent class="h-4 w-4" />
@@ -235,9 +235,9 @@
 
                 <!-- Content -->
                 <div class="min-w-0 flex-1">
-                  <p class="text-sm text-[#F8FAFC]">
-                    <span class="font-medium {actorIsSystem(item) ? 'text-[#94A3B8]' : ''}">{actorDisplay(item)}</span>
-                    <span class="text-[#94A3B8]"> {item.action ?? item.description ?? item.message ?? 'performed an action'}</span>
+                  <p class="text-sm text-foreground">
+                    <span class="font-medium {actorIsSystem(item) ? 'text-muted-foreground' : ''}">{actorDisplay(item)}</span>
+                    <span class="text-muted-foreground"> {item.action ?? item.description ?? item.message ?? 'performed an action'}</span>
                     {#if link && (item.entityName || item.entityTitle)}
                       <a href={link} class="font-medium text-blue-400 hover:text-blue-300 hover:underline">
                         {item.entityName ?? item.entityTitle}
@@ -248,7 +248,7 @@
                       </a>
                     {/if}
                   </p>
-                  <p class="mt-0.5 text-xs text-[#94A3B8]">{timeAgo(item.createdAt ?? item.timestamp)}</p>
+                  <p class="mt-0.5 text-xs text-muted-foreground">{timeAgo(item.createdAt ?? item.timestamp)}</p>
                 </div>
               </div>
             {/each}
@@ -263,7 +263,7 @@
         <button
           onclick={loadMore}
           disabled={loadingMore}
-          class="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-[#121218] px-5 py-2.5 text-sm font-medium text-[#F8FAFC] transition-colors hover:bg-white/[0.05] disabled:opacity-50"
+          class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
         >
           {#if loadingMore}
             <Loader2 class="h-4 w-4 animate-spin" />

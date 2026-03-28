@@ -243,8 +243,8 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-[#F8FAFC]">Members</h1>
-      <p class="mt-1 text-sm text-[#94A3B8]">Manage team access and roles</p>
+      <h1 class="text-2xl font-bold text-foreground">Members</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Manage team access and roles</p>
     </div>
     <button
       onclick={() => { showInviteForm = !showInviteForm; }}
@@ -262,14 +262,14 @@
 
   <!-- Invite form -->
   {#if showInviteForm}
-    <section class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
-      <div class="flex items-center gap-3 px-5 py-4 border-b border-white/[0.05]">
+    <section class="rounded-xl border border-border bg-card overflow-hidden">
+      <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50">
         <div class="rounded-lg bg-blue-500/10 p-2">
           <Mail class="h-4 w-4 text-blue-400" />
         </div>
         <div>
-          <h2 class="text-sm font-semibold text-[#F8FAFC]">Invite Team Member</h2>
-          <p class="text-xs text-[#94A3B8]">Send an invitation to join this company</p>
+          <h2 class="text-sm font-semibold text-foreground">Invite Team Member</h2>
+          <p class="text-xs text-muted-foreground">Send an invitation to join this company</p>
         </div>
       </div>
 
@@ -279,7 +279,7 @@
       >
         <!-- Email -->
         <div>
-          <label for="invite-email" class="block text-sm font-medium text-[#F8FAFC] mb-1">
+          <label for="invite-email" class="block text-sm font-medium text-foreground mb-1">
             Email <span class="text-red-400">*</span>
           </label>
           <input
@@ -288,43 +288,43 @@
             bind:value={inviteEmail}
             placeholder="colleague@company.com"
             required
-            class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <!-- Role -->
         <div>
-          <label for="invite-role" class="block text-sm font-medium text-[#F8FAFC] mb-1">
+          <label for="invite-role" class="block text-sm font-medium text-foreground mb-1">
             Role <span class="text-red-400">*</span>
           </label>
           <div class="relative">
             <select
               id="invite-role"
               bind:value={inviteRole}
-              class="w-full appearance-none rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 pr-10 text-sm text-[#F8FAFC] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              class="w-full appearance-none rounded-lg border border-border bg-accent/60 px-4 py-2 pr-10 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               {#each ROLE_OPTIONS as opt}
-                <option value={opt.value} class="bg-[#121218] text-[#F8FAFC]">{opt.label}</option>
+                <option value={opt.value} class="bg-card text-foreground">{opt.label}</option>
               {/each}
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[#94A3B8]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           </div>
-          <p class="mt-1 text-xs text-[#94A3B8]">
+          <p class="mt-1 text-xs text-muted-foreground">
             {ROLE_OPTIONS.find((o) => o.value === inviteRole)?.description ?? ''}
           </p>
         </div>
 
         <!-- Message -->
         <div>
-          <label for="invite-message" class="block text-sm font-medium text-[#F8FAFC] mb-1">
-            Message <span class="text-[#94A3B8] font-normal">(optional)</span>
+          <label for="invite-message" class="block text-sm font-medium text-foreground mb-1">
+            Message <span class="text-muted-foreground font-normal">(optional)</span>
           </label>
           <textarea
             id="invite-message"
             bind:value={inviteMessage}
             placeholder="Add a personal message to the invitation..."
             rows="3"
-            class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] resize-none focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] resize-none focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           ></textarea>
         </div>
 
@@ -353,7 +353,7 @@
           <button
             type="button"
             onclick={resetInviteForm}
-            class="rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#94A3B8] hover:bg-white/[0.03] transition-colors"
+            class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40 transition-colors"
           >
             Cancel
           </button>
@@ -365,11 +365,11 @@
   <!-- Tabs + Search -->
   <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <!-- Tabs -->
-    <div class="flex items-center gap-1 border-b border-white/[0.08]">
+    <div class="flex items-center gap-1 border-b border-border">
       <button
         onclick={() => { activeTab = 'all'; }}
         class="relative px-4 py-2.5 text-sm font-medium transition-colors
-          {activeTab === 'all' ? 'text-[#F8FAFC]' : 'text-[#94A3B8] hover:text-[#F8FAFC]'}"
+          {activeTab === 'all' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
       >
         All
         <span class="ml-1 text-xs opacity-70">({members.length})</span>
@@ -380,7 +380,7 @@
       <button
         onclick={() => { activeTab = 'active'; }}
         class="relative px-4 py-2.5 text-sm font-medium transition-colors
-          {activeTab === 'active' ? 'text-[#F8FAFC]' : 'text-[#94A3B8] hover:text-[#F8FAFC]'}"
+          {activeTab === 'active' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
       >
         Active
         <span class="ml-1 text-xs opacity-70">({activeMembers.length})</span>
@@ -391,7 +391,7 @@
       <button
         onclick={() => { activeTab = 'pending'; }}
         class="relative px-4 py-2.5 text-sm font-medium transition-colors
-          {activeTab === 'pending' ? 'text-[#F8FAFC]' : 'text-[#94A3B8] hover:text-[#F8FAFC]'}"
+          {activeTab === 'pending' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
       >
         Pending
         {#if pendingMembers.length > 0}
@@ -409,12 +409,12 @@
 
     <!-- Search -->
     <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
       <input
         type="text"
         placeholder="Search members..."
         bind:value={searchQuery}
-        class="w-full sm:w-64 rounded-lg border border-white/[0.08] bg-[#121218] pl-9 pr-3 py-2 text-sm text-[#F8FAFC] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#2563EB] transition"
+        class="w-full sm:w-64 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
       />
     </div>
   </div>
@@ -423,7 +423,7 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(5) as _}
-        <div class="h-[72px] animate-pulse rounded-xl bg-[#121218] border border-white/[0.08]"></div>
+        <div class="h-[72px] animate-pulse rounded-xl bg-card border border-border"></div>
       {/each}
     </div>
 
@@ -450,12 +450,12 @@
   <!-- Empty -->
   {:else if filteredMembers.length === 0}
     <div class="flex flex-col items-center justify-center py-16 text-center">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <Users class="w-8 h-8 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <Users class="w-8 h-8 text-muted-foreground" />
       </div>
       {#if members.length === 0}
-        <h3 class="text-lg font-medium text-[#F8FAFC]">No members yet</h3>
-        <p class="mt-1 text-sm text-[#94A3B8]">Invite your first team member to get started.</p>
+        <h3 class="text-lg font-medium text-foreground">No members yet</h3>
+        <p class="mt-1 text-sm text-muted-foreground">Invite your first team member to get started.</p>
         <button
           onclick={() => { showInviteForm = true; }}
           class="mt-4 text-sm text-[#2563EB] hover:underline"
@@ -463,17 +463,17 @@
           Send your first invite
         </button>
       {:else}
-        <p class="text-[#94A3B8] text-sm">No members match your search or filter.</p>
+        <p class="text-muted-foreground text-sm">No members match your search or filter.</p>
       {/if}
     </div>
 
   <!-- Members list -->
   {:else}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
+    <div class="rounded-xl border border-border bg-card overflow-hidden">
       {#each filteredMembers as member, i (member.id)}
         <div
-          class="flex items-center gap-4 px-5 py-4 transition hover:bg-white/[0.03]
-            {i < filteredMembers.length - 1 ? 'border-b border-white/[0.05]' : ''}"
+          class="flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
+            {i < filteredMembers.length - 1 ? 'border-b border-border/50' : ''}"
         >
           <!-- Avatar -->
           <div class="shrink-0">
@@ -484,7 +484,7 @@
                 class="h-9 w-9 rounded-full object-cover"
               />
             {:else}
-              <div class="flex h-9 w-9 items-center justify-center rounded-full bg-white/[0.08] text-xs font-semibold text-[#F8FAFC]">
+              <div class="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-xs font-semibold text-foreground">
                 {memberInitials(member)}
               </div>
             {/if}
@@ -493,7 +493,7 @@
           <!-- Name & email -->
           <div class="min-w-0 flex-1">
             <div class="flex items-center gap-2.5">
-              <span class="text-sm font-semibold text-[#F8FAFC] truncate">
+              <span class="text-sm font-semibold text-foreground truncate">
                 {member.name ?? member.email}
               </span>
               <span class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {roleBadgeColor(member.role)}">
@@ -504,14 +504,14 @@
               </span>
             </div>
             {#if member.name}
-              <p class="text-xs text-[#94A3B8] mt-0.5 truncate">{member.email}</p>
+              <p class="text-xs text-muted-foreground mt-0.5 truncate">{member.email}</p>
             {/if}
           </div>
 
           <!-- Joined date -->
           <div class="hidden md:flex items-center gap-1.5 shrink-0">
-            <Clock class="h-3.5 w-3.5 text-[#94A3B8]" />
-            <span class="text-xs text-[#94A3B8] tabular-nums">
+            <Clock class="h-3.5 w-3.5 text-muted-foreground" />
+            <span class="text-xs text-muted-foreground tabular-nums">
               {member.status === 'pending' ? 'Invited ' + timeAgo(member.createdAt) : formatDate(member.joinedAt ?? member.createdAt)}
             </span>
           </div>
@@ -530,7 +530,7 @@
                   </button>
                   <button
                     onclick={() => { confirmRevokeId = null; }}
-                    class="rounded-lg border border-white/[0.08] px-2 py-1.5 text-xs text-[#94A3B8] hover:bg-white/[0.03]"
+                    class="rounded-lg border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/40"
                   >
                     Cancel
                   </button>
@@ -540,7 +540,7 @@
                   onclick={() => { confirmRevokeId = member.id; }}
                   disabled={revokingId === member.id}
                   title="Revoke access"
-                  class="rounded-lg p-2 text-[#94A3B8] transition-colors hover:bg-white/[0.05] hover:text-red-400 disabled:opacity-50"
+                  class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-red-400 disabled:opacity-50"
                 >
                   <UserMinus class="h-4 w-4" />
                 </button>
@@ -554,10 +554,10 @@
     </div>
 
     <!-- Summary -->
-    <p class="text-xs text-[#94A3B8] text-center">
+    <p class="text-xs text-muted-foreground text-center">
       {filteredMembers.length} member{filteredMembers.length !== 1 ? 's' : ''}
       {#if searchQuery.trim() && filteredMembers.length !== tabbedMembers.length}
-        <span class="text-[#94A3B8]/60">(filtered from {tabbedMembers.length})</span>
+        <span class="text-muted-foreground/60">(filtered from {tabbedMembers.length})</span>
       {/if}
     </p>
   {/if}

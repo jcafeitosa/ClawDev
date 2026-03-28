@@ -151,7 +151,7 @@
     critical: 'text-[#EF4444] bg-red-500/15 border-red-500/30',
     high: 'text-[#F97316] bg-orange-500/15 border-orange-500/30',
     medium: 'text-[#F59E0B] bg-yellow-500/15 border-yellow-500/30',
-    low: 'text-[#94A3B8] bg-zinc-500/15 border-zinc-500/30',
+    low: 'text-muted-foreground bg-zinc-500/15 border-zinc-500/30',
   };
 
   const PRIORITY_LABELS: Record<string, string> = {
@@ -246,7 +246,7 @@
 <div class="p-6 space-y-6">
   <!-- Header -->
   <div class="flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-[#F8FAFC]">Issues</h1>
+    <h1 class="text-xl font-semibold text-foreground">Issues</h1>
     <a
       href="/{$page.params.companyPrefix}/issues/new"
       class="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1d4ed8] active:scale-[0.98]"
@@ -262,18 +262,18 @@
     <div class="relative" data-dropdown>
       <button
         onclick={() => { statusDropdownOpen = !statusDropdownOpen; priorityDropdownOpen = false; }}
-        class="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-[#121218] px-3 py-2 text-sm text-[#F8FAFC] transition hover:bg-white/[0.05]"
+        class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition hover:bg-accent/60"
       >
         {selectedStatusLabel()}
-        <ChevronDown class="w-3.5 h-3.5 text-[#94A3B8]" />
+        <ChevronDown class="w-3.5 h-3.5 text-muted-foreground" />
       </button>
       {#if statusDropdownOpen}
-        <div class="absolute top-full left-0 z-20 mt-1 w-44 rounded-lg border border-white/[0.08] bg-[#121218] py-1 shadow-xl">
+        <div class="absolute top-full left-0 z-20 mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-xl">
           {#each ALL_STATUSES as s}
             <button
               onclick={() => { statusFilter = s.value; statusDropdownOpen = false; }}
               class="flex w-full items-center gap-2 px-3 py-1.5 text-sm transition
-                {statusFilter === s.value ? 'text-white bg-white/[0.08]' : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/[0.03]'}"
+                {statusFilter === s.value ? 'text-white bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-accent/40'}"
             >
               {#if s.value}
                 <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(s.value)}"></span>
@@ -289,18 +289,18 @@
     <div class="relative" data-dropdown>
       <button
         onclick={() => { priorityDropdownOpen = !priorityDropdownOpen; statusDropdownOpen = false; }}
-        class="inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-[#121218] px-3 py-2 text-sm text-[#F8FAFC] transition hover:bg-white/[0.05]"
+        class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition hover:bg-accent/60"
       >
         {selectedPriorityLabel()}
-        <ChevronDown class="w-3.5 h-3.5 text-[#94A3B8]" />
+        <ChevronDown class="w-3.5 h-3.5 text-muted-foreground" />
       </button>
       {#if priorityDropdownOpen}
-        <div class="absolute top-full left-0 z-20 mt-1 w-44 rounded-lg border border-white/[0.08] bg-[#121218] py-1 shadow-xl">
+        <div class="absolute top-full left-0 z-20 mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-xl">
           {#each ALL_PRIORITIES as p}
             <button
               onclick={() => { priorityFilter = p.value; priorityDropdownOpen = false; }}
               class="flex w-full items-center gap-2 px-3 py-1.5 text-sm transition
-                {priorityFilter === p.value ? 'text-white bg-white/[0.08]' : 'text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/[0.03]'}"
+                {priorityFilter === p.value ? 'text-white bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-accent/40'}"
             >
               {#if p.value}
                 <span class="inline-flex items-center rounded border px-1 py-0 text-[10px] font-bold leading-relaxed {PRIORITY_COLORS[p.value] ?? ''}">
@@ -316,24 +316,24 @@
 
     <!-- Search -->
     <div class="relative flex-1 sm:max-w-xs">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
       <input
         type="text"
         placeholder="Search issues..."
         bind:value={searchQuery}
-        class="w-full rounded-lg border border-white/[0.08] bg-[#121218] pl-9 pr-3 py-2 text-sm text-[#F8FAFC] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#2563EB] transition"
+        class="w-full rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
       />
     </div>
 
     <!-- View toggle -->
-    <div class="flex items-center rounded-lg border border-white/[0.08] bg-[#121218] p-0.5 shrink-0">
+    <div class="flex items-center rounded-lg border border-border bg-card p-0.5 shrink-0">
       <button
         onclick={() => viewMode = 'list'}
         class={cn(
           "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
           viewMode === 'list'
-            ? "bg-[rgba(255,255,255,0.1)] text-[#F8FAFC]"
-            : "text-[#94A3B8] hover:text-[#F8FAFC]",
+            ? "bg-accent text-foreground"
+            : "text-muted-foreground hover:text-foreground",
         )}
         aria-label="List view"
       >
@@ -345,8 +345,8 @@
         class={cn(
           "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
           viewMode === 'board'
-            ? "bg-[rgba(255,255,255,0.1)] text-[#F8FAFC]"
-            : "text-[#94A3B8] hover:text-[#F8FAFC]",
+            ? "bg-accent text-foreground"
+            : "text-muted-foreground hover:text-foreground",
         )}
         aria-label="Board view"
       >
@@ -361,10 +361,10 @@
     {#if viewMode === 'board'}
       <div class="flex gap-3 overflow-x-auto pb-4">
         {#each Array(5) as _}
-          <div class="w-72 shrink-0 rounded-xl border border-white/[0.06] bg-[rgba(255,255,255,0.02)] p-3 space-y-2">
-            <div class="h-4 w-24 animate-pulse rounded bg-white/[0.06]"></div>
+          <div class="w-72 shrink-0 rounded-xl border border-border/50 bg-accent/25 p-3 space-y-2">
+            <div class="h-4 w-24 animate-pulse rounded bg-accent/75"></div>
             {#each Array(3) as __}
-              <div class="h-24 animate-pulse rounded-lg bg-white/[0.04]"></div>
+              <div class="h-24 animate-pulse rounded-lg bg-accent/50"></div>
             {/each}
           </div>
         {/each}
@@ -372,7 +372,7 @@
     {:else}
       <div class="space-y-3">
         {#each Array(8) as _}
-          <div class="h-[60px] animate-pulse rounded-xl bg-[#121218] border border-white/[0.08]"></div>
+          <div class="h-[60px] animate-pulse rounded-xl bg-card border border-border"></div>
         {/each}
       </div>
     {/if}
@@ -392,14 +392,14 @@
   <!-- Empty -->
   {:else if filteredIssues.length === 0}
     <div class="flex flex-col items-center justify-center py-16 text-center">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <ListTodo class="w-8 h-8 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <ListTodo class="w-8 h-8 text-muted-foreground" />
       </div>
       {#if issues.length === 0 && !statusFilter && !searchQuery.trim()}
-        <p class="text-[#94A3B8] text-sm">No issues yet.</p>
-        <p class="text-xs text-[#94A3B8]/60 mt-1">Create an issue to get started.</p>
+        <p class="text-muted-foreground text-sm">No issues yet.</p>
+        <p class="text-xs text-muted-foreground/60 mt-1">Create an issue to get started.</p>
       {:else}
-        <p class="text-[#94A3B8] text-sm">No issues match the current filters.</p>
+        <p class="text-muted-foreground text-sm">No issues match the current filters.</p>
       {/if}
     </div>
 
@@ -409,19 +409,19 @@
 
   <!-- List view -->
   {:else}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
+    <div class="rounded-xl border border-border bg-card overflow-hidden">
       {#each filteredIssues as issue, i (issue.id)}
         <a
           href="/{$page.params.companyPrefix}/issues/{issue.id}"
-          class="flex items-center gap-3 px-5 py-3 transition hover:bg-white/[0.03]
-            {i < filteredIssues.length - 1 ? 'border-b border-white/[0.05]' : ''}"
+          class="flex items-center gap-3 px-5 py-3 transition hover:bg-accent/40
+            {i < filteredIssues.length - 1 ? 'border-b border-border/50' : ''}"
         >
           <!-- Status dot -->
           <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(issue.status)}"></span>
 
           <!-- Identifier -->
           {#if issue.identifier}
-            <span class="text-xs font-mono text-[#94A3B8] shrink-0 w-20 truncate">
+            <span class="text-xs font-mono text-muted-foreground shrink-0 w-20 truncate">
               {issue.identifier}
             </span>
           {/if}
@@ -435,13 +435,13 @@
           {/if}
 
           <!-- Title -->
-          <span class="text-sm text-[#F8FAFC] truncate flex-1 min-w-0">
+          <span class="text-sm text-foreground truncate flex-1 min-w-0">
             {issue.title}
           </span>
 
           <!-- Priority badge -->
           {#if issue.priority && PRIORITY_LABELS[issue.priority]}
-            <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none shrink-0 {PRIORITY_COLORS[issue.priority] ?? 'text-[#94A3B8] bg-zinc-500/15 border-zinc-500/30'}">
+            <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none shrink-0 {PRIORITY_COLORS[issue.priority] ?? 'text-muted-foreground bg-zinc-500/15 border-zinc-500/30'}">
               {PRIORITY_LABELS[issue.priority]}
             </span>
           {/if}
@@ -458,7 +458,7 @@
                 </span>
               {/each}
               {#if issue.labels.length > 2}
-                <span class="text-[10px] text-[#94A3B8]">+{issue.labels.length - 2}</span>
+                <span class="text-[10px] text-muted-foreground">+{issue.labels.length - 2}</span>
               {/if}
             </div>
           {/if}
@@ -474,7 +474,7 @@
           {/if}
 
           <!-- Formatted date -->
-          <span class="text-xs text-[#94A3B8] shrink-0 tabular-nums text-right hidden sm:block" style="min-width: 6.5rem;">
+          <span class="text-xs text-muted-foreground shrink-0 tabular-nums text-right hidden sm:block" style="min-width: 6.5rem;">
             {formatDate(issue.updatedAt || issue.createdAt)}
           </span>
         </a>
@@ -482,7 +482,7 @@
     </div>
 
     <!-- Count -->
-    <p class="text-xs text-[#94A3B8] text-right">
+    <p class="text-xs text-muted-foreground text-right">
       {filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''}
     </p>
   {/if}

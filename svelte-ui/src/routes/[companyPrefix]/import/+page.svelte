@@ -101,8 +101,8 @@
 
 <div class="mx-auto max-w-lg p-6 space-y-6">
   <div>
-    <h1 class="text-xl font-bold text-[#F8FAFC]">Import Company Data</h1>
-    <p class="mt-1 text-sm text-[#94A3B8]">Upload a ZIP or JSON file to import data into your workspace</p>
+    <h1 class="text-xl font-bold text-foreground">Import Company Data</h1>
+    <p class="mt-1 text-sm text-muted-foreground">Upload a ZIP or JSON file to import data into your workspace</p>
   </div>
 
   <!-- Drop zone -->
@@ -115,9 +115,9 @@
       ondrop={onDrop}
       role="presentation"
     >
-      <Upload class="mb-3 h-8 w-8 text-[#94A3B8]" />
-      <p class="text-sm text-[#94A3B8]">Drag & drop a ZIP or JSON file, or</p>
-      <label class="mt-3 cursor-pointer rounded-lg border border-white/[0.08] bg-[#121218] px-4 py-2 text-sm font-medium text-[#F8FAFC] transition-colors hover:bg-white/[0.05]">
+      <Upload class="mb-3 h-8 w-8 text-muted-foreground" />
+      <p class="text-sm text-muted-foreground">Drag & drop a ZIP or JSON file, or</p>
+      <label class="mt-3 cursor-pointer rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60">
         Browse files
         <input type="file" accept=".zip,.json" class="hidden" onchange={onInput} />
       </label>
@@ -126,13 +126,13 @@
 
   <!-- File info -->
   {#if fileInfo && !done}
-    <div class="flex items-center gap-3 rounded-lg border border-white/[0.08] bg-[#121218] p-4">
+    <div class="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
       <FileArchive class="h-5 w-5 text-blue-400" />
       <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-[#F8FAFC] truncate">{fileInfo.name}</p>
-        <p class="text-xs text-[#94A3B8]">{fileInfo.size}</p>
+        <p class="text-sm font-medium text-foreground truncate">{fileInfo.name}</p>
+        <p class="text-xs text-muted-foreground">{fileInfo.size}</p>
       </div>
-      <button onclick={resetFile} class="text-xs text-[#94A3B8] hover:text-[#F8FAFC] transition-colors">Remove</button>
+      <button onclick={resetFile} class="text-xs text-muted-foreground hover:text-foreground transition-colors">Remove</button>
     </div>
   {/if}
 
@@ -141,7 +141,7 @@
     <button
       onclick={fetchPreview}
       disabled={previewing}
-      class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-[#121218] px-4 py-2.5 text-sm font-medium text-[#F8FAFC] transition-colors hover:bg-white/[0.05] disabled:opacity-50"
+      class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
     >
       {#if previewing}
         <Loader2 class="h-4 w-4 animate-spin" />
@@ -155,8 +155,8 @@
 
   <!-- Preview data -->
   {#if previewData && !done}
-    <div class="rounded-lg border border-white/[0.08] bg-[#121218] p-4 space-y-3">
-      <h3 class="text-sm font-medium text-[#F8FAFC]">Import Preview</h3>
+    <div class="rounded-lg border border-border bg-card p-4 space-y-3">
+      <h3 class="text-sm font-medium text-foreground">Import Preview</h3>
 
       <!-- Entity counts -->
       {#if previewData.counts || previewData.entities}
@@ -164,8 +164,8 @@
         <div class="space-y-1">
           {#each Object.entries(counts) as [key, value]}
             <div class="flex items-center justify-between text-sm">
-              <span class="capitalize text-[#94A3B8]">{key}</span>
-              <span class="font-medium text-[#F8FAFC]">{value} items</span>
+              <span class="capitalize text-muted-foreground">{key}</span>
+              <span class="font-medium text-foreground">{value} items</span>
             </div>
           {/each}
         </div>
@@ -184,10 +184,10 @@
 
       <!-- Collision strategy selector -->
       <div class="space-y-2">
-        <label class="text-xs font-medium text-[#94A3B8]">Collision Strategy</label>
+        <label class="text-xs font-medium text-muted-foreground">Collision Strategy</label>
         <select
           bind:value={collisionStrategy}
-          class="w-full appearance-none rounded-lg border border-white/[0.08] bg-[#0A0A0F] px-3 py-2 text-sm text-[#F8FAFC] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          class="w-full appearance-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
           <option value="skip">Skip existing - keep current data</option>
           <option value="overwrite">Overwrite - replace with imported data</option>
@@ -219,31 +219,31 @@
     <div class="rounded-lg border border-green-500/20 bg-green-500/5 p-5 space-y-4">
       <div class="flex items-center gap-3">
         <CheckCircle2 class="h-6 w-6 text-green-400" />
-        <h3 class="text-lg font-semibold text-[#F8FAFC]">Import Complete</h3>
+        <h3 class="text-lg font-semibold text-foreground">Import Complete</h3>
       </div>
 
       <div class="space-y-1">
         {#if importResults.created !== undefined}
           <div class="flex items-center justify-between text-sm">
-            <span class="text-[#94A3B8]">Created</span>
+            <span class="text-muted-foreground">Created</span>
             <span class="font-medium text-green-400">{importResults.created}</span>
           </div>
         {/if}
         {#if importResults.updated !== undefined}
           <div class="flex items-center justify-between text-sm">
-            <span class="text-[#94A3B8]">Updated</span>
+            <span class="text-muted-foreground">Updated</span>
             <span class="font-medium text-blue-400">{importResults.updated}</span>
           </div>
         {/if}
         {#if importResults.skipped !== undefined}
           <div class="flex items-center justify-between text-sm">
-            <span class="text-[#94A3B8]">Skipped</span>
-            <span class="font-medium text-[#94A3B8]">{importResults.skipped}</span>
+            <span class="text-muted-foreground">Skipped</span>
+            <span class="font-medium text-muted-foreground">{importResults.skipped}</span>
           </div>
         {/if}
         {#if importResults.errors !== undefined && importResults.errors > 0}
           <div class="flex items-center justify-between text-sm">
-            <span class="text-[#94A3B8]">Errors</span>
+            <span class="text-muted-foreground">Errors</span>
             <span class="font-medium text-red-400">{importResults.errors}</span>
           </div>
         {/if}
@@ -251,12 +251,12 @@
 
       <!-- Per-entity breakdown if available -->
       {#if importResults.details}
-        <div class="border-t border-white/[0.06] pt-3 space-y-1">
-          <h4 class="text-xs font-medium text-[#94A3B8]">Breakdown</h4>
+        <div class="border-t border-border/50 pt-3 space-y-1">
+          <h4 class="text-xs font-medium text-muted-foreground">Breakdown</h4>
           {#each Object.entries(importResults.details) as [entity, detail]}
             <div class="flex items-center justify-between text-sm">
-              <span class="capitalize text-[#94A3B8]">{entity}</span>
-              <span class="text-xs text-[#F8FAFC]">
+              <span class="capitalize text-muted-foreground">{entity}</span>
+              <span class="text-xs text-foreground">
                 {(detail as any).created ?? 0} created, {(detail as any).updated ?? 0} updated, {(detail as any).skipped ?? 0} skipped
               </span>
             </div>
@@ -266,7 +266,7 @@
 
       <button
         onclick={resetFile}
-        class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-[#121218] px-4 py-2.5 text-sm font-medium text-[#F8FAFC] transition-colors hover:bg-white/[0.05]"
+        class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
       >
         Import Another File
       </button>
@@ -275,11 +275,11 @@
     <!-- Fallback if no structured results -->
     <div class="flex flex-col items-center gap-3 rounded-lg border border-green-500/20 bg-green-500/5 p-6">
       <CheckCircle2 class="h-8 w-8 text-green-400" />
-      <h3 class="text-lg font-semibold text-[#F8FAFC]">Import Complete</h3>
-      <p class="text-sm text-[#94A3B8]">Your data has been imported successfully</p>
+      <h3 class="text-lg font-semibold text-foreground">Import Complete</h3>
+      <p class="text-sm text-muted-foreground">Your data has been imported successfully</p>
       <button
         onclick={resetFile}
-        class="mt-2 inline-flex items-center gap-2 rounded-lg border border-white/[0.08] bg-[#121218] px-4 py-2.5 text-sm font-medium text-[#F8FAFC] transition-colors hover:bg-white/[0.05]"
+        class="mt-2 inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
       >
         Import Another File
       </button>

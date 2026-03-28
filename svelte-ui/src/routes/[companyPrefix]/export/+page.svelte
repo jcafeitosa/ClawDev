@@ -91,8 +91,8 @@
 
 <div class="mx-auto max-w-lg p-6 space-y-6">
   <div>
-    <h1 class="text-xl font-bold text-[#F8FAFC]">Export Company</h1>
-    <p class="mt-1 text-sm text-[#94A3B8]">Select what to include in the export:</p>
+    <h1 class="text-xl font-bold text-foreground">Export Company</h1>
+    <p class="mt-1 text-sm text-muted-foreground">Select what to include in the export:</p>
   </div>
 
   <button onclick={toggleAll} class="text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors">
@@ -101,17 +101,17 @@
 
   <div class="space-y-2">
     {#each sections as s}
-      <label class="flex items-center gap-3 rounded-lg border border-white/[0.08] bg-[#121218] p-3 cursor-pointer transition-colors hover:bg-white/[0.03] {selected.has(s) ? 'border-blue-500/30' : ''}">
+      <label class="flex items-center gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer transition-colors hover:bg-accent/40 {selected.has(s) ? 'border-blue-500/30' : ''}">
         <input
           type="checkbox"
           checked={selected.has(s)}
           onchange={() => toggle(s)}
-          class="rounded border-white/20 bg-white/[0.05] text-blue-500 focus:ring-blue-500/30"
+          class="rounded border-white/20 bg-accent/60 text-blue-500 focus:ring-blue-500/30"
         />
-        <Package class="h-4 w-4 text-[#94A3B8]" />
-        <span class="text-sm capitalize text-[#F8FAFC]">{s}</span>
+        <Package class="h-4 w-4 text-muted-foreground" />
+        <span class="text-sm capitalize text-foreground">{s}</span>
         {#if previewData && previewData[s] !== undefined}
-          <span class="ml-auto text-xs text-[#94A3B8]">{previewData[s]} items</span>
+          <span class="ml-auto text-xs text-muted-foreground">{previewData[s]} items</span>
         {/if}
       </label>
     {/each}
@@ -122,7 +122,7 @@
     <button
       onclick={fetchPreview}
       disabled={previewing}
-      class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-white/[0.08] bg-[#121218] px-4 py-2.5 text-sm font-medium text-[#F8FAFC] transition-colors hover:bg-white/[0.05] disabled:opacity-50"
+      class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
     >
       {#if previewing}
         <Loader2 class="h-4 w-4 animate-spin" />
@@ -135,18 +135,18 @@
   {/if}
 
   {#if previewData}
-    <div class="rounded-lg border border-white/[0.08] bg-[#121218] p-4 space-y-2">
-      <h3 class="text-sm font-medium text-[#F8FAFC]">Export Preview</h3>
+    <div class="rounded-lg border border-border bg-card p-4 space-y-2">
+      <h3 class="text-sm font-medium text-foreground">Export Preview</h3>
       <div class="space-y-1">
         {#each [...selected] as s}
           <div class="flex items-center justify-between text-sm">
-            <span class="capitalize text-[#94A3B8]">{s}</span>
-            <span class="font-medium text-[#F8FAFC]">{previewData[s] ?? 0} items</span>
+            <span class="capitalize text-muted-foreground">{s}</span>
+            <span class="font-medium text-foreground">{previewData[s] ?? 0} items</span>
           </div>
         {/each}
-        <div class="mt-2 flex items-center justify-between border-t border-white/[0.06] pt-2 text-sm">
-          <span class="font-medium text-[#94A3B8]">Total</span>
-          <span class="font-bold text-[#F8FAFC]">
+        <div class="mt-2 flex items-center justify-between border-t border-border/50 pt-2 text-sm">
+          <span class="font-medium text-muted-foreground">Total</span>
+          <span class="font-bold text-foreground">
             {Object.entries(previewData).filter(([k]) => selected.has(k)).reduce((sum, [, v]) => sum + (typeof v === 'number' ? v : 0), 0)} items
           </span>
         </div>
@@ -157,11 +157,11 @@
   <!-- Progress indicator -->
   {#if exporting}
     <div class="space-y-2">
-      <div class="flex items-center justify-between text-xs text-[#94A3B8]">
+      <div class="flex items-center justify-between text-xs text-muted-foreground">
         <span>Exporting...</span>
         <span>{Math.round(exportProgress)}%</span>
       </div>
-      <div class="h-2 w-full overflow-hidden rounded-full bg-white/[0.05]">
+      <div class="h-2 w-full overflow-hidden rounded-full bg-accent/60">
         <div
           class="h-full rounded-full bg-blue-500 transition-all duration-300 ease-out"
           style="width: {exportProgress}%"

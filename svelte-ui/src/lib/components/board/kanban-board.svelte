@@ -156,21 +156,21 @@
       class={cn(
         'flex h-full w-72 shrink-0 flex-col rounded-xl border transition-all duration-150',
         isDropTarget
-          ? 'border-white/[0.2] bg-white/[0.04] shadow-lg shadow-black/20'
-          : 'border-white/[0.06] bg-white/[0.02]',
+          ? 'border-border bg-accent/50 shadow-lg shadow-black/20'
+          : 'border-border/50 bg-accent/25',
       )}
       ondragover={(e) => handleDragOver(e, col.status)}
       ondragleave={(e) => handleDragLeave(e, col.status)}
       ondrop={(e) => handleDrop(e, col.status)}
     >
       <!-- Column header -->
-      <div class="flex items-center gap-2.5 border-b border-white/[0.04] px-3 py-2.5">
+      <div class="flex items-center gap-2.5 border-b border-border/50 px-3 py-2.5">
         <span class="size-2.5 shrink-0 rounded-full" style="background-color: {col.color};"></span>
-        <span class="text-xs font-semibold uppercase tracking-wide text-[#F8FAFC]">
+        <span class="text-xs font-semibold uppercase tracking-wide text-foreground">
           {col.label}
         </span>
         <span
-          class="flex h-5 min-w-5 items-center justify-center rounded-full bg-white/[0.06] px-1.5 text-[10px] font-medium tabular-nums text-[#94A3B8]"
+          class="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent/75 px-1.5 text-[10px] font-medium tabular-nums text-muted-foreground"
         >
           {columnIssues.length}
         </span>
@@ -185,10 +185,10 @@
             ondragstart={(e) => handleDragStart(e, issue.id)}
             ondragend={handleDragEnd}
             class={cn(
-              'group/card block cursor-grab rounded-lg border bg-[#1a1a24] p-3 transition-all active:cursor-grabbing',
+              'group/card block cursor-grab rounded-lg border bg-secondary p-3 transition-all active:cursor-grabbing',
               draggedIssueId === issue.id
-                ? 'border-white/[0.2] opacity-40'
-                : 'border-white/[0.08] hover:border-white/[0.14] hover:bg-white/[0.03] hover:shadow-lg hover:shadow-black/20',
+                ? 'border-border opacity-40'
+                : 'border-border hover:border-border hover:bg-accent/40 hover:shadow-lg hover:shadow-black/20',
               movingIssueId === issue.id && 'animate-pulse opacity-60',
             )}
           >
@@ -200,7 +200,7 @@
               <!-- Top row: identifier + priority -->
               <div class="mb-1.5 flex items-center gap-2">
                 {#if issue.identifier}
-                  <span class="text-[11px] font-mono tracking-tight text-[#94A3B8]">
+                  <span class="text-[11px] font-mono tracking-tight text-muted-foreground">
                     {issue.identifier}
                   </span>
                 {/if}
@@ -218,7 +218,7 @@
               </div>
 
               <!-- Title -->
-              <p class="mb-2 line-clamp-2 text-sm leading-snug text-[#F8FAFC]">
+              <p class="mb-2 line-clamp-2 text-sm leading-snug text-foreground">
                 {issue.title}
               </p>
 
@@ -234,7 +234,7 @@
                     </span>
                   {/each}
                   {#if issue.labels.length > 3}
-                    <span class="text-[10px] text-[#94A3B8]">+{issue.labels.length - 3}</span>
+                    <span class="text-[10px] text-muted-foreground">+{issue.labels.length - 3}</span>
                   {/if}
                 </div>
               {/if}
@@ -243,22 +243,22 @@
               <div class="mt-auto flex items-center gap-2">
                 {#if assigneeInitial(issue)}
                   <div
-                    class="flex h-5 w-5 items-center justify-center rounded-full bg-white/[0.08] text-[10px] font-medium text-[#94A3B8]"
+                    class="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-muted-foreground"
                     title={assigneeTooltip(issue)}
                   >
                     {assigneeInitial(issue)}
                   </div>
                   {#if assigneeTooltip(issue)}
-                    <span class="truncate text-[11px] text-[#94A3B8]">{assigneeTooltip(issue)}</span>
+                    <span class="truncate text-[11px] text-muted-foreground">{assigneeTooltip(issue)}</span>
                   {/if}
                 {:else}
-                  <div class="flex h-5 w-5 items-center justify-center rounded-full bg-white/[0.04]">
-                    <User class="size-3 text-[#94A3B8]/40" />
+                  <div class="flex h-5 w-5 items-center justify-center rounded-full bg-accent/50">
+                    <User class="size-3 text-muted-foreground/40" />
                   </div>
                 {/if}
 
                 {#if issue.projectId}
-                  <FolderKanban class="ml-auto size-3 text-[#94A3B8]/50" />
+                  <FolderKanban class="ml-auto size-3 text-muted-foreground/50" />
                 {/if}
               </div>
             </a>
@@ -269,17 +269,17 @@
           <div
             class={cn(
               'flex items-center justify-center rounded-lg border-2 border-dashed py-10 transition-colors',
-              isDropTarget ? 'border-white/[0.2] bg-white/[0.03]' : 'border-white/[0.06]',
+              isDropTarget ? 'border-border bg-accent/40' : 'border-border/50',
             )}
           >
-            <p class="text-xs text-[#94A3B8]/50">No issues</p>
+            <p class="text-xs text-muted-foreground/50">No issues</p>
           </div>
         {/if}
       </div>
 
       <!-- Drop indicator at bottom of column -->
       {#if isDropTarget && columnIssues.length > 0}
-        <div class="mx-2 mb-2 h-1 rounded-full bg-white/[0.15] transition-all"></div>
+        <div class="mx-2 mb-2 h-1 rounded-full bg-accent transition-all"></div>
       {/if}
     </div>
   {/each}

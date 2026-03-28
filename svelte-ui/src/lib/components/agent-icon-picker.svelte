@@ -187,15 +187,15 @@
   <button
     bind:this={triggerEl}
     type="button"
-    class="flex items-center gap-2.5 rounded-lg border border-white/[0.08] bg-[#0A0A0F] px-3.5 py-2.5 text-sm text-[#F8FAFC] transition hover:border-white/[0.15] hover:bg-white/[0.03] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30"
+    class="flex items-center gap-2.5 rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground transition hover:border-border hover:bg-accent/40 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30"
     onclick={toggle}
     aria-haspopup="true"
     aria-expanded={open}
   >
-    <span class="flex h-7 w-7 items-center justify-center rounded-md bg-white/[0.06]">
-      <svelte:component this={currentIcon} class="size-4 text-[#94A3B8]" />
+    <span class="flex h-7 w-7 items-center justify-center rounded-md bg-accent/75">
+      <svelte:component this={currentIcon} class="size-4 text-muted-foreground" />
     </span>
-    <span class="text-[#CBD5E1]">{value || "Bot"}</span>
+    <span class="text-muted-foreground/80">{value || "Bot"}</span>
   </button>
 
   <!-- Popover -->
@@ -204,25 +204,25 @@
     <div
       bind:this={popoverEl}
       onkeydown={handleKeydown}
-      class="absolute left-0 top-full z-50 mt-2 w-[340px] rounded-xl border border-white/[0.1] bg-[#18181B] shadow-2xl shadow-black/50"
+      class="absolute left-0 top-full z-50 mt-2 w-[340px] rounded-xl border border-border bg-[#18181B] shadow-2xl shadow-black/50"
       role="dialog"
       aria-label="Icon picker"
     >
       <!-- Search -->
-      <div class="flex items-center gap-2 border-b border-white/[0.08] px-3">
-        <Search class="size-3.5 shrink-0 text-[#64748B]" />
+      <div class="flex items-center gap-2 border-b border-border px-3">
+        <Search class="size-3.5 shrink-0 text-muted-foreground" />
         <input
           bind:this={searchInputEl}
           bind:value={searchQuery}
           placeholder="Search icons..."
-          class="flex h-10 w-full bg-transparent text-sm text-[#F8FAFC] outline-none placeholder:text-[#475569]"
+          class="flex h-10 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-[#475569]"
           spellcheck="false"
           autocomplete="off"
         />
         {#if searchQuery}
           <button
             type="button"
-            class="shrink-0 rounded p-0.5 text-[#64748B] hover:text-[#F8FAFC] transition-colors"
+            class="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors"
             onclick={() => { searchQuery = ""; searchInputEl?.focus(); }}
             aria-label="Clear search"
           >
@@ -234,7 +234,7 @@
       <!-- Icon grid -->
       <div class="max-h-[280px] overflow-y-auto overscroll-contain p-2">
         {#if filteredIcons.length === 0}
-          <p class="py-8 text-center text-sm text-[#64748B]">No icons match "{searchQuery}"</p>
+          <p class="py-8 text-center text-sm text-muted-foreground">No icons match "{searchQuery}"</p>
         {:else}
           <div class="grid grid-cols-8 gap-1">
             {#each filteredIcons as icon (icon.name)}
@@ -243,7 +243,7 @@
                 class="group flex h-8 w-8 items-center justify-center rounded-md transition-colors
                   {value === icon.name
                     ? 'bg-[#2563EB]/20 ring-1 ring-[#2563EB]/60 text-[#60A5FA]'
-                    : 'text-[#94A3B8] hover:bg-white/[0.08] hover:text-[#F8FAFC]'}"
+                    : 'text-muted-foreground hover:bg-accent hover:text-foreground'}"
                 title={icon.name}
                 onclick={() => select(icon.name)}
               >
@@ -255,7 +255,7 @@
       </div>
 
       <!-- Footer -->
-      <div class="border-t border-white/[0.06] px-3 py-2">
+      <div class="border-t border-border/50 px-3 py-2">
         <p class="text-[11px] text-[#475569]">
           {filteredIcons.length} icon{filteredIcons.length === 1 ? "" : "s"} available
         </p>

@@ -126,13 +126,13 @@
   // CSS helpers
   // ---------------------------------------------------------------------------
   const inputCls =
-    "w-full rounded-lg border border-white/[0.08] bg-[#0A0A0F] px-3.5 py-2.5 text-sm text-[#F8FAFC] placeholder:text-[#475569] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30 transition";
+    "w-full rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground placeholder:text-[#475569] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30 transition";
   const selectCls =
-    "w-full appearance-none rounded-lg border border-white/[0.08] bg-[#0A0A0F] px-3.5 py-2.5 pr-9 text-sm text-[#F8FAFC] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30 transition cursor-pointer";
-  const labelCls = "block text-sm font-medium text-[#CBD5E1]";
-  const helpCls = "mt-1 text-xs text-[#64748B]";
+    "w-full appearance-none rounded-lg border border-border bg-background px-3.5 py-2.5 pr-9 text-sm text-foreground focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30 transition cursor-pointer";
+  const labelCls = "block text-sm font-medium text-muted-foreground/80";
+  const helpCls = "mt-1 text-xs text-muted-foreground";
   const sectionHeadingCls =
-    "flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#64748B] border-b border-white/[0.06] pb-2 mb-4";
+    "flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground border-b border-border/50 pb-2 mb-4";
 </script>
 
 <div class="space-y-8">
@@ -161,7 +161,7 @@
               <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
               <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>The Anthropic model to use for this agent.</p>
         </div>
@@ -179,7 +179,7 @@
               <option value="medium">Medium</option>
               <option value="high">High</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>Controls reasoning depth. Higher effort uses more tokens.</p>
         </div>
@@ -214,7 +214,7 @@
               <option value="o3">o3</option>
               <option value="o4-mini">o4-mini</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>The OpenAI model to use for code generation.</p>
         </div>
@@ -232,21 +232,21 @@
               <option value="medium">Medium</option>
               <option value="high">High</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>Controls how much reasoning the model applies.</p>
         </div>
 
-        <div class="flex items-center justify-between rounded-lg border border-white/[0.08] bg-[#0A0A0F] px-4 py-3">
+        <div class="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3">
           <div>
-            <span class="text-sm font-medium text-[#CBD5E1]">Web Search</span>
-            <p class="text-xs text-[#64748B] mt-0.5">Allow the agent to search the web for context.</p>
+            <span class="text-sm font-medium text-muted-foreground/80">Web Search</span>
+            <p class="text-xs text-muted-foreground mt-0.5">Allow the agent to search the web for context.</p>
           </div>
           <button
             type="button"
             role="switch"
             aria-checked={config.search ?? false}
-            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.search ? 'bg-[#2563EB]' : 'bg-white/[0.12]'}"
+            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.search ? 'bg-[#2563EB]' : 'bg-accent'}"
             onclick={() => toggleField("search")}
           >
             <span
@@ -282,7 +282,7 @@
               <option value="plan">Plan</option>
               <option value="ask">Ask</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>Plan mode generates a plan before executing; Ask mode is conversational.</p>
         </div>
@@ -301,21 +301,21 @@
               <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
               <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>The Google Gemini model to use.</p>
         </div>
 
-        <div class="flex items-center justify-between rounded-lg border border-white/[0.08] bg-[#0A0A0F] px-4 py-3">
+        <div class="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3">
           <div>
-            <span class="text-sm font-medium text-[#CBD5E1]">Sandbox</span>
-            <p class="text-xs text-[#64748B] mt-0.5">Run in an isolated sandbox environment.</p>
+            <span class="text-sm font-medium text-muted-foreground/80">Sandbox</span>
+            <p class="text-xs text-muted-foreground mt-0.5">Run in an isolated sandbox environment.</p>
           </div>
           <button
             type="button"
             role="switch"
             aria-checked={config.sandbox ?? false}
-            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.sandbox ? 'bg-[#2563EB]' : 'bg-white/[0.12]'}"
+            class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.sandbox ? 'bg-[#2563EB]' : 'bg-accent'}"
             onclick={() => toggleField("sandbox")}
           >
             <span
@@ -359,7 +359,7 @@
               <option value="high">High</option>
               <option value="xhigh">Extra High</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>Controls the depth of chain-of-thought reasoning.</p>
         </div>
@@ -406,7 +406,7 @@
               <option value="fixed">Fixed</option>
               <option value="run">Per Run</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>How session keys are generated: per issue, fixed, or per run.</p>
         </div>
@@ -442,7 +442,7 @@
         <div>
           <label for="cfg-cwd-process" class={labelCls}>Working Directory</label>
           <div class="relative mt-1.5">
-            <FolderOpen class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <FolderOpen class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               id="cfg-cwd-process"
               type="text"
@@ -482,7 +482,7 @@
               <option value="GET">GET</option>
               <option value="POST">POST</option>
             </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
         </div>
 
@@ -517,7 +517,7 @@
         <div>
           <label for="cfg-cwd" class={labelCls}>Working Directory</label>
           <div class="relative mt-1.5">
-            <FolderOpen class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-[#64748B]" />
+            <FolderOpen class="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
             <input
               id="cfg-cwd"
               type="text"
@@ -556,7 +556,7 @@
           ></textarea>
           <p class={helpCls}>
             Template for the prompt sent to the agent. Supports
-            <code class="rounded bg-white/[0.06] px-1 py-0.5 text-[11px] text-[#94A3B8]">{"{{"}issue.title{"}}"}</code>
+            <code class="rounded bg-accent/75 px-1 py-0.5 text-[11px] text-muted-foreground">{"{{"}issue.title{"}}"}</code>
             placeholders.
           </p>
         </div>
@@ -578,8 +578,8 @@
         {#if adapterType === "claude_local"}
           <div class="flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/[0.04] px-4 py-3">
             <div>
-              <span class="text-sm font-medium text-[#CBD5E1]">Skip Permissions</span>
-              <p class="text-xs text-[#64748B] mt-0.5">
+              <span class="text-sm font-medium text-muted-foreground/80">Skip Permissions</span>
+              <p class="text-xs text-muted-foreground mt-0.5">
                 Dangerously skip all permission prompts. Use with extreme caution.
               </p>
             </div>
@@ -587,7 +587,7 @@
               type="button"
               role="switch"
               aria-checked={config.dangerouslySkipPermissions ?? false}
-              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.dangerouslySkipPermissions ? 'bg-amber-500' : 'bg-white/[0.12]'}"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.dangerouslySkipPermissions ? 'bg-amber-500' : 'bg-accent'}"
               onclick={() => toggleField("dangerouslySkipPermissions")}
             >
               <span
@@ -600,8 +600,8 @@
         {#if adapterType === "codex_local"}
           <div class="flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/[0.04] px-4 py-3">
             <div>
-              <span class="text-sm font-medium text-[#CBD5E1]">Bypass Approvals & Sandbox</span>
-              <p class="text-xs text-[#64748B] mt-0.5">
+              <span class="text-sm font-medium text-muted-foreground/80">Bypass Approvals & Sandbox</span>
+              <p class="text-xs text-muted-foreground mt-0.5">
                 Dangerously bypass all approval gates and sandbox restrictions.
               </p>
             </div>
@@ -609,7 +609,7 @@
               type="button"
               role="switch"
               aria-checked={config.dangerouslyBypassApprovalsAndSandbox ?? false}
-              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.dangerouslyBypassApprovalsAndSandbox ? 'bg-amber-500' : 'bg-white/[0.12]'}"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.dangerouslyBypassApprovalsAndSandbox ? 'bg-amber-500' : 'bg-accent'}"
               onclick={() => toggleField("dangerouslyBypassApprovalsAndSandbox")}
             >
               <span

@@ -50,7 +50,7 @@
 
 <a
   href="/{companyPrefix}/issues/{issue.id}"
-  class="group block rounded-lg border border-white/[0.06] bg-[var(--clawdev-card-bg)] p-3 transition-all hover:border-white/[0.12] hover:bg-white/[0.03] hover:shadow-lg hover:shadow-black/20"
+  class="group block rounded-lg border border-border/50 bg-[var(--clawdev-card-bg)] p-3 transition-all hover:border-border hover:bg-accent/40 hover:shadow-lg hover:shadow-black/20"
 >
   <!-- Top row: identifier + priority -->
   <div class="flex items-center gap-2 mb-1.5">
@@ -67,7 +67,7 @@
           issue.priority === "critical" && "text-[#EF4444] bg-red-500/10 border-red-500/20",
           issue.priority === "high" && "text-[#F97316] bg-orange-500/10 border-orange-500/20",
           issue.priority === "medium" && "text-[#F59E0B] bg-yellow-500/10 border-yellow-500/20",
-          issue.priority === "low" && "text-[#64748B] bg-zinc-500/10 border-zinc-500/20",
+          issue.priority === "low" && "text-muted-foreground bg-zinc-500/10 border-zinc-500/20",
         )}
       >
         <span class={cn("size-1.5 rounded-full", PRIORITY_DOT_COLORS[issue.priority])}></span>
@@ -101,11 +101,11 @@
   <!-- Bottom row: assignee + metadata -->
   <div class="flex items-center gap-2 mt-auto">
     {#if assigneeInitial(issue)}
-      <div class="flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(255,255,255,0.08)] text-[10px] font-medium text-[var(--clawdev-text-muted)]" title={issue.assigneeName || issue.agentName || ""}>
+      <div class="flex h-5 w-5 items-center justify-center rounded-full bg-accent text-[10px] font-medium text-[var(--clawdev-text-muted)]" title={issue.assigneeName || issue.agentName || ""}>
         {assigneeInitial(issue)}
       </div>
     {:else}
-      <div class="flex h-5 w-5 items-center justify-center rounded-full bg-[rgba(255,255,255,0.04)]">
+      <div class="flex h-5 w-5 items-center justify-center rounded-full bg-accent/50">
         <User class="size-3 text-[var(--clawdev-text-muted)]/40" />
       </div>
     {/if}

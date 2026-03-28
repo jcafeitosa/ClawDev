@@ -142,8 +142,8 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-[#F8FAFC]">Labels</h1>
-      <p class="mt-1 text-sm text-[#94A3B8]">Organize issues, agents, and projects with labels</p>
+      <h1 class="text-2xl font-bold text-foreground">Labels</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Organize issues, agents, and projects with labels</p>
     </div>
     <button
       onclick={() => (showCreate = !showCreate)}
@@ -158,14 +158,14 @@
   {#if showCreate}
     <form
       onsubmit={(e) => { e.preventDefault(); createLabel(); }}
-      class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden"
+      class="rounded-xl border border-border bg-card overflow-hidden"
     >
-      <div class="flex items-center justify-between px-5 py-4 border-b border-white/[0.05]">
-        <h2 class="text-sm font-semibold text-[#F8FAFC]">New Label</h2>
+      <div class="flex items-center justify-between px-5 py-4 border-b border-border/50">
+        <h2 class="text-sm font-semibold text-foreground">New Label</h2>
         <button
           type="button"
           onclick={() => { showCreate = false; resetForm(); }}
-          class="rounded-lg p-1 text-[#94A3B8] hover:bg-white/[0.05] transition-colors"
+          class="rounded-lg p-1 text-muted-foreground hover:bg-accent/60 transition-colors"
         >
           <X class="h-4 w-4" />
         </button>
@@ -174,18 +174,18 @@
       <div class="p-5 space-y-4">
         <!-- Name -->
         <div>
-          <label for="label-name" class="block text-sm font-medium text-[#F8FAFC] mb-1">Name</label>
+          <label for="label-name" class="block text-sm font-medium text-foreground mb-1">Name</label>
           <input
             id="label-name"
             bind:value={formName}
             placeholder="e.g. bug, feature, urgent"
-            class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
         <!-- Color picker -->
         <div>
-          <span class="block text-sm font-medium text-[#F8FAFC] mb-2">Color</span>
+          <span class="block text-sm font-medium text-foreground mb-2">Color</span>
           <div class="flex items-center gap-3 flex-wrap">
             {#each COLOR_PRESETS as preset (preset.value)}
               <button
@@ -194,18 +194,18 @@
                 title={preset.name}
                 class="h-8 w-8 rounded-full transition-all {preset.bg}
                   {formColor === preset.value
-                    ? 'ring-2 ring-offset-2 ring-offset-[#121218] ' + preset.ring + ' scale-110'
+                    ? 'ring-2 ring-offset-2 ring-offset-card ' + preset.ring + ' scale-110'
                     : 'opacity-60 hover:opacity-100 hover:scale-105'}"
               ></button>
             {/each}
           </div>
-          <p class="mt-2 text-xs text-[#94A3B8]">Selected: {colorPreset(formColor).name}</p>
+          <p class="mt-2 text-xs text-muted-foreground">Selected: {colorPreset(formColor).name}</p>
         </div>
 
         <!-- Preview -->
         {#if formName.trim()}
           <div>
-            <span class="block text-sm font-medium text-[#F8FAFC] mb-1">Preview</span>
+            <span class="block text-sm font-medium text-foreground mb-1">Preview</span>
             <div class="flex items-center gap-2">
               <span class="inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium {labelBadgeBg(formColor)}">
                 <span class="h-2 w-2 rounded-full {dotClass(formColor)}"></span>
@@ -216,7 +216,7 @@
         {/if}
 
         <!-- Actions -->
-        <div class="flex items-center gap-3 pt-2 border-t border-white/[0.05]">
+        <div class="flex items-center gap-3 pt-2 border-t border-border/50">
           <button
             type="submit"
             disabled={creating || !formName.trim()}
@@ -227,7 +227,7 @@
           <button
             type="button"
             onclick={() => { showCreate = false; resetForm(); }}
-            class="rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#94A3B8] hover:bg-white/[0.03]"
+            class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40"
           >
             Cancel
           </button>
@@ -238,10 +238,10 @@
 
   <!-- Loading skeleton -->
   {#if loading}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
+    <div class="rounded-xl border border-border bg-card overflow-hidden">
       <div class="p-5 space-y-3">
         {#each Array(6) as _}
-          <div class="h-12 animate-pulse rounded-lg bg-white/[0.05]"></div>
+          <div class="h-12 animate-pulse rounded-lg bg-accent/60"></div>
         {/each}
       </div>
     </div>
@@ -249,11 +249,11 @@
   <!-- Empty state -->
   {:else if labels.length === 0}
     <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <Tag class="h-10 w-10 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <Tag class="h-10 w-10 text-muted-foreground" />
       </div>
-      <h3 class="text-lg font-medium text-[#F8FAFC]">No labels yet</h3>
-      <p class="mt-1 text-sm text-[#94A3B8]">Labels help you categorize and filter your work</p>
+      <h3 class="text-lg font-medium text-foreground">No labels yet</h3>
+      <p class="mt-1 text-sm text-muted-foreground">Labels help you categorize and filter your work</p>
       <button
         onclick={() => (showCreate = true)}
         class="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
@@ -265,20 +265,20 @@
 
   <!-- Labels list -->
   {:else}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
-      <div class="px-5 py-4 border-b border-white/[0.05]">
-        <h2 class="text-sm font-semibold text-[#F8FAFC]">
+    <div class="rounded-xl border border-border bg-card overflow-hidden">
+      <div class="px-5 py-4 border-b border-border/50">
+        <h2 class="text-sm font-semibold text-foreground">
           {labels.length} {labels.length === 1 ? 'label' : 'labels'}
         </h2>
       </div>
 
-      <div class="divide-y divide-white/[0.05]">
+      <div class="divide-y divide-border/50">
         {#each labels as label (label.id)}
-          <div class="flex items-center justify-between gap-4 px-5 py-3.5 hover:bg-white/[0.03] transition-colors">
+          <div class="flex items-center justify-between gap-4 px-5 py-3.5 hover:bg-accent/40 transition-colors">
             <!-- Left: color dot + name + badge -->
             <div class="flex items-center gap-3 min-w-0">
               <span class="h-3 w-3 shrink-0 rounded-full {dotClass(label.color)}"></span>
-              <span class="text-sm font-medium text-[#F8FAFC] truncate">{label.name}</span>
+              <span class="text-sm font-medium text-foreground truncate">{label.name}</span>
               <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium leading-none {labelBadgeBg(label.color)}">
                 {colorPreset(label.color).name}
               </span>
@@ -287,7 +287,7 @@
             <!-- Right: usage count + delete -->
             <div class="flex items-center gap-4 shrink-0">
               {#if label.usageCount !== undefined && label.usageCount !== null}
-                <span class="text-xs text-[#94A3B8] tabular-nums">
+                <span class="text-xs text-muted-foreground tabular-nums">
                   {label.usageCount} {label.usageCount === 1 ? 'use' : 'uses'}
                 </span>
               {/if}
@@ -305,7 +305,7 @@
                   </button>
                   <button
                     onclick={() => (confirmDeleteId = null)}
-                    class="rounded-md border border-white/[0.08] px-2.5 py-1 text-xs text-[#94A3B8] hover:bg-white/[0.03]"
+                    class="rounded-md border border-border px-2.5 py-1 text-xs text-muted-foreground hover:bg-accent/40"
                   >
                     No
                   </button>
@@ -313,7 +313,7 @@
               {:else}
                 <button
                   onclick={() => (confirmDeleteId = label.id)}
-                  class="rounded-lg p-1.5 text-[#94A3B8] transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
                   title="Delete label"
                 >
                   <Trash2 class="h-4 w-4" />

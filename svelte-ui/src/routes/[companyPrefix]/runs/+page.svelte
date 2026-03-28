@@ -228,8 +228,8 @@
   <!-- Header -->
   <div class="flex items-center justify-between">
     <div>
-      <h1 class="text-2xl font-bold text-[#F8FAFC]">Runs</h1>
-      <p class="mt-1 text-sm text-[#94A3B8]">Agent execution history and active runs</p>
+      <h1 class="text-2xl font-bold text-foreground">Runs</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Agent execution history and active runs</p>
     </div>
   </div>
 
@@ -242,7 +242,7 @@
           class="rounded-lg px-3 py-1.5 text-sm font-medium transition
             {statusFilter === filter
               ? 'bg-[#2563EB] text-white'
-              : 'bg-white/[0.05] text-[#94A3B8] hover:bg-white/[0.08] hover:text-[#F8FAFC]'}"
+              : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
         >
           {filterLabel(filter)}
           <span class="ml-1 text-xs opacity-70">({countByFilter(filter)})</span>
@@ -251,12 +251,12 @@
     </div>
 
     <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#94A3B8]" />
+      <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
       <input
         type="text"
         placeholder="Search runs..."
         bind:value={searchQuery}
-        class="w-full sm:w-64 rounded-lg border border-white/[0.08] bg-[#121218] pl-9 pr-3 py-2 text-sm text-[#F8FAFC] placeholder:text-[#94A3B8] focus:outline-none focus:border-[#2563EB] transition"
+        class="w-full sm:w-64 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
       />
     </div>
   </div>
@@ -265,7 +265,7 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(8) as _}
-        <div class="h-[60px] animate-pulse rounded-xl bg-[#121218] border border-white/[0.08]"></div>
+        <div class="h-[60px] animate-pulse rounded-xl bg-card border border-border"></div>
       {/each}
     </div>
 
@@ -284,25 +284,25 @@
   <!-- Empty -->
   {:else if filteredRuns.length === 0}
     <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <Play class="h-10 w-10 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <Play class="h-10 w-10 text-muted-foreground" />
       </div>
       {#if runs.length === 0}
-        <h3 class="text-lg font-medium text-[#F8FAFC]">No runs yet</h3>
-        <p class="mt-1 text-sm text-[#94A3B8]">Runs will appear here when agents execute tasks</p>
+        <h3 class="text-lg font-medium text-foreground">No runs yet</h3>
+        <p class="mt-1 text-sm text-muted-foreground">Runs will appear here when agents execute tasks</p>
       {:else}
-        <p class="text-[#94A3B8] text-sm">No runs match the current filters.</p>
+        <p class="text-muted-foreground text-sm">No runs match the current filters.</p>
       {/if}
     </div>
 
   <!-- Runs list -->
   {:else}
-    <div class="rounded-xl border border-white/[0.08] bg-[#121218] overflow-hidden">
+    <div class="rounded-xl border border-border bg-card overflow-hidden">
       {#each filteredRuns as run, i (run.id)}
         <a
           href="/{prefix}/runs/{run.id}"
-          class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-white/[0.03]
-            {i < filteredRuns.length - 1 ? 'border-b border-white/[0.05]' : ''}"
+          class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-accent/40
+            {i < filteredRuns.length - 1 ? 'border-b border-border/50' : ''}"
         >
           <!-- Status dot -->
           <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(run.status)}"></span>
@@ -313,12 +313,12 @@
           </span>
 
           <!-- Run ID (first 8 chars, mono) -->
-          <span class="text-xs font-mono text-[#94A3B8] shrink-0 w-20 truncate">
+          <span class="text-xs font-mono text-muted-foreground shrink-0 w-20 truncate">
             {run.id.slice(0, 8)}
           </span>
 
           <!-- Agent name -->
-          <span class="text-sm text-[#F8FAFC] truncate flex-1 min-w-0">
+          <span class="text-sm text-foreground truncate flex-1 min-w-0">
             {resolveAgentName(run)}
           </span>
 
@@ -331,24 +331,24 @@
 
           <!-- Duration -->
           {#if formatDuration(run)}
-            <span class="hidden md:inline-block text-xs text-[#94A3B8] font-mono shrink-0 tabular-nums w-16 text-right">
+            <span class="hidden md:inline-block text-xs text-muted-foreground font-mono shrink-0 tabular-nums w-16 text-right">
               {formatDuration(run)}
             </span>
           {/if}
 
           <!-- Time ago -->
-          <span class="text-xs text-[#94A3B8] shrink-0 tabular-nums w-16 text-right">
+          <span class="text-xs text-muted-foreground shrink-0 tabular-nums w-16 text-right">
             {runTimestamp(run)}
           </span>
 
           <!-- Arrow -->
-          <ChevronRight class="h-4 w-4 shrink-0 text-[#94A3B8] opacity-0 transition-opacity group-hover:opacity-100" />
+          <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
         </a>
       {/each}
     </div>
 
     <!-- Count -->
-    <p class="text-xs text-[#94A3B8] text-right">
+    <p class="text-xs text-muted-foreground text-right">
       {filteredRuns.length} run{filteredRuns.length !== 1 ? 's' : ''}
     </p>
   {/if}

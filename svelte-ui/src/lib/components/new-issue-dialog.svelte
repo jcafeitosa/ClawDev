@@ -199,8 +199,8 @@
   ];
 
   const selectClasses =
-    'w-full rounded-lg border border-white/[0.08] bg-[#121218] px-3 py-2 text-sm text-[#F8FAFC] outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors';
-  const labelClasses = 'block text-xs font-medium text-[#94A3B8] mb-1.5';
+    'w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 transition-colors';
+  const labelClasses = 'block text-xs font-medium text-muted-foreground mb-1.5';
 </script>
 
 {#if visible}
@@ -214,14 +214,14 @@
     aria-modal="true"
     aria-label="Create new issue"
   >
-    <div class="w-full max-w-lg mx-4 bg-[#0a0a0f] border border-white/[0.08] rounded-2xl shadow-2xl">
+    <div class="w-full max-w-lg mx-4 bg-background border border-border rounded-2xl shadow-2xl">
       <!-- Header -->
       <div class="flex items-center justify-between px-6 pt-5 pb-3">
-        <h2 class="text-lg font-semibold text-[#F8FAFC]">New Issue</h2>
+        <h2 class="text-lg font-semibold text-foreground">New Issue</h2>
         <button
           onclick={close}
           disabled={submitting}
-          class="p-1 rounded-lg text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/[0.06] transition-colors disabled:opacity-50"
+          class="p-1 rounded-lg text-muted-foreground hover:text-foreground hover:bg-accent/75 transition-colors disabled:opacity-50"
           aria-label="Close dialog"
         >
           <X class="h-5 w-5" />
@@ -244,8 +244,8 @@
             placeholder="Issue title..."
             required
             disabled={submitting}
-            class="w-full rounded-lg border border-white/[0.08] bg-[#121218] px-3 py-2.5 text-sm text-[#F8FAFC]
-                   placeholder:text-[#94A3B8]/50 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500
+            class="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-foreground
+                   placeholder:text-muted-foreground/50 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500
                    transition-colors disabled:opacity-50"
           />
         </div>
@@ -259,8 +259,8 @@
             placeholder="Describe the issue (supports markdown)..."
             rows="3"
             disabled={submitting}
-            class="w-full rounded-lg border border-white/[0.08] bg-[#121218] px-3 py-2.5 text-sm text-[#F8FAFC]
-                   placeholder:text-[#94A3B8]/50 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500
+            class="w-full rounded-lg border border-border bg-card px-3 py-2.5 text-sm text-foreground
+                   placeholder:text-muted-foreground/50 outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500
                    transition-colors resize-y min-h-[72px] disabled:opacity-50"
           ></textarea>
         </div>
@@ -317,11 +317,11 @@
 
         <!-- Actions -->
         <div class="flex items-center justify-between pt-2">
-          <span class="text-xs text-[#94A3B8]">
+          <span class="text-xs text-muted-foreground">
             {#if submitting}
               Creating issue...
             {:else}
-              <kbd class="px-1.5 py-0.5 rounded bg-white/[0.06] text-[10px] font-mono">Ctrl+Enter</kbd> to submit
+              <kbd class="px-1.5 py-0.5 rounded bg-accent/75 text-[10px] font-mono">Ctrl+Enter</kbd> to submit
             {/if}
           </span>
           <div class="flex gap-2">
@@ -329,7 +329,7 @@
               type="button"
               onclick={close}
               disabled={submitting}
-              class="px-4 py-2 rounded-lg text-sm text-[#94A3B8] hover:text-[#F8FAFC] hover:bg-white/[0.06]
+              class="px-4 py-2 rounded-lg text-sm text-muted-foreground hover:text-foreground hover:bg-accent/75
                      transition-colors disabled:opacity-50"
             >
               Cancel

@@ -89,11 +89,11 @@
       onblur={commitEdit}
       disabled={saving}
       {placeholder}
-      class="w-full bg-transparent border-b-2 border-blue-500 outline-none text-[#F8FAFC] py-1
+      class="w-full bg-transparent border-b-2 border-blue-500 outline-none text-foreground py-1
              disabled:opacity-50 {className}"
     />
     {#if saving}
-      <span class="flex items-center gap-1 text-xs text-[#94A3B8] whitespace-nowrap">
+      <span class="flex items-center gap-1 text-xs text-muted-foreground whitespace-nowrap">
         <Loader2 class="h-3.5 w-3.5 animate-spin" />
         Saving...
       </span>
@@ -104,25 +104,25 @@
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="inline-editor-display group relative inline-flex items-center gap-2 cursor-pointer rounded-md
-           hover:bg-white/[0.04] transition-colors -mx-1 px-1 {className}"
+           hover:bg-accent/50 transition-colors -mx-1 px-1 {className}"
     onclick={startEdit}
     role="button"
     tabindex="0"
     onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); startEdit(); } }}
   >
     {#if tag === 'h1'}
-      <h1 class="text-[#F8FAFC] {!value ? 'text-[#94A3B8] italic' : ''}">{value || placeholder}</h1>
+      <h1 class="text-foreground {!value ? 'text-muted-foreground italic' : ''}">{value || placeholder}</h1>
     {:else if tag === 'h2'}
-      <h2 class="text-[#F8FAFC] {!value ? 'text-[#94A3B8] italic' : ''}">{value || placeholder}</h2>
+      <h2 class="text-foreground {!value ? 'text-muted-foreground italic' : ''}">{value || placeholder}</h2>
     {:else if tag === 'h3'}
-      <h3 class="text-[#F8FAFC] {!value ? 'text-[#94A3B8] italic' : ''}">{value || placeholder}</h3>
+      <h3 class="text-foreground {!value ? 'text-muted-foreground italic' : ''}">{value || placeholder}</h3>
     {:else if tag === 'span'}
-      <span class="text-[#F8FAFC] {!value ? 'text-[#94A3B8] italic' : ''}">{value || placeholder}</span>
+      <span class="text-foreground {!value ? 'text-muted-foreground italic' : ''}">{value || placeholder}</span>
     {:else}
-      <p class="text-[#F8FAFC] {!value ? 'text-[#94A3B8] italic' : ''}">{value || placeholder}</p>
+      <p class="text-foreground {!value ? 'text-muted-foreground italic' : ''}">{value || placeholder}</p>
     {/if}
     <Pencil
-      class="h-3.5 w-3.5 text-[#94A3B8] opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+      class="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
     />
   </div>
 {/if}

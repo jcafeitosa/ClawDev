@@ -178,28 +178,28 @@
   <button
     bind:this={triggerEl}
     type="button"
-    class="flex w-full items-center justify-between gap-2 rounded-lg border border-white/[0.08] bg-[#0A0A0F] px-3.5 py-2.5 text-sm text-[#F8FAFC] transition hover:border-white/[0.15] hover:bg-white/[0.03] focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30"
+    class="flex w-full items-center justify-between gap-2 rounded-lg border border-border bg-background px-3.5 py-2.5 text-sm text-foreground transition hover:border-border hover:bg-accent/40 focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30"
     onclick={toggle}
     aria-haspopup="listbox"
     aria-expanded={open}
   >
     <span class="flex items-center gap-2.5 min-w-0">
       {#if selectedAgent}
-        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.06]">
-          <Bot class="size-3.5 text-[#94A3B8]" />
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/75">
+          <Bot class="size-3.5 text-muted-foreground" />
         </span>
-        <span class="truncate text-[#CBD5E1]">{selectedAgent.name}</span>
+        <span class="truncate text-muted-foreground/80">{selectedAgent.name}</span>
         <span class="inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {roleBadgeColor(selectedAgent.role)}">
           {selectedAgent.role}
         </span>
       {:else}
-        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-white/[0.06]">
-          <MinusCircle class="size-3.5 text-[#64748B]" />
+        <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-accent/75">
+          <MinusCircle class="size-3.5 text-muted-foreground" />
         </span>
-        <span class="text-[#64748B]">None - Top Level</span>
+        <span class="text-muted-foreground">None - Top Level</span>
       {/if}
     </span>
-    <ChevronDown class="size-4 shrink-0 text-[#64748B] transition-transform {open ? 'rotate-180' : ''}" />
+    <ChevronDown class="size-4 shrink-0 text-muted-foreground transition-transform {open ? 'rotate-180' : ''}" />
   </button>
 
   <!-- Popover -->
@@ -208,25 +208,25 @@
     <div
       bind:this={popoverEl}
       onkeydown={handleKeydown}
-      class="absolute left-0 top-full z-50 mt-2 w-full min-w-[320px] rounded-xl border border-white/[0.1] bg-[#18181B] shadow-2xl shadow-black/50"
+      class="absolute left-0 top-full z-50 mt-2 w-full min-w-[320px] rounded-xl border border-border bg-[#18181B] shadow-2xl shadow-black/50"
       role="listbox"
       aria-label="Select manager agent"
     >
       <!-- Search -->
-      <div class="flex items-center gap-2 border-b border-white/[0.08] px-3">
-        <Search class="size-3.5 shrink-0 text-[#64748B]" />
+      <div class="flex items-center gap-2 border-b border-border px-3">
+        <Search class="size-3.5 shrink-0 text-muted-foreground" />
         <input
           bind:this={searchInputEl}
           bind:value={searchQuery}
           placeholder="Search agents..."
-          class="flex h-10 w-full bg-transparent text-sm text-[#F8FAFC] outline-none placeholder:text-[#475569]"
+          class="flex h-10 w-full bg-transparent text-sm text-foreground outline-none placeholder:text-[#475569]"
           spellcheck="false"
           autocomplete="off"
         />
         {#if searchQuery}
           <button
             type="button"
-            class="shrink-0 rounded p-0.5 text-[#64748B] hover:text-[#F8FAFC] transition-colors"
+            class="shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground transition-colors"
             onclick={() => { searchQuery = ""; searchInputEl?.focus(); }}
             aria-label="Clear search"
           >
@@ -243,28 +243,28 @@
           class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors
             {value === null
               ? 'bg-[#2563EB]/10 text-[#60A5FA]'
-              : 'text-[#94A3B8] hover:bg-white/[0.05] hover:text-[#F8FAFC]'}"
+              : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'}"
           onclick={() => select(null)}
           role="option"
           aria-selected={value === null}
         >
-          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/[0.06]">
-            <MinusCircle class="size-4 {value === null ? 'text-[#60A5FA]' : 'text-[#64748B]'}" />
+          <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/75">
+            <MinusCircle class="size-4 {value === null ? 'text-[#60A5FA]' : 'text-muted-foreground'}" />
           </span>
           <div class="flex-1 min-w-0">
             <span class="font-medium">None (Top Level)</span>
-            <p class="text-xs text-[#64748B] mt-0.5">This agent has no manager.</p>
+            <p class="text-xs text-muted-foreground mt-0.5">This agent has no manager.</p>
           </div>
         </button>
 
         <!-- Separator -->
         {#if !loading && availableAgents.length > 0}
-          <div class="my-1.5 border-t border-white/[0.06]"></div>
+          <div class="my-1.5 border-t border-border/50"></div>
         {/if}
 
         <!-- Loading -->
         {#if loading}
-          <div class="flex items-center justify-center gap-2 py-8 text-sm text-[#64748B]">
+          <div class="flex items-center justify-center gap-2 py-8 text-sm text-muted-foreground">
             <Loader2 class="size-4 animate-spin" />
             <span>Loading agents...</span>
           </div>
@@ -284,13 +284,13 @@
 
         <!-- Empty filtered -->
         {:else if availableAgents.length === 0 && agents.length > 0}
-          <p class="py-6 text-center text-sm text-[#64748B]">
+          <p class="py-6 text-center text-sm text-muted-foreground">
             No agents match "{searchQuery}"
           </p>
 
         <!-- Empty company -->
         {:else if availableAgents.length === 0}
-          <p class="py-6 text-center text-sm text-[#64748B]">
+          <p class="py-6 text-center text-sm text-muted-foreground">
             No other agents in this company.
           </p>
 
@@ -302,14 +302,14 @@
               class="flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm transition-colors
                 {value === agent.id
                   ? 'bg-[#2563EB]/10 text-[#60A5FA]'
-                  : 'text-[#CBD5E1] hover:bg-white/[0.05] hover:text-[#F8FAFC]'}"
+                  : 'text-muted-foreground/80 hover:bg-accent/60 hover:text-foreground'}"
               onclick={() => select(agent.id)}
               role="option"
               aria-selected={value === agent.id}
             >
               <!-- Icon / Avatar -->
-              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-white/[0.06]">
-                <Bot class="size-4 {value === agent.id ? 'text-[#60A5FA]' : 'text-[#94A3B8]'}" />
+              <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-accent/75">
+                <Bot class="size-4 {value === agent.id ? 'text-[#60A5FA]' : 'text-muted-foreground'}" />
               </span>
 
               <!-- Name & role -->
@@ -331,7 +331,7 @@
 
       <!-- Footer -->
       {#if !loading && !error}
-        <div class="border-t border-white/[0.06] px-3 py-2">
+        <div class="border-t border-border/50 px-3 py-2">
           <p class="text-[11px] text-[#475569]">
             {availableAgents.length} agent{availableAgents.length === 1 ? "" : "s"} available
           </p>

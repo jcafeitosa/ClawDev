@@ -72,16 +72,16 @@
 <div class="space-y-6 p-6">
   <!-- Header -->
   <div>
-    <h1 class="text-2xl font-bold text-[#F8FAFC]">Approvals</h1>
-    <p class="mt-1 text-sm text-[#94A3B8]">Review and approve pending requests</p>
+    <h1 class="text-2xl font-bold text-foreground">Approvals</h1>
+    <p class="mt-1 text-sm text-muted-foreground">Review and approve pending requests</p>
   </div>
 
   <!-- Tabs -->
-  <div class="flex items-center gap-1 border-b border-white/[0.08]">
+  <div class="flex items-center gap-1 border-b border-border">
     <button
       onclick={() => (activeTab = 'pending')}
       class="relative px-4 py-2.5 text-sm font-medium transition-colors
-        {activeTab === 'pending' ? 'text-[#F8FAFC]' : 'text-[#94A3B8] hover:text-[#F8FAFC]'}"
+        {activeTab === 'pending' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
     >
       Pending
       {#if pendingCount > 0}
@@ -96,7 +96,7 @@
     <button
       onclick={() => (activeTab = 'all')}
       class="relative px-4 py-2.5 text-sm font-medium transition-colors
-        {activeTab === 'all' ? 'text-[#F8FAFC]' : 'text-[#94A3B8] hover:text-[#F8FAFC]'}"
+        {activeTab === 'all' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
     >
       All
       {#if activeTab === 'all'}
@@ -109,19 +109,19 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(4) as _}
-        <div class="h-24 animate-pulse rounded-xl border border-white/[0.08] bg-[#121218]"></div>
+        <div class="h-24 animate-pulse rounded-xl border border-border bg-card"></div>
       {/each}
     </div>
   {:else if displayedApprovals.length === 0}
     <!-- Empty state -->
     <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-white/[0.05] p-4 mb-4">
-        <ShieldCheck class="h-10 w-10 text-[#94A3B8]" />
+      <div class="rounded-full bg-accent/60 p-4 mb-4">
+        <ShieldCheck class="h-10 w-10 text-muted-foreground" />
       </div>
-      <h3 class="text-lg font-medium text-[#F8FAFC]">
+      <h3 class="text-lg font-medium text-foreground">
         {activeTab === 'pending' ? 'No pending approvals' : 'No approvals yet'}
       </h3>
-      <p class="mt-1 text-sm text-[#94A3B8]">
+      <p class="mt-1 text-sm text-muted-foreground">
         {activeTab === 'pending' ? 'You\'re all caught up' : 'Approval requests will appear here'}
       </p>
     </div>
@@ -129,11 +129,11 @@
     <!-- Approval cards -->
     <div class="space-y-3">
       {#each displayedApprovals as approval (approval.id)}
-        <a href="/{prefix}/approvals/{approval.id}" class="block rounded-xl border border-white/[0.08] bg-[#121218] p-5 transition-colors hover:bg-white/[0.03] group">
+        <a href="/{prefix}/approvals/{approval.id}" class="block rounded-xl border border-border bg-card p-5 transition-colors hover:bg-accent/40 group">
           <div class="flex items-start justify-between gap-4">
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-3 mb-2">
-                <h3 class="text-sm font-semibold text-[#F8FAFC] truncate group-hover:text-blue-400 transition-colors">
+                <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-blue-400 transition-colors">
                   {approval.description ?? approval.title ?? approval.name ?? 'Approval Request'}
                 </h3>
                 <span class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium {statusBadge(approval.status)}">
@@ -141,7 +141,7 @@
                 </span>
               </div>
 
-              <div class="flex items-center gap-4 text-xs text-[#94A3B8]">
+              <div class="flex items-center gap-4 text-xs text-muted-foreground">
                 {#if approval.requesterName || approval.requester}
                   <span class="inline-flex items-center gap-1">
                     <User class="h-3.5 w-3.5" />
@@ -157,7 +157,7 @@
               </div>
 
               {#if approval.details || approval.reason}
-                <p class="mt-2 text-xs text-[#94A3B8] line-clamp-2">{approval.details ?? approval.reason}</p>
+                <p class="mt-2 text-xs text-muted-foreground line-clamp-2">{approval.details ?? approval.reason}</p>
               {/if}
             </div>
 
@@ -182,7 +182,7 @@
                 </button>
               </div>
             {:else}
-              <ChevronRight class="h-4 w-4 text-[#94A3B8] group-hover:text-[#F8FAFC] transition-colors shrink-0" />
+              <ChevronRight class="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
             {/if}
           </div>
         </a>
