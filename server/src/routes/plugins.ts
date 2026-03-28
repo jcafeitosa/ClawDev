@@ -85,7 +85,7 @@ interface PluginInstallRequest {
   isLocalPath?: boolean;
 }
 
-interface AvailablePluginExample {
+export interface AvailablePluginExample {
   packageName: string;
   pluginKey: string;
   displayName: string;
@@ -141,7 +141,7 @@ const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
   },
 ];
 
-function listBundledPluginExamples(): AvailablePluginExample[] {
+export function listBundledPluginExamples(): AvailablePluginExample[] {
   return BUNDLED_PLUGIN_EXAMPLES.flatMap((plugin) => {
     const absoluteLocalPath = path.resolve(REPO_ROOT, plugin.localPath);
     if (!existsSync(absoluteLocalPath)) return [];
@@ -162,7 +162,7 @@ function listBundledPluginExamples(): AvailablePluginExample[] {
  * @param pluginId - Either a database UUID or plugin key (manifest id)
  * @returns Plugin record or null if not found
  */
-async function resolvePlugin(
+export async function resolvePlugin(
   registry: ReturnType<typeof pluginRegistryService>,
   pluginId: string,
 ) {
