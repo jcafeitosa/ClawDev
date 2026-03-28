@@ -24,7 +24,7 @@
     BarChart3,
     TrendingUp,
     Wallet,
-    MoreHorizontal,
+
     Maximize2,
     Plus,
     ArrowRight,
@@ -222,9 +222,9 @@
           </div>
           <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Issue Status</h3>
         </div>
-        <button class="opacity-0 transition-opacity group-hover:opacity-60">
-          <MoreHorizontal size={14} color="var(--dash-muted)" />
-        </button>
+        <a href="/{prefix}/issues" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+          View all
+        </a>
       </div>
 
       {#if loading}

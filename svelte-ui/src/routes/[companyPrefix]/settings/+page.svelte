@@ -118,8 +118,27 @@
       </div>
     </div>
 
-    <div class="p-5">
-      <p class="text-sm text-[#94A3B8]">Theme and branding settings will be available in a future update.</p>
+    <div class="p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-[#F8FAFC]">Theme</p>
+          <p class="text-xs text-[#94A3B8]">Switch between light and dark mode</p>
+        </div>
+        <div class="flex items-center gap-1 rounded-lg border border-white/[0.08] p-0.5">
+          <button
+            onclick={() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark'); }}
+            class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-white/[0.1] text-[#F8FAFC]"
+          >Dark</button>
+          <button
+            onclick={() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light'); }}
+            class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-[#94A3B8] hover:text-[#F8FAFC]"
+          >Light</button>
+        </div>
+      </div>
+      <div>
+        <p class="text-sm font-medium text-[#F8FAFC]">Brand Color</p>
+        <p class="text-xs text-[#94A3B8] mb-2">Additional branding settings coming in a future update</p>
+      </div>
     </div>
   </section>
 

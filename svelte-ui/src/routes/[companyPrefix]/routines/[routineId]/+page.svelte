@@ -76,6 +76,7 @@
 
   // Delete trigger
   let deletingTriggerId = $state<string | null>(null);
+  let confirmingTriggerDeleteId = $state<string | null>(null);
 
   // ---------------------------------------------------------------------------
   // Derived
@@ -547,19 +548,14 @@
                             <span class="text-xs text-zinc-500">
                               <TimeAgo date={trigger.createdAt} />
                             </span>
-                            <Button
-                              variant="destructive"
-                              size="sm"
-                              disabled={deletingTriggerId === trigger.id}
-                              onclick={() => {
-                                if (deletingTriggerId === trigger.id) return;
-                                if (confirm("Delete this trigger? This action cannot be undone.")) {
-                                  deleteTrigger(trigger.id);
-                                }
-                              }}
-                            >
-                              {deletingTriggerId === trigger.id ? "Deleting..." : "Delete"}
-                            </Button>
+                            {#if confirmingTriggerDeleteId === trigger.id}
+                              <Button variant="destructive" size="sm" disabled={deletingTriggerId === trigger.id} onclick={() => deleteTrigger(trigger.id)}>
+                                {deletingTriggerId === trigger.id ? "Deleting..." : "Confirm"}
+                              </Button>
+                              <Button variant="outline" size="sm" onclick={() => (confirmingTriggerDeleteId = null)}>Cancel</Button>
+                            {:else}
+                              <Button variant="outline" size="sm" onclick={() => (confirmingTriggerDeleteId = trigger.id)}>Delete</Button>
+                            {/if}
                           </div>
                         </div>
                       </CardContent>
