@@ -4,8 +4,7 @@
   import { companyStore } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
-  import StatusBadge from '$lib/components/status-badge.svelte';
-  import { Users, Plus, Minus, Maximize, Download, Upload, Bot } from 'lucide-svelte';
+  import { Users, Plus, Minus, Download, Upload, Bot, Terminal, Briefcase, Globe, Shield, Code, Palette, TrendingUp, Megaphone } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Org', href: `/${$page.params.companyPrefix}/org` }, { label: 'Chart' }]));
 
@@ -15,7 +14,6 @@
     title?: string;
     role?: string;
     status?: string;
-    icon?: string;
     adapterType?: string;
     reportsTo?: string | null;
     [key: string]: unknown;
@@ -26,13 +24,12 @@
   let companyId = $derived(companyStore.selectedCompany?.id);
   let prefix = $derived($page.params.companyPrefix);
 
-  // Zoom/pan state
   let scale = $state(1);
-  let translateX = $state(0);
-  let translateY = $state(0);
-  let isPanning = $state(false);
-  let panStartX = $state(0);
-  let panStartY = $state(0);
+  let tx = $state(0);
+  let ty = $state(0);
+  let dragging = $state(false);
+  let dragX = $state(0);
+  let dragY = $state(0);
 
   $effect(() => {
     if (!companyId) return;
@@ -44,125 +41,98 @@
   });
 
   let roots = $derived(agents.filter(a => !a.reportsTo));
-  function children(parentId: string): Agent[] {
-    return agents.filter(a => a.reportsTo === parentId);
+  function getChildren(pid: string): Agent[] {
+    return agents.filter(a => a.reportsTo === pid);
   }
 
-  // Zoom controls
-  function zoomIn() { scale = Math.min(scale + 0.15, 2.5); }
-  function zoomOut() { scale = Math.max(scale - 0.15, 0.3); }
-  function fitView() { scale = 1; translateX = 0; translateY = 0; }
+  function zoomIn() { scale = Math.min(scale + 0.15, 3); }
+  function zoomOut() { scale = Math.max(scale - 0.15, 0.2); }
+  function fit() { scale = 1; tx = 0; ty = 0; }
 
-  // Pan handlers
-  function handleMouseDown(e: MouseEvent) {
+  function onMouseDown(e: MouseEvent) {
     if (e.button !== 0) return;
-    isPanning = true;
-    panStartX = e.clientX - translateX;
-    panStartY = e.clientY - translateY;
+    dragging = true;
+    dragX = e.clientX - tx;
+    dragY = e.clientY - ty;
   }
-  function handleMouseMove(e: MouseEvent) {
-    if (!isPanning) return;
-    translateX = e.clientX - panStartX;
-    translateY = e.clientY - panStartY;
+  function onMouseMove(e: MouseEvent) {
+    if (!dragging) return;
+    tx = e.clientX - dragX;
+    ty = e.clientY - dragY;
   }
-  function handleMouseUp() { isPanning = false; }
-  function handleWheel(e: WheelEvent) {
+  function onMouseUp() { dragging = false; }
+  function onWheel(e: WheelEvent) {
     e.preventDefault();
-    const delta = e.deltaY > 0 ? -0.08 : 0.08;
-    scale = Math.max(0.3, Math.min(2.5, scale + delta));
+    scale = Math.max(0.2, Math.min(3, scale + (e.deltaY > 0 ? -0.08 : 0.08)));
   }
 
-  // Status colors
   const STATUS_DOT: Record<string, string> = {
-    running: 'bg-blue-500',
-    idle: 'bg-emerald-500',
-    active: 'bg-emerald-500',
-    paused: 'bg-amber-500',
-    error: 'bg-red-500',
-    terminated: 'bg-zinc-500',
+    running: '#3B82F6', idle: '#10B981', active: '#10B981',
+    paused: '#F59E0B', error: '#EF4444', terminated: '#71717A',
   };
-
-  const ADAPTER_NAMES: Record<string, string> = {
+  const ADAPTER: Record<string, string> = {
     claude_local: 'Claude', codex_local: 'Codex', cursor: 'Cursor',
     gemini_local: 'Gemini', pi_local: 'Pi', opencode_local: 'OpenCode',
     openclaw_gateway: 'OpenClaw', process: 'Process', http: 'HTTP',
   };
-
-  // Role icon backgrounds
-  const ROLE_BG: Record<string, string> = {
-    ceo: '#92400E', cto: '#1E40AF', cfo: '#065F46', cmo: '#6B21A8',
-    cpo: '#9A3412', engineer: '#164E63', designer: '#831843',
-    general: '#3F3F46', marketer: '#7C2D12',
+  const ROLE_ICONS: Record<string, typeof Bot> = {
+    ceo: Briefcase, cto: Terminal, cfo: TrendingUp, cmo: Megaphone,
+    cpo: Globe, engineer: Code, designer: Palette, general: Bot,
   };
+  function roleIcon(role: string) { return ROLE_ICONS[role?.toLowerCase()] ?? Bot; }
 </script>
 
 <div class="flex h-full flex-col">
-  <!-- Header bar -->
-  <div class="flex items-center justify-between border-b border-border px-5 py-3">
-    <div class="flex items-center gap-4">
-      <h1 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground">Org Chart</h1>
-      <a href="/{prefix}/import" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-        <Upload class="h-3.5 w-3.5" /> Import company
-      </a>
-      <a href="/{prefix}/export" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors">
-        <Download class="h-3.5 w-3.5" /> Export company
-      </a>
-    </div>
+  <!-- Top bar -->
+  <div class="flex items-center gap-6 border-b border-border px-5 py-3 shrink-0">
+    <span class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Org Chart</span>
+    <a href="/{prefix}/import" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+      <Upload class="h-3.5 w-3.5" /> Import company
+    </a>
+    <a href="/{prefix}/export" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
+      <Download class="h-3.5 w-3.5" /> Export company
+    </a>
   </div>
 
-  <!-- Canvas area -->
+  <!-- Canvas -->
   <div
-    class="relative flex-1 overflow-hidden bg-background"
-    style="cursor: {isPanning ? 'grabbing' : 'grab'};"
-    onmousedown={handleMouseDown}
-    onmousemove={handleMouseMove}
-    onmouseup={handleMouseUp}
-    onmouseleave={handleMouseUp}
-    onwheel={handleWheel}
+    class="relative flex-1 overflow-hidden"
+    style="cursor:{dragging?'grabbing':'grab'};background:var(--org-bg,#0C0C12)"
     role="application"
-    aria-label="Organization chart canvas"
+    aria-label="Org chart"
+    onmousedown={onMouseDown}
+    onmousemove={onMouseMove}
+    onmouseup={onMouseUp}
+    onmouseleave={onMouseUp}
+    onwheel={onWheel}
   >
-    <!-- Zoom controls -->
+    <!-- Zoom buttons -->
     <div class="absolute top-3 right-3 z-10 flex flex-col gap-1">
-      <button onclick={zoomIn} class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" aria-label="Zoom in">
-        <Plus class="h-4 w-4" />
-      </button>
-      <button onclick={zoomOut} class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition-colors" aria-label="Zoom out">
-        <Minus class="h-4 w-4" />
-      </button>
-      <button onclick={fitView} class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-accent transition-colors text-[10px] font-bold" aria-label="Fit view">
-        Fit
-      </button>
+      <button onclick={zoomIn} class="oc-btn" aria-label="Zoom in"><Plus class="h-4 w-4" /></button>
+      <button onclick={zoomOut} class="oc-btn" aria-label="Zoom out"><Minus class="h-4 w-4" /></button>
+      <button onclick={fit} class="oc-btn text-[10px] font-bold" aria-label="Fit">Fit</button>
     </div>
 
     {#if loading}
       <div class="flex h-full items-center justify-center">
-        <div class="flex flex-col items-center gap-3">
-          <div class="h-10 w-10 animate-spin rounded-full border-2 border-border border-t-blue-500"></div>
-          <p class="text-sm text-muted-foreground">Loading org chart...</p>
-        </div>
+        <div class="h-8 w-8 animate-spin rounded-full border-2 border-border border-t-blue-500"></div>
       </div>
     {:else if agents.length === 0}
       <div class="flex h-full items-center justify-center">
-        <div class="flex flex-col items-center gap-4">
-          <div class="rounded-full bg-accent/60 p-4">
-            <Users class="h-10 w-10 text-muted-foreground" />
-          </div>
-          <h3 class="text-lg font-medium text-foreground">No agents yet</h3>
-          <a href="/{prefix}/agents/new" class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700">
-            + New Agent
-          </a>
+        <div class="text-center">
+          <Users class="mx-auto mb-3 h-10 w-10 text-muted-foreground/40" />
+          <p class="text-sm text-muted-foreground">No agents yet</p>
+          <a href="/{prefix}/agents/new" class="mt-3 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm text-white hover:bg-blue-700">+ New Agent</a>
         </div>
       </div>
     {:else}
-      <!-- Pannable/zoomable container -->
       <div
-        class="h-full w-full flex items-start justify-center pt-16"
-        style="transform: translate({translateX}px, {translateY}px) scale({scale}); transform-origin: center top; transition: {isPanning ? 'none' : 'transform 0.15s ease'};"
+        style="transform:translate({tx}px,{ty}px) scale({scale});transform-origin:50% 0;transition:{dragging?'none':'transform .15s ease'}"
+        class="flex justify-center pt-16 pb-32"
       >
-        <div class="flex flex-col items-center gap-0">
+        <div class="inline-flex flex-col items-center">
           {#each roots as root (root.id)}
-            {@render orgCard(root)}
+            {@render tree(root)}
           {/each}
         </div>
       </div>
@@ -170,64 +140,136 @@
   </div>
 </div>
 
-{#snippet orgCard(agent: Agent)}
-  {@const kids = children(agent.id)}
+{#snippet tree(agent: Agent)}
+  {@const kids = getChildren(agent.id)}
+  {@const RoleIcon = roleIcon(agent.role ?? '')}
   <div class="flex flex-col items-center">
-    <!-- Vertical line from parent (if not root) -->
-    {#if agent.reportsTo}
-      <div class="w-px h-8 bg-border"></div>
-    {/if}
-
-    <!-- Agent card -->
+    <!-- Card -->
     <a
       href="/{prefix}/agents/{agent.id}"
-      class="group relative flex items-start gap-3 rounded-xl border border-border bg-card p-4 pr-6 shadow-sm transition-all hover:border-blue-500/50 hover:shadow-md"
-      style="min-width: 200px; max-width: 260px;"
+      class="oc-card group"
       onclick={(e) => e.stopPropagation()}
     >
-      <!-- Role icon -->
-      <div
-        class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-white"
-        style="background-color: {ROLE_BG[agent.role?.toLowerCase() ?? ''] ?? ROLE_BG.general}"
-      >
-        <Bot class="h-4 w-4" />
+      <!-- Icon -->
+      <div class="oc-icon">
+        <RoleIcon class="h-4 w-4 text-zinc-400" />
       </div>
-
-      <!-- Info -->
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-bold text-foreground group-hover:text-blue-400 transition-colors truncate">{agent.name}</p>
-        {#if agent.title}
-          <p class="text-xs text-muted-foreground truncate">{agent.title}</p>
-        {:else if agent.role}
-          <p class="text-xs text-muted-foreground truncate capitalize">{agent.role}</p>
-        {/if}
-        {#if agent.adapterType}
-          <p class="mt-0.5 text-[11px] text-muted-foreground/70">{ADAPTER_NAMES[agent.adapterType] ?? agent.adapterType}</p>
-        {/if}
+      <!-- Text -->
+      <div class="flex-1 min-w-0">
+        <p class="text-sm font-bold text-zinc-100 group-hover:text-blue-400 transition-colors">{agent.name}</p>
+        <p class="text-xs text-zinc-400 truncate">{agent.title ?? agent.role ?? ''}</p>
+        <p class="text-[11px] text-zinc-500">{ADAPTER[agent.adapterType ?? ''] ?? agent.adapterType ?? ''}</p>
       </div>
-
       <!-- Status dot -->
-      <div class="absolute left-3 bottom-3 h-2.5 w-2.5 rounded-full {STATUS_DOT[agent.status ?? 'idle'] ?? 'bg-zinc-400'} {agent.status === 'running' ? 'animate-pulse' : ''}"></div>
+      <div
+        class="absolute bottom-3 left-3 h-2.5 w-2.5 rounded-full"
+        style="background:{STATUS_DOT[agent.status ?? 'idle'] ?? '#71717A'}"
+        class:animate-pulse={agent.status === 'running'}
+      ></div>
     </a>
 
-    <!-- Children connector -->
+    <!-- Connector to children -->
     {#if kids.length > 0}
-      <!-- Vertical line down -->
-      <div class="w-px h-8 bg-border"></div>
+      <!-- Vertical line from card bottom to junction -->
+      <div class="oc-vline" style="height:48px"></div>
 
-      <!-- Horizontal connector bar (if multiple children) -->
-      {#if kids.length > 1}
-        <div class="relative" style="width: {kids.length * 240}px; max-width: 90vw;">
-          <div class="absolute top-0 left-1/2 -translate-x-1/2 h-px bg-border" style="width: {(kids.length - 1) * 240}px;"></div>
+      {#if kids.length === 1}
+        <!-- Single child: straight down -->
+        {@render tree(kids[0])}
+      {:else}
+        <!-- Multiple children: horizontal bar + branches -->
+        <div class="relative flex items-start">
+          <!-- Horizontal bar spanning all children -->
+          <div class="absolute top-0 left-1/2 -translate-x-1/2 h-px bg-zinc-700" style="width:calc(100% - 200px)"></div>
+
+          <div class="flex gap-12">
+            {#each kids as child (child.id)}
+              <div class="flex flex-col items-center">
+                <div class="oc-vline" style="height:48px"></div>
+                {@render tree(child)}
+              </div>
+            {/each}
+          </div>
         </div>
       {/if}
-
-      <!-- Children row -->
-      <div class="flex items-start gap-6">
-        {#each kids as child (child.id)}
-          {@render orgCard(child)}
-        {/each}
-      </div>
     {/if}
   </div>
 {/snippet}
+
+<style>
+  :root {
+    --org-bg: #0C0C12;
+  }
+  :global(:root:not(.dark)) {
+    --org-bg: #F3F4F6;
+  }
+
+  .oc-btn {
+    display: flex;
+    height: 32px;
+    width: 32px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: #1a1a24;
+    color: #94A3B8;
+    transition: all .15s;
+  }
+  .oc-btn:hover { color: #F8FAFC; background: #252530; }
+  :global(:root:not(.dark)) .oc-btn {
+    border-color: #D1D5DB;
+    background: #FFFFFF;
+    color: #6B7280;
+  }
+  :global(:root:not(.dark)) .oc-btn:hover { color: #111827; background: #F3F4F6; }
+
+  .oc-card {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px 20px;
+    min-width: 220px;
+    max-width: 280px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #1a1a24;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  .oc-card:hover {
+    border-color: rgba(59,130,246,0.4);
+    box-shadow: 0 0 20px rgba(59,130,246,0.08);
+  }
+  :global(:root:not(.dark)) .oc-card {
+    background: #FFFFFF;
+    border-color: #E5E7EB;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+  }
+  :global(:root:not(.dark)) .oc-card:hover {
+    border-color: #93C5FD;
+    box-shadow: 0 2px 8px rgba(59,130,246,0.12);
+  }
+  :global(:root:not(.dark)) .oc-card p.text-zinc-100 { color: #111827 !important; }
+  :global(:root:not(.dark)) .oc-card p.text-zinc-400 { color: #6B7280 !important; }
+  :global(:root:not(.dark)) .oc-card p.text-zinc-500 { color: #9CA3AF !important; }
+
+  .oc-icon {
+    flex-shrink: 0;
+    display: flex;
+    height: 36px;
+    width: 36px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.06);
+  }
+  :global(:root:not(.dark)) .oc-icon { background: #F3F4F6; }
+
+  .oc-vline {
+    width: 1px;
+    background: #3F3F46;
+    flex-shrink: 0;
+  }
+  :global(:root:not(.dark)) .oc-vline { background: #D1D5DB; }
+</style>
