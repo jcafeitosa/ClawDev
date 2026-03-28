@@ -3,12 +3,12 @@
  *
  * Migration strategy:
  * 1. Elysia handles new/migrated routes
- * 2. Unmigrated routes fall through to Express via .use(expressApp)
+ * 2. Unmigrated routes remain in Express (served separately)
  * 3. Once all routes are migrated, Express is removed
  *
  * Eden Treaty types are exported for type-safe client consumption.
  */
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import type { Db } from "@clawdev/db";
 import { and, count, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import { heartbeatRuns, instanceUserRoles, invites } from "@clawdev/db";
@@ -16,6 +16,8 @@ import type { DeploymentExposure, DeploymentMode } from "@clawdev/shared";
 import { readPersistedDevServerStatus, toDevServerHealthStatus } from "./dev-server-status.js";
 import { instanceSettingsService } from "./services/instance-settings.js";
 import { serverVersion } from "./version.js";
+import { elysiaErrorHandler } from "./elysia-plugins/error-handler.js";
+import { elysiaAuth } from "./elysia-plugins/auth.js";
 
 export function createElysiaApp(
   db: Db,
@@ -24,9 +26,18 @@ export function createElysiaApp(
     deploymentExposure: DeploymentExposure;
     authReady: boolean;
     companyDeletionEnabled: boolean;
+    resolveSession?: (headers: Headers) => Promise<{ user?: { id: string } | null } | null>;
   },
 ) {
   const app = new Elysia({ prefix: "/api" })
+    .use(elysiaErrorHandler)
+    .use(
+      elysiaAuth({
+        db,
+        deploymentMode: opts.deploymentMode,
+        resolveSession: opts.resolveSession,
+      }),
+    )
     .get("/health", async () => {
       let bootstrapStatus: "ready" | "bootstrap_pending" = "ready";
       let bootstrapInviteActive = false;
