@@ -65,6 +65,8 @@ export interface AppOptions {
   storageService?: StorageService;
   serveUi?: boolean;
   resolveSession?: (headers: Headers) => Promise<{ user?: { id: string } | null } | null>;
+  /** better-auth instance — mounted via .mount(auth.handler) for native Web API auth */
+  betterAuth?: { handler: (request: Request) => Promise<Response> | Response };
 }
 
 // ---------------------------------------------------------------------------
@@ -86,7 +88,7 @@ export function createApp(opts: AppOptions) {
 
   const app = new Elysia({ prefix: "/api" })
     // -- Global plugins --
-    .use(cors())
+    .use(cors({ credentials: true }))
     .use(errorHandler)
     .use(auth)
     .use(
@@ -179,8 +181,16 @@ export function createApp(opts: AppOptions) {
     .use(pluginRoutes(db, auth))
     .use(pluginUiStaticRoutes(db));
 
-  // -- Root-level app (WebSocket + static UI) --
+  // -- Root-level app (auth handler + WebSocket + static UI) --
   const rootApp = new Elysia()
+    .use(cors({ credentials: true }));
+
+  // Mount better-auth handler at /api/auth/* (native Web API — no Node.js conversion)
+  if (opts.betterAuth) {
+    rootApp.mount("/api/auth", opts.betterAuth.handler);
+  }
+
+  rootApp
     .use(app)
     .use(liveEventsWs(db, { deploymentMode, resolveSessionFromHeaders: resolveSession }));
 

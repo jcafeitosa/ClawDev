@@ -452,6 +452,7 @@ export async function startServer(): Promise<StartedServer> {
   let resolveSessionFromHeaders:
     | ((headers: Headers) => Promise<BetterAuthSessionResult | null>)
     | undefined;
+  let betterAuthHandler: { handler: (request: Request) => Promise<Response> | Response } | undefined;
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
@@ -490,6 +491,7 @@ export async function startServer(): Promise<StartedServer> {
     );
     const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
     resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
+    betterAuthHandler = auth;
     await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
     authReady = true;
   }
@@ -511,13 +513,16 @@ export async function startServer(): Promise<StartedServer> {
   const storageService = createStorageServiceFromConfig(config);
 
   // Create Elysia app (Bun native — all routes)
-  const app = createApp(db as any, {
+  const app = createApp({
+    db: db as any,
     deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
     authReady,
     companyDeletionEnabled: config.companyDeletionEnabled,
     storageService,
+    serveUi: config.serveUi,
     resolveSession: resolveSessionFromHeaders,
+    betterAuth: betterAuthHandler,
   });
 
   // Start Elysia server (Bun native HTTP + WebSocket)

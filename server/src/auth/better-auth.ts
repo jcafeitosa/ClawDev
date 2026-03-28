@@ -1,7 +1,16 @@
-import type { IncomingHttpHeaders } from "node:http";
+/**
+ * better-auth integration for Elysia/Bun.
+ *
+ * Uses better-auth's native Web API handler via Elysia .mount() — no Node.js
+ * conversion layer (toNodeHandler) needed. Session resolution uses the standard
+ * Headers API directly.
+ *
+ * @see https://better-auth.com/docs/integrations/elysia
+ * @see https://elysiajs.com/integrations/better-auth
+ */
+
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { toNodeHandler } from "better-auth/node";
 import type { Db } from "@clawdev/db";
 import {
   authAccounts,
@@ -10,6 +19,10 @@ import {
   authVerifications,
 } from "@clawdev/db";
 import type { Config } from "../config.js";
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
 
 export type BetterAuthSessionUser = {
   id: string;
@@ -22,20 +35,11 @@ export type BetterAuthSessionResult = {
   user: BetterAuthSessionUser | null;
 };
 
-type BetterAuthInstance = ReturnType<typeof betterAuth>;
+export type BetterAuthInstance = ReturnType<typeof betterAuth>;
 
-function headersFromNodeHeaders(rawHeaders: IncomingHttpHeaders): Headers {
-  const headers = new Headers();
-  for (const [key, raw] of Object.entries(rawHeaders)) {
-    if (!raw) continue;
-    if (Array.isArray(raw)) {
-      for (const value of raw) headers.append(key, value);
-      continue;
-    }
-    headers.set(key, raw);
-  }
-  return headers;
-}
+// ---------------------------------------------------------------------------
+// Trusted origins
+// ---------------------------------------------------------------------------
 
 export function deriveAuthTrustedOrigins(config: Config): string[] {
   const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
@@ -60,7 +64,15 @@ export function deriveAuthTrustedOrigins(config: Config): string[] {
   return Array.from(trustedOrigins);
 }
 
-export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?: string[]): BetterAuthInstance {
+// ---------------------------------------------------------------------------
+// Instance factory
+// ---------------------------------------------------------------------------
+
+export function createBetterAuthInstance(
+  db: Db,
+  config: Config,
+  trustedOrigins?: string[],
+): BetterAuthInstance {
   const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
   const secret = process.env.BETTER_AUTH_SECRET ?? process.env.CLAWDEV_AGENT_JWT_SECRET ?? "clawdev-dev-secret";
   const effectiveTrustedOrigins = trustedOrigins ?? deriveAuthTrustedOrigins(config);
@@ -96,6 +108,16 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
   return betterAuth(authConfig);
 }
 
+// ---------------------------------------------------------------------------
+// Session resolution (Web API — no Node.js conversion needed)
+// ---------------------------------------------------------------------------
+
+/**
+ * Resolve a better-auth session from standard Web API Headers.
+ *
+ * Uses `auth.api.getSession({ headers })` directly — better-auth handles
+ * cookie extraction from the Headers object internally.
+ */
 export async function resolveBetterAuthSessionFromHeaders(
   auth: BetterAuthInstance,
   headers: Headers,
@@ -103,9 +125,7 @@ export async function resolveBetterAuthSessionFromHeaders(
   const api = (auth as unknown as { api?: { getSession?: (input: unknown) => Promise<unknown> } }).api;
   if (!api?.getSession) return null;
 
-  const sessionValue = await api.getSession({
-    headers,
-  });
+  const sessionValue = await api.getSession({ headers });
   if (!sessionValue || typeof sessionValue !== "object") return null;
 
   const value = sessionValue as {
@@ -126,4 +146,3 @@ export async function resolveBetterAuthSessionFromHeaders(
   if (!session || !user) return null;
   return { session, user };
 }
-
