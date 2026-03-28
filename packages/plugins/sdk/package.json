@@ -38,6 +38,14 @@
       "types": "./dist/ui/types.d.ts",
       "import": "./dist/ui/types.js"
     },
+    "./ui-svelte": {
+      "types": "./dist/ui-svelte/index.d.ts",
+      "import": "./dist/ui-svelte/index.js"
+    },
+    "./ui-svelte/stores": {
+      "types": "./dist/ui-svelte/stores.d.ts",
+      "import": "./dist/ui-svelte/stores.js"
+    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
@@ -81,6 +89,14 @@
         "types": "./dist/ui/types.d.ts",
         "import": "./dist/ui/types.js"
       },
+      "./ui-svelte": {
+        "types": "./dist/ui-svelte/index.d.ts",
+        "import": "./dist/ui-svelte/index.js"
+      },
+      "./ui-svelte/stores": {
+        "types": "./dist/ui-svelte/stores.d.ts",
+        "import": "./dist/ui-svelte/stores.js"
+      },
       "./testing": {
         "types": "./dist/testing.d.ts",
         "import": "./dist/testing.js"
@@ -116,10 +132,14 @@
     "typescript": "^5.7.3"
   },
   "peerDependencies": {
-    "react": ">=18"
+    "react": ">=18",
+    "svelte": ">=5"
   },
   "peerDependenciesMeta": {
     "react": {
+      "optional": true
+    },
+    "svelte": {
       "optional": true
     }
   }
