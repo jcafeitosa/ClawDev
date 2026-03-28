@@ -169,5 +169,5 @@ export function elysiaAuth(opts: AuthPluginOptions) {
 
       return { actor: { type: "none", source: "bearer_unrecognized" } };
     },
-  );
+  ).as("global");
 }
