@@ -1,0 +1,1 @@
+import{s,d as u,e as r,g as i}from"./DJW_FWg2.js";let t=s(u([]));function a(e){if(typeof document>"u")return;if(e.length===0){document.title="ClawDev";return}const n=e.map(o=>o.label).reverse().join(" · ");document.title=`${n} · ClawDev`}const d={get items(){return i(t)},set(e){r(t,e,!0),a(e)},clear(){r(t,[],!0),a([])}};export{d as b};

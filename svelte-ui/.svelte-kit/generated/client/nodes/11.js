@@ -1,0 +1,1 @@
+export { default as component } from "../../../../src/routes/[companyPrefix]/inbox/+page.svelte";

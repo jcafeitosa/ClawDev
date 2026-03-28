@@ -4,5 +4,6 @@ packages:
   - packages/plugins/*
   - packages/plugins/examples/*
   - server
-  - ui
+  - svelte-ui
+  - docs-astro
   - cli
