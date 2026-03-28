@@ -9,6 +9,10 @@
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
   import { onMount } from "svelte";
   import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw } from "lucide-svelte";
+  import AgentIconPicker from '$lib/components/agent-icon-picker.svelte';
+  import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
+  import MarkdownBody from '$lib/components/markdown-body.svelte';
+  import InlineEditor from '$lib/components/inline-editor.svelte';
 
   // ---------------------------------------------------------------------------
   // State
@@ -27,7 +31,7 @@
 
   // Edit form state
   let editMode = $state(false);
-  let editForm = $state({ name: "", title: "", role: "", status: "", systemPrompt: "" });
+  let editForm = $state({ name: "", title: "", role: "", status: "", systemPrompt: "", icon: "Bot", reportsTo: null as string | null });
   let editSaving = $state(false);
 
   // API Keys state
@@ -193,6 +197,8 @@
       role: agent.role ?? "general",
       status: agent.status ?? "idle",
       systemPrompt: agent.systemPrompt ?? agent.adapterConfig?.systemPrompt ?? "",
+      icon: agent.icon ?? "Bot",
+      reportsTo: agent.reportsTo ?? null,
     };
     editMode = true;
   }
@@ -213,6 +219,8 @@
       if (editForm.systemPrompt !== (agent.systemPrompt ?? agent.adapterConfig?.systemPrompt ?? "")) {
         payload.systemPrompt = editForm.systemPrompt;
       }
+      if (editForm.icon !== (agent.icon ?? "Bot")) payload.icon = editForm.icon;
+      if (editForm.reportsTo !== (agent.reportsTo ?? null)) payload.reportsTo = editForm.reportsTo;
 
       if (Object.keys(payload).length === 0) {
         toastStore.push({ title: "No changes", body: "Nothing was modified.", tone: "info" });
@@ -301,6 +309,20 @@
   });
 
   // ---------------------------------------------------------------------------
+  // Inline name edit
+  // ---------------------------------------------------------------------------
+  async function saveInlineName(newName: string): Promise<void> {
+    if (!agentId) throw new Error("No agent ID");
+    const res = await api(`/api/agents/${agentId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ name: newName }),
+    });
+    if (!res.ok) throw new Error(`Failed: ${res.status}`);
+    toastStore.push({ title: "Name updated", body: `Agent renamed to "${newName}".`, tone: "success" });
+    await loadAgent();
+  }
+
+  // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
   const ADAPTER_LABELS: Record<string, string> = {
@@ -326,12 +348,18 @@
     <div class="flex items-start justify-between gap-4">
       <div class="min-w-0">
         <div class="flex items-center gap-3 mb-1">
-          <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-[#2563EB]/10 text-[#60a5fa] shrink-0">
+          <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-[#2563EB]/10 text-[#60a5fa] shrink-0" title={agent.icon ?? "Bot"}>
             <Bot size={20} />
           </div>
           <div>
             <div class="flex items-center gap-2">
-              <h1 class="text-xl font-semibold truncate">{agent.name}</h1>
+              <InlineEditor
+                value={agent.name}
+                onSave={saveInlineName}
+                tag="h1"
+                class="text-xl font-semibold"
+                placeholder="Agent name"
+              />
               <StatusBadge status={agent.status} />
               {#if agent.role}<Badge variant="outline" class="capitalize">{agent.role}</Badge>{/if}
             </div>
@@ -394,14 +422,21 @@
         </CardHeader>
         <CardContent>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label for="edit-name" class="block text-xs text-[#94A3B8] mb-1">Name</label>
-              <input
-                id="edit-name"
-                type="text"
-                bind:value={editForm.name}
-                class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
-              />
+            <!-- Icon + Name row -->
+            <div class="sm:col-span-2 flex items-start gap-4">
+              <div>
+                <label class="block text-xs text-[#94A3B8] mb-1">Icon</label>
+                <AgentIconPicker value={editForm.icon} onSelect={(name) => editForm.icon = name} />
+              </div>
+              <div class="flex-1">
+                <label for="edit-name" class="block text-xs text-[#94A3B8] mb-1">Name</label>
+                <input
+                  id="edit-name"
+                  type="text"
+                  bind:value={editForm.name}
+                  class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                />
+              </div>
             </div>
             <div>
               <label for="edit-title" class="block text-xs text-[#94A3B8] mb-1">Title</label>
@@ -419,10 +454,22 @@
                 bind:value={editForm.role}
                 class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#2563EB] capitalize"
               >
-                {#each ROLES as role}
-                  <option value={role} class="capitalize bg-[#0f172a]">{role}</option>
+                {#each ROLES as r}
+                  <option value={r} class="capitalize bg-[#0f172a]">{r}</option>
                 {/each}
               </select>
+            </div>
+            <!-- Reports To -->
+            <div>
+              <label class="block text-xs text-[#94A3B8] mb-1">Reports To</label>
+              {#if companyId}
+                <ReportsToPicker
+                  {companyId}
+                  value={editForm.reportsTo}
+                  excludeId={agentId}
+                  onSelect={(id) => editForm.reportsTo = id}
+                />
+              {/if}
             </div>
             <div>
               <label for="edit-status" class="block text-xs text-[#94A3B8] mb-1">Status</label>
@@ -431,8 +478,8 @@
                 bind:value={editForm.status}
                 class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#2563EB] capitalize"
               >
-                {#each STATUSES as status}
-                  <option value={status} class="capitalize bg-[#0f172a]">{status}</option>
+                {#each STATUSES as s}
+                  <option value={s} class="capitalize bg-[#0f172a]">{s}</option>
                 {/each}
               </select>
             </div>
@@ -474,6 +521,16 @@
           <!-- OVERVIEW TAB -->
           <TabsContent value="overview">
             <div class="space-y-4 mt-4">
+              <!-- Description -->
+              {#if agent.description}
+                <Card>
+                  <CardHeader><CardTitle>Description</CardTitle></CardHeader>
+                  <CardContent>
+                    <MarkdownBody content={agent.description} />
+                  </CardContent>
+                </Card>
+              {/if}
+
               <!-- Budget Card -->
               {#if agent.budgetMonthlyCents > 0}
                 <Card>

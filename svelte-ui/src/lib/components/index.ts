@@ -11,3 +11,4 @@ export { default as MarkdownBody } from './markdown-body.svelte';
 export { default as InlineEditor } from './inline-editor.svelte';
 export { default as NewIssueDialog } from './new-issue-dialog.svelte';
 export { openNewIssueDialog } from './new-issue-dialog.svelte';
+export { default as LiveRunWidget } from './live-run-widget.svelte';

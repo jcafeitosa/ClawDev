@@ -2,8 +2,12 @@
   import { Sidebar } from "$components/layout/index.js";
   import { BreadcrumbBar } from "$components/layout/index.js";
   import { ToastViewport } from "$components/layout/index.js";
+  import MobileBottomNav from "$components/layout/mobile-bottom-nav.svelte";
+  import { NewIssueDialog } from "$components/index.js";
   import { sidebarStore } from "$stores/sidebar.svelte.js";
+  import { companyStore } from "$stores/company.svelte.js";
   import { themeStore } from "$stores/theme.svelte.js";
+  import { page } from "$app/stores";
   import { onMount } from "svelte";
 
   let { children } = $props();
@@ -11,10 +15,40 @@
   onMount(() => {
     themeStore.init();
     sidebarStore.init();
+    loadCompanies();
   });
+
+  // Sync company from route param
+  $effect(() => {
+    const prefix = $page.params.companyPrefix;
+    if (prefix && companyStore.companies.length > 0) {
+      const match = companyStore.companies.find(
+        (c) => c.slug === prefix || c.id === prefix,
+      );
+      if (match && match.id !== companyStore.selectedCompanyId) {
+        companyStore.select(match.id, "route_sync");
+      }
+    }
+  });
+
+  async function loadCompanies() {
+    if (companyStore.companies.length > 0) return;
+    companyStore.setLoading(true);
+    try {
+      const res = await fetch("/api/companies");
+      if (!res.ok) throw new Error(`Failed to load companies: ${res.status}`);
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : data.data ?? data.companies ?? [];
+      companyStore.setCompanies(list);
+    } catch (err) {
+      companyStore.setError(err instanceof Error ? err : new Error(String(err)));
+    } finally {
+      companyStore.setLoading(false);
+    }
+  }
 </script>
 
-<div class="flex h-full overflow-hidden">
+<div class="flex h-full overflow-hidden bg-[var(--clawdev-bg-base)]">
   <!-- Sidebar -->
   {#if sidebarStore.open || !sidebarStore.isMobile}
     <Sidebar />
@@ -23,10 +57,12 @@
   <!-- Main content -->
   <div class="flex flex-1 flex-col min-w-0 overflow-hidden">
     <BreadcrumbBar />
-    <main class="flex-1 overflow-y-auto">
+    <main class="flex-1 overflow-y-auto bg-[var(--clawdev-bg-base)] pb-16 md:pb-0">
       {@render children()}
     </main>
   </div>
 </div>
 
+<MobileBottomNav companyPrefix={$page.params.companyPrefix} />
+<NewIssueDialog />
 <ToastViewport />

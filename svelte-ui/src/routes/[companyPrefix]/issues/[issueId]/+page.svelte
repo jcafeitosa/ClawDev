@@ -7,8 +7,11 @@
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea, Input, Label } from "$components/ui/index.js";
+  import InlineEditor from "$lib/components/inline-editor.svelte";
+  import MarkdownBody from "$lib/components/markdown-body.svelte";
+  import LiveRunWidget from "$lib/components/live-run-widget.svelte";
   import { onMount } from "svelte";
-  import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink } from "lucide-svelte";
+  import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag } from "lucide-svelte";
 
   // ---------------------------------------------------------------------------
   // Types
@@ -27,6 +30,7 @@
     parentId?: string | null;
     companyId: string;
     checkedOutBy?: string | null;
+    labels?: Array<{ id: string; name: string; color?: string }> | null;
     createdAt?: string;
     updatedAt?: string;
     project?: { id: string; name: string } | null;
@@ -81,6 +85,36 @@
     [key: string]: unknown;
   }
 
+  interface SubIssue {
+    id: string;
+    identifier?: string;
+    title: string;
+    status: string;
+    priority?: string | null;
+    [key: string]: unknown;
+  }
+
+  interface ActivityEntry {
+    id: string;
+    actor?: string | null;
+    actorName?: string | null;
+    action: string;
+    details?: string | null;
+    createdAt?: string;
+    [key: string]: unknown;
+  }
+
+  interface Run {
+    id: string;
+    status: string;
+    agentId?: string | null;
+    agentName?: string | null;
+    startedAt?: string | null;
+    finishedAt?: string | null;
+    summary?: string | null;
+    [key: string]: unknown;
+  }
+
   // ---------------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------------
@@ -97,6 +131,9 @@
   let documents = $state<IssueDocument[]>([]);
   let attachments = $state<Attachment[]>([]);
   let agents = $state<Agent[]>([]);
+  let subIssues = $state<SubIssue[]>([]);
+  let activityEntries = $state<ActivityEntry[]>([]);
+  let runs = $state<Run[]>([]);
   let loading = $state(true);
   let notFound = $state(false);
   let activeTab = $state("details");
@@ -139,12 +176,18 @@
   let uploading = $state(false);
   let fileInput = $state<HTMLInputElement | null>(null);
 
+  // -- Sub-issue create state
+  let showSubIssueForm = $state(false);
+  let newSubIssueTitle = $state("");
+  let submittingSubIssue = $state(false);
+
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
   let issueId = $derived($page.params.issueId);
   let companyId = $derived(companyStore.selectedCompanyId);
   let isCheckedOut = $derived(!!issue?.checkedOutBy);
+  let prefix = $derived($page.params.companyPrefix);
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -213,6 +256,41 @@
     }
   }
 
+  async function loadSubIssues() {
+    if (!issueId || !companyId) return;
+    try {
+      const res = await api(`/api/companies/${companyId}/issues?parentId=${issueId}`);
+      if (res.ok) {
+        const data = await res.json();
+        subIssues = Array.isArray(data) ? data : data.data ?? data.issues ?? [];
+      } else {
+        subIssues = [];
+      }
+    } catch {
+      subIssues = [];
+    }
+  }
+
+  async function loadActivity() {
+    if (!issueId) return;
+    try {
+      const res = await api(`/api/issues/${issueId}/activity`);
+      activityEntries = res.ok ? ((await res.json()) as ActivityEntry[]) ?? [] : [];
+    } catch {
+      activityEntries = [];
+    }
+  }
+
+  async function loadRuns() {
+    if (!issueId) return;
+    try {
+      const res = await api(`/api/issues/${issueId}/runs`);
+      runs = res.ok ? ((await res.json()) as Run[]) ?? [] : [];
+    } catch {
+      runs = [];
+    }
+  }
+
   async function submitComment() {
     if (!issueId || !newComment.trim()) return;
     submittingComment = true;
@@ -229,6 +307,25 @@
       toastStore.push({ title: "Failed to add comment", body: err?.message, tone: "error" });
     } finally {
       submittingComment = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // InlineEditor title save
+  // ---------------------------------------------------------------------------
+  async function saveTitle(newTitle: string) {
+    if (!issueId) return;
+    const res = await api(`/api/issues/${issueId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ title: newTitle }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    if (issue) {
+      issue = { ...issue, title: newTitle };
+      breadcrumbStore.set([
+        { label: "Issues", href: `/${prefix}/issues` },
+        { label: issue.identifier ?? newTitle },
+      ]);
     }
   }
 
@@ -336,6 +433,29 @@
     } finally {
       deleting = false;
       showDeleteConfirm = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Sub-issue handlers
+  // ---------------------------------------------------------------------------
+  async function createSubIssue() {
+    if (!issueId || !companyId || !newSubIssueTitle.trim()) return;
+    submittingSubIssue = true;
+    try {
+      const res = await api(`/api/companies/${companyId}/issues`, {
+        method: "POST",
+        body: JSON.stringify({ title: newSubIssueTitle.trim(), parentId: issueId }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Sub-issue created", tone: "success" });
+      newSubIssueTitle = "";
+      showSubIssueForm = false;
+      await loadSubIssues();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to create sub-issue", body: err?.message, tone: "error" });
+    } finally {
+      submittingSubIssue = false;
     }
   }
 
@@ -479,6 +599,15 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Label color helper
+  // ---------------------------------------------------------------------------
+  function labelStyle(color?: string): string {
+    if (!color) return '';
+    const c = color.startsWith('#') ? color : `#${color}`;
+    return `background-color: ${c}20; color: ${c}; border-color: ${c}40;`;
+  }
+
+  // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
   onMount(() => {
@@ -486,6 +615,9 @@
     loadComments();
     loadDocuments();
     loadAttachments();
+    loadSubIssues();
+    loadActivity();
+    loadRuns();
   });
 </script>
 
@@ -502,19 +634,25 @@
 {:else if issue}
   <div class="p-6">
     <!-- Header -->
-    <div class="flex items-start justify-between gap-4 mb-6">
-      <div class="min-w-0">
+    <div class="flex items-start justify-between gap-4 mb-4">
+      <div class="min-w-0 flex-1">
         <div class="flex items-center gap-3 mb-1">
           {#if issue.identifier}
-            <span class="text-sm font-mono text-zinc-500 dark:text-zinc-400">{issue.identifier}</span>
+            <span class="text-sm font-mono text-zinc-500 dark:text-zinc-400 shrink-0">{issue.identifier}</span>
           {/if}
-          <h1 class="text-xl font-semibold truncate">{issue.title}</h1>
+          <InlineEditor
+            value={issue.title}
+            onSave={saveTitle}
+            tag="h1"
+            class="text-xl font-semibold"
+            placeholder="Issue title..."
+          />
         </div>
         <!-- Ancestors -->
         {#if issue.ancestors && issue.ancestors.length > 0}
           <div class="flex items-center gap-1.5 text-xs text-zinc-500 dark:text-zinc-400 mt-1">
             {#each issue.ancestors as ancestor, i}
-              <a href="/{$page.params.companyPrefix}/issues/{ancestor.id}" class="hover:text-primary hover:underline">
+              <a href="/{prefix}/issues/{ancestor.id}" class="hover:text-primary hover:underline">
                 {ancestor.identifier ?? ancestor.title}
               </a>
               {#if i < issue.ancestors.length - 1}
@@ -560,11 +698,16 @@
             Delete
           </Button>
         {/if}
-        <Button variant="outline" size="sm" href="/{$page.params.companyPrefix}/issues">
+        <Button variant="outline" size="sm" href="/{prefix}/issues">
           Back
         </Button>
       </div>
     </div>
+
+    <!-- Live Run Widget -->
+    {#if companyId}
+      <LiveRunWidget {issueId} companyId={companyId} companyPrefix={prefix} />
+    {/if}
 
     <!-- Inline Edit Form -->
     {#if editing}
@@ -631,10 +774,15 @@
           <TabsList>
             <TabsTrigger value="details">Details</TabsTrigger>
             <TabsTrigger value="comments">Comments ({comments.length})</TabsTrigger>
+            <TabsTrigger value="sub-issues">Sub-Issues ({subIssues.length})</TabsTrigger>
+            <TabsTrigger value="activity">Activity</TabsTrigger>
             <TabsTrigger value="work-products">Work Products</TabsTrigger>
             <TabsTrigger value="documents">Documents</TabsTrigger>
           </TabsList>
 
+          <!-- ============================================================= -->
+          <!-- Details Tab                                                    -->
+          <!-- ============================================================= -->
           <TabsContent value="details">
             <div class="space-y-6 mt-4">
               <!-- Description -->
@@ -643,10 +791,10 @@
                   <CardTitle>Description</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {#if issue.description}
-                    <div class="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap">
-                      {issue.description}
-                    </div>
+                  {#if issue.descriptionDocument?.content}
+                    <MarkdownBody content={issue.descriptionDocument.content} />
+                  {:else if issue.description}
+                    <MarkdownBody content={issue.description} />
                   {:else}
                     <p class="text-sm text-zinc-500 dark:text-zinc-400 italic">No description provided.</p>
                   {/if}
@@ -660,9 +808,7 @@
                     <CardTitle>Plan</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <div class="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm">
-                      {issue.planDocument.content}
-                    </div>
+                    <MarkdownBody content={issue.planDocument.content} />
                   </CardContent>
                 </Card>
               {/if}
@@ -725,6 +871,9 @@
             </div>
           </TabsContent>
 
+          <!-- ============================================================= -->
+          <!-- Comments Tab                                                   -->
+          <!-- ============================================================= -->
           <TabsContent value="comments">
             <div class="mt-4 space-y-4">
               <!-- Comment input -->
@@ -773,6 +922,159 @@
             </div>
           </TabsContent>
 
+          <!-- ============================================================= -->
+          <!-- Sub-Issues Tab                                                 -->
+          <!-- ============================================================= -->
+          <TabsContent value="sub-issues">
+            <div class="mt-4 space-y-4">
+              <div class="flex justify-end">
+                <Button variant="outline" size="sm" onclick={() => showSubIssueForm = !showSubIssueForm}>
+                  {#if showSubIssueForm}
+                    <X class="size-3.5 mr-1" />
+                    Cancel
+                  {:else}
+                    <Plus class="size-3.5 mr-1" />
+                    Create Sub-Issue
+                  {/if}
+                </Button>
+              </div>
+
+              {#if showSubIssueForm}
+                <Card>
+                  <CardContent class="pt-4">
+                    <div class="space-y-3">
+                      <div>
+                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Title</Label>
+                        <Input bind:value={newSubIssueTitle} placeholder="Sub-issue title..." />
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <Button size="sm" onclick={createSubIssue} disabled={submittingSubIssue || !newSubIssueTitle.trim()}>
+                          {submittingSubIssue ? "Creating..." : "Create"}
+                        </Button>
+                        <Button variant="outline" size="sm" onclick={() => { showSubIssueForm = false; newSubIssueTitle = ''; }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              {/if}
+
+              {#if subIssues.length === 0}
+                <EmptyState title="No sub-issues" description="Break this issue into smaller tasks by creating sub-issues." icon="🧩" />
+              {:else}
+                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                  {#each subIssues as sub}
+                    <a
+                      href="/{prefix}/issues/{sub.id}"
+                      class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                    >
+                      <div class="flex items-center gap-3 min-w-0">
+                        {#if sub.identifier}
+                          <span class="text-xs font-mono text-zinc-500 dark:text-zinc-400 shrink-0">{sub.identifier}</span>
+                        {/if}
+                        <span class="truncate font-medium">{sub.title}</span>
+                      </div>
+                      <div class="flex items-center gap-2 shrink-0">
+                        {#if sub.priority}
+                          <PriorityIcon priority={sub.priority} />
+                        {/if}
+                        <StatusBadge status={sub.status} />
+                      </div>
+                    </a>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </TabsContent>
+
+          <!-- ============================================================= -->
+          <!-- Activity Tab                                                   -->
+          <!-- ============================================================= -->
+          <TabsContent value="activity">
+            <div class="mt-4 space-y-6">
+              <!-- Activity feed -->
+              <Card>
+                <CardHeader>
+                  <CardTitle class="flex items-center gap-2">
+                    <Activity class="size-4" />
+                    Activity Feed
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {#if activityEntries.length === 0}
+                    <p class="text-sm text-zinc-500 dark:text-zinc-400 italic">No activity recorded yet.</p>
+                  {:else}
+                    <div class="space-y-3">
+                      {#each activityEntries as entry}
+                        <div class="flex items-start gap-3 text-sm">
+                          <div class="mt-1 size-2 rounded-full bg-blue-400 shrink-0"></div>
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                              <span class="font-medium text-[#F8FAFC]">
+                                {entry.actorName ?? entry.actor ?? 'System'}
+                              </span>
+                              <span class="text-zinc-400">{entry.action}</span>
+                              {#if entry.details}
+                                <span class="text-zinc-500">&mdash; {entry.details}</span>
+                              {/if}
+                            </div>
+                            {#if entry.createdAt}
+                              <TimeAgo date={entry.createdAt} class="text-xs text-zinc-500 mt-0.5" />
+                            {/if}
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  {/if}
+                </CardContent>
+              </Card>
+
+              <!-- Run history -->
+              <Card>
+                <CardHeader>
+                  <CardTitle class="flex items-center gap-2">
+                    <ListTree class="size-4" />
+                    Run History
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {#if runs.length === 0}
+                    <p class="text-sm text-zinc-500 dark:text-zinc-400 italic">No runs recorded.</p>
+                  {:else}
+                    <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                      {#each runs as run}
+                        <a
+                          href="/{prefix}/runs/{run.id}"
+                          class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                        >
+                          <div class="flex items-center gap-3 min-w-0">
+                            <StatusBadge status={run.status} />
+                            <span class="truncate">
+                              {run.agentName ?? run.agentId?.slice(0, 8) ?? 'Unknown agent'}
+                            </span>
+                            {#if run.summary}
+                              <span class="text-zinc-500 truncate">&mdash; {run.summary}</span>
+                            {/if}
+                          </div>
+                          <div class="flex items-center gap-2 shrink-0 text-xs text-zinc-500">
+                            {#if run.startedAt}
+                              <TimeAgo date={run.startedAt} />
+                            {/if}
+                            <ExternalLink class="size-3" />
+                          </div>
+                        </a>
+                      {/each}
+                    </div>
+                  {/if}
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          <!-- ============================================================= -->
+          <!-- Work Products Tab                                              -->
+          <!-- ============================================================= -->
           <TabsContent value="work-products">
             <div class="mt-4 space-y-4">
               <!-- Add Work Product button -->
@@ -910,6 +1212,9 @@
             </div>
           </TabsContent>
 
+          <!-- ============================================================= -->
+          <!-- Documents Tab                                                  -->
+          <!-- ============================================================= -->
           <TabsContent value="documents">
             <div class="mt-4">
               {#if documents.length === 0}
@@ -923,9 +1228,7 @@
                       </CardHeader>
                       <CardContent>
                         {#if doc.content}
-                          <div class="prose prose-sm dark:prose-invert max-w-none whitespace-pre-wrap text-sm">
-                            {doc.content}
-                          </div>
+                          <MarkdownBody content={doc.content} />
                         {:else}
                           <p class="text-sm text-zinc-500 italic">No content.</p>
                         {/if}
@@ -956,10 +1259,26 @@
             <span class="capitalize">{issue.priority ?? "normal"}</span>
           </div>
         </PropertyRow>
+        {#if issue.labels && issue.labels.length > 0}
+          <Separator />
+          <PropertyRow label="Labels">
+            <div class="flex flex-wrap gap-1.5">
+              {#each issue.labels as label}
+                <span
+                  class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium"
+                  style={labelStyle(label.color)}
+                >
+                  <Tag class="size-3" />
+                  {label.name}
+                </span>
+              {/each}
+            </div>
+          </PropertyRow>
+        {/if}
         {#if issue.assigneeAgentId}
           <Separator />
           <PropertyRow label="Assignee (Agent)">
-            <a href="/{$page.params.companyPrefix}/agents/{issue.assigneeAgentId}" class="text-primary hover:underline text-xs font-mono">
+            <a href="/{prefix}/agents/{issue.assigneeAgentId}" class="text-primary hover:underline text-xs font-mono">
               {issue.assigneeAgentId.slice(0, 8)}...
             </a>
           </PropertyRow>
@@ -967,7 +1286,7 @@
         {#if issue.project}
           <Separator />
           <PropertyRow label="Project">
-            <a href="/{$page.params.companyPrefix}/projects/{issue.project.id}" class="text-primary hover:underline">
+            <a href="/{prefix}/projects/{issue.project.id}" class="text-primary hover:underline">
               {issue.project.name}
             </a>
           </PropertyRow>
@@ -975,7 +1294,7 @@
         {#if issue.goal}
           <Separator />
           <PropertyRow label="Goal">
-            <a href="/{$page.params.companyPrefix}/goals/{issue.goal.id}" class="text-primary hover:underline">
+            <a href="/{prefix}/goals/{issue.goal.id}" class="text-primary hover:underline">
               {issue.goal.title}
             </a>
           </PropertyRow>
@@ -983,7 +1302,7 @@
         {#if issue.parentId}
           <Separator />
           <PropertyRow label="Parent">
-            <a href="/{$page.params.companyPrefix}/issues/{issue.parentId}" class="text-primary hover:underline text-xs font-mono">
+            <a href="/{prefix}/issues/{issue.parentId}" class="text-primary hover:underline text-xs font-mono">
               {issue.parentId.slice(0, 8)}...
             </a>
           </PropertyRow>

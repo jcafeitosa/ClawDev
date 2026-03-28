@@ -3,6 +3,7 @@
   import { goto } from "$app/navigation";
   import { sidebarStore } from "$stores/sidebar.svelte.js";
   import { companyStore } from "$stores/company.svelte.js";
+  import { openNewIssueDialog } from "$components/new-issue-dialog.svelte";
   import { cn } from "$utils/index.js";
   import {
     LayoutDashboard,
@@ -308,13 +309,13 @@
 
   <!-- New Issue button -->
   <div class="px-3 pt-3 pb-1">
-    <a
-      href={`/${prefix}/issues/new`}
+    <button
+      onclick={openNewIssueDialog}
       class="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-[var(--clawdev-primary)] px-3 text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors"
     >
       <Plus class="size-3.5" />
       New Issue
-    </a>
+    </button>
   </div>
 
   <!-- Navigation with collapsible sections -->

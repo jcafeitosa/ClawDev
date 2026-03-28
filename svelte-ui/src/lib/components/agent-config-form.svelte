@@ -494,7 +494,7 @@
             class="{inputCls} mt-1.5 font-mono text-xs"
             value={config.headers ?? "{}"}
             oninput={(e) => setField("headers", e.currentTarget.value)}
-            placeholder='{"Authorization": "Bearer ..."}'
+            placeholder={"{\u0022Authorization\u0022: \u0022Bearer ...\u0022}"}
             spellcheck="false"
           ></textarea>
           <p class={helpCls}>Custom HTTP headers as a JSON object.</p>
@@ -551,12 +551,12 @@
             class="{inputCls} mt-1.5 font-mono text-xs"
             value={config.promptTemplate ?? ""}
             oninput={(e) => setField("promptTemplate", e.currentTarget.value)}
-            placeholder="You are an agent working on {{issue.title}}..."
+            placeholder="You are an agent working on the assigned issue..."
             spellcheck="false"
           ></textarea>
           <p class={helpCls}>
             Template for the prompt sent to the agent. Supports
-            <code class="rounded bg-white/[0.06] px-1 py-0.5 text-[11px] text-[#94A3B8]">{"{{issue.title}}"}</code>
+            <code class="rounded bg-white/[0.06] px-1 py-0.5 text-[11px] text-[#94A3B8]">{"{{"}issue.title{"}}"}</code>
             placeholders.
           </p>
         </div>
