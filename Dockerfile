@@ -29,30 +29,30 @@ FROM base AS build
 WORKDIR /app
 COPY --from=deps /app /app
 COPY . .
-RUN pnpm --filter @paperclipai/ui build
-RUN pnpm --filter @paperclipai/plugin-sdk build
-RUN pnpm --filter @paperclipai/server build
+RUN pnpm --filter @clawdev/ui build
+RUN pnpm --filter @clawdev/plugin-sdk build
+RUN pnpm --filter @clawdev/server build
 RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" && exit 1)
 
 FROM base AS production
 WORKDIR /app
 COPY --chown=node:node --from=build /app /app
 RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
-  && mkdir -p /paperclip \
-  && chown node:node /paperclip
+  && mkdir -p /clawdev \
+  && chown node:node /clawdev
 
 ENV NODE_ENV=production \
-  HOME=/paperclip \
+  HOME=/clawdev \
   HOST=0.0.0.0 \
   PORT=3100 \
   SERVE_UI=true \
-  PAPERCLIP_HOME=/paperclip \
-  PAPERCLIP_INSTANCE_ID=default \
-  PAPERCLIP_CONFIG=/paperclip/instances/default/config.json \
-  PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
+  CLAWDEV_HOME=/clawdev \
+  CLAWDEV_INSTANCE_ID=default \
+  CLAWDEV_CONFIG=/clawdev/instances/default/config.json \
+  CLAWDEV_DEPLOYMENT_MODE=authenticated \
+  CLAWDEV_DEPLOYMENT_EXPOSURE=private
 
-VOLUME ["/paperclip"]
+VOLUME ["/clawdev"]
 EXPOSE 3100
 
 USER node

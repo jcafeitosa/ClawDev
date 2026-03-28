@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Backup the configured Paperclip database to the configured backup directory
-# (default: ~/.paperclip/instances/<instance-id>/data/backups)
+# Backup the configured ClawDev database to the configured backup directory
+# (default: ~/.clawdev/instances/<instance-id>/data/backups)
 #
 # Usage:
 #   ./scripts/backup-db.sh

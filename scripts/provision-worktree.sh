@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-base_cwd="${PAPERCLIP_WORKSPACE_BASE_CWD:?PAPERCLIP_WORKSPACE_BASE_CWD is required}"
-worktree_cwd="${PAPERCLIP_WORKSPACE_CWD:?PAPERCLIP_WORKSPACE_CWD is required}"
-paperclip_home="${PAPERCLIP_HOME:-$HOME/.paperclip}"
-paperclip_instance_id="${PAPERCLIP_INSTANCE_ID:-default}"
-paperclip_dir="$worktree_cwd/.paperclip"
-worktree_config_path="$paperclip_dir/config.json"
-worktree_env_path="$paperclip_dir/.env"
-worktree_name="${PAPERCLIP_WORKSPACE_BRANCH:-$(basename "$worktree_cwd")}"
+base_cwd="${CLAWDEV_WORKSPACE_BASE_CWD:?CLAWDEV_WORKSPACE_BASE_CWD is required}"
+worktree_cwd="${CLAWDEV_WORKSPACE_CWD:?CLAWDEV_WORKSPACE_CWD is required}"
+clawdev_home="${CLAWDEV_HOME:-$HOME/.clawdev}"
+clawdev_instance_id="${CLAWDEV_INSTANCE_ID:-default}"
+clawdev_dir="$worktree_cwd/.clawdev"
+worktree_config_path="$clawdev_dir/config.json"
+worktree_env_path="$clawdev_dir/.env"
+worktree_name="${CLAWDEV_WORKSPACE_BRANCH:-$(basename "$worktree_cwd")}"
 
 if [[ ! -d "$base_cwd" ]]; then
   echo "Base workspace does not exist: $base_cwd" >&2
@@ -20,16 +20,16 @@ if [[ ! -d "$worktree_cwd" ]]; then
   exit 1
 fi
 
-source_config_path="${PAPERCLIP_CONFIG:-}"
-if [[ -z "$source_config_path" && ( -e "$base_cwd/.paperclip/config.json" || -L "$base_cwd/.paperclip/config.json" ) ]]; then
-  source_config_path="$base_cwd/.paperclip/config.json"
+source_config_path="${CLAWDEV_CONFIG:-}"
+if [[ -z "$source_config_path" && ( -e "$base_cwd/.clawdev/config.json" || -L "$base_cwd/.clawdev/config.json" ) ]]; then
+  source_config_path="$base_cwd/.clawdev/config.json"
 fi
 if [[ -z "$source_config_path" ]]; then
-  source_config_path="$paperclip_home/instances/$paperclip_instance_id/config.json"
+  source_config_path="$clawdev_home/instances/$clawdev_instance_id/config.json"
 fi
 source_env_path="$(dirname "$source_config_path")/.env"
 
-mkdir -p "$paperclip_dir"
+mkdir -p "$clawdev_dir"
 
 run_isolated_worktree_init() {
   if command -v pnpm >/dev/null 2>&1 && pnpm clawdev --help >/dev/null 2>&1; then
@@ -49,10 +49,10 @@ write_fallback_worktree_config() {
   WORKTREE_NAME="$worktree_name" \
   BASE_CWD="$base_cwd" \
   WORKTREE_CWD="$worktree_cwd" \
-  PAPERCLIP_DIR="$paperclip_dir" \
+  CLAWDEV_DIR="$clawdev_dir" \
   SOURCE_CONFIG_PATH="$source_config_path" \
   SOURCE_ENV_PATH="$source_env_path" \
-  PAPERCLIP_WORKTREES_DIR="${PAPERCLIP_WORKTREES_DIR:-}" \
+  CLAWDEV_WORKTREES_DIR="${CLAWDEV_WORKTREES_DIR:-}" \
   node <<'EOF'
 const fs = require("node:fs");
 const os = require("node:os");
@@ -162,14 +162,14 @@ function resolveRuntimeLikePath(value, configPath) {
 
 async function main() {
   const worktreeName = process.env.WORKTREE_NAME;
-  const paperclipDir = process.env.PAPERCLIP_DIR;
+  const clawdevDir = process.env.CLAWDEV_DIR;
   const sourceConfigPath = process.env.SOURCE_CONFIG_PATH;
   const sourceEnvPath = process.env.SOURCE_ENV_PATH;
-  const worktreeHome = path.resolve(expandHomePrefix(nonEmpty(process.env.PAPERCLIP_WORKTREES_DIR) ?? "~/.paperclip-worktrees"));
+  const worktreeHome = path.resolve(expandHomePrefix(nonEmpty(process.env.CLAWDEV_WORKTREES_DIR) ?? "~/.clawdev-worktrees"));
   const instanceId = sanitizeInstanceId(worktreeName);
   const instanceRoot = path.resolve(worktreeHome, "instances", instanceId);
-  const configPath = path.resolve(paperclipDir, "config.json");
-  const envPath = path.resolve(paperclipDir, ".env");
+  const configPath = path.resolve(clawdevDir, "config.json");
+  const envPath = path.resolve(clawdevDir, ".env");
 
   let sourceConfig = null;
   if (sourceConfigPath && fs.existsSync(sourceConfigPath)) {
@@ -232,7 +232,7 @@ async function main() {
         baseDir: path.resolve(instanceRoot, "data", "storage"),
       },
       s3: {
-        bucket: sourceConfig?.storage?.s3?.bucket ?? "paperclip",
+        bucket: sourceConfig?.storage?.s3?.bucket ?? "clawdev",
         region: sourceConfig?.storage?.s3?.region ?? "us-east-1",
         endpoint: sourceConfig?.storage?.s3?.endpoint,
         prefix: sourceConfig?.storage?.s3?.prefix ?? "",
@@ -250,7 +250,7 @@ async function main() {
 
   fs.writeFileSync(configPath, `${JSON.stringify(targetConfig, null, 2)}\n`, { mode: 0o600 });
 
-  const inlineMasterKey = nonEmpty(sourceEnvEntries.PAPERCLIP_SECRETS_MASTER_KEY);
+  const inlineMasterKey = nonEmpty(sourceEnvEntries.CLAWDEV_SECRETS_MASTER_KEY);
   if (inlineMasterKey) {
     fs.mkdirSync(path.resolve(instanceRoot, "secrets"), { recursive: true });
     fs.writeFileSync(targetConfig.secrets.localEncrypted.keyFilePath, inlineMasterKey, {
@@ -258,8 +258,8 @@ async function main() {
       mode: 0o600,
     });
   } else {
-    const sourceKeyFilePath = nonEmpty(sourceEnvEntries.PAPERCLIP_SECRETS_MASTER_KEY_FILE)
-      ? resolveRuntimeLikePath(sourceEnvEntries.PAPERCLIP_SECRETS_MASTER_KEY_FILE, sourceConfigPath)
+    const sourceKeyFilePath = nonEmpty(sourceEnvEntries.CLAWDEV_SECRETS_MASTER_KEY_FILE)
+      ? resolveRuntimeLikePath(sourceEnvEntries.CLAWDEV_SECRETS_MASTER_KEY_FILE, sourceConfigPath)
       : nonEmpty(sourceConfig?.secrets?.localEncrypted?.keyFilePath)
         ? resolveRuntimeLikePath(sourceConfig.secrets.localEncrypted.keyFilePath, sourceConfigPath)
         : null;
@@ -272,17 +272,17 @@ async function main() {
   }
 
   const envLines = [
-    "PAPERCLIP_HOME=" + JSON.stringify(worktreeHome),
-    "PAPERCLIP_INSTANCE_ID=" + JSON.stringify(instanceId),
-    "PAPERCLIP_CONFIG=" + JSON.stringify(configPath),
-    "PAPERCLIP_CONTEXT=" + JSON.stringify(path.resolve(worktreeHome, "context.json")),
-    "PAPERCLIP_IN_WORKTREE=true",
-    "PAPERCLIP_WORKTREE_NAME=" + JSON.stringify(worktreeName),
+    "CLAWDEV_HOME=" + JSON.stringify(worktreeHome),
+    "CLAWDEV_INSTANCE_ID=" + JSON.stringify(instanceId),
+    "CLAWDEV_CONFIG=" + JSON.stringify(configPath),
+    "CLAWDEV_CONTEXT=" + JSON.stringify(path.resolve(worktreeHome, "context.json")),
+    "CLAWDEV_IN_WORKTREE=true",
+    "CLAWDEV_WORKTREE_NAME=" + JSON.stringify(worktreeName),
   ];
 
-  const agentJwtSecret = nonEmpty(sourceEnvEntries.PAPERCLIP_AGENT_JWT_SECRET);
+  const agentJwtSecret = nonEmpty(sourceEnvEntries.CLAWDEV_AGENT_JWT_SECRET);
   if (agentJwtSecret) {
-    envLines.push("PAPERCLIP_AGENT_JWT_SECRET=" + JSON.stringify(agentJwtSecret));
+    envLines.push("CLAWDEV_AGENT_JWT_SECRET=" + JSON.stringify(agentJwtSecret));
   }
 
   fs.writeFileSync(envPath, `${envLines.join("\n")}\n`, { mode: 0o600 });
@@ -318,6 +318,6 @@ done < <(
       -type d \
       -name node_modules \
       ! -path './.git/*' \
-      ! -path './.paperclip/*' \
+      ! -path './.clawdev/*' \
       | sed 's#^\./##'
 )
