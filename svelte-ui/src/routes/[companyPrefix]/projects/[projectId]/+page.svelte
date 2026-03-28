@@ -1,11 +1,13 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { api, unwrap } from "$lib/api";
+  import { goto } from "$app/navigation";
+  import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { companyStore } from "$stores/company.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
+  import { Pencil, Trash2, Plus, X } from "lucide-svelte";
   import { onMount } from "svelte";
 
   // ---------------------------------------------------------------------------
@@ -55,6 +57,11 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Constants
+  // ---------------------------------------------------------------------------
+  const PROJECT_STATUSES = ["backlog", "active", "paused", "completed", "archived"];
+
+  // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
   let project = $state<Project | null>(null);
@@ -65,11 +72,29 @@
   let notFound = $state(false);
   let activeTab = $state("issues");
 
+  // Edit form state
+  let editing = $state(false);
+  let editName = $state("");
+  let editStatus = $state("");
+  let editTargetDate = $state("");
+  let saving = $state(false);
+
+  // Delete state
+  let confirmDelete = $state(false);
+  let deleting = $state(false);
+
+  // Create workspace form state
+  let showCreateWorkspace = $state(false);
+  let newWsName = $state("");
+  let newWsCwd = $state("");
+  let creatingWorkspace = $state(false);
+
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
   let projectId = $derived($page.params.projectId);
   let companyId = $derived(companyStore.selectedCompanyId);
+  let prefix = $derived($page.params.companyPrefix);
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -79,16 +104,18 @@
     loading = true;
     notFound = false;
     try {
-      const result = await (api as any).api.projects({ id: projectId }).get();
-      project = unwrap(result) as Project;
+      const res = await api(`/api/projects/${projectId}`);
+      if (!res.ok) {
+        if (res.status === 404) { notFound = true; return; }
+        throw new Error(await res.text());
+      }
+      project = (await res.json()) as Project;
       breadcrumbStore.set([
-        { label: "Projects", href: `/${$page.params.companyPrefix}/projects` },
+        { label: "Projects", href: `/${prefix}/projects` },
         { label: project.name },
       ]);
     } catch (err: any) {
-      if (err?.message?.includes("not found") || err?.status === 404) {
-        notFound = true;
-      } else {
+      if (!notFound) {
         toastStore.push({ title: "Failed to load project", body: err?.message, tone: "error" });
       }
     } finally {
@@ -99,8 +126,8 @@
   async function loadIssues() {
     if (!projectId || !companyId) return;
     try {
-      const result = await (api as any).api.companies({ companyId }).issues.get({ query: { projectId } });
-      issues = (unwrap(result) as Issue[]) ?? [];
+      const res = await api(`/api/companies/${companyId}/issues?projectId=${projectId}`);
+      issues = res.ok ? ((await res.json()) as Issue[]) ?? [] : [];
     } catch {
       issues = [];
     }
@@ -109,9 +136,8 @@
   async function loadGoals() {
     if (!companyId) return;
     try {
-      const result = await (api as any).api.companies({ companyId }).goals.get();
-      const allGoals = (unwrap(result) as Goal[]) ?? [];
-      // Filter goals linked to this project
+      const res = await api(`/api/companies/${companyId}/goals`);
+      const allGoals = res.ok ? ((await res.json()) as Goal[]) ?? [] : [];
       const projectGoalIds = new Set([
         ...(project?.goalIds ?? []),
         ...(project?.goalId ? [project.goalId] : []),
@@ -125,8 +151,8 @@
   async function loadWorkspaces() {
     if (!projectId) return;
     try {
-      const result = await (api as any).api.projects({ id: projectId }).workspaces.get();
-      workspaces = (unwrap(result) as Workspace[]) ?? [];
+      const res = await api(`/api/projects/${projectId}/workspaces`);
+      workspaces = res.ok ? ((await res.json()) as Workspace[]) ?? [] : [];
     } catch {
       workspaces = [];
     }
@@ -134,11 +160,94 @@
 
   onMount(async () => {
     await loadProject();
-    // Load secondary data after project is loaded (need companyId from project)
     loadIssues();
     loadGoals();
     loadWorkspaces();
   });
+
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
+  function startEditing() {
+    if (!project) return;
+    editName = project.name;
+    editStatus = project.status ?? "backlog";
+    editTargetDate = project.targetDate ? project.targetDate.slice(0, 10) : "";
+    editing = true;
+  }
+
+  function cancelEditing() {
+    editing = false;
+  }
+
+  async function saveProject() {
+    if (!project || !editName.trim()) return;
+    saving = true;
+    try {
+      const body: Record<string, unknown> = {
+        name: editName.trim(),
+        status: editStatus,
+      };
+      if (editTargetDate) {
+        body.targetDate = new Date(editTargetDate).toISOString();
+      } else {
+        body.targetDate = null;
+      }
+      const res = await api(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const updated = (await res.json()) as Project;
+      project = updated;
+      editing = false;
+      toastStore.push({ title: "Project updated", tone: "success" });
+      breadcrumbStore.set([
+        { label: "Projects", href: `/${prefix}/projects` },
+        { label: updated.name },
+      ]);
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to update project", body: err?.message, tone: "error" });
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function deleteProject() {
+    deleting = true;
+    try {
+      const res = await api(`/api/projects/${projectId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Project deleted", tone: "success" });
+      goto(`/${prefix}/projects`);
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to delete project", body: err?.message, tone: "error" });
+    } finally {
+      deleting = false;
+      confirmDelete = false;
+    }
+  }
+
+  async function createWorkspace() {
+    if (!newWsName.trim()) return;
+    creatingWorkspace = true;
+    try {
+      const res = await api(`/api/projects/${projectId}/workspaces`, {
+        method: "POST",
+        body: JSON.stringify({ name: newWsName.trim(), cwd: newWsCwd.trim() || undefined }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Workspace created", tone: "success" });
+      showCreateWorkspace = false;
+      newWsName = "";
+      newWsCwd = "";
+      await loadWorkspaces();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to create workspace", body: err?.message, tone: "error" });
+    } finally {
+      creatingWorkspace = false;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -159,7 +268,7 @@
 {:else if notFound}
   <div class="p-6">
     <EmptyState title="Project not found" description="The project you're looking for doesn't exist or you don't have access." icon="📁">
-      <a href="/{$page.params.companyPrefix}/projects" class="text-sm text-primary hover:underline">Back to projects</a>
+      <a href="/{prefix}/projects" class="text-sm text-primary hover:underline">Back to projects</a>
     </EmptyState>
   </div>
 {:else if project}
@@ -167,24 +276,89 @@
     <!-- Header -->
     <div class="flex items-start justify-between gap-4 mb-6">
       <div class="min-w-0">
-        <div class="flex items-center gap-3 mb-1">
-          <h1 class="text-xl font-semibold truncate">{project.name}</h1>
-          {#if project.status}
-            <StatusBadge status={project.status} />
+        {#if editing}
+          <!-- Edit form -->
+          <div class="space-y-3 max-w-lg">
+            <div>
+              <label for="edit-name" class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+              <input
+                id="edit-name"
+                type="text"
+                bind:value={editName}
+                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label for="edit-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+              <select
+                id="edit-status"
+                bind:value={editStatus}
+                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              >
+                {#each PROJECT_STATUSES as s}
+                  <option value={s} class="capitalize">{s}</option>
+                {/each}
+              </select>
+            </div>
+            <div>
+              <label for="edit-target-date" class="block text-xs font-medium text-zinc-400 mb-1">Target Date</label>
+              <input
+                id="edit-target-date"
+                type="date"
+                bind:value={editTargetDate}
+                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div class="flex items-center gap-2 pt-1">
+              <Button size="sm" onclick={saveProject} disabled={saving || !editName.trim()}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+              <Button variant="ghost" size="sm" onclick={cancelEditing} disabled={saving}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        {:else}
+          <div class="flex items-center gap-3 mb-1">
+            <h1 class="text-xl font-semibold truncate">{project.name}</h1>
+            {#if project.status}
+              <StatusBadge status={project.status} />
+            {/if}
+            {#if project.archivedAt}
+              <Badge variant="secondary">Archived</Badge>
+            {/if}
+          </div>
+          {#if project.shortname}
+            <p class="text-xs font-mono text-zinc-500 dark:text-zinc-400">{project.shortname}</p>
           {/if}
-          {#if project.archivedAt}
-            <Badge variant="secondary">Archived</Badge>
+          {#if project.description}
+            <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{project.description}</p>
           {/if}
-        </div>
-        {#if project.shortname}
-          <p class="text-xs font-mono text-zinc-500 dark:text-zinc-400">{project.shortname}</p>
-        {/if}
-        {#if project.description}
-          <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{project.description}</p>
         {/if}
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <Button variant="outline" size="sm" href="/{$page.params.companyPrefix}/projects">
+        {#if !editing}
+          <Button variant="outline" size="sm" onclick={startEditing}>
+            <Pencil class="size-3.5 mr-1.5" />
+            Edit
+          </Button>
+          {#if confirmDelete}
+            <div class="flex items-center gap-1.5">
+              <Button variant="destructive" size="sm" onclick={deleteProject} disabled={deleting}>
+                {deleting ? "Deleting..." : "Confirm"}
+              </Button>
+              <Button variant="ghost" size="sm" onclick={() => (confirmDelete = false)} disabled={deleting}>
+                <X class="size-3.5" />
+              </Button>
+            </div>
+          {:else}
+            <Button variant="destructive" size="sm" onclick={() => (confirmDelete = true)}>
+              <Trash2 class="size-3.5 mr-1.5" />
+              Delete
+            </Button>
+          {/if}
+        {/if}
+        <Button variant="outline" size="sm" href="/{prefix}/projects">
           Back
         </Button>
       </div>
@@ -222,7 +396,7 @@
                 <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                   {#each issues as issue}
                     <a
-                      href="/{$page.params.companyPrefix}/issues/{issue.id}"
+                      href="/{prefix}/issues/{issue.id}"
                       class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                     >
                       <div class="flex items-center gap-3 min-w-0">
@@ -249,7 +423,7 @@
                 <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                   {#each goals as goal}
                     <a
-                      href="/{$page.params.companyPrefix}/goals/{goal.id}"
+                      href="/{prefix}/goals/{goal.id}"
                       class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                     >
                       <div class="flex items-center gap-3 min-w-0">
@@ -268,9 +442,54 @@
 
           <TabsContent value="workspaces">
             <div class="mt-4">
-              {#if workspaces.length === 0}
+              <!-- Create workspace form -->
+              <div class="mb-4">
+                {#if showCreateWorkspace}
+                  <Card>
+                    <CardContent class="pt-4">
+                      <div class="space-y-3">
+                        <div>
+                          <label for="ws-name" class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+                          <input
+                            id="ws-name"
+                            type="text"
+                            bind:value={newWsName}
+                            placeholder="e.g. frontend-workspace"
+                            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <div>
+                          <label for="ws-cwd" class="block text-xs font-medium text-zinc-400 mb-1">Working Directory (CWD)</label>
+                          <input
+                            id="ws-cwd"
+                            type="text"
+                            bind:value={newWsCwd}
+                            placeholder="/path/to/project"
+                            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm font-mono text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <Button size="sm" onclick={createWorkspace} disabled={creatingWorkspace || !newWsName.trim()}>
+                            {creatingWorkspace ? "Creating..." : "Create"}
+                          </Button>
+                          <Button variant="ghost" size="sm" onclick={() => (showCreateWorkspace = false)} disabled={creatingWorkspace}>
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                {:else}
+                  <Button variant="outline" size="sm" onclick={() => (showCreateWorkspace = true)}>
+                    <Plus class="size-3.5 mr-1.5" />
+                    Create Workspace
+                  </Button>
+                {/if}
+              </div>
+
+              {#if workspaces.length === 0 && !showCreateWorkspace}
                 <EmptyState title="No workspaces" description="No execution workspaces configured for this project." icon="🗂" />
-              {:else}
+              {:else if workspaces.length > 0}
                 <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                   {#each workspaces as ws}
                     <div class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">

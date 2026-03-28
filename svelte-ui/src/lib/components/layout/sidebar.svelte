@@ -12,6 +12,7 @@
     FolderKanban,
     Bot,
     ShieldCheck,
+    Box,
     Building2,
     DollarSign,
     Activity,
@@ -107,6 +108,7 @@
         { label: "Projects", href: "projects", icon: FolderKanban },
         { label: "Agents", href: "agents", icon: Bot },
         { label: "Approvals", href: "approvals", icon: ShieldCheck },
+        { label: "Workspaces", href: "workspaces", icon: Box },
       ],
     },
     {

@@ -1,6 +1,6 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { api, unwrap } from "$lib/api";
+  import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
@@ -62,6 +62,7 @@
   // ---------------------------------------------------------------------------
   let approvalId = $derived($page.params.approvalId);
   let isPending = $derived(approval?.status === "pending");
+  let isRejected = $derived(approval?.status === "rejected");
   let payloadEntries = $derived(
     approval ? Object.entries(approval.payload).filter(([, v]) => v !== null && v !== undefined) : [],
   );
@@ -74,16 +75,18 @@
     loading = true;
     notFound = false;
     try {
-      const result = await (api as any).api.approvals({ id: approvalId }).get();
-      approval = unwrap(result) as Approval;
+      const res = await api(`/api/approvals/${approvalId}`);
+      if (!res.ok) {
+        if (res.status === 404) { notFound = true; return; }
+        throw new Error(await res.text());
+      }
+      approval = (await res.json()) as Approval;
       breadcrumbStore.set([
         { label: "Approvals", href: `/${$page.params.companyPrefix}/approvals` },
         { label: approval.title ?? `${approval.type} approval` },
       ]);
     } catch (err: any) {
-      if (err?.message?.includes("not found") || err?.status === 404) {
-        notFound = true;
-      } else {
+      if (!notFound) {
         toastStore.push({ title: "Failed to load approval", body: err?.message, tone: "error" });
       }
     } finally {
@@ -94,8 +97,8 @@
   async function loadComments() {
     if (!approvalId) return;
     try {
-      const result = await (api as any).api.approvals({ id: approvalId }).comments.get();
-      comments = (unwrap(result) as ApprovalComment[]) ?? [];
+      const res = await api(`/api/approvals/${approvalId}/comments`);
+      comments = res.ok ? ((await res.json()) as ApprovalComment[]) ?? [] : [];
     } catch {
       comments = [];
     }
@@ -104,8 +107,8 @@
   async function loadLinkedIssues() {
     if (!approvalId) return;
     try {
-      const result = await (api as any).api.approvals({ id: approvalId }).issues.get();
-      linkedIssues = (unwrap(result) as LinkedIssue[]) ?? [];
+      const res = await api(`/api/approvals/${approvalId}/issues`);
+      linkedIssues = res.ok ? ((await res.json()) as LinkedIssue[]) ?? [] : [];
     } catch {
       linkedIssues = [];
     }
@@ -115,10 +118,14 @@
     if (!approvalId) return;
     processingAction = "approve";
     try {
-      await (api as any).api.approvals({ id: approvalId }).approve.post({
-        decidedByUserId: null,
-        decisionNote: decisionNote.trim() || null,
+      const res = await api(`/api/approvals/${approvalId}/approve`, {
+        method: "POST",
+        body: JSON.stringify({
+          decidedByUserId: null,
+          decisionNote: decisionNote.trim() || null,
+        }),
       });
+      if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Approval approved", tone: "success" });
       decisionNote = "";
       await loadApproval();
@@ -133,15 +140,60 @@
     if (!approvalId) return;
     processingAction = "reject";
     try {
-      await (api as any).api.approvals({ id: approvalId }).reject.post({
-        decidedByUserId: null,
-        decisionNote: decisionNote.trim() || null,
+      const res = await api(`/api/approvals/${approvalId}/reject`, {
+        method: "POST",
+        body: JSON.stringify({
+          decidedByUserId: null,
+          decisionNote: decisionNote.trim() || null,
+        }),
       });
+      if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Approval rejected", tone: "success" });
       decisionNote = "";
       await loadApproval();
     } catch (err: any) {
       toastStore.push({ title: "Failed to reject", body: err?.message, tone: "error" });
+    } finally {
+      processingAction = null;
+    }
+  }
+
+  async function handleRequestRevision() {
+    if (!approvalId) return;
+    processingAction = "request-revision";
+    try {
+      const res = await api(`/api/approvals/${approvalId}/request-revision`, {
+        method: "POST",
+        body: JSON.stringify({
+          note: decisionNote.trim() || null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Revision requested", tone: "success" });
+      decisionNote = "";
+      await loadApproval();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to request revision", body: err?.message, tone: "error" });
+    } finally {
+      processingAction = null;
+    }
+  }
+
+  async function handleResubmit() {
+    if (!approvalId) return;
+    processingAction = "resubmit";
+    try {
+      const res = await api(`/api/approvals/${approvalId}/resubmit`, {
+        method: "POST",
+        body: JSON.stringify({
+          payload: approval?.payload ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Approval resubmitted", tone: "success" });
+      await loadApproval();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to resubmit", body: err?.message, tone: "error" });
     } finally {
       processingAction = null;
     }
@@ -216,6 +268,14 @@
             />
             <div class="flex items-center gap-2 justify-end">
               <Button
+                variant="outline"
+                size="sm"
+                disabled={processingAction !== null}
+                onclick={handleRequestRevision}
+              >
+                {processingAction === "request-revision" ? "Requesting..." : "Request Revision"}
+              </Button>
+              <Button
                 variant="destructive"
                 size="sm"
                 disabled={processingAction !== null}
@@ -231,6 +291,26 @@
                 {processingAction === "approve" ? "Approving..." : "Approve"}
               </Button>
             </div>
+          </div>
+        </CardContent>
+      </Card>
+    {/if}
+
+    <!-- Resubmit action (rejected approvals) -->
+    {#if isRejected}
+      <Card class="mb-6">
+        <CardContent class="pt-6">
+          <div class="flex items-center justify-between">
+            <div class="text-sm text-zinc-500 dark:text-zinc-400">
+              This approval was rejected. You can resubmit it for review.
+            </div>
+            <Button
+              size="sm"
+              disabled={processingAction !== null}
+              onclick={handleResubmit}
+            >
+              {processingAction === "resubmit" ? "Resubmitting..." : "Resubmit"}
+            </Button>
           </div>
         </CardContent>
       </Card>

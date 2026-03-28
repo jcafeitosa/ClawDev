@@ -1,10 +1,12 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { api, unwrap } from "$lib/api";
+  import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
-  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
+  import { goto } from "$app/navigation";
+  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Input, Textarea, Select, SelectTrigger, SelectContent, SelectItem } from "$components/ui/index.js";
+  import { Pencil, Trash2 } from "lucide-svelte";
   import { onMount } from "svelte";
 
   // ---------------------------------------------------------------------------
@@ -55,6 +57,26 @@
   let activeTab = $state("overview");
   let triggeringRun = $state(false);
 
+  // Edit mode
+  let editing = $state(false);
+  let editTitle = $state("");
+  let editDescription = $state("");
+  let editStatus = $state("");
+  let saving = $state(false);
+
+  // Delete
+  let confirmingDelete = $state(false);
+  let deleting = $state(false);
+
+  // Create trigger
+  let showCreateTrigger = $state(false);
+  let newTriggerKind = $state<"cron" | "webhook">("cron");
+  let newTriggerCron = $state("");
+  let creatingTrigger = $state(false);
+
+  // Delete trigger
+  let deletingTriggerId = $state<string | null>(null);
+
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
@@ -71,16 +93,18 @@
     loading = true;
     notFound = false;
     try {
-      const result = await (api as any).api.routines({ id: routineId }).get();
-      routine = unwrap(result) as Routine;
+      const res = await api(`/api/routines/${routineId}`);
+      if (!res.ok) {
+        if (res.status === 404) { notFound = true; return; }
+        throw new Error(await res.text());
+      }
+      routine = (await res.json()) as Routine;
       breadcrumbStore.set([
         { label: "Routines", href: `/${$page.params.companyPrefix}/routines` },
         { label: routine.title },
       ]);
     } catch (err: any) {
-      if (err?.message?.includes("not found") || err?.status === 404) {
-        notFound = true;
-      } else {
+      if (!notFound) {
         toastStore.push({ title: "Failed to load routine", body: err?.message, tone: "error" });
       }
     } finally {
@@ -91,8 +115,8 @@
   async function loadRuns() {
     if (!routineId) return;
     try {
-      const result = await (api as any).api.routines({ id: routineId }).runs.get({ query: { limit: "30" } });
-      runs = (unwrap(result) as RoutineRun[]) ?? [];
+      const res = await api(`/api/routines/${routineId}/runs?limit=30`);
+      runs = res.ok ? ((await res.json()) as RoutineRun[]) ?? [] : [];
     } catch {
       runs = [];
     }
@@ -102,13 +126,106 @@
     if (!routineId) return;
     triggeringRun = true;
     try {
-      await (api as any).api.routines({ id: routineId }).run.post({ source: "manual" });
+      const res = await api(`/api/routines/${routineId}/run`, {
+        method: "POST",
+        body: JSON.stringify({ source: "manual" }),
+      });
+      if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Run triggered", body: "A new routine run has been queued.", tone: "success" });
       await loadRuns();
     } catch (err: any) {
       toastStore.push({ title: "Failed to trigger run", body: err?.message, tone: "error" });
     } finally {
       triggeringRun = false;
+    }
+  }
+
+  function startEdit() {
+    if (!routine) return;
+    editTitle = routine.title;
+    editDescription = routine.description ?? "";
+    editStatus = routine.status;
+    editing = true;
+  }
+
+  function cancelEdit() {
+    editing = false;
+  }
+
+  async function saveEdit() {
+    if (!routineId || !editTitle.trim()) return;
+    saving = true;
+    try {
+      const res = await api(`/api/routines/${routineId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          title: editTitle.trim(),
+          description: editDescription.trim() || null,
+          status: editStatus,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Routine updated", tone: "success" });
+      editing = false;
+      await loadRoutine();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to update routine", body: err?.message, tone: "error" });
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function deleteRoutine() {
+    if (!routineId) return;
+    deleting = true;
+    try {
+      const res = await api(`/api/routines/${routineId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Routine deleted", tone: "success" });
+      goto(`/${$page.params.companyPrefix}/routines`);
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to delete routine", body: err?.message, tone: "error" });
+    } finally {
+      deleting = false;
+      confirmingDelete = false;
+    }
+  }
+
+  async function createTrigger() {
+    if (!routineId) return;
+    if (newTriggerKind === "cron" && !newTriggerCron.trim()) return;
+    creatingTrigger = true;
+    try {
+      const body: Record<string, string> = { kind: newTriggerKind };
+      if (newTriggerKind === "cron") body.cronExpression = newTriggerCron.trim();
+      const res = await api(`/api/routines/${routineId}/triggers`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Trigger created", tone: "success" });
+      newTriggerKind = "cron";
+      newTriggerCron = "";
+      showCreateTrigger = false;
+      await loadRoutine();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to create trigger", body: err?.message, tone: "error" });
+    } finally {
+      creatingTrigger = false;
+    }
+  }
+
+  async function deleteTrigger(triggerId: string) {
+    deletingTriggerId = triggerId;
+    try {
+      const res = await api(`/api/routine-triggers/${triggerId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Trigger deleted", tone: "success" });
+      await loadRoutine();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to delete trigger", body: err?.message, tone: "error" });
+    } finally {
+      deletingTriggerId = null;
     }
   }
 
@@ -174,6 +291,28 @@
         {/if}
       </div>
       <div class="flex items-center gap-2 shrink-0">
+        <Button variant="outline" size="sm" onclick={startEdit}>
+          <Pencil class="w-3.5 h-3.5 mr-1" />
+          Edit
+        </Button>
+        {#if confirmingDelete}
+          <Button
+            variant="destructive"
+            size="sm"
+            disabled={deleting}
+            onclick={deleteRoutine}
+          >
+            {deleting ? "Deleting..." : "Confirm Delete"}
+          </Button>
+          <Button variant="outline" size="sm" onclick={() => (confirmingDelete = false)}>
+            Cancel
+          </Button>
+        {:else}
+          <Button variant="destructive" size="sm" onclick={() => (confirmingDelete = true)}>
+            <Trash2 class="w-3.5 h-3.5 mr-1" />
+            Delete
+          </Button>
+        {/if}
         <Button
           variant="outline"
           size="sm"
@@ -187,6 +326,42 @@
         </Button>
       </div>
     </div>
+
+    <!-- Edit form -->
+    {#if editing}
+      <Card class="mb-6">
+        <CardContent class="pt-6">
+          <form onsubmit={(e) => { e.preventDefault(); saveEdit(); }} class="space-y-4">
+            <div>
+              <label for="edit-title" class="block text-sm font-medium mb-1">Title</label>
+              <Input id="edit-title" bind:value={editTitle} placeholder="Routine title" />
+            </div>
+            <div>
+              <label for="edit-desc" class="block text-sm font-medium mb-1">Description</label>
+              <Textarea id="edit-desc" bind:value={editDescription} placeholder="Description (optional)" class="min-h-[60px] resize-y" />
+            </div>
+            <div>
+              <label for="edit-status" class="block text-sm font-medium mb-1">Status</label>
+              <select
+                id="edit-status"
+                bind:value={editStatus}
+                class="w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="active">Active</option>
+                <option value="paused">Paused</option>
+                <option value="archived">Archived</option>
+              </select>
+            </div>
+            <div class="flex items-center gap-2 justify-end">
+              <Button variant="outline" size="sm" onclick={cancelEdit} type="button">Cancel</Button>
+              <Button size="sm" disabled={saving || !editTitle.trim()} type="submit">
+                {saving ? "Saving..." : "Save"}
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+    {/if}
 
     <!-- Main content + sidebar -->
     <div class="flex flex-col lg:flex-row gap-6">
@@ -301,8 +476,47 @@
           </TabsContent>
 
           <TabsContent value="triggers">
-            <div class="mt-4">
-              {#if triggers.length === 0}
+            <div class="mt-4 space-y-4">
+              <!-- Create Trigger -->
+              <div class="flex justify-end">
+                <Button variant="outline" size="sm" onclick={() => (showCreateTrigger = !showCreateTrigger)}>
+                  {showCreateTrigger ? "Cancel" : "Add Trigger"}
+                </Button>
+              </div>
+
+              {#if showCreateTrigger}
+                <Card>
+                  <CardContent class="pt-6">
+                    <form onsubmit={(e) => { e.preventDefault(); createTrigger(); }} class="space-y-4">
+                      <div>
+                        <label for="trigger-kind" class="block text-sm font-medium mb-1">Kind</label>
+                        <select
+                          id="trigger-kind"
+                          bind:value={newTriggerKind}
+                          class="w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                        >
+                          <option value="cron">Cron</option>
+                          <option value="webhook">Webhook</option>
+                        </select>
+                      </div>
+                      {#if newTriggerKind === "cron"}
+                        <div>
+                          <label for="trigger-cron" class="block text-sm font-medium mb-1">Cron Expression</label>
+                          <Input id="trigger-cron" bind:value={newTriggerCron} placeholder="e.g. 0 9 * * 1-5" />
+                          <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Standard cron format: minute hour day month weekday</p>
+                        </div>
+                      {/if}
+                      <div class="flex justify-end">
+                        <Button size="sm" type="submit" disabled={creatingTrigger || (newTriggerKind === "cron" && !newTriggerCron.trim())}>
+                          {creatingTrigger ? "Creating..." : "Create Trigger"}
+                        </Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              {/if}
+
+              {#if triggers.length === 0 && !showCreateTrigger}
                 <EmptyState title="No triggers" description="No triggers have been configured for this routine." icon="⚡" />
               {:else}
                 <div class="space-y-4">
@@ -329,8 +543,23 @@
                               </div>
                             {/if}
                           </div>
-                          <div class="text-xs text-zinc-500 shrink-0">
-                            <TimeAgo date={trigger.createdAt} />
+                          <div class="flex items-center gap-3 shrink-0">
+                            <span class="text-xs text-zinc-500">
+                              <TimeAgo date={trigger.createdAt} />
+                            </span>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              disabled={deletingTriggerId === trigger.id}
+                              onclick={() => {
+                                if (deletingTriggerId === trigger.id) return;
+                                if (confirm("Delete this trigger? This action cannot be undone.")) {
+                                  deleteTrigger(trigger.id);
+                                }
+                              }}
+                            >
+                              {deletingTriggerId === trigger.id ? "Deleting..." : "Delete"}
+                            </Button>
                           </div>
                         </div>
                       </CardContent>

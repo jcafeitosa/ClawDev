@@ -1,11 +1,13 @@
 <script lang="ts">
   import { page } from "$app/stores";
-  import { api, unwrap } from "$lib/api";
+  import { goto } from "$app/navigation";
+  import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { companyStore } from "$stores/company.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
+  import { Pencil, Trash2, X } from "lucide-svelte";
   import { onMount } from "svelte";
 
   // ---------------------------------------------------------------------------
@@ -37,6 +39,12 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Constants
+  // ---------------------------------------------------------------------------
+  const GOAL_STATUSES = ["planned", "active", "completed", "archived"];
+  const GOAL_LEVELS = ["task", "quarter", "annual"];
+
+  // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
   let goal = $state<Goal | null>(null);
@@ -46,11 +54,24 @@
   let notFound = $state(false);
   let activeTab = $state("overview");
 
+  // Edit form state
+  let editing = $state(false);
+  let editTitle = $state("");
+  let editDescription = $state("");
+  let editStatus = $state("");
+  let editLevel = $state("");
+  let saving = $state(false);
+
+  // Delete state
+  let confirmDelete = $state(false);
+  let deleting = $state(false);
+
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
   let goalId = $derived($page.params.goalId);
   let companyId = $derived(companyStore.selectedCompanyId);
+  let prefix = $derived($page.params.companyPrefix);
   let childGoals = $derived(allGoals.filter((g) => g.parentId === goalId));
   let parentGoal = $derived(goal?.parentId ? allGoals.find((g) => g.id === goal!.parentId) ?? null : null);
 
@@ -62,16 +83,18 @@
     loading = true;
     notFound = false;
     try {
-      const result = await (api as any).api.goals({ id: goalId }).get();
-      goal = unwrap(result) as Goal;
+      const res = await api(`/api/goals/${goalId}`);
+      if (!res.ok) {
+        if (res.status === 404) { notFound = true; return; }
+        throw new Error(await res.text());
+      }
+      goal = (await res.json()) as Goal;
       breadcrumbStore.set([
-        { label: "Goals", href: `/${$page.params.companyPrefix}/goals` },
+        { label: "Goals", href: `/${prefix}/goals` },
         { label: goal.title },
       ]);
     } catch (err: any) {
-      if (err?.message?.includes("not found") || err?.status === 404) {
-        notFound = true;
-      } else {
+      if (!notFound) {
         toastStore.push({ title: "Failed to load goal", body: err?.message, tone: "error" });
       }
     } finally {
@@ -82,8 +105,8 @@
   async function loadAllGoals() {
     if (!companyId) return;
     try {
-      const result = await (api as any).api.companies({ companyId }).goals.get();
-      allGoals = (unwrap(result) as Goal[]) ?? [];
+      const res = await api(`/api/companies/${companyId}/goals`);
+      allGoals = res.ok ? ((await res.json()) as Goal[]) ?? [] : [];
     } catch {
       allGoals = [];
     }
@@ -92,9 +115,8 @@
   async function loadLinkedIssues() {
     if (!companyId || !goalId) return;
     try {
-      // Issues API doesn't have goalId filter, so we fetch all and filter client-side
-      const result = await (api as any).api.companies({ companyId }).issues.get();
-      const all = (unwrap(result) as Issue[]) ?? [];
+      const res = await api(`/api/companies/${companyId}/issues`);
+      const all = res.ok ? ((await res.json()) as Issue[]) ?? [] : [];
       linkedIssues = all.filter((i) => i.goalId === goalId);
     } catch {
       linkedIssues = [];
@@ -106,6 +128,67 @@
     loadAllGoals();
     loadLinkedIssues();
   });
+
+  // ---------------------------------------------------------------------------
+  // Actions
+  // ---------------------------------------------------------------------------
+  function startEditing() {
+    if (!goal) return;
+    editTitle = goal.title;
+    editDescription = goal.description ?? "";
+    editStatus = goal.status ?? "planned";
+    editLevel = goal.level ?? "task";
+    editing = true;
+  }
+
+  function cancelEditing() {
+    editing = false;
+  }
+
+  async function saveGoal() {
+    if (!goal || !editTitle.trim()) return;
+    saving = true;
+    try {
+      const body: Record<string, unknown> = {
+        title: editTitle.trim(),
+        description: editDescription.trim() || null,
+        status: editStatus,
+        level: editLevel,
+      };
+      const res = await api(`/api/goals/${goalId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const updated = (await res.json()) as Goal;
+      goal = updated;
+      editing = false;
+      toastStore.push({ title: "Goal updated", tone: "success" });
+      breadcrumbStore.set([
+        { label: "Goals", href: `/${prefix}/goals` },
+        { label: updated.title },
+      ]);
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to update goal", body: err?.message, tone: "error" });
+    } finally {
+      saving = false;
+    }
+  }
+
+  async function deleteGoal() {
+    deleting = true;
+    try {
+      const res = await api(`/api/goals/${goalId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Goal deleted", tone: "success" });
+      goto(`/${prefix}/goals`);
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to delete goal", body: err?.message, tone: "error" });
+    } finally {
+      deleting = false;
+      confirmDelete = false;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -123,7 +206,7 @@
 {:else if notFound}
   <div class="p-6">
     <EmptyState title="Goal not found" description="The goal you're looking for doesn't exist or you don't have access." icon="🎯">
-      <a href="/{$page.params.companyPrefix}/goals" class="text-sm text-primary hover:underline">Back to goals</a>
+      <a href="/{prefix}/goals" class="text-sm text-primary hover:underline">Back to goals</a>
     </EmptyState>
   </div>
 {:else if goal}
@@ -131,19 +214,98 @@
     <!-- Header -->
     <div class="flex items-start justify-between gap-4 mb-6">
       <div class="min-w-0">
-        <div class="flex items-center gap-3 mb-1">
-          <h1 class="text-xl font-semibold truncate">{goal.title}</h1>
-          <StatusBadge status={goal.status} />
-          {#if goal.level}
-            <Badge variant="outline" class="capitalize">{goal.level}</Badge>
+        {#if editing}
+          <!-- Edit form -->
+          <div class="space-y-3 max-w-lg">
+            <div>
+              <label for="edit-title" class="block text-xs font-medium text-zinc-400 mb-1">Title</label>
+              <input
+                id="edit-title"
+                type="text"
+                bind:value={editTitle}
+                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div>
+              <label for="edit-description" class="block text-xs font-medium text-zinc-400 mb-1">Description</label>
+              <textarea
+                id="edit-description"
+                bind:value={editDescription}
+                rows="3"
+                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+              ></textarea>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+              <div>
+                <label for="edit-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+                <select
+                  id="edit-status"
+                  bind:value={editStatus}
+                  class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {#each GOAL_STATUSES as s}
+                    <option value={s} class="capitalize">{s}</option>
+                  {/each}
+                </select>
+              </div>
+              <div>
+                <label for="edit-level" class="block text-xs font-medium text-zinc-400 mb-1">Level</label>
+                <select
+                  id="edit-level"
+                  bind:value={editLevel}
+                  class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {#each GOAL_LEVELS as l}
+                    <option value={l} class="capitalize">{l}</option>
+                  {/each}
+                </select>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 pt-1">
+              <Button size="sm" onclick={saveGoal} disabled={saving || !editTitle.trim()}>
+                {saving ? "Saving..." : "Save"}
+              </Button>
+              <Button variant="ghost" size="sm" onclick={cancelEditing} disabled={saving}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        {:else}
+          <div class="flex items-center gap-3 mb-1">
+            <h1 class="text-xl font-semibold truncate">{goal.title}</h1>
+            <StatusBadge status={goal.status} />
+            {#if goal.level}
+              <Badge variant="outline" class="capitalize">{goal.level}</Badge>
+            {/if}
+          </div>
+          {#if goal.description}
+            <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{goal.description}</p>
           {/if}
-        </div>
-        {#if goal.description}
-          <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{goal.description}</p>
         {/if}
       </div>
       <div class="flex items-center gap-2 shrink-0">
-        <Button variant="outline" size="sm" href="/{$page.params.companyPrefix}/goals">
+        {#if !editing}
+          <Button variant="outline" size="sm" onclick={startEditing}>
+            <Pencil class="size-3.5 mr-1.5" />
+            Edit
+          </Button>
+          {#if confirmDelete}
+            <div class="flex items-center gap-1.5">
+              <Button variant="destructive" size="sm" onclick={deleteGoal} disabled={deleting}>
+                {deleting ? "Deleting..." : "Confirm"}
+              </Button>
+              <Button variant="ghost" size="sm" onclick={() => (confirmDelete = false)} disabled={deleting}>
+                <X class="size-3.5" />
+              </Button>
+            </div>
+          {:else}
+            <Button variant="destructive" size="sm" onclick={() => (confirmDelete = true)}>
+              <Trash2 class="size-3.5 mr-1.5" />
+              Delete
+            </Button>
+          {/if}
+        {/if}
+        <Button variant="outline" size="sm" href="/{prefix}/goals">
           Back
         </Button>
       </div>
@@ -209,7 +371,7 @@
                   </CardHeader>
                   <CardContent>
                     <a
-                      href="/{$page.params.companyPrefix}/goals/{parentGoal.id}"
+                      href="/{prefix}/goals/{parentGoal.id}"
                       class="flex items-center gap-3 text-sm hover:text-primary transition-colors"
                     >
                       <StatusBadge status={parentGoal.status} />
@@ -232,7 +394,7 @@
                 <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                   {#each childGoals as child}
                     <a
-                      href="/{$page.params.companyPrefix}/goals/{child.id}"
+                      href="/{prefix}/goals/{child.id}"
                       class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                     >
                       <div class="flex items-center gap-3 min-w-0">
@@ -260,7 +422,7 @@
                 <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                   {#each linkedIssues as issue}
                     <a
-                      href="/{$page.params.companyPrefix}/issues/{issue.id}"
+                      href="/{prefix}/issues/{issue.id}"
                       class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
                     >
                       <div class="flex items-center gap-3 min-w-0">
@@ -299,7 +461,7 @@
         <Separator />
         {#if parentGoal}
           <PropertyRow label="Parent">
-            <a href="/{$page.params.companyPrefix}/goals/{parentGoal.id}" class="text-primary hover:underline text-sm">
+            <a href="/{prefix}/goals/{parentGoal.id}" class="text-primary hover:underline text-sm">
               {parentGoal.title}
             </a>
           </PropertyRow>

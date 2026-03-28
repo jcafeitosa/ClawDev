@@ -38,7 +38,17 @@
   let showCreate = $state(false);
   let newTitle = $state('');
   let newDescription = $state('');
+  let newAssigneeAgentId = $state('');
   let creating = $state(false);
+
+  // Agents for assignee dropdown
+  interface Agent {
+    id: string;
+    name: string;
+    [key: string]: unknown;
+  }
+  let agents = $state<Agent[]>([]);
+  let agentsLoading = $state(false);
 
   let companyId = $derived(companyStore.selectedCompany?.id ?? companyStore.selectedCompanyId);
   let prefix = $derived($page.params.companyPrefix);
@@ -87,9 +97,20 @@
       .finally(() => { loading = false; });
   }
 
+  function loadAgents() {
+    if (!companyId) return;
+    agentsLoading = true;
+    api(`/api/companies/${companyId}/agents`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { agents = (Array.isArray(d) ? d : d.agents ?? []) as Agent[]; })
+      .catch(() => { agents = []; })
+      .finally(() => { agentsLoading = false; });
+  }
+
   $effect(() => {
     if (!companyId) return;
     loadRoutines();
+    loadAgents();
   });
 
   // ---------------------------------------------------------------------------
@@ -101,6 +122,7 @@
     try {
       const body: Record<string, string> = { title: newTitle.trim() };
       if (newDescription.trim()) body.description = newDescription.trim();
+      if (newAssigneeAgentId) body.assigneeAgentId = newAssigneeAgentId;
       const res = await api(`/api/companies/${companyId}/routines`, {
         method: 'POST',
         body: JSON.stringify(body),
@@ -110,6 +132,7 @@
       routines = [...routines, created];
       newTitle = '';
       newDescription = '';
+      newAssigneeAgentId = '';
       showCreate = false;
     } catch (e: any) {
       console.error('Failed to create routine:', e);
@@ -218,6 +241,25 @@
           class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
         ></textarea>
       </div>
+      <div>
+        <label for="routine-agent" class="block text-sm font-medium text-[#F8FAFC] mb-1">
+          Assignee Agent <span class="text-[#94A3B8] font-normal">(optional)</span>
+        </label>
+        <select
+          id="routine-agent"
+          bind:value={newAssigneeAgentId}
+          disabled={agentsLoading}
+          class="w-full rounded-lg border border-white/[0.08] bg-white/[0.05] px-4 py-2 text-sm text-[#F8FAFC] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          <option value="">No agent assigned</option>
+          {#each agents as agent}
+            <option value={agent.id}>{agent.name}</option>
+          {/each}
+        </select>
+        {#if agentsLoading}
+          <p class="text-xs text-[#94A3B8] mt-1">Loading agents...</p>
+        {/if}
+      </div>
       <div class="flex items-center gap-3">
         <button
           type="submit"
@@ -228,7 +270,7 @@
         </button>
         <button
           type="button"
-          onclick={() => { showCreate = false; newTitle = ''; newDescription = ''; }}
+          onclick={() => { showCreate = false; newTitle = ''; newDescription = ''; newAssigneeAgentId = ''; }}
           class="rounded-lg border border-white/[0.08] px-4 py-2 text-sm text-[#94A3B8] hover:bg-white/[0.03]"
         >
           Cancel
