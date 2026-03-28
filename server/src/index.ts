@@ -2,6 +2,7 @@
 import { existsSync, readFileSync, rmSync } from "node:fs";
 import { createServer } from "node:http";
 import { resolve } from "node:path";
+import { PassThrough } from "node:stream";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
 import { pathToFileURL } from "node:url";
@@ -25,6 +26,7 @@ import {
 } from "@clawdev/db";
 import detectPort from "detect-port";
 import { createApp } from "./app.js";
+import { createElysiaApp } from "./elysia-app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { setupLiveEventsWebSocketServer } from "./realtime/live-events-ws.js";
@@ -64,6 +66,9 @@ type EmbeddedPostgresCtor = new (opts: {
   onError?: (message: unknown) => void;
 }) => EmbeddedPostgresInstance;
 
+
+/** Re-export ElysiaApp type for Eden Treaty client generation */
+export type { ElysiaApp } from "./elysia-app.js";
 
 export interface StartedServer {
   server: ReturnType<typeof createServer>;
@@ -518,7 +523,19 @@ export async function startServer(): Promise<StartedServer> {
   });
   const uiMode = config.uiDevMiddleware ? "vite-dev" : config.serveUi ? "static" : "none";
   const storageService = createStorageServiceFromConfig(config);
-  const app = await createApp(db as any, {
+
+  // Create Elysia app (migrated routes)
+  const elysiaApp = createElysiaApp(db as any, {
+    deploymentMode: config.deploymentMode,
+    deploymentExposure: config.deploymentExposure,
+    authReady,
+    companyDeletionEnabled: config.companyDeletionEnabled,
+    storageService,
+    resolveSession: resolveSessionFromHeaders,
+  });
+
+  // Create Express app (remaining unmigrated routes + UI)
+  const expressApp = await createApp(db as any, {
     uiMode,
     serverPort: listenPort,
     storageService,
@@ -531,7 +548,137 @@ export async function startServer(): Promise<StartedServer> {
     betterAuthHandler,
     resolveSession,
   });
-  const server = createServer(app as unknown as Parameters<typeof createServer>[0]);
+
+  // Dual-stack HTTP handler: Elysia handles migrated API routes, Express handles everything else.
+  // Elysia.handle() returns a Web Response; if 404 with our sentinel header, the route is not
+  // registered in Elysia so we fall through to Express.
+  const ELYSIA_NOT_FOUND_SENTINEL = "x-elysia-not-found";
+  const elysiaWithSentinel = elysiaApp.onError(({ set, code }) => {
+    if (code === "NOT_FOUND") {
+      set.headers[ELYSIA_NOT_FOUND_SENTINEL] = "1";
+    }
+  });
+
+  /**
+   * Collects the full request body from a Node.js IncomingMessage into a Buffer.
+   * Required so both Elysia and Express can read the body if a fallback occurs.
+   */
+  function collectRequestBody(nodeReq: import("node:http").IncomingMessage): Promise<Buffer> {
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      nodeReq.on("data", (chunk: Buffer) => chunks.push(chunk));
+      nodeReq.on("end", () => resolve(Buffer.concat(chunks)));
+      nodeReq.on("error", reject);
+    });
+  }
+
+  /**
+   * Converts a Node.js IncomingMessage + pre-buffered body into a Web API Request
+   * suitable for Elysia.handle().
+   */
+  function toWebRequest(
+    nodeReq: import("node:http").IncomingMessage,
+    body: Buffer | null,
+  ): Request {
+    const host = nodeReq.headers.host ?? `${config.host}:${listenPort}`;
+    const url = `http://${host}${nodeReq.url}`;
+    const webHeaders = new Headers();
+    for (const [key, value] of Object.entries(nodeReq.headers)) {
+      if (value === undefined) continue;
+      if (Array.isArray(value)) {
+        for (const v of value) webHeaders.append(key, v);
+      } else {
+        webHeaders.set(key, value);
+      }
+    }
+    return new Request(url, {
+      method: nodeReq.method ?? "GET",
+      headers: webHeaders,
+      body,
+    });
+  }
+
+  /**
+   * Writes a Web API Response back to a Node.js ServerResponse.
+   */
+  async function writeWebResponse(
+    webRes: Response,
+    nodeRes: import("node:http").ServerResponse,
+    excludeHeaders: Set<string>,
+  ): Promise<void> {
+    const headers: Record<string, string> = {};
+    for (const [key, value] of webRes.headers.entries()) {
+      if (excludeHeaders.has(key)) continue;
+      headers[key] = value;
+    }
+    nodeRes.writeHead(webRes.status, headers);
+    if (webRes.body) {
+      const reader = webRes.body.getReader();
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        nodeRes.write(value);
+      }
+    }
+    nodeRes.end();
+  }
+
+  /**
+   * Pushes a pre-read body buffer back onto a Node.js IncomingMessage so that
+   * downstream consumers (Express body parsers) can read it normally.
+   */
+  function replayBodyOntoRequest(
+    nodeReq: import("node:http").IncomingMessage,
+    body: Buffer,
+  ): void {
+    const passthrough = new PassThrough();
+    passthrough.end(body);
+    // Replace the readable state so Express reads the buffered body
+    (nodeReq as any)._readableState = passthrough._readableState;
+    (nodeReq as any)._read = passthrough._read.bind(passthrough);
+  }
+
+  const expressHandler = expressApp as unknown as (
+    req: import("node:http").IncomingMessage,
+    res: import("node:http").ServerResponse,
+  ) => void;
+
+  const sentinelHeadersToStrip = new Set([ELYSIA_NOT_FOUND_SENTINEL]);
+
+  const server = createServer(async (req, res) => {
+    // Non-API routes go directly to Express (UI, static assets, WebSocket upgrades, etc.)
+    if (!req.url?.startsWith("/api/")) {
+      expressHandler(req, res);
+      return;
+    }
+
+    try {
+      const method = (req.method ?? "GET").toUpperCase();
+      const hasBody = method !== "GET" && method !== "HEAD";
+
+      // Buffer the entire body upfront so it can be replayed to Express if Elysia
+      // does not handle this route.
+      const bodyBuffer = hasBody ? await collectRequestBody(req) : null;
+      const webRequest = toWebRequest(req, bodyBuffer);
+      const elysiaResponse = await elysiaWithSentinel.handle(webRequest);
+
+      // If Elysia does not recognize this route, fall through to Express
+      if (elysiaResponse.headers.get(ELYSIA_NOT_FOUND_SENTINEL) === "1") {
+        if (bodyBuffer && bodyBuffer.length > 0) {
+          replayBodyOntoRequest(req, bodyBuffer);
+        }
+        expressHandler(req, res);
+        return;
+      }
+
+      // Elysia handled the request; write its response to the Node.js response
+      await writeWebResponse(elysiaResponse, res, sentinelHeadersToStrip);
+    } catch (err) {
+      // On any Elysia handling error, fall through to Express
+      logger.warn({ err }, "Elysia handler error; falling through to Express");
+      expressHandler(req, res);
+    }
+  });
   
   if (listenPort !== config.port) {
     logger.warn(`Requested port is busy; using next free port (requestedPort=${config.port}, selectedPort=${listenPort})`);
@@ -546,6 +693,8 @@ export async function startServer(): Promise<StartedServer> {
   process.env.CLAWDEV_LISTEN_PORT = String(listenPort);
   process.env.CLAWDEV_API_URL = `http://${runtimeApiHost}:${listenPort}`;
   
+  logger.info("Elysia dual-stack enabled: migrated API routes handled by Elysia, remainder by Express");
+
   setupLiveEventsWebSocketServer(server, db as any, {
     deploymentMode: config.deploymentMode,
     resolveSessionFromHeaders,

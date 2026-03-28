@@ -3,7 +3,7 @@
  *
  * Migration strategy:
  * 1. Elysia handles new/migrated routes
- * 2. Unmigrated routes remain in Express (served separately)
+ * 2. Unmigrated routes remain in Express (served separately via dual-stack)
  * 3. Once all routes are migrated, Express is removed
  *
  * Eden Treaty types are exported for type-safe client consumption.
@@ -20,6 +20,21 @@ import { elysiaErrorHandler } from "./elysia-plugins/error-handler.js";
 import { elysiaAuth } from "./elysia-plugins/auth.js";
 import type { StorageService } from "./storage/types.js";
 
+// Elysia route modules
+import { elysiaDashboardRoutes } from "./elysia-routes/dashboard.js";
+import { elysiaSidebarBadgeRoutes } from "./elysia-routes/sidebar-badges.js";
+import { elysiaGoalRoutes } from "./elysia-routes/goals.js";
+import { elysiaActivityRoutes } from "./elysia-routes/activity.js";
+import { elysiaSecretRoutes } from "./elysia-routes/secrets.js";
+import { elysiaProjectRoutes } from "./elysia-routes/projects.js";
+import { elysiaRoutineRoutes } from "./elysia-routes/routines.js";
+import { elysiaInstanceSettingsRoutes } from "./elysia-routes/instance-settings.js";
+import { elysiaLlmRoutes } from "./elysia-routes/llms.js";
+import { elysiaApprovalRoutes } from "./elysia-routes/approvals.js";
+import { elysiaExecutionWorkspaceRoutes } from "./elysia-routes/execution-workspaces.js";
+import { elysiaCostRoutes } from "./elysia-routes/costs.js";
+import { elysiaCompanyRoutes } from "./elysia-routes/companies.js";
+
 export function createElysiaApp(
   db: Db,
   opts: {
@@ -31,15 +46,15 @@ export function createElysiaApp(
     resolveSession?: (headers: Headers) => Promise<{ user?: { id: string } | null } | null>;
   },
 ) {
+  const authPlugin = elysiaAuth({
+    db,
+    deploymentMode: opts.deploymentMode,
+    resolveSession: opts.resolveSession,
+  });
+
   const app = new Elysia({ prefix: "/api" })
     .use(elysiaErrorHandler)
-    .use(
-      elysiaAuth({
-        db,
-        deploymentMode: opts.deploymentMode,
-        resolveSession: opts.resolveSession,
-      }),
-    )
+    .use(authPlugin)
     .get("/health", async () => {
       let bootstrapStatus: "ready" | "bootstrap_pending" = "ready";
       let bootstrapInviteActive = false;
@@ -100,7 +115,21 @@ export function createElysiaApp(
         },
         ...(devServer ? { devServer } : {}),
       };
-    });
+    })
+    // Register all migrated route modules
+    .use(elysiaDashboardRoutes(db, authPlugin))
+    .use(elysiaSidebarBadgeRoutes(db, authPlugin))
+    .use(elysiaGoalRoutes(db, authPlugin))
+    .use(elysiaActivityRoutes(db, authPlugin))
+    .use(elysiaSecretRoutes(db, authPlugin))
+    .use(elysiaProjectRoutes(db, authPlugin))
+    .use(elysiaRoutineRoutes(db, authPlugin))
+    .use(elysiaInstanceSettingsRoutes(db, authPlugin))
+    .use(elysiaLlmRoutes(db, authPlugin))
+    .use(elysiaApprovalRoutes(db, authPlugin))
+    .use(elysiaExecutionWorkspaceRoutes(db, authPlugin))
+    .use(elysiaCostRoutes(db, authPlugin))
+    .use(elysiaCompanyRoutes(db, authPlugin, opts.storageService));
 
   return app;
 }
