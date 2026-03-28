@@ -19,7 +19,7 @@ import {
 } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { fetchAllQuotaWindows } from "../services/quota-windows.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
 function parseDateRange(query: Record<string, string>) {
   const from = query.from ? new Date(query.from) : undefined;
@@ -37,7 +37,7 @@ function parseLimit(query: Record<string, string>) {
   return limit;
 }
 
-export function elysiaCostRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function costRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const heartbeat = heartbeatService(db);
   const budgetHooks = { cancelWorkForScope: heartbeat.cancelBudgetScopeWork };
   const costs = costService(db, budgetHooks);

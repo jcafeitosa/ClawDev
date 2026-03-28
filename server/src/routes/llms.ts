@@ -4,14 +4,14 @@ import { AGENT_ICON_NAMES } from "@clawdev/shared";
 import { forbidden } from "../errors.js";
 import { listServerAdapters } from "../adapters/index.js";
 import { agentService } from "../services/agents.js";
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 
 function hasCreatePermission(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
   if (!agent.permissions || typeof agent.permissions !== "object") return false;
   return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
 }
 
-export function elysiaLlmRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function llmRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const agentsSvc = agentService(db);
 
   async function assertCanRead(actor: Actor) {

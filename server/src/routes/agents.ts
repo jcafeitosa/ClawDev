@@ -51,7 +51,7 @@ import {
   loadDefaultAgentInstructionsBundle,
   resolveDefaultAgentInstructionsBundleRole,
 } from "../services/default-agent-instructions.js";
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 import {
   DEFAULT_INSTRUCTIONS_PATH_KEYS,
   DEFAULT_MANAGED_INSTRUCTIONS_ADAPTER_TYPES,
@@ -78,7 +78,7 @@ import {
   assertAdapterConfigConstraints,
 } from "./agent-helpers.js";
 
-export function elysiaAgentRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function agentRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = agentService(db);
   const access = accessService(db);
   const approvalsSvc = approvalService(db);

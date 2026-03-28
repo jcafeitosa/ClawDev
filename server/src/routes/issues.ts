@@ -34,11 +34,11 @@ import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import { shouldWakeAssigneeOnCheckout } from "../routes/issues-checkout-wakeup.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
 
-export function elysiaIssueRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>, storage: StorageService) {
+export function issueRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>, storage: StorageService) {
   const svc = issueService(db);
   const access = accessService(db);
   const heartbeat = heartbeatService(db);

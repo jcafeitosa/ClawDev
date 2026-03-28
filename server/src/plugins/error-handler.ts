@@ -7,7 +7,7 @@ import { ZodError } from "zod";
 import { HttpError } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 
-export const elysiaErrorHandler = new Elysia({ name: "error-handler" }).onError(
+export const errorHandler = new Elysia({ name: "error-handler" }).onError(
   ({ error, set, path, request }) => {
     if (error instanceof HttpError) {
       if (error.status >= 500) {

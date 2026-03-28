@@ -8,7 +8,7 @@ import { assetService, logActivity } from "../services/index.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { badRequest, notFound, unprocessable } from "../errors.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
 const SVG_CONTENT_TYPE = "image/svg+xml";
 const ALLOWED_COMPANY_LOGO_CONTENT_TYPES = new Set([
@@ -96,7 +96,7 @@ async function extractFileFromRequest(request: Request): Promise<{
   };
 }
 
-export function elysiaAssetRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>, storage: StorageService) {
+export function assetRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>, storage: StorageService) {
   const svc = assetService(db);
 
   return new Elysia()

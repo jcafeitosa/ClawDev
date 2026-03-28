@@ -1,2 +1,2 @@
-export { elysiaErrorHandler } from "./error-handler.js";
-export { elysiaAuth, type Actor } from "./auth.js";
+export { errorHandler } from "./error-handler.js";
+export { authPlugin, type Actor } from "./auth.js";

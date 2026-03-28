@@ -10,9 +10,9 @@ import {
 import { notFound } from "../errors.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
 import { logActivity, secretService } from "../services/index.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
-export function elysiaSecretRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function secretRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = secretService(db);
   const configuredDefaultProvider = process.env.CLAWDEV_SECRETS_PROVIDER;
   const defaultProvider = (

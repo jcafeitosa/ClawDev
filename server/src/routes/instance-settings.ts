@@ -4,7 +4,7 @@ import { patchInstanceExperimentalSettingsSchema, patchInstanceGeneralSettingsSc
 import { forbidden } from "../errors.js";
 import { instanceSettingsService, logActivity } from "../services/index.js";
 import { getActorInfo } from "./authz.js";
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 
 function assertCanManageInstanceSettings(actor: Actor) {
   if (actor.type !== "board") throw forbidden("Board access required");
@@ -12,7 +12,7 @@ function assertCanManageInstanceSettings(actor: Actor) {
   throw forbidden("Instance admin access required");
 }
 
-export function elysiaInstanceSettingsRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function instanceSettingsRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = instanceSettingsService(db);
 
   return new Elysia()

@@ -4,9 +4,9 @@ import { createGoalSchema, updateGoalSchema } from "@clawdev/shared";
 import { notFound } from "../errors.js";
 import { goalService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
-export function elysiaGoalRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function goalRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = goalService(db);
 
   return new Elysia()

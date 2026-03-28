@@ -11,11 +11,11 @@ import {
   stopRuntimeServicesForExecutionWorkspace,
 } from "../services/workspace-runtime.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
 const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 
-export function elysiaExecutionWorkspaceRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function executionWorkspaceRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
 

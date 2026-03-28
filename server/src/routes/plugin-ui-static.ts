@@ -33,7 +33,7 @@ export interface ElysiaPluginUiStaticOptions {
   localPluginDir: string;
 }
 
-export function elysiaPluginUiStaticRoutes(db: Db, options: ElysiaPluginUiStaticOptions) {
+export function pluginUiStaticRoutes(db: Db, options: ElysiaPluginUiStaticOptions) {
   const registry = pluginRegistryService(db);
 
   return new Elysia()

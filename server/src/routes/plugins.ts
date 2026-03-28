@@ -39,12 +39,12 @@ function mapRpcErrorToBridgeError(err: unknown): PluginBridgeErrorResponse {
   if (message.includes("not running") || message.includes("not registered")) return { code: "WORKER_UNAVAILABLE", message };
   return { code: "UNKNOWN", message };
 }
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 import { badRequest, notFound } from "../errors.js";
 
-export function elysiaPluginRoutes(
+export function pluginRoutes(
   db: Db,
-  authPlugin: ReturnType<typeof elysiaAuth>,
+  authPlugin: ReturnType<typeof authPlugin>,
   loader: ReturnType<typeof pluginLoader>,
   jobDeps?: PluginRouteJobDeps,
   webhookDeps?: PluginRouteWebhookDeps,

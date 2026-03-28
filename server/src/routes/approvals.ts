@@ -18,13 +18,13 @@ import {
 } from "../services/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
 import { redactEventPayload } from "../redaction.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
 function redactApprovalPayload<T extends { payload: Record<string, unknown> }>(approval: T): T {
   return { ...approval, payload: redactEventPayload(approval.payload) ?? {} };
 }
 
-export function elysiaApprovalRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function approvalRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = approvalService(db);
   const heartbeat = heartbeatService(db);
   const issueApprovalsSvc = issueApprovalService(db);

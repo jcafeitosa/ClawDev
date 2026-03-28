@@ -21,7 +21,7 @@ import {
   instanceUserRoles,
 } from "@clawdev/db";
 import detectPort from "detect-port";
-import { createElysiaApp } from "./elysia-app.js";
+import { createApp } from "./app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService } from "./services/index.js";
@@ -61,8 +61,8 @@ type EmbeddedPostgresCtor = new (opts: {
 }) => EmbeddedPostgresInstance;
 
 
-/** Re-export ElysiaApp type for Eden Treaty client generation */
-export type { ElysiaApp } from "./elysia-app.js";
+/** Re-export App type for Eden Treaty client generation */
+export type { App } from "./app.js";
 
 export interface StartedServer {
   host: string;
@@ -511,7 +511,7 @@ export async function startServer(): Promise<StartedServer> {
   const storageService = createStorageServiceFromConfig(config);
 
   // Create Elysia app (Bun native — all routes)
-  const app = createElysiaApp(db as any, {
+  const app = createApp(db as any, {
     deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
     authReady,

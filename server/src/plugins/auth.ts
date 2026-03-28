@@ -33,7 +33,7 @@ interface AuthPluginOptions {
   resolveSession?: (headers: Headers) => Promise<{ user?: { id: string } | null } | null>;
 }
 
-export function elysiaAuth(opts: AuthPluginOptions) {
+export function authPlugin(opts: AuthPluginOptions) {
   const boardAuth = boardAuthService(opts.db);
 
   return new Elysia({ name: "auth" }).derive(

@@ -11,9 +11,9 @@ import {
 import { forbidden, notFound, unauthorized } from "../errors.js";
 import { accessService, logActivity, routineService } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 
-export function elysiaRoutineRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function routineRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = routineService(db);
   const access = accessService(db);
 

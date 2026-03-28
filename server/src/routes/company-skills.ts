@@ -9,14 +9,14 @@ import {
 import { forbidden, notFound } from "../errors.js";
 import { accessService, agentService, companySkillService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 
 function canCreateAgents(agent: { permissions: Record<string, unknown> | null | undefined }) {
   if (!agent.permissions || typeof agent.permissions !== "object") return false;
   return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
 }
 
-export function elysiaCompanySkillRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function companySkillRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const agentSvc = agentService(db);
   const access = accessService(db);
   const svc = companySkillService(db);

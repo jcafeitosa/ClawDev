@@ -26,7 +26,7 @@ import {
 } from "../services/index.js";
 import { assertCompanyAccess } from "./authz.js";
 import { claimBoardOwnership, inspectBoardClaimChallenge } from "../board-claim.js";
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 import {
   hashToken,
   createInviteToken,
@@ -99,9 +99,9 @@ function buildCliAuthApprovalPath(challengeId: string, token: string) {
   return `/cli-auth/${challengeId}?token=${encodeURIComponent(token)}`;
 }
 
-export function elysiaAccessRoutes(
+export function accessRoutes(
   db: Db,
-  authPlugin: ReturnType<typeof elysiaAuth>,
+  authPlugin: ReturnType<typeof authPlugin>,
   opts: {
     deploymentMode: DeploymentMode;
     deploymentExposure: DeploymentExposure;

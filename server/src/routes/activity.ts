@@ -6,7 +6,7 @@ import { activityService } from "../services/activity.js";
 import { issueService } from "../services/index.js";
 import { sanitizeRecord } from "../redaction.js";
 import { assertBoard, assertCompanyAccess } from "./authz.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
 const createActivitySchema = z.object({
   actorType: z.enum(["agent", "user", "system"]).optional().default("system"),
@@ -18,7 +18,7 @@ const createActivitySchema = z.object({
   details: z.record(z.unknown()).optional().nullable(),
 });
 
-export function elysiaActivityRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function activityRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = activityService(db);
   const issueSvc = issueService(db);
 

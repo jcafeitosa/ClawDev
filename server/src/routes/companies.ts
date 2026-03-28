@@ -19,9 +19,9 @@ import {
 } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
 import { assertBoard, assertCompanyAccess, getActorInfo } from "./authz.js";
-import { elysiaAuth, type Actor } from "../plugins/auth.js";
+import { authPlugin, type Actor } from "../plugins/auth.js";
 
-export function elysiaCompanyRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>, storage?: StorageService) {
+export function companyRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>, storage?: StorageService) {
   const svc = companyService(db);
   const agentSvc = agentService(db);
   const portability = companyPortabilityService(db, storage);

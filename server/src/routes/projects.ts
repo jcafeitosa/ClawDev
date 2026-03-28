@@ -11,9 +11,9 @@ import { conflict, notFound, unprocessable } from "../errors.js";
 import { projectService, logActivity } from "../services/index.js";
 import { assertCompanyAccess, getActorInfo } from "./authz.js";
 import type { Actor } from "../plugins/auth.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
-export function elysiaProjectRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function projectRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = projectService(db);
 
   async function resolveCompanyIdForProjectReference(actor: Actor, query: Record<string, string>) {

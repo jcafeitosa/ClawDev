@@ -6,9 +6,9 @@ import { sidebarBadgeService } from "../services/sidebar-badges.js";
 import { accessService } from "../services/access.js";
 import { dashboardService } from "../services/dashboard.js";
 import { assertCompanyAccess } from "./authz.js";
-import { elysiaAuth } from "../plugins/auth.js";
+import { authPlugin } from "../plugins/auth.js";
 
-export function elysiaSidebarBadgeRoutes(db: Db, authPlugin: ReturnType<typeof elysiaAuth>) {
+export function sidebarBadgeRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
   const svc = sidebarBadgeService(db);
   const access = accessService(db);
   const dashboard = dashboardService(db);
