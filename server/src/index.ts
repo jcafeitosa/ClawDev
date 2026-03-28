@@ -33,6 +33,8 @@ import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
+import { registerRepeatingJob } from "./services/scheduler.js";
+import { isRedisConfigured, connectRedis } from "./redis.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -549,6 +551,11 @@ export async function startServer(): Promise<StartedServer> {
     resolveSessionFromHeaders,
   });
 
+  // Connect Redis if configured (enables BullMQ scheduler + Redis pub/sub)
+  if (isRedisConfigured()) {
+    await connectRedis();
+  }
+
   void reconcilePersistedRuntimeServicesOnStartup(db as any)
     .then((result) => {
       if (result.reconciled > 0) {
@@ -574,38 +581,25 @@ export async function startServer(): Promise<StartedServer> {
       .catch((err) => {
         logger.error({ err }, "startup heartbeat recovery failed");
       });
-    setInterval(() => {
-      void heartbeat
-        .tickTimers(new Date())
-        .then((result) => {
-          if (result.enqueued > 0) {
-            logger.info({ ...result }, "heartbeat timer tick enqueued runs");
-          }
-        })
-        .catch((err) => {
-          logger.error({ err }, "heartbeat timer tick failed");
-        });
+    void registerRepeatingJob({
+      name: "heartbeat-tick",
+      intervalMs: config.heartbeatSchedulerIntervalMs,
+      handler: async () => {
+        const tickResult = await heartbeat.tickTimers(new Date());
+        if (tickResult.enqueued > 0) {
+          logger.info({ ...tickResult }, "heartbeat timer tick enqueued runs");
+        }
 
-      void routines
-        .tickScheduledTriggers(new Date())
-        .then((result) => {
-          if (result.triggered > 0) {
-            logger.info({ ...result }, "routine scheduler tick enqueued runs");
-          }
-        })
-        .catch((err) => {
-          logger.error({ err }, "routine scheduler tick failed");
-        });
-  
-      // Periodically reap orphaned runs (5-min staleness threshold) and make sure
-      // persisted queued work is still being driven forward.
-      void heartbeat
-        .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
-        .then(() => heartbeat.resumeQueuedRuns())
-        .catch((err) => {
-          logger.error({ err }, "periodic heartbeat recovery failed");
-        });
-    }, config.heartbeatSchedulerIntervalMs);
+        const routineResult = await routines.tickScheduledTriggers(new Date());
+        if (routineResult.triggered > 0) {
+          logger.info({ ...routineResult }, "routine scheduler tick enqueued runs");
+        }
+
+        // Reap orphaned runs (5-min staleness) and resume queued work
+        await heartbeat.reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 });
+        await heartbeat.resumeQueuedRuns();
+      },
+    });
   }
   
   if (config.databaseBackupEnabled) {
@@ -651,9 +645,11 @@ export async function startServer(): Promise<StartedServer> {
       },
       "Automatic database backups enabled",
     );
-    setInterval(() => {
-      void runScheduledBackup();
-    }, backupIntervalMs);
+    void registerRepeatingJob({
+      name: "database-backup",
+      intervalMs: backupIntervalMs,
+      handler: runScheduledBackup,
+    });
   }
   
   await new Promise<void>((resolveListen, rejectListen) => {
