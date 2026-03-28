@@ -116,10 +116,40 @@
 
   async function fetchTranscript(runId: string): Promise<TranscriptMessage[]> {
     try {
-      const res = await api(`/api/heartbeat-runs/${runId}/transcript`);
-      if (!res.ok) return [];
-      const data = await res.json();
-      return Array.isArray(data) ? data : data.messages ?? [];
+      // Use the log endpoint (NDJSON format) to get transcript chunks
+      const res = await api(`/api/heartbeat-runs/${runId}/log`);
+      if (!res.ok) {
+        // Fallback to events endpoint
+        const eventsRes = await api(`/api/heartbeat-runs/${runId}/events`);
+        if (!eventsRes.ok) return [];
+        const events = await eventsRes.json();
+        if (!Array.isArray(events)) return [];
+        return events
+          .filter((e: Record<string, unknown>) => e.stream === 'stdout' || e.type === 'message')
+          .map((e: Record<string, unknown>) => ({
+            role: (e.stream as string) ?? 'assistant',
+            content: (e.chunk as string) ?? (e.text as string) ?? (e.data as string) ?? '',
+            timestamp: (e.ts as string) ?? (e.createdAt as string) ?? '',
+          }));
+      }
+      const text = await res.text();
+      if (!text.trim()) return [];
+      // Parse NDJSON lines
+      const lines = text.trim().split('\n');
+      const messages: TranscriptMessage[] = [];
+      for (const line of lines) {
+        try {
+          const entry = JSON.parse(line);
+          if (entry.chunk || entry.text || entry.content) {
+            messages.push({
+              role: entry.stream ?? entry.role ?? 'assistant',
+              content: entry.chunk ?? entry.text ?? entry.content ?? '',
+              timestamp: entry.ts ?? '',
+            });
+          }
+        } catch { /* skip malformed lines */ }
+      }
+      return messages;
     } catch {
       return [];
     }

@@ -8,8 +8,19 @@
   import { onMount } from 'svelte';
   import {
     Inbox as InboxIcon, AlertTriangle, XCircle, X, RotateCcw,
-    UserPlus, ChevronRight, Loader2, CheckCheck, Radio
+    UserPlus, ChevronRight, Loader2, CheckCheck, Radio,
+    ShieldCheck, ShieldAlert, Bot
   } from 'lucide-svelte';
+
+  /** Resolve the correct icon component for an approval type */
+  const APPROVAL_TYPE_ICONS: Record<string, typeof UserPlus> = {
+    hire_agent: Bot,
+    approve_ceo_strategy: ShieldCheck,
+    budget_override_required: ShieldAlert,
+  };
+  function getApprovalIcon(type: string) {
+    return APPROVAL_TYPE_ICONS[type] ?? ShieldCheck;
+  }
   import SwipeToArchive from '$lib/components/swipe-to-archive.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
 
@@ -71,6 +82,7 @@
   let allLoaded = $derived(
     !loadingIssuesMine &&
     !loadingIssuesTouched &&
+    !loadingIssuesAll &&
     !loadingApprovals &&
     !loadingHeartbeats &&
     !loadingDashboard &&
@@ -978,7 +990,7 @@
                   >
                     <span class="hidden h-3.5 w-3.5 shrink-0 sm:inline-flex" aria-hidden="true"></span>
                     <span class="mt-0.5 shrink-0 rounded-md bg-accent/60 p-1.5 sm:mt-0">
-                      <UserPlus class="h-4 w-4 text-muted-foreground" />
+                      <svelte:component this={getApprovalIcon(approval.type ?? '')} class="h-4 w-4 text-muted-foreground" />
                     </span>
                     <span class="min-w-0 flex-1">
                       <span class="line-clamp-2 text-sm font-medium text-foreground sm:truncate sm:line-clamp-none">
@@ -1024,7 +1036,7 @@
                 <span class="hidden h-4 w-4 shrink-0 sm:inline-flex" aria-hidden="true"></span>
                 <span class="hidden h-3.5 w-3.5 shrink-0 sm:inline-flex" aria-hidden="true"></span>
                 <span class="mt-0.5 shrink-0 rounded-md bg-accent/60 p-1.5 sm:mt-0">
-                  <UserPlus class="h-4 w-4 text-muted-foreground" />
+                  <svelte:component this={getApprovalIcon(approval.type ?? '')} class="h-4 w-4 text-muted-foreground" />
                 </span>
                 <span class="min-w-0 flex-1">
                   <span class="line-clamp-2 text-sm font-medium text-foreground sm:truncate sm:line-clamp-none">

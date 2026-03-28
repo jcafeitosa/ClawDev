@@ -97,7 +97,12 @@ interface ToastMapping {
 const EVENT_TOAST_MAP: Record<string, ToastMapping> = {
   "agent.status_changed": {
     title: (p) => `Agent ${p.name ?? p.agentName ?? "unknown"} is now ${p.status ?? p.newStatus ?? "updated"}`,
-    tone: () => "info",
+    tone: (p) => (p.status === "error" ? "error" : "info"),
+    entityKey: "agentId",
+  },
+  "agent.status": {
+    title: (p) => `Agent ${p.name ?? p.agentName ?? "unknown"} is now ${p.status ?? "updated"}`,
+    tone: (p) => (p.status === "error" ? "error" : "info"),
     entityKey: "agentId",
   },
   "run.started": {
@@ -113,6 +118,42 @@ const EVENT_TOAST_MAP: Record<string, ToastMapping> = {
     },
     tone: (p) => (p.error || p.status === "failed" ? "error" : "success"),
     entityKey: "runId",
+  },
+  "heartbeat.run.status": {
+    title: (p) => {
+      const status = p.status as string ?? "updated";
+      const agent = p.agentName ?? p.name ?? "agent";
+      if (status === "succeeded") return `Run succeeded for ${agent}`;
+      if (status === "failed" || status === "timed_out") return `Run ${status} for ${agent}`;
+      if (status === "cancelled") return `Run cancelled for ${agent}`;
+      return `Run ${status} for ${agent}`;
+    },
+    tone: (p) => {
+      const status = p.status as string;
+      if (status === "succeeded") return "success";
+      if (status === "failed" || status === "timed_out") return "error";
+      return "info";
+    },
+    entityKey: "runId",
+  },
+  "heartbeat.run.queued": {
+    title: (p) => `Run queued for ${p.agentName ?? p.name ?? "agent"}`,
+    tone: () => "info",
+    entityKey: "runId",
+  },
+  "activity.logged": {
+    title: (p) => {
+      const action = (p.action as string) ?? "";
+      const entityType = (p.entityType as string) ?? "";
+      if (action === "issue.comment_added") return "New comment added";
+      if (action === "issue.created") return `New issue created`;
+      if (action === "issue.updated") return "Issue updated";
+      if (action.startsWith("approval.")) return "Approval updated";
+      if (action.startsWith("agent.")) return "Agent updated";
+      return `Activity: ${action || entityType}`;
+    },
+    tone: () => "info",
+    entityKey: "entityId",
   },
   "approval.created": {
     title: () => "New approval request",
@@ -186,10 +227,19 @@ export const liveEventsStore = {
     connect(companyId);
   },
   disconnect,
-  /** Register an event handler */
+  /** Register an event handler for all events */
   on(handler: EventHandler) {
     handlers.add(handler);
     return () => handlers.delete(handler);
+  },
+  /** Register a handler for specific event type(s) */
+  onEvent(eventTypes: string | string[], handler: (event: LiveEvent) => void) {
+    const types = Array.isArray(eventTypes) ? eventTypes : [eventTypes];
+    const wrapped: EventHandler = (event) => {
+      if (types.includes(event.type)) handler(event);
+    };
+    handlers.add(wrapped);
+    return () => handlers.delete(wrapped);
   },
   /** Push a toast from a live event (manual) */
   notify(input: ToastInput) {

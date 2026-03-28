@@ -13,7 +13,8 @@
   import CommentThread from "$lib/components/comment-thread.svelte";
   import IssueWorkspaceCard from "$lib/components/issue-workspace-card.svelte";
   import ScrollToBottom from "$lib/components/scroll-to-bottom.svelte";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { liveEventsStore, type LiveEvent } from "$stores/live-events.svelte.js";
   import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag, PanelRightOpen, PanelRightClose, ChevronRight, User, Calendar, Clock } from "lucide-svelte";
 
   // ---------------------------------------------------------------------------
@@ -710,6 +711,10 @@
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
+  let hasLiveRuns = $state(false);
+  let unsubscribeLiveEvents: (() => void) | null = null;
+  let liveRunsPollInterval: ReturnType<typeof setInterval> | null = null;
+
   onMount(() => {
     loadIssue();
     loadComments();
@@ -719,6 +724,66 @@
     loadSubIssues();
     loadActivity();
     loadRuns();
+
+    // Poll for live runs every 3 seconds
+    liveRunsPollInterval = setInterval(async () => {
+      try {
+        const res = await api(`/api/issues/${issueId}/live-runs`);
+        if (res.ok) {
+          const liveRuns = await res.json();
+          hasLiveRuns = Array.isArray(liveRuns) && liveRuns.length > 0;
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+
+    // Subscribe to WebSocket live events for real-time updates
+    unsubscribeLiveEvents = liveEventsStore.on((event: LiveEvent) => {
+      const payload = event.payload ?? {};
+      const eventIssueId = (payload.issueId ?? payload.entityId) as string | undefined;
+      const eventEntityType = (payload.entityType) as string | undefined;
+
+      switch (event.type) {
+        case "activity.logged": {
+          // Refresh if this activity is about our issue
+          const action = (payload.action as string) ?? "";
+          const isAboutThisIssue = eventIssueId === issueId || eventEntityType === "issue" && eventIssueId === issueId;
+          if (isAboutThisIssue || action.startsWith("issue.")) {
+            loadIssue();
+            loadActivity();
+            if (action === "issue.comment_added") loadComments();
+            if (action.includes("document")) loadDocuments();
+            if (action.includes("attachment")) loadAttachments();
+            if (action.includes("work_product")) loadIssue();
+          }
+          break;
+        }
+        case "heartbeat.run.status":
+        case "heartbeat.run.queued":
+        case "run.started":
+        case "run.completed": {
+          // Refresh runs for this issue
+          const runIssueId = (payload.issueId ?? payload.taskId) as string | undefined;
+          if (runIssueId === issueId || !runIssueId) {
+            loadRuns();
+            loadIssue();
+            loadActivity();
+          }
+          break;
+        }
+        case "issue.created":
+        case "issue.updated": {
+          if (eventIssueId === issueId) {
+            loadIssue();
+          }
+          break;
+        }
+      }
+    });
+  });
+
+  onDestroy(() => {
+    if (unsubscribeLiveEvents) unsubscribeLiveEvents();
+    if (liveRunsPollInterval) clearInterval(liveRunsPollInterval);
   });
 </script>
 
@@ -742,6 +807,15 @@
             <div class="inline-flex items-center gap-1.5 shrink-0">
               <span class="size-2.5 rounded-full {statusDotColor(issue.status)}"></span>
               <span class="text-sm font-mono text-zinc-500 dark:text-zinc-400">{issue.identifier}</span>
+              {#if hasLiveRuns}
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-500 text-[10px] font-semibold uppercase tracking-wider">
+                  <span class="relative flex h-1.5 w-1.5">
+                    <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-75"></span>
+                    <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-cyan-500"></span>
+                  </span>
+                  Live
+                </span>
+              {/if}
               <button
                 class="p-0.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
                 title="Copy identifier"
