@@ -17,6 +17,7 @@
     Activity,
     CircleDot,
     AlertCircle,
+    AlertTriangle,
     Clock,
     User,
     GitCommit,
@@ -40,6 +41,7 @@
   let activityFeed = $state<any[]>([]);
   let heartbeatRuns = $state<any[]>([]);
   let costSummary = $state<any>(null);
+  let budgetIncidents = $state<any[]>([]);
 
   let companyId = $derived(companyStore.selectedCompany?.id);
   let companyName = $derived(companyStore.selectedCompany?.name ?? 'Company');
@@ -57,6 +59,9 @@
   );
   let runningAgents = $derived(
     agents.filter((a) => a.status === 'active' || a.status === 'running'),
+  );
+  let pendingIncidents = $derived(
+    budgetIncidents.filter((inc) => inc.status === 'pending'),
   );
 
   // ── Widget derived data ──────────────────────────────────────────
@@ -179,6 +184,11 @@
         badgeCounts = data ?? {};
       },
     );
+
+    // Budget incidents (non-blocking)
+    safeFetch<any>(`/api/companies/${companyId}/budgets/overview`, null).then((data) => {
+      budgetIncidents = data?.incidents ?? data?.budgetIncidents ?? [];
+    });
   });
 
   // ── Helpers ────────────────────────────────────────────────────────
@@ -372,6 +382,42 @@
       {/if}
     </div>
   </div>
+
+  <!-- ── Budget Incident Alert ──────────────────────────────────────── -->
+  {#if pendingIncidents.length > 0}
+    <div class="relative overflow-hidden rounded-xl border border-red-500/30 bg-red-500/[0.08] px-5 py-4">
+      <div class="flex items-start gap-4">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/20">
+          <AlertTriangle size={20} color="#ef4444" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold text-red-400">Budget Hard Stop Active</h3>
+            {#if pendingIncidents.length > 1}
+              <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                {pendingIncidents.length}
+              </span>
+            {/if}
+          </div>
+          {#if pendingIncidents.length === 1}
+            <p class="mt-0.5 text-sm text-red-300/80">
+              Agent <span class="font-medium text-red-300">{pendingIncidents[0].agentName ?? pendingIncidents[0].agent?.name ?? 'Unknown'}</span> has been paused — monthly budget exceeded.
+            </p>
+          {:else}
+            <p class="mt-0.5 text-sm text-red-300/80">
+              {pendingIncidents.length} agents have been paused — monthly budgets exceeded.
+            </p>
+          {/if}
+        </div>
+        <a
+          href="/{prefix}/budgets"
+          class="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
+        >
+          Resolve
+        </a>
+      </div>
+    </div>
+  {/if}
 
   <!-- ── Quick Actions ─────────────────────────────────────────────── -->
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">

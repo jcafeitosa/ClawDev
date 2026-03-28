@@ -8,7 +8,7 @@
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
   import { onMount } from "svelte";
-  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw } from "lucide-svelte";
+  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check } from "lucide-svelte";
   import AgentIconPicker from '$lib/components/agent-icon-picker.svelte';
   import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
   import MarkdownBody from '$lib/components/markdown-body.svelte';
@@ -43,6 +43,11 @@
   let revokingKeyId = $state<string | null>(null);
   let confirmRevokeId = $state<string | null>(null);
 
+  // Budget edit state
+  let editingBudget = $state(false);
+  let budgetInputDollars = $state('');
+  let budgetSaving = $state(false);
+
   const ROLES = ["general", "ceo", "cto", "engineer", "designer", "marketer", "custom"];
   const STATUSES = ["idle", "waiting", "running", "paused", "error"];
 
@@ -59,6 +64,9 @@
     agent?.budgetMonthlyCents && agent.budgetMonthlyCents > 0
       ? Math.min(100, Math.round((agent.spentMonthlyCents ?? 0) / agent.budgetMonthlyCents * 100))
       : 0
+  );
+  let budgetBarColor = $derived(
+    budgetPct > 85 ? '#ef4444' : budgetPct > 60 ? '#f59e0b' : '#10b981'
   );
 
   // ---------------------------------------------------------------------------
@@ -320,6 +328,43 @@
     if (!res.ok) throw new Error(`Failed: ${res.status}`);
     toastStore.push({ title: "Name updated", body: `Agent renamed to "${newName}".`, tone: "success" });
     await loadAgent();
+  }
+
+  // ---------------------------------------------------------------------------
+  // Budget Edit
+  // ---------------------------------------------------------------------------
+  function openBudgetEdit() {
+    budgetInputDollars = agent?.budgetMonthlyCents ? (agent.budgetMonthlyCents / 100).toFixed(2) : '';
+    editingBudget = true;
+  }
+
+  function cancelBudgetEdit() {
+    editingBudget = false;
+    budgetInputDollars = '';
+  }
+
+  async function saveBudget() {
+    if (!agentId) return;
+    const dollars = parseFloat(budgetInputDollars);
+    if (isNaN(dollars) || dollars < 0) {
+      toastStore.push({ title: "Invalid amount", body: "Enter a valid dollar amount.", tone: "error" });
+      return;
+    }
+    budgetSaving = true;
+    try {
+      const res = await api(`/api/agents/${agentId}/budgets`, {
+        method: "PATCH",
+        body: JSON.stringify({ budgetMonthlyCents: Math.round(dollars * 100) }),
+      });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      toastStore.push({ title: "Budget updated", body: `Monthly budget set to $${dollars.toFixed(2)}.`, tone: "success" });
+      editingBudget = false;
+      await loadAgent();
+    } catch (err: any) {
+      toastStore.push({ title: "Budget update failed", body: err?.message, tone: "error" });
+    } finally {
+      budgetSaving = false;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -902,9 +947,72 @@
           <PropertyRow label="Model"><span class="font-mono text-xs">{agent.model ?? agent.adapterConfig?.model ?? "—"}</span></PropertyRow>
         {/if}
         <Separator />
-        <PropertyRow label="Budget">{budgetFormatted}</PropertyRow>
-        <Separator />
-        <PropertyRow label="Spent">{spentFormatted}</PropertyRow>
+        <!-- Budget section with progress bar -->
+        <div class="px-1 py-1.5">
+          <div class="flex items-center justify-between mb-1">
+            <span class="text-xs text-[#94A3B8]">Monthly Budget</span>
+            {#if !editingBudget}
+              <button
+                class="text-[10px] font-medium text-[#2563EB] hover:underline"
+                onclick={openBudgetEdit}
+              >
+                Edit
+              </button>
+            {/if}
+          </div>
+
+          {#if editingBudget}
+            <div class="flex items-center gap-1.5 mt-1">
+              <div class="relative flex-1">
+                <span class="absolute left-2 top-1/2 -translate-y-1/2 text-xs text-[#94A3B8]">$</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  bind:value={budgetInputDollars}
+                  class="w-full rounded-md border border-white/[0.12] bg-white/[0.04] pl-5 pr-2 py-1 text-xs focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+                  placeholder="0.00"
+                  onkeydown={(e: KeyboardEvent) => { if (e.key === 'Enter') saveBudget(); if (e.key === 'Escape') cancelBudgetEdit(); }}
+                />
+              </div>
+              <button
+                class="flex h-6 w-6 items-center justify-center rounded-md bg-[#2563EB]/20 text-[#2563EB] hover:bg-[#2563EB]/30 transition-colors disabled:opacity-50"
+                onclick={saveBudget}
+                disabled={budgetSaving}
+              >
+                <Check size={12} />
+              </button>
+              <button
+                class="flex h-6 w-6 items-center justify-center rounded-md bg-white/[0.06] text-[#94A3B8] hover:bg-white/[0.1] transition-colors"
+                onclick={cancelBudgetEdit}
+              >
+                <X size={12} />
+              </button>
+            </div>
+          {:else}
+            <p class="text-sm font-medium" title={agent?.budgetMonthlyCents ? `${agent.budgetMonthlyCents} cents` : ''}>{budgetFormatted}</p>
+          {/if}
+
+          <div class="flex items-center justify-between mt-2 mb-1">
+            <span class="text-xs text-[#94A3B8]">Monthly Spent</span>
+            {#if agent?.budgetMonthlyCents && agent.budgetMonthlyCents > 0}
+              <span class="text-[10px] font-semibold" style="color: {budgetBarColor};">{budgetPct}%</span>
+            {/if}
+          </div>
+          <p class="text-sm font-medium" title={agent?.spentMonthlyCents ? `${agent.spentMonthlyCents} cents` : ''}>{spentFormatted}</p>
+
+          {#if agent?.budgetMonthlyCents && agent.budgetMonthlyCents > 0}
+            <div class="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/[0.08]">
+              <div
+                class="h-full rounded-full transition-all duration-500"
+                style="width: {budgetPct}%; background-color: {budgetBarColor};"
+              ></div>
+            </div>
+            <p class="mt-1 text-[10px] text-[#94A3B8]">
+              {spentFormatted} of {budgetFormatted}
+            </p>
+          {/if}
+        </div>
         <Separator />
         <PropertyRow label="Issues"><span class="font-medium">{issues.length}</span></PropertyRow>
         <Separator />

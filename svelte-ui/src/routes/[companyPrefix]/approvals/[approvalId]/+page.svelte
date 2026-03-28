@@ -5,6 +5,7 @@
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea } from "$components/ui/index.js";
+  import CommentThread from "$lib/components/comment-thread.svelte";
   import { onMount } from "svelte";
 
   // ---------------------------------------------------------------------------
@@ -112,6 +113,24 @@
     } catch {
       linkedIssues = [];
     }
+  }
+
+  async function submitComment(body: string) {
+    if (!approvalId || !body.trim()) return;
+    const res = await api(`/api/approvals/${approvalId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body: body.trim() }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    toastStore.push({ title: "Comment added", tone: "success" });
+    await loadComments();
+  }
+
+  async function deleteComment(commentId: string) {
+    const res = await api(`/api/comments/${commentId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(await res.text());
+    toastStore.push({ title: "Comment deleted", tone: "success" });
+    await loadComments();
   }
 
   async function handleApprove() {
@@ -398,28 +417,11 @@
 
           <TabsContent value="comments">
             <div class="mt-4">
-              {#if comments.length === 0}
-                <EmptyState title="No comments" description="No discussion on this approval yet." icon="💬" />
-              {:else}
-                <div class="space-y-3">
-                  {#each comments as comment}
-                    <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-                      <div class="flex items-center justify-between mb-2">
-                        <div class="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                          {#if comment.agentId}
-                            <Badge variant="outline" class="text-xs">Agent</Badge>
-                          {:else}
-                            <Badge variant="secondary" class="text-xs">Board</Badge>
-                          {/if}
-                          <span class="font-mono">{(comment.agentId ?? comment.userId ?? "unknown").slice(0, 8)}</span>
-                        </div>
-                        <TimeAgo date={comment.createdAt} class="text-xs" />
-                      </div>
-                      <div class="text-sm whitespace-pre-wrap">{comment.body}</div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
+              <CommentThread
+                {comments}
+                onSubmit={submitComment}
+                onDelete={deleteComment}
+              />
             </div>
           </TabsContent>
         </Tabs>

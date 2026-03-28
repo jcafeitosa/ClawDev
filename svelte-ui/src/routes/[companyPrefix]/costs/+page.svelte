@@ -7,6 +7,7 @@
   import {
     DollarSign,
     TrendingUp,
+    TrendingDown,
     PieChart,
     Server,
     Wallet,
@@ -14,6 +15,7 @@
     FolderKanban,
     Receipt,
     LayoutDashboard,
+    Gauge,
   } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Costs' }]));
@@ -42,13 +44,36 @@
 
   let activeTab = $state('overview');
 
+  // Date range for Overview tab
+  type DatePreset = '7d' | '30d' | '90d' | 'all';
+  let datePreset = $state<DatePreset>('30d');
+  let dateRange = $derived.by(() => {
+    const now = new Date();
+    if (datePreset === 'all') return { from: '', to: '' };
+    const days = datePreset === '7d' ? 7 : datePreset === '90d' ? 90 : 30;
+    const from = new Date(now.getTime() - days * 86400000);
+    return {
+      from: from.toISOString().split('T')[0],
+      to: now.toISOString().split('T')[0],
+    };
+  });
+
+  // Quota windows
+  let quotaLoading = $state(false);
+  let quotaWindows = $state<any[]>([]);
+  let quotaLoaded = $state(false);
+
   let companyId = $derived(companyStore.selectedCompany?.id);
 
   // ── Load overview data ─────────────────────────────────────────────
   $effect(() => {
     if (!companyId) return;
     loading = true;
-    api(`/api/companies/${companyId}/costs/summary`)
+    const params = new URLSearchParams();
+    if (dateRange.from) params.set('from', dateRange.from);
+    if (dateRange.to) params.set('to', dateRange.to);
+    const qs = params.toString() ? `?${params.toString()}` : '';
+    api(`/api/companies/${companyId}/costs/summary${qs}`)
       .then((r) => r.json())
       .then((d) => {
         summary = d.summary ?? d;
@@ -118,6 +143,19 @@
         .catch(console.error)
         .finally(() => (financeLoading = false));
     }
+
+    // Load quota windows when finance tab is active
+    if (activeTab === 'finance' && !quotaLoaded) {
+      quotaLoading = true;
+      api(`/api/companies/${companyId}/costs/quota-windows`)
+        .then((r) => r.json())
+        .then((d) => {
+          quotaWindows = Array.isArray(d) ? d : d.data ?? d.windows ?? d.items ?? [];
+          quotaLoaded = true;
+        })
+        .catch(() => { quotaWindows = []; quotaLoaded = true; })
+        .finally(() => (quotaLoading = false));
+    }
   });
 
   // ── Formatters ─────────────────────────────────────────────────────
@@ -142,6 +180,12 @@
     } catch {
       return value;
     }
+  }
+
+  function quotaBarColor(pct: number): string {
+    if (pct > 90) return '#ef4444';
+    if (pct > 70) return '#f59e0b';
+    return '#10b981';
   }
 
   // Tab definition
@@ -247,6 +291,26 @@
 
       <!-- ─── Overview Tab ──────────────────────────────────────────── -->
       <TabsContent value="overview">
+        <!-- Date range selector -->
+        <div class="flex items-center gap-2 px-5 pt-4 pb-2">
+          <span class="text-xs font-medium text-[#94A3B8] mr-1">Period:</span>
+          {#each [
+            { key: '7d', label: '7 days' },
+            { key: '30d', label: '30 days' },
+            { key: '90d', label: '90 days' },
+            { key: 'all', label: 'All time' },
+          ] as preset}
+            <button
+              class="rounded-md px-3 py-1 text-xs font-medium transition-colors {datePreset === preset.key
+                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                : 'bg-white/[0.04] text-[#94A3B8] border border-white/[0.06] hover:bg-white/[0.08] hover:text-[#F8FAFC]'}"
+              onclick={() => { datePreset = preset.key as DatePreset; }}
+            >
+              {preset.label}
+            </button>
+          {/each}
+        </div>
+
         {#if loading}
           <div class="p-5 space-y-3">
             {#each Array(5) as _}
@@ -428,29 +492,120 @@
         {:else}
           <!-- Revenue vs Expense summary cards -->
           <div class="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-            <div class="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-              <div class="flex items-center gap-2 mb-2">
-                <div class="rounded-md bg-emerald-500/10 p-1.5">
-                  <TrendingUp class="h-4 w-4 text-emerald-400" />
+            <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/[0.04] p-5">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <div class="rounded-md bg-emerald-500/10 p-1.5">
+                    <TrendingUp class="h-4 w-4 text-emerald-400" />
+                  </div>
+                  <span class="text-sm font-medium text-[#94A3B8]">Revenue</span>
                 </div>
-                <span class="text-sm font-medium text-[#94A3B8]">Revenue</span>
+                {#if financeSummary?.revenueCount ?? financeSummary?.revenueEventCount}
+                  <span class="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-400">
+                    {financeSummary?.revenueCount ?? financeSummary?.revenueEventCount} events
+                  </span>
+                {/if}
               </div>
-              <p class="text-2xl font-bold text-emerald-400">
+              <p class="text-3xl font-bold text-emerald-400" title={`$${(financeSummary?.revenue ?? financeSummary?.totalRevenue ?? 0).toLocaleString('en', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`}>
                 {formatCurrency(financeSummary?.revenue ?? financeSummary?.totalRevenue ?? 0)}
               </p>
+              {#if financeSummary?.revenueChange !== undefined}
+                <p class="mt-1 text-xs text-emerald-400/70">
+                  {financeSummary.revenueChange > 0 ? '+' : ''}{financeSummary.revenueChange.toFixed(1)}% vs last period
+                </p>
+              {/if}
             </div>
-            <div class="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
-              <div class="flex items-center gap-2 mb-2">
-                <div class="rounded-md bg-red-500/10 p-1.5">
-                  <DollarSign class="h-4 w-4 text-red-400" />
+            <div class="rounded-lg border border-red-500/20 bg-red-500/[0.04] p-5">
+              <div class="flex items-center justify-between mb-3">
+                <div class="flex items-center gap-2">
+                  <div class="rounded-md bg-red-500/10 p-1.5">
+                    <TrendingDown class="h-4 w-4 text-red-400" />
+                  </div>
+                  <span class="text-sm font-medium text-[#94A3B8]">Expenses</span>
                 </div>
-                <span class="text-sm font-medium text-[#94A3B8]">Expenses</span>
+                {#if financeSummary?.expenseCount ?? financeSummary?.expenseEventCount}
+                  <span class="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-400">
+                    {financeSummary?.expenseCount ?? financeSummary?.expenseEventCount} events
+                  </span>
+                {/if}
               </div>
-              <p class="text-2xl font-bold text-red-400">
+              <p class="text-3xl font-bold text-red-400" title={`$${(financeSummary?.expense ?? financeSummary?.totalExpense ?? 0).toLocaleString('en', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`}>
                 {formatCurrency(financeSummary?.expense ?? financeSummary?.totalExpense ?? 0)}
               </p>
+              {#if financeSummary?.expenseChange !== undefined}
+                <p class="mt-1 text-xs text-red-400/70">
+                  {financeSummary.expenseChange > 0 ? '+' : ''}{financeSummary.expenseChange.toFixed(1)}% vs last period
+                </p>
+              {/if}
             </div>
           </div>
+
+          <!-- Provider Quota Windows -->
+          {#if quotaLoading}
+            <div class="px-5 pb-4 space-y-3">
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-[#94A3B8]">Provider Quotas</h4>
+              {#each Array(3) as _}
+                <div class="h-16 animate-pulse rounded-lg bg-white/[0.05]"></div>
+              {/each}
+            </div>
+          {:else if quotaWindows.length > 0}
+            <div class="px-5 pb-5">
+              <h4 class="text-xs font-semibold uppercase tracking-wider text-[#94A3B8] mb-3">Provider Quotas</h4>
+              <div class="space-y-3">
+                {#each quotaWindows as window}
+                  {@const used = window.used ?? window.currentUsage ?? 0}
+                  {@const limit = window.limit ?? window.quotaLimit ?? window.total ?? 1}
+                  {@const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0}
+                  <div class="rounded-lg border border-white/[0.06] bg-white/[0.02] p-4">
+                    <div class="flex items-center justify-between mb-2">
+                      <div class="flex items-center gap-2">
+                        <Gauge size={14} class="text-[#94A3B8]" />
+                        <span class="text-sm font-medium text-[#F8FAFC]">{window.provider ?? window.name ?? 'Provider'}</span>
+                        {#if window.model}
+                          <span class="rounded bg-white/[0.06] px-1.5 py-0.5 text-[10px] font-mono text-[#94A3B8]">{window.model}</span>
+                        {/if}
+                      </div>
+                      <span class="text-xs font-semibold" style="color: {quotaBarColor(pct)};">{pct.toFixed(0)}%</span>
+                    </div>
+                    <div class="h-2 w-full overflow-hidden rounded-full bg-white/[0.06]">
+                      <div
+                        class="h-full rounded-full transition-all duration-500"
+                        style="width: {pct}%; background-color: {quotaBarColor(pct)};"
+                      ></div>
+                    </div>
+                    <div class="mt-1.5 flex items-center justify-between">
+                      <span class="text-[11px] text-[#94A3B8]" title={`$${used.toLocaleString('en', { minimumFractionDigits: 4 })}`}>
+                        {formatCurrency(used)} used
+                      </span>
+                      <span class="text-[11px] text-[#94A3B8]" title={`$${limit.toLocaleString('en', { minimumFractionDigits: 4 })}`}>
+                        {formatCurrency(limit)} limit
+                      </span>
+                    </div>
+                    <!-- Model breakdown -->
+                    {#if window.models && window.models.length > 0}
+                      <div class="mt-2 space-y-1 border-t border-white/[0.04] pt-2">
+                        {#each window.models as mdl}
+                          {@const mdlUsed = mdl.used ?? mdl.currentUsage ?? 0}
+                          {@const mdlLimit = mdl.limit ?? mdl.quotaLimit ?? limit}
+                          {@const mdlPct = mdlLimit > 0 ? Math.min(100, (mdlUsed / mdlLimit) * 100) : 0}
+                          <div class="flex items-center gap-3">
+                            <span class="w-24 truncate text-[10px] font-mono text-[#94A3B8]">{mdl.model ?? mdl.name}</span>
+                            <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-white/[0.06]">
+                              <div
+                                class="h-full rounded-full"
+                                style="width: {mdlPct}%; background-color: {quotaBarColor(mdlPct)};"
+                              ></div>
+                            </div>
+                            <span class="text-[10px] text-[#94A3B8] w-16 text-right">{formatCurrency(mdlUsed)}</span>
+                          </div>
+                        {/each}
+                      </div>
+                    {/if}
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/if}
 
           <!-- Finance events table -->
           {#if financeEvents.length === 0}

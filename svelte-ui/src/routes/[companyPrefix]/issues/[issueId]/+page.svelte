@@ -10,6 +10,7 @@
   import InlineEditor from "$lib/components/inline-editor.svelte";
   import MarkdownBody from "$lib/components/markdown-body.svelte";
   import LiveRunWidget from "$lib/components/live-run-widget.svelte";
+  import CommentThread from "$lib/components/comment-thread.svelte";
   import { onMount } from "svelte";
   import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag } from "lucide-svelte";
 
@@ -137,8 +138,7 @@
   let loading = $state(true);
   let notFound = $state(false);
   let activeTab = $state("details");
-  let newComment = $state("");
-  let submittingComment = $state(false);
+  // Comment submission/deletion handled by CommentThread component
 
   // -- Inline edit state
   let editing = $state(false);
@@ -291,23 +291,22 @@
     }
   }
 
-  async function submitComment() {
-    if (!issueId || !newComment.trim()) return;
-    submittingComment = true;
-    try {
-      const res = await api(`/api/issues/${issueId}/comments`, {
-        method: "POST",
-        body: JSON.stringify({ body: newComment.trim() }),
-      });
-      if (!res.ok) throw new Error(await res.text());
-      newComment = "";
-      toastStore.push({ title: "Comment added", tone: "success" });
-      await loadComments();
-    } catch (err: any) {
-      toastStore.push({ title: "Failed to add comment", body: err?.message, tone: "error" });
-    } finally {
-      submittingComment = false;
-    }
+  async function submitComment(body: string) {
+    if (!issueId || !body.trim()) return;
+    const res = await api(`/api/issues/${issueId}/comments`, {
+      method: "POST",
+      body: JSON.stringify({ body: body.trim() }),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    toastStore.push({ title: "Comment added", tone: "success" });
+    await loadComments();
+  }
+
+  async function deleteComment(commentId: string) {
+    const res = await api(`/api/comments/${commentId}`, { method: "DELETE" });
+    if (!res.ok) throw new Error(await res.text());
+    toastStore.push({ title: "Comment deleted", tone: "success" });
+    await loadComments();
   }
 
   // ---------------------------------------------------------------------------
@@ -875,50 +874,12 @@
           <!-- Comments Tab                                                   -->
           <!-- ============================================================= -->
           <TabsContent value="comments">
-            <div class="mt-4 space-y-4">
-              <!-- Comment input -->
-              <div class="space-y-2">
-                <Textarea
-                  bind:value={newComment}
-                  placeholder="Add a comment..."
-                  class="min-h-[80px] resize-y"
-                />
-                <div class="flex justify-end">
-                  <Button
-                    size="sm"
-                    disabled={!newComment.trim() || submittingComment}
-                    onclick={submitComment}
-                  >
-                    {submittingComment ? "Posting..." : "Comment"}
-                  </Button>
-                </div>
-              </div>
-
-              <Separator />
-
-              <!-- Comments list -->
-              {#if comments.length === 0}
-                <EmptyState title="No comments yet" description="Be the first to add a comment." icon="💬" />
-              {:else}
-                <div class="space-y-3">
-                  {#each comments as comment}
-                    <div class="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-                      <div class="flex items-center justify-between mb-2">
-                        <div class="flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-                          {#if comment.agentId}
-                            <Badge variant="outline" class="text-xs">Agent</Badge>
-                          {:else}
-                            <Badge variant="secondary" class="text-xs">Board</Badge>
-                          {/if}
-                          <span class="font-mono">{(comment.agentId ?? comment.userId ?? "unknown").slice(0, 8)}</span>
-                        </div>
-                        <TimeAgo date={comment.createdAt} class="text-xs" />
-                      </div>
-                      <div class="text-sm whitespace-pre-wrap">{comment.body}</div>
-                    </div>
-                  {/each}
-                </div>
-              {/if}
+            <div class="mt-4">
+              <CommentThread
+                {comments}
+                onSubmit={submitComment}
+                onDelete={deleteComment}
+              />
             </div>
           </TabsContent>
 
