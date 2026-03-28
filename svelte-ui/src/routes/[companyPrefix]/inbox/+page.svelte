@@ -9,6 +9,7 @@
     Inbox, Bell, CircleDot, Bot, MessageSquare, AlertTriangle, FileText,
     ChevronRight, ListTodo, ShieldCheck, Play, CheckCheck, Loader2
   } from 'lucide-svelte';
+  import SwipeToArchive from '$lib/components/swipe-to-archive.svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Inbox' }]));
 
@@ -133,6 +134,18 @@
     }
   }
 
+  async function archiveItem(item: any) {
+    const id = item.issueId ?? item.entityId ?? item.id;
+    if (!id) return;
+    try {
+      await api(`/api/issues/${id}/inbox-archive`, { method: 'POST' });
+      items = items.filter((it) => (it.id ?? it.entityId) !== (item.id ?? item.entityId));
+      toastStore.push({ title: 'Archived', tone: 'success' });
+    } catch {
+      toastStore.push({ title: 'Failed to archive', tone: 'error' });
+    }
+  }
+
   const emptyMessages: Record<string, { title: string; body: string }> = {
     mine: { title: 'Nothing assigned to you', body: 'Items assigned to you will appear here' },
     recent: { title: 'No recent notifications', body: 'Recent activity will show up here' },
@@ -224,6 +237,7 @@
         {@const link = itemLink(item)}
         {@const isUnread = item.unread !== false && item.read !== true}
 
+        <SwipeToArchive onArchive={() => archiveItem(item)}>
         <button
           onclick={() => handleItemClick(item)}
           class="group flex w-full items-center gap-4 rounded-xl px-4 py-3 text-left transition-colors hover:bg-white/[0.03] border-b border-white/[0.05] last:border-0"
@@ -258,6 +272,7 @@
             <ChevronRight class="h-4 w-4 shrink-0 text-[#94A3B8] opacity-50 transition-transform group-hover:translate-x-0.5" />
           {/if}
         </button>
+        </SwipeToArchive>
       {/each}
     </div>
   {/if}

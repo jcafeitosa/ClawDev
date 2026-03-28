@@ -12,6 +12,7 @@
   import LiveRunWidget from "$lib/components/live-run-widget.svelte";
   import CommentThread from "$lib/components/comment-thread.svelte";
   import IssueWorkspaceCard from "$lib/components/issue-workspace-card.svelte";
+  import ScrollToBottom from "$lib/components/scroll-to-bottom.svelte";
   import { onMount } from "svelte";
   import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag } from "lucide-svelte";
 
@@ -1292,4 +1293,5 @@
       </PropertiesPanel>
     </div>
   </div>
+  <ScrollToBottom />
 {/if}

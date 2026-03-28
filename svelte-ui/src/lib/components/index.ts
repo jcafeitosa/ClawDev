@@ -14,3 +14,6 @@ export { openNewIssueDialog } from './new-issue-dialog.svelte';
 export { default as LiveRunWidget } from './live-run-widget.svelte';
 export { default as ActiveAgentsPanel } from './active-agents-panel.svelte';
 export { default as IssueWorkspaceCard } from './issue-workspace-card.svelte';
+export { default as ScrollToBottom } from './scroll-to-bottom.svelte';
+export { default as SwipeToArchive } from './swipe-to-archive.svelte';
+export { default as CommentThread } from './comment-thread.svelte';
