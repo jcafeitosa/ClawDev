@@ -450,25 +450,25 @@ export async function startServer(): Promise<StartedServer> {
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
+  const {
+    createBetterAuthInstance,
+    deriveAuthTrustedOrigins,
+    resolveBetterAuthSessionFromHeaders,
+  } = await import("./auth/better-auth.js");
+  const betterAuthSecret =
+    process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
+  if (config.deploymentMode === "authenticated" && !betterAuthSecret) {
+    throw new Error(
+      "authenticated mode requires BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) to be set",
+    );
+  }
+  const derivedTrustedOrigins = deriveAuthTrustedOrigins(config);
+  const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins]));
   if (config.deploymentMode === "authenticated") {
-    const {
-      createBetterAuthInstance,
-      deriveAuthTrustedOrigins,
-      resolveBetterAuthSessionFromHeaders,
-    } = await import("./auth/better-auth.js");
-    const betterAuthSecret =
-      process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
-    if (!betterAuthSecret) {
-      throw new Error(
-        "authenticated mode requires BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) to be set",
-      );
-    }
-    const derivedTrustedOrigins = deriveAuthTrustedOrigins(config);
-    const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
-      .split(",")
-      .map((value) => value.trim())
-      .filter((value) => value.length > 0);
-    const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins]));
     logger.info(
       {
         authBaseUrlMode: config.authBaseUrlMode,
@@ -481,11 +481,13 @@ export async function startServer(): Promise<StartedServer> {
       },
       "Authenticated mode auth origin configuration",
     );
-    const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
-    resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
-    await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
-    authReady = true;
   }
+  const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
+  resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
+  if (config.deploymentMode === "authenticated") {
+    await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
+  }
+  authReady = true;
   
   const listenPort = await detectPort(config.port);
   if (listenPort !== config.port) {
@@ -507,6 +509,7 @@ export async function startServer(): Promise<StartedServer> {
     deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
     authReady,
+    authHandler: auth.handler,
     companyDeletionEnabled: config.companyDeletionEnabled,
     storage: storageService,
     serveUi: config.serveUi,

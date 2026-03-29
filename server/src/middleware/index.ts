@@ -1,4 +1,4 @@
-export { elysiaLogger } from "./logger.js";
+export { elysiaLogger } from "./elysia-logger.js";
 export { elysiaErrorHandler } from "./error-handler.js";
 export { elysiaAuth, requireAuth, type AuthUser } from "./auth.js";
 export { uuidParam, companyIdParam, paginationQuery, errorResponse } from "./validation.js";

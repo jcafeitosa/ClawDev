@@ -6,7 +6,7 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { activityLogs } from "@clawdev/db";
+import { activityLog } from "@clawdev/db";
 import { eq, desc } from "drizzle-orm";
 import { companyIdParam, paginationQuery } from "../middleware/index.js";
 
@@ -20,9 +20,9 @@ export function activityRoutes(db: Db) {
 
         const rows = await db
           .select()
-          .from(activityLogs)
-          .where(eq(activityLogs.companyId, params.companyId))
-          .orderBy(desc(activityLogs.createdAt))
+          .from(activityLog)
+          .where(eq(activityLog.companyId, params.companyId))
+          .orderBy(desc(activityLog.createdAt))
           .limit(limit)
           .offset(offset);
 

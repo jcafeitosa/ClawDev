@@ -8,13 +8,12 @@
  * Cache: content-hashed files → immutable; others → ETag-based revalidation.
  */
 
-import { Elysia, t } from "elysia";
+import { Elysia } from "elysia";
 import path from "node:path";
 import fs from "node:fs";
 import crypto from "node:crypto";
 import type { Db } from "@clawdev/db";
 import { pluginRegistryService } from "../services/plugin-registry.js";
-import { resolvePluginUiDir } from "../routes/plugin-ui-static.js";
 import { logger } from "../middleware/logger.js";
 
 const CONTENT_HASH_PATTERN = /[.-][a-fA-F0-9]{8,}\.\w+$/;
@@ -48,6 +47,46 @@ function computeETag(size: number, mtimeMs: number): string {
     .digest("hex")
     .slice(0, 16);
   return `"${hash}"`;
+}
+
+function resolvePluginUiDir(
+  localPluginDir: string,
+  packageName: string,
+  entrypointsUi: string,
+  packagePath?: string | null,
+): string | null {
+  if (packagePath) {
+    const resolvedPackagePath = path.resolve(packagePath);
+    if (fs.existsSync(resolvedPackagePath)) {
+      const uiDirFromPackagePath = path.resolve(resolvedPackagePath, entrypointsUi);
+      if (uiDirFromPackagePath.startsWith(resolvedPackagePath) && fs.existsSync(uiDirFromPackagePath)) {
+        return uiDirFromPackagePath;
+      }
+    }
+  }
+
+  let packageRoot: string;
+  if (packageName.startsWith("@")) {
+    packageRoot = path.join(localPluginDir, "node_modules", ...packageName.split("/"));
+  } else {
+    packageRoot = path.join(localPluginDir, "node_modules", packageName);
+  }
+
+  if (!fs.existsSync(packageRoot)) {
+    const directPath = path.join(localPluginDir, packageName);
+    if (fs.existsSync(directPath)) {
+      packageRoot = directPath;
+    } else {
+      return null;
+    }
+  }
+
+  const uiDir = path.resolve(packageRoot, entrypointsUi);
+  if (!fs.existsSync(uiDir)) {
+    return null;
+  }
+
+  return uiDir;
 }
 
 export interface PluginUiStaticRouteOptions {

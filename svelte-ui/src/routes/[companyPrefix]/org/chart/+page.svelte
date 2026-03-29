@@ -1,154 +1,53 @@
 <script lang="ts">
-  import { page } from "$app/stores";
-  import { api } from "$lib/api/client";
-  import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
-  import { companyStore } from "$stores/company.svelte.js";
-  import { onMount } from "svelte";
+  import { page } from '$app/stores';
+  import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
+  import { companyStore } from '$stores/company.svelte.js';
+  import { api } from '$lib/api';
+  import { onMount } from 'svelte';
+  import StatusBadge from '$lib/components/status-badge.svelte';
 
-  let companyPrefix = $derived($page.params.companyPrefix);
+  onMount(() => breadcrumbStore.set([{ label: 'Org', href: `/${$page.params.companyPrefix}/org` }, { label: 'Chart' }]));
+
   let agents = $state<any[]>([]);
   let loading = $state(true);
-  let error = $state<string | null>(null);
+  let companyId = $derived(companyStore.selectedCompany?.id);
 
-  interface TreeNode {
-    agent: any;
-    children: TreeNode[];
-  }
-
-  let tree = $derived(buildTree(agents));
-
-  function buildTree(allAgents: any[]): TreeNode[] {
-    const byParent = new Map<string | null, any[]>();
-
-    for (const a of allAgents) {
-      const parentId = a.reportsTo ?? null;
-      if (!byParent.has(parentId)) byParent.set(parentId, []);
-      byParent.get(parentId)!.push(a);
-    }
-
-    function buildNodes(parentId: string | null): TreeNode[] {
-      const children = byParent.get(parentId) ?? [];
-      return children.map((agent) => ({
-        agent,
-        children: buildNodes(agent.id),
-      }));
-    }
-
-    return buildNodes(null);
-  }
-
-  onMount(() => {
-    breadcrumbStore.set([
-      { label: "Org", href: `/${companyPrefix}/org` },
-      { label: "Chart" },
-    ]);
-
-    api.api.agents.get({ query: { companyId: companyStore.selectedCompanyId ?? undefined } })
-      .then((res) => {
-        agents = (res.data as any[]) ?? [];
-      })
-      .catch((err) => {
-        error = err instanceof Error ? err.message : "Failed to load agents";
-      })
-      .finally(() => {
-        loading = false;
-      });
+  $effect(() => {
+    if (!companyId) return;
+    api(`/api/companies/${companyId}/agents`).then(r => r.json()).then(d => { agents = Array.isArray(d) ? d : d.agents ?? []; }).finally(() => { loading = false; });
   });
 
-  const statusColors: Record<string, string> = {
-    active: "bg-green-500",
-    idle: "bg-yellow-500",
-    offline: "bg-muted-foreground",
-  };
+  let roots = $derived(agents.filter(a => !a.reportsTo));
+  function children(parentId: string) { return agents.filter(a => a.reportsTo === parentId); }
 </script>
 
-<div class="p-6 space-y-6">
-  <div class="flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-foreground">Organization Chart</h1>
-    <a
-      href="/{companyPrefix}/agents/new"
-      class="inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
-    >
-      Add Agent
+{#snippet agentNode(agent: any, depth: number)}
+  <div class="ml-{Math.min(depth * 6, 24)} border-l-2 border-zinc-200 pl-4 py-2 dark:border-zinc-700" style="margin-left: {depth * 24}px">
+    <a href="/{$page.params.companyPrefix}/agents/{agent.id}" class="flex items-center gap-3 rounded-lg p-2 hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+      <div class="h-8 w-8 rounded-full bg-indigo-100 flex items-center justify-center text-xs font-bold text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300">
+        {(agent.name ?? '?')[0].toUpperCase()}
+      </div>
+      <div>
+        <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{agent.name}</p>
+        <p class="text-xs text-zinc-500">{agent.role ?? agent.adapterType ?? ''}</p>
+      </div>
+      <StatusBadge status={agent.status ?? 'idle'} />
     </a>
-  </div>
-
-  {#if loading}
-    <div class="flex justify-center py-16">
-      <div class="space-y-4 w-full max-w-md">
-        <div class="h-16 rounded-lg bg-muted animate-pulse mx-auto w-40"></div>
-        <div class="flex justify-center gap-8">
-          <div class="h-14 w-32 rounded-lg bg-muted animate-pulse"></div>
-          <div class="h-14 w-32 rounded-lg bg-muted animate-pulse"></div>
-        </div>
-      </div>
-    </div>
-  {:else if error}
-    <div class="rounded-lg border border-destructive/50 bg-destructive/10 p-4">
-      <p class="text-sm text-destructive">{error}</p>
-    </div>
-  {:else if agents.length === 0}
-    <div class="flex flex-col items-center justify-center py-16 text-center">
-      <p class="text-sm text-muted-foreground">No agents in this company yet.</p>
-      <a
-        href="/{companyPrefix}/agents/new"
-        class="mt-3 inline-flex h-8 items-center justify-center rounded-md bg-primary px-3 text-xs font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
-      >
-        Create First Agent
-      </a>
-    </div>
-  {:else}
-    <!-- CSS-based org chart tree -->
-    <div class="overflow-x-auto pb-8">
-      <div class="inline-flex flex-col items-center min-w-full">
-        {#each tree as node}
-          {@render orgNode(node, 0)}
-        {/each}
-      </div>
-    </div>
-  {/if}
-</div>
-
-{#snippet orgNode(node: TreeNode, depth: number)}
-  <div class="flex flex-col items-center">
-    <!-- Agent card -->
-    <a
-      href="/{companyPrefix}/agents/{node.agent.id}"
-      class="rounded-lg border border-border bg-card p-3 min-w-[10rem] text-center hover:bg-muted/50 transition-colors shadow-sm"
-    >
-      <div class="flex items-center justify-center gap-1.5 mb-1">
-        <span class="size-2 rounded-full {statusColors[node.agent.status] ?? 'bg-muted-foreground'}"></span>
-        <p class="text-sm font-medium text-foreground truncate">{node.agent.name}</p>
-      </div>
-      <p class="text-xs text-muted-foreground truncate">{node.agent.role ?? node.agent.adapterType ?? "Agent"}</p>
-    </a>
-
-    <!-- Children -->
-    {#if node.children.length > 0}
-      <!-- Vertical connector from parent -->
-      <div class="w-px h-6 bg-border"></div>
-
-      <!-- Horizontal connector bar -->
-      {#if node.children.length > 1}
-        <div class="flex items-start">
-          <div class="flex">
-            {#each node.children as child, i}
-              <div class="flex flex-col items-center px-3">
-                <!-- Horizontal line segments -->
-                <div class="flex w-full">
-                  <div class="h-px flex-1 {i === 0 ? 'bg-transparent' : 'bg-border'}"></div>
-                  <div class="h-px flex-1 {i === node.children.length - 1 ? 'bg-transparent' : 'bg-border'}"></div>
-                </div>
-                <!-- Vertical line to child -->
-                <div class="w-px h-6 bg-border"></div>
-                {@render orgNode(child, depth + 1)}
-              </div>
-            {/each}
-          </div>
-        </div>
-      {:else}
-        {@render orgNode(node.children[0], depth + 1)}
-      {/if}
-    {/if}
+    {#each children(agent.id) as child (child.id)}
+      {@render agentNode(child, depth + 1)}
+    {/each}
   </div>
 {/snippet}
+
+<div class="p-6 space-y-4">
+  <h1 class="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Organization Chart</h1>
+  {#if loading}
+    <div class="space-y-3">{#each Array(5) as _}<div class="h-12 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800"></div>{/each}</div>
+  {:else if roots.length === 0}
+    <p class="text-sm text-zinc-500 py-8 text-center">No agents found.</p>
+  {:else}
+    {#each roots as root (root.id)}
+      {@render agentNode(root, 0)}
+    {/each}
+  {/if}
+</div>

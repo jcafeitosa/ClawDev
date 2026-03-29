@@ -94,6 +94,7 @@ export interface ElysiaAppOptions {
   deploymentMode: DeploymentMode;
   deploymentExposure: DeploymentExposure;
   authReady: boolean;
+  authHandler?: (request: Request) => Promise<Response> | Response;
   companyDeletionEnabled: boolean;
   storage: StorageService;
   serveUi?: boolean;
@@ -118,6 +119,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     deploymentMode,
     deploymentExposure,
     authReady,
+    authHandler,
     companyDeletionEnabled,
     storage,
     resolveSessionFromHeaders,
@@ -237,6 +239,20 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
   }
 
   // -- Root-level app (non-/api routes + websocket + static UI) --
+  const authApp = new Elysia({ prefix: "/api/auth" })
+    .get("/get-session", async ({ request }) => {
+      if (!authHandler) return new Response("Not found", { status: 404 });
+      return authHandler(request);
+    })
+    .all("/", async ({ request }) => {
+      if (!authHandler) return new Response("Not found", { status: 404 });
+      return authHandler(request);
+    })
+    .all("/*", async ({ request }) => {
+      if (!authHandler) return new Response("Not found", { status: 404 });
+      return authHandler(request);
+    });
+
   const rootApp = new Elysia()
     // LLM reflection routes (mounted at /llms, outside /api)
     .use(llmRoutes(db))
@@ -264,31 +280,33 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     if (uiDist) {
       const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
 
+      const serveStaticUi = async ({ request, set }: any) => {
+        const url = new URL(request.url);
+        if (
+          url.pathname.startsWith("/api/") ||
+          url.pathname.startsWith("/llms/") ||
+          url.pathname.startsWith("/_plugins/")
+        ) {
+          set.status = 404;
+          return { error: "Not found" };
+        }
+
+        const filePath = path.join(uiDist, url.pathname);
+        if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+          return Bun.file(filePath);
+        }
+
+        set.headers["content-type"] = "text/html; charset=utf-8";
+        return indexHtml;
+      };
+
       rootApp
-        .use(new Elysia({ prefix: "/" }).get("/*", async ({ request, set }) => {
-          const url = new URL(request.url);
-          // Skip API, WS, LLM, and plugin routes
-          if (
-            url.pathname.startsWith("/api/") ||
-            url.pathname.startsWith("/llms/") ||
-            url.pathname.startsWith("/_plugins/")
-          ) {
-            set.status = 404;
-            return { error: "Not found" };
-          }
-
-          // Try to serve a static file first
-          const filePath = path.join(uiDist, url.pathname);
-          if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-            return Bun.file(filePath);
-          }
-
-          // SPA fallback — return index.html for all non-file routes
-          set.headers["content-type"] = "text/html; charset=utf-8";
-          return indexHtml;
-        }));
+        .get("/", serveStaticUi)
+        .get("/*", serveStaticUi);
     }
   }
+
+  rootApp.use(authApp);
 
   return rootApp;
 }

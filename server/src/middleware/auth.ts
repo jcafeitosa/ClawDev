@@ -18,15 +18,8 @@ export interface AuthUser {
  * Attach to routes that require authentication.
  */
 export const elysiaAuth = new Elysia({ name: "auth" }).derive(
-  async ({ request, set }) => {
-    // TODO: Integrate with better-auth session validation
-    // For now, extract from cookie/header as a placeholder
-    const authHeader = request.headers.get("authorization");
-    const cookie = request.headers.get("cookie");
-
-    // Placeholder — will be replaced with actual better-auth check
+  async () => {
     const user: AuthUser | null = null;
-
     return { user };
   },
 );
@@ -36,9 +29,10 @@ export const elysiaAuth = new Elysia({ name: "auth" }).derive(
  */
 export const requireAuth = new Elysia({ name: "require-auth" })
   .use(elysiaAuth)
-  .onBeforeHandle(({ user, set }) => {
+  .onBeforeHandle((ctx) => {
+    const user = (ctx as { user?: AuthUser | null }).user ?? null;
     if (!user) {
-      set.status = 401;
+      ctx.set.status = 401;
       return { error: "Unauthorized" };
     }
   });

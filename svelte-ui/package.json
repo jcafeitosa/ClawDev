@@ -12,7 +12,9 @@
     "clean": "rm -rf .svelte-kit build"
   },
   "dependencies": {
-    "@clawdev/shared": "workspace:*"
+    "@clawdev/shared": "workspace:*",
+    "better-auth": "1.4.18",
+    "echarts": "^6.0.0"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.8",
