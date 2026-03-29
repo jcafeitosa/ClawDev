@@ -4,6 +4,7 @@
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
   import { Skeleton } from '$lib/components/ui/index.js';
+  import ProviderIcon from '$lib/components/providers/provider-icon.svelte';
   import {
     Plug,
     Server,
@@ -460,8 +461,8 @@
           >
             <div class="flex items-start justify-between gap-3">
               <div class="flex items-center gap-3 min-w-0">
-                <div class="rounded-lg p-2.5 shrink-0" style="background-color: {brand.color}20">
-                  <svelte:component this={ProviderIcon} class="h-5 w-5" style="color: {brand.color}" />
+                <div class="rounded-lg p-2.5 shrink-0" style="background-color: {brand.color}15">
+                  <ProviderIcon adapterType={provider.adapterType} size={22} />
                 </div>
                 <div class="min-w-0">
                   <h3 class="text-sm font-semibold text-foreground truncate">{provider.displayName}</h3>
