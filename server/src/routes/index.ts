@@ -17,3 +17,6 @@ export { llmRoutes } from "./llms.js";
 export { executionWorkspaceRoutes } from "./execution-workspaces.js";
 export { sidebarBadgeRoutes } from "./sidebar-badges.js";
 export { pluginUiStaticRoutes, type PluginUiStaticRouteOptions } from "./plugin-ui-static.js";
+export { runRoutes } from "./runs.js";
+export { inboxRoutes } from "./inbox.js";
+export { budgetRoutes } from "./budgets.js";

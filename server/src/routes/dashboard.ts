@@ -15,7 +15,7 @@ export function dashboardRoutes(db: Db) {
   return new Elysia().get(
     "/companies/:companyId/dashboard",
     async ({ params }) => {
-      const data = await svc.getDashboard(params.companyId);
+      const data = await svc.summary(params.companyId);
       return data;
     },
     { params: companyIdParam },

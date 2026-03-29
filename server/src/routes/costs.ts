@@ -37,6 +37,18 @@ export function costRoutes(db: Db) {
       { params: companyIdParam },
     )
 
+    // Cost summary (alias for company costs — used by dashboard widgets)
+    .get(
+      "/companies/:companyId/costs/summary",
+      async ({ params, query }) => {
+        const from = query.from ? new Date(query.from as string) : undefined;
+        const to = query.to ? new Date(query.to as string) : undefined;
+        const costs = await svc.getCompanyCosts(params.companyId, { from, to });
+        return costs;
+      },
+      { params: companyIdParam },
+    )
+
     // Daily cost trend
     .get(
       "/companies/:companyId/costs/daily",

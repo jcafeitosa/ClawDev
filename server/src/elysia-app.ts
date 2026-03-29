@@ -56,6 +56,9 @@ import {
   dashboardRoutes,
   routineRoutes,
   approvalRoutes,
+  runRoutes,
+  inboxRoutes,
+  budgetRoutes,
 } from "./routes/index.js";
 import { llmRoutes } from "./routes/llms.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
@@ -231,6 +234,9 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     .use(approvalRoutes(db))
     .use(executionWorkspaceRoutes(db))
     .use(sidebarBadgeRoutes(db))
+    .use(runRoutes(db))
+    .use(inboxRoutes(db))
+    .use(budgetRoutes(db))
     .use(assetRoutes(db, storage));
 
   // -- Plugins (conditional — requires plugin deps) --
