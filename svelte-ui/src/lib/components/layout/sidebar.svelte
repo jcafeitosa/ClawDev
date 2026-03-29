@@ -71,8 +71,17 @@
     slug?: string;
     urlKey?: string;
     icon?: string | null;
+    iconColor?: string | null;
+    nickname?: string | null;
     status?: string;
     role?: string;
+  }
+
+  /** Check if a string is an emoji (not a Lucide icon name) */
+  function isEmoji(str: string | null | undefined): boolean {
+    if (!str) return false;
+    // Emoji regex: matches any emoji character (including compound sequences)
+    return /^\p{Emoji_Presentation}|\p{Extended_Pictographic}/u.test(str);
   }
 
   // ---------------------------------------------------------------------------
@@ -710,12 +719,29 @@
               >
                 <!-- Agent icon with status dot -->
                 <div class="relative shrink-0">
-                  {#if agent.icon}
-                    <span class="flex h-5 w-5 items-center justify-center text-sm" title={agent.name}>
+                  {#if agent.icon && isEmoji(agent.icon)}
+                    <!-- Native emoji — always colorful -->
+                    <span class="flex h-5 w-5 items-center justify-center text-sm select-none" title={agent.nickname ?? agent.name}>
                       {agent.icon}
                     </span>
+                  {:else if agent.icon}
+                    <!-- Lucide icon name or custom char with optional color -->
+                    <span
+                      class="flex h-5 w-5 items-center justify-center rounded-md text-[9px] font-bold uppercase"
+                      style:background-color={agent.iconColor ? `${agent.iconColor}20` : 'var(--clawdev-card-hover)'}
+                      style:color={agent.iconColor ?? 'var(--clawdev-text-muted)'}
+                      title={agent.nickname ?? agent.name}
+                    >
+                      {agentInitials(agent)}
+                    </span>
                   {:else}
-                    <span class="flex h-5 w-5 items-center justify-center rounded-md bg-[var(--clawdev-card-hover)] text-[9px] font-bold text-[var(--clawdev-text-muted)] uppercase">
+                    <!-- Fallback initials with optional color -->
+                    <span
+                      class="flex h-5 w-5 items-center justify-center rounded-md text-[9px] font-bold uppercase"
+                      style:background-color={agent.iconColor ? `${agent.iconColor}20` : 'var(--clawdev-card-hover)'}
+                      style:color={agent.iconColor ?? 'var(--clawdev-text-muted)'}
+                      title={agent.nickname ?? agent.name}
+                    >
                       {agentInitials(agent)}
                     </span>
                   {/if}
@@ -729,7 +755,9 @@
                     ></span>
                   {/if}
                 </div>
-                <span class="flex-1 truncate">{agent.name}</span>
+                <span class="flex-1 truncate" title={agent.nickname ? `${agent.name} (${agent.nickname})` : agent.name}>
+                  {agent.nickname ?? agent.name}
+                </span>
                 {#if liveRunsByAgent.get(agent.id)}
                   <span class="ml-auto flex items-center gap-1 text-[10px] font-medium tabular-nums text-[#60a5fa]">
                     <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#3b82f6] animate-pulse"></span>
