@@ -4,7 +4,7 @@ import { agents, costEvents, providerConfigs, providerHealthEvents } from "@claw
 import type { ProviderQuotaResult, QuotaWindow } from "@clawdev/shared";
 import { AGENT_ADAPTER_TYPES, type AgentAdapterType } from "@clawdev/shared";
 import { notFound } from "../errors.js";
-import { listServerAdapters, findServerAdapter } from "../adapters/registry.js";
+import { listServerAdapters, findServerAdapter, listAdapterModels } from "../adapters/registry.js";
 import { fetchAllQuotaWindows } from "./quota-windows.js";
 import {
   createModelRegistry,
@@ -525,10 +525,23 @@ export function providerService(db: Db) {
       const syntheticQuota = !nativeQuota ? buildSyntheticQuota(adapterType, liveDetails, spendCents, config) : null;
       const quotaWindows = nativeQuota ?? syntheticQuota;
 
-      // Models from registry
-      const registryModels = modelRegistry
-        .listModels({ adapterType })
-        .map((m) => ({ id: m.id, displayName: m.displayName, tier: m.tier }));
+      // Models — prefer dynamic from adapter, fallback to registry seed
+      let adapterModels: Array<{ id: string; displayName: string; tier: number }> = [];
+      try {
+        const dynamicModels = await listAdapterModels(adapterType);
+        if (dynamicModels.length > 0) {
+          adapterModels = dynamicModels.map((m) => {
+            const registryMatch = modelRegistry.getModel(adapterType, m.id);
+            return { id: m.id, displayName: m.label ?? m.id, tier: registryMatch?.tier ?? 2 };
+          });
+        }
+      } catch { /* ignore */ }
+      if (adapterModels.length === 0) {
+        adapterModels = modelRegistry
+          .listModels({ adapterType })
+          .map((m) => ({ id: m.id, displayName: m.displayName, tier: m.tier }));
+      }
+      const registryModels = adapterModels;
 
       const adapterBreakers = breakersByAdapter.get(adapterType) ?? {};
       const connectionStatus = deriveConnectionStatus(adapterType, config, quotaWindows, adapterBreakers, meta);
