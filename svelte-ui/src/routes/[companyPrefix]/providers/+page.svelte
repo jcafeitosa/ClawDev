@@ -867,7 +867,7 @@
               </tr>
             </thead>
             <tbody>
-              {#each allCircuitBreakers as breaker (breaker.id)}
+              {#each allCircuitBreakers as breaker, idx (`${breaker.providerName}:${breaker.id}:${idx}`)}
                 {@const circuitMeta = CIRCUIT_META[breaker.circuitState] ?? CIRCUIT_META.CLOSED}
                 <tr class="border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
                   <td class="px-5 py-3">
