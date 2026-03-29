@@ -1,9 +1,11 @@
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, isNull, inArray, sql } from "drizzle-orm";
+import crypto from "node:crypto";
 import type { Db } from "@clawdev/db";
 import {
   companyMemberships,
   instanceUserRoles,
   principalPermissionGrants,
+  invites,
 } from "@clawdev/db";
 import type { PermissionKey, PrincipalType } from "@clawdev/shared";
 
@@ -359,6 +361,65 @@ export function accessService(db: Db) {
     });
   }
 
+  // -----------------------------------------------------------------------
+  // Invites
+  // -----------------------------------------------------------------------
+
+  async function listInvites(companyId: string) {
+    return db
+      .select()
+      .from(invites)
+      .where(and(eq(invites.companyId, companyId), isNull(invites.revokedAt)));
+  }
+
+  async function createInvite(data: { companyId: string; email: string; role?: string }) {
+    const token = crypto.randomBytes(32).toString("hex");
+    const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
+
+    const [row] = await db
+      .insert(invites)
+      .values({
+        companyId: data.companyId,
+        tokenHash,
+        expiresAt,
+        defaultsPayload: data.role ? { role: data.role } : null,
+      })
+      .returning();
+
+    return { ...row, token };
+  }
+
+  async function revokeInvite(inviteId: string) {
+    await db
+      .update(invites)
+      .set({ revokedAt: new Date(), updatedAt: new Date() })
+      .where(eq(invites.id, inviteId));
+  }
+
+  async function acceptInvite(inviteId: string) {
+    const [updated] = await db
+      .update(invites)
+      .set({ acceptedAt: new Date(), updatedAt: new Date() })
+      .where(eq(invites.id, inviteId))
+      .returning();
+    return updated ?? null;
+  }
+
+  // -----------------------------------------------------------------------
+  // CLI Auth
+  // -----------------------------------------------------------------------
+
+  async function generateCliToken() {
+    const token = crypto.randomBytes(32).toString("hex");
+    return { token };
+  }
+
+  async function verifyCliToken(token: string) {
+    // Basic verification stub — in production this would check against a persistent store
+    return { valid: !!token, userId: null as string | null };
+  }
+
   return {
     isInstanceAdmin,
     canUser,
@@ -376,5 +437,11 @@ export function accessService(db: Db) {
     setPrincipalGrants,
     listPrincipalGrants,
     setPrincipalPermission,
+    listInvites,
+    createInvite,
+    revokeInvite,
+    acceptInvite,
+    generateCliToken,
+    verifyCliToken,
   };
 }

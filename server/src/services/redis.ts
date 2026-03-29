@@ -8,7 +8,7 @@
  * `redis://localhost:6379` for local development.
  */
 
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 import { logger } from "../middleware/logger.js";
 
 const log = logger.child({ service: "redis" });
@@ -26,25 +26,26 @@ export function getRedis(): Redis {
 
   const url = process.env.REDIS_URL ?? "redis://localhost:6379";
 
-  connection = new Redis(url, {
+  const redis = new Redis(url, {
     maxRetriesPerRequest: null, // Required by BullMQ
     enableReadyCheck: true,
     lazyConnect: false,
   });
 
-  connection.on("connect", () => {
+  redis.on("connect", () => {
     log.info({ url: url.replace(/\/\/.*@/, "//<redacted>@") }, "Redis connected");
   });
 
-  connection.on("error", (err) => {
+  redis.on("error", (err: Error) => {
     log.error({ err: err.message }, "Redis connection error");
   });
 
-  connection.on("close", () => {
+  redis.on("close", () => {
     log.info("Redis connection closed");
   });
 
-  return connection;
+  connection = redis;
+  return redis;
 }
 
 /**

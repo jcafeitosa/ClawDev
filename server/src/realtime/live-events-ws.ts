@@ -163,10 +163,10 @@ export function liveEventsElysiaWs(
         log.info({ companyId }, "WebSocket disconnected");
       },
 
-      error(ws, error) {
+      error: ((ws: any, error: any) => {
         const companyId = ws.data.params.companyId;
         log.warn({ err: error, companyId }, "WebSocket error");
-      },
+      }) as any,
 
       // Send ping every 30s to keep connection alive
       idleTimeout: 60,

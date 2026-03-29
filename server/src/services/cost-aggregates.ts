@@ -67,7 +67,7 @@ export function costAggregateService(db: Db) {
           AND bucket >= ${monthStart}
       `);
 
-      return Number(result.rows[0]?.total ?? 0);
+      return Number((result as any[])[0]?.total ?? 0);
     },
 
     /**
@@ -100,7 +100,7 @@ export function costAggregateService(db: Db) {
         WHERE ${where}
       `);
 
-      const row = result.rows[0];
+      const row = (result as any[])[0];
       return {
         totalCostCents: Number(row?.total_cost_cents ?? 0),
         totalInputTokens: Number(row?.total_input_tokens ?? 0),
@@ -150,7 +150,7 @@ export function costAggregateService(db: Db) {
         ORDER BY SUM(ca.total_cost_cents) DESC
       `);
 
-      return result.rows.map((row) => ({
+      return (result as any[]).map((row) => ({
         agentId: row.agent_id,
         agentName: row.agent_name,
         totalCostCents: Number(row.total_cost_cents),
@@ -202,7 +202,7 @@ export function costAggregateService(db: Db) {
         ORDER BY SUM(total_cost_cents) DESC
       `);
 
-      return result.rows.map((row) => ({
+      return (result as any[]).map((row) => ({
         provider: row.provider,
         biller: row.biller,
         billingType: row.billing_type,
@@ -245,7 +245,7 @@ export function costAggregateService(db: Db) {
           AND bucket >= ${cutoff}
       `);
 
-      const row = result.rows[0];
+      const row = (result as any[])[0];
       return {
         totalCostCents: Number(row?.total_cost_cents ?? 0),
         totalInputTokens: Number(row?.total_input_tokens ?? 0),
@@ -279,7 +279,7 @@ export function costAggregateService(db: Db) {
         ORDER BY bucket ASC
       `);
 
-      return result.rows.map((row) => ({
+      return (result as any[]).map((row: any) => ({
         date: row.bucket,
         totalCostCents: Number(row.total_cost_cents),
         activeAgents: Number(row.active_agents),

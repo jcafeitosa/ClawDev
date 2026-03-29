@@ -14,6 +14,7 @@
  */
 
 import { Elysia, t } from "elysia";
+import { node } from "@elysiajs/node";
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import type { Db } from "@clawdev/db";
@@ -259,7 +260,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
       return authHandler(request);
     });
 
-  const rootApp = new Elysia()
+  const rootApp = new Elysia({ adapter: node() })
     // LLM reflection routes (mounted at /llms, outside /api)
     .use(llmRoutes(db))
     // Plugin UI static files (mounted at /_plugins)
@@ -299,7 +300,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
 
         const filePath = path.join(uiDist, url.pathname);
         if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-          return Bun.file(filePath);
+          return (globalThis as any).Bun?.file?.(filePath) ?? new Response(fs.readFileSync(filePath));
         }
 
         set.headers["content-type"] = "text/html; charset=utf-8";

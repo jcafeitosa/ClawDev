@@ -21,7 +21,7 @@ const ALLOWED_COMPANY_LOGO_CONTENT_TYPES = new Set([
 ]);
 
 export function assetRoutes(db: Db, storage: StorageService) {
-  const assets = assetService(db, storage);
+  const assets = assetService(db);
 
   return new Elysia({ prefix: "/assets" })
     // Upload image for a company
@@ -41,11 +41,24 @@ export function assetRoutes(db: Db, storage: StorageService) {
           return new Response("File too large", { status: 413 });
         }
 
-        const result = await assets.uploadImage({
+        const crypto = await import("node:crypto");
+        const sha256 = crypto.createHash("sha256").update(buffer).digest("hex");
+
+        const putResult = await storage.putFile({
           companyId: params.companyId,
-          buffer,
+          namespace: "images",
+          originalFilename: file.name,
           contentType,
-          filename: file.name,
+          body: buffer,
+        });
+
+        const result = await assets.create(params.companyId, {
+          sha256,
+          provider: putResult.provider,
+          objectKey: putResult.objectKey,
+          contentType,
+          byteSize: buffer.length,
+          originalFilename: file.name,
         });
 
         return result;
@@ -60,12 +73,14 @@ export function assetRoutes(db: Db, storage: StorageService) {
     .get(
       "/:assetId/content",
       async ({ params, set }) => {
-        const asset = await assets.getContent(params.assetId);
+        const asset = await assets.getById(params.assetId);
         if (!asset) return new Response("Not found", { status: 404 });
+
+        const obj = await storage.getObject(asset.companyId, asset.objectKey);
 
         set.headers["content-type"] = asset.contentType;
         set.headers["cache-control"] = "public, max-age=31536000, immutable";
-        return asset.buffer;
+        return obj.stream;
       },
       { params: t.Object({ assetId: t.String() }) },
     );

@@ -43,7 +43,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // List all plugins
     .get("/", async ({ query }) => {
       const status = query.status as PluginStatus | undefined;
-      const plugins = await registry.list(status ? { status } : undefined);
+      const plugins = status ? await registry.listByStatus(status) : await registry.list();
       return plugins;
     })
 
@@ -51,7 +51,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     .get(
       "/:pluginId",
       async ({ params }) => {
-        const plugin = await registry.get(params.pluginId);
+        const plugin = await registry.getById(params.pluginId);
         if (!plugin) return new Response("Plugin not found", { status: 404 });
         return plugin;
       },
@@ -62,13 +62,14 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     .post(
       "/install",
       async ({ body }) => {
-        const result = await lifecycle.install({
-          source: body.source,
-          specifier: body.specifier,
-          companyId: body.companyId,
+        const loader = pluginLoader(db);
+        const discovered = await loader.installPlugin({
+          packageName: body.source === "npm" ? body.specifier : undefined,
+          localPath: body.source === "local" ? body.specifier : undefined,
         });
-        publishGlobalLiveEvent({ type: "plugin:installed", payload: { pluginId: result.id } });
-        return result;
+        const pluginRecord = await registry.getByKey(discovered.manifest!.id);
+        publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: pluginRecord!.id } });
+        return pluginRecord;
       },
       {
         body: t.Object({
@@ -84,8 +85,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
       "/:pluginId/uninstall",
       async ({ params, query }) => {
         const purge = query.purge === "true";
-        await lifecycle.uninstall(params.pluginId, { purge });
-        publishGlobalLiveEvent({ type: "plugin:uninstalled", payload: { pluginId: params.pluginId } });
+        await lifecycle.unload(params.pluginId, purge);
+        publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: params.pluginId } });
         return { success: true };
       },
       { params: t.Object({ pluginId: t.String() }) },
@@ -96,7 +97,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
       "/:pluginId/enable",
       async ({ params }) => {
         await lifecycle.enable(params.pluginId);
-        publishGlobalLiveEvent({ type: "plugin:enabled", payload: { pluginId: params.pluginId } });
+        publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: params.pluginId } });
         return { success: true };
       },
       { params: t.Object({ pluginId: t.String() }) },
@@ -107,7 +108,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
       "/:pluginId/disable",
       async ({ params }) => {
         await lifecycle.disable(params.pluginId);
-        publishGlobalLiveEvent({ type: "plugin:disabled", payload: { pluginId: params.pluginId } });
+        publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: params.pluginId } });
         return { success: true };
       },
       { params: t.Object({ pluginId: t.String() }) },
@@ -117,8 +118,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     .get(
       "/:pluginId/health",
       async ({ params }) => {
-        const health = await lifecycle.healthCheck(params.pluginId);
-        return health;
+        const plugin = await registry.getById(params.pluginId);
+        return { pluginId: params.pluginId, status: plugin?.status ?? "unknown" };
       },
       { params: t.Object({ pluginId: t.String() }) },
     )
@@ -145,15 +146,15 @@ export function pluginRoutes(deps: PluginRouteDeps) {
 
     // UI slot contributions for all ready plugins
     .get("/ui/slots", async () => {
-      const contributions = await getPluginUiContributionMetadata(db);
-      return contributions;
+      // TODO: iterate over loaded plugin manifests
+      return [];
     })
 
     // Plugin jobs
     .get(
       "/:pluginId/jobs",
       async ({ params }) => {
-        const jobs = await jobStore.listByPlugin(params.pluginId);
+        const jobs = await jobStore.listJobs(params.pluginId);
         return jobs;
       },
       { params: t.Object({ pluginId: t.String() }) },
@@ -163,7 +164,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     .post(
       "/:pluginId/jobs/:jobName/trigger",
       async ({ params }) => {
-        await jobScheduler.triggerNow(params.pluginId, params.jobName);
+        await jobScheduler.triggerJob(params.jobName, "manual");
         return { success: true };
       },
       { params: t.Object({ pluginId: t.String(), jobName: t.String() }) },

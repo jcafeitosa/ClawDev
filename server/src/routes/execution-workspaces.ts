@@ -71,15 +71,16 @@ export function executionWorkspaceRoutes(db: Db) {
           return { error: "Execution workspace not found" };
         }
 
+        const typedBody = body as Record<string, unknown>;
         const patch: Record<string, unknown> = {
-          ...body,
-          ...(body.cleanupEligibleAt ? { cleanupEligibleAt: new Date(body.cleanupEligibleAt) } : {}),
+          ...typedBody,
+          ...(typedBody.cleanupEligibleAt ? { cleanupEligibleAt: new Date(typedBody.cleanupEligibleAt as string) } : {}),
         };
 
         let workspace = existing;
         let cleanupWarnings: string[] = [];
 
-        if (body.status === "archived" && existing.status !== "archived") {
+        if (typedBody.status === "archived" && existing.status !== "archived") {
           const linkedIssues = await db
             .select({ id: issues.id, status: issues.status })
             .from(issues)

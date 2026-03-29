@@ -32,7 +32,7 @@ interface EmbeddingRecord {
   createdAt: Date;
 }
 
-interface SearchResult {
+export interface SearchResult {
   entityType: EmbeddableEntityType;
   entityId: string;
   content: string;
@@ -213,7 +213,7 @@ export function embeddingService(db: Db, openaiApiKey?: string) {
         LIMIT ${limit}
       `);
 
-      return result.rows.map((row) => ({
+      return (result as any[]).map((row: any) => ({
         entityType: row.entity_type as EmbeddableEntityType,
         entityId: row.entity_id,
         content: row.content,

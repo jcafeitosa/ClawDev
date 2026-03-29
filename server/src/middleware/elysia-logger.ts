@@ -30,7 +30,7 @@ export const elysiaLogger = new Elysia({ name: "logger" })
   .onError(({ error, request }) => {
     const url = new URL(request.url);
     log.error(
-      { method: request.method, path: url.pathname, err: error.message },
+      { method: request.method, path: url.pathname, err: (error as any).message },
       `Error: ${request.method} ${url.pathname}`,
     );
   });

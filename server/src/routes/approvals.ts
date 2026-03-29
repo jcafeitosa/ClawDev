@@ -15,7 +15,7 @@ export function approvalRoutes(db: Db) {
       "/companies/:companyId/approvals",
       async ({ params, query }) => {
         const status = query.status as string | undefined;
-        const approvals = await svc.list(params.companyId, { status });
+        const approvals = await svc.list(params.companyId, status);
         return approvals;
       },
       { params: companyIdParam },
@@ -24,7 +24,7 @@ export function approvalRoutes(db: Db) {
     .get(
       "/approvals/:id",
       async ({ params }) => {
-        const approval = await svc.get(params.id);
+        const approval = await svc.getById(params.id);
         if (!approval) return new Response("Not found", { status: 404 });
         return approval;
       },
@@ -34,7 +34,7 @@ export function approvalRoutes(db: Db) {
     .post(
       "/approvals/:id/approve",
       async ({ params }) => {
-        await svc.approve(params.id);
+        await svc.approve(params.id, "system", null);
         return { success: true };
       },
       { params: t.Object({ id: t.String() }) },
@@ -43,7 +43,7 @@ export function approvalRoutes(db: Db) {
     .post(
       "/approvals/:id/reject",
       async ({ params, body }) => {
-        await svc.reject(params.id, body?.reason);
+        await svc.reject(params.id, "system", body?.reason);
         return { success: true };
       },
       {

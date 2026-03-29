@@ -217,7 +217,7 @@ export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions
         set.headers["access-control-allow-origin"] = "*";
 
         // Send file
-        return Bun.file(resolvedFilePath);
+        return (globalThis as any).Bun?.file?.(resolvedFilePath) ?? new Response(fs.readFileSync(resolvedFilePath));
       },
     );
 }

@@ -27,7 +27,7 @@ export function companySkillRoutes(db: Db) {
     .get(
       "/skills/:id",
       async ({ params }) => {
-        const skill = await svc.get(params.id);
+        const skill = await svc.getById(params.id);
         if (!skill) return new Response("Not found", { status: 404 });
         return skill;
       },
@@ -38,11 +38,10 @@ export function companySkillRoutes(db: Db) {
     .post(
       "/companies/:companyId/skills",
       async ({ params, body }) => {
-        const skill = await svc.create({
-          companyId: params.companyId,
+        const skill = await svc.createLocalSkill(params.companyId, {
           name: body.name,
           description: body.description,
-          content: body.content,
+          markdown: body.content,
         });
         return skill;
       },
@@ -56,13 +55,17 @@ export function companySkillRoutes(db: Db) {
       },
     )
 
-    // Update skill
+    // Update skill content
     .patch(
       "/skills/:id",
       async ({ params, body }) => {
-        const updated = await svc.update(params.id, body);
-        if (!updated) return new Response("Not found", { status: 404 });
-        return updated;
+        const skill = await svc.getById(params.id);
+        if (!skill) return new Response("Not found", { status: 404 });
+        if (body.content) {
+          const updated = await svc.updateFile(skill.companyId, params.id, "SKILL.md", body.content);
+          return updated;
+        }
+        return skill;
       },
       {
         params: t.Object({ id: t.String() }),
@@ -78,7 +81,9 @@ export function companySkillRoutes(db: Db) {
     .delete(
       "/skills/:id",
       async ({ params }) => {
-        await svc.delete(params.id);
+        const skill = await svc.getById(params.id);
+        if (!skill) return new Response("Not found", { status: 404 });
+        await svc.deleteSkill(skill.companyId, params.id);
         return { success: true };
       },
       { params: t.Object({ id: t.String() }) },

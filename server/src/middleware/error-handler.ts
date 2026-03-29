@@ -25,7 +25,7 @@ export const elysiaErrorHandler = new Elysia({ name: "error-handler" }).onError(
         return { error: "Invalid request body" };
 
       default:
-        log.error({ code, err: error.message, stack: error.stack }, "Unhandled error");
+        log.error({ code, err: (error as any).message, stack: (error as any).stack }, "Unhandled error");
         set.status = 500;
         return { error: "Internal server error" };
     }

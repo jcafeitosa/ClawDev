@@ -25,9 +25,7 @@ export function instanceSettingsRoutes(db: Db) {
       },
       {
         body: t.Object({
-          instanceName: t.Optional(t.String()),
-          defaultLlmModel: t.Optional(t.String()),
-          maxConcurrentAgents: t.Optional(t.Number()),
+          censorUsernameInLogs: t.Optional(t.Boolean()),
         }),
       },
     )
@@ -45,9 +43,8 @@ export function instanceSettingsRoutes(db: Db) {
       },
       {
         body: t.Object({
+          enableIsolatedWorkspaces: t.Optional(t.Boolean()),
           autoRestartDevServerWhenIdle: t.Optional(t.Boolean()),
-          enablePluginSandbox: t.Optional(t.Boolean()),
-          enableCostTracking: t.Optional(t.Boolean()),
         }),
       },
     );

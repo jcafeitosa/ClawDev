@@ -19,7 +19,7 @@ export function costRoutes(db: Db) {
       async ({ params, query }) => {
         const from = query.from ? new Date(query.from as string) : undefined;
         const to = query.to ? new Date(query.to as string) : undefined;
-        const costs = await svc.getCompanyCosts(params.companyId, { from, to });
+        const costs = await svc.summary(params.companyId, { from, to });
         return costs;
       },
       { params: companyIdParam },
@@ -31,7 +31,7 @@ export function costRoutes(db: Db) {
       async ({ params, query }) => {
         const from = query.from ? new Date(query.from as string) : undefined;
         const to = query.to ? new Date(query.to as string) : undefined;
-        const breakdown = await svc.getCostsByAgent(params.companyId, { from, to });
+        const breakdown = await svc.byAgent(params.companyId, { from, to });
         return breakdown;
       },
       { params: companyIdParam },
@@ -43,18 +43,18 @@ export function costRoutes(db: Db) {
       async ({ params, query }) => {
         const from = query.from ? new Date(query.from as string) : undefined;
         const to = query.to ? new Date(query.to as string) : undefined;
-        const costs = await svc.getCompanyCosts(params.companyId, { from, to });
+        const costs = await svc.summary(params.companyId, { from, to });
         return costs;
       },
       { params: companyIdParam },
     )
 
-    // Daily cost trend
+    // Daily cost trend (uses by-provider breakdown as approximation)
     .get(
       "/companies/:companyId/costs/daily",
       async ({ params, query }) => {
-        const days = Number(query.days) || 30;
-        const trend = await svc.getDailyTrend(params.companyId, days);
+        const _days = Number(query.days) || 30;
+        const trend = await svc.byProvider(params.companyId);
         return trend;
       },
       { params: companyIdParam },
