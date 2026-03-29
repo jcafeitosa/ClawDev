@@ -41,10 +41,10 @@ const ADAPTER_DISPLAY_NAMES: Record<string, string> = {
   codex_local: "Codex (OpenAI)",
   copilot_local: "Copilot (GitHub)",
   cursor: "Cursor",
-  gemini_local: "Gemini (Google)",
+  gemini_local: "Gemini Antigravity (Google)",
   opencode_local: "OpenCode",
   openclaw_gateway: "OpenClaw Gateway",
-  pi_local: "Pi (pi-mono)",
+  pi_local: "Pi (multi-provider)",
   hermes_local: "Hermes",
   process: "Ollama (local)",
   http: "HTTP API",
@@ -395,19 +395,30 @@ export function providerService(db: Db) {
           };
         }
         case "pi_local": {
-          const [version, modelsRaw] = await Promise.all([
-            probeCli("pi", ["--version"]).catch(() => ""),
-            probeCli("pi", ["--list-models"]).catch(() => ""),
-          ]);
-          const models = modelsRaw.split("\n").filter(l => l.trim() && !l.startsWith("Available")).slice(0, 20);
-          const hasApiKey = !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY);
+          const version = await probeCli("pi", ["--version"]).catch(() => "");
+          // Pi is a multi-provider CLI — detect which providers have API keys set
+          const piProviders: Array<{ name: string; envVar: string; configured: boolean }> = [
+            { name: "Groq", envVar: "GROQ_API_KEY", configured: !!process.env.GROQ_API_KEY },
+            { name: "Cerebras", envVar: "CEREBRAS_API_KEY", configured: !!process.env.CEREBRAS_API_KEY },
+            { name: "xAI Grok", envVar: "XAI_API_KEY", configured: !!process.env.XAI_API_KEY },
+            { name: "OpenRouter", envVar: "OPENROUTER_API_KEY", configured: !!process.env.OPENROUTER_API_KEY },
+            { name: "Mistral", envVar: "MISTRAL_API_KEY", configured: !!process.env.MISTRAL_API_KEY },
+            { name: "MiniMax", envVar: "MINIMAX_API_KEY", configured: !!process.env.MINIMAX_API_KEY },
+            { name: "Kimi", envVar: "KIMI_API_KEY", configured: !!process.env.KIMI_API_KEY },
+            { name: "Amazon Bedrock", envVar: "AWS_ACCESS_KEY_ID", configured: !!process.env.AWS_ACCESS_KEY_ID },
+            { name: "Vercel AI Gateway", envVar: "AI_GATEWAY_API_KEY", configured: !!process.env.AI_GATEWAY_API_KEY },
+            { name: "ZAI", envVar: "ZAI_API_KEY", configured: !!process.env.ZAI_API_KEY },
+            { name: "OpenCode Zen", envVar: "OPENCODE_API_KEY", configured: !!process.env.OPENCODE_API_KEY },
+          ];
+          const configuredProviders = piProviders.filter(p => p.configured).map(p => p.name);
+          const availableProviders = piProviders.map(p => `${p.name} (${p.envVar}${p.configured ? ' ✓' : ''})`);
           return {
             cliVersion: version || null,
-            authenticatedUser: null,
-            defaultModel: models[0] ?? "google/gemini-2.5-flash",
-            availableModels: models,
-            billingType: hasApiKey ? "api" : "subscription",
-            authCommand: "pi /login",
+            authenticatedUser: configuredProviders.length > 0 ? configuredProviders.join(", ") : null,
+            defaultModel: "google/gemini-2.5-flash",
+            availableModels: availableProviders,
+            billingType: "multi-provider",
+            authCommand: "Set API keys: GROQ_API_KEY, XAI_API_KEY, MISTRAL_API_KEY, etc.",
           };
         }
         default:

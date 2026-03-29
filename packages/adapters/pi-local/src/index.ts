@@ -1,11 +1,11 @@
 import type { AdapterMeta } from "@clawdev/shared";
 
 export const type = "pi_local";
-export const label = "Pi (pi-mono)";
+export const label = "Pi (multi-provider)";
 
 export const meta: AdapterMeta = {
   type: "pi_local",
-  label: "Pi (pi-mono)",
+  label: "Pi (multi-provider)",
   icon: "Circle",
   authMethods: ["api_key", "cli_auth"],
   envVarNames: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"],

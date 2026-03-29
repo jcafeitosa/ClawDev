@@ -1,11 +1,11 @@
 import type { AdapterMeta } from "@clawdev/shared";
 
 export const type = "gemini_local";
-export const label = "Gemini CLI (local)";
+export const label = "Gemini Antigravity";
 
 export const meta: AdapterMeta = {
   type: "gemini_local",
-  label: "Google Gemini",
+  label: "Gemini Antigravity (Google)",
   icon: "Sparkles",
   authMethods: ["api_key", "cli_auth"],
   envVarNames: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
