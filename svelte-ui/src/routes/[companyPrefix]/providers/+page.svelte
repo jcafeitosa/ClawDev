@@ -75,17 +75,28 @@
   }
 
   interface Provider {
-    id: string;
-    name: string;
+    adapterType: string;
     displayName: string;
-    status: ConnectionStatus;
-    modelCount: number;
-    monthlySpend: number;
-    authMethod: string;
-    icon: string;
+    configured: boolean;
     enabled: boolean;
+    connectionStatus: ConnectionStatus;
+    priority: number;
+    authMethod: string | null;
+    subscriptionPlan: string | null;
+    subscriptionLimitMonthly: number | null;
+    subscriptionResetsAt: string | null;
+    lastHealthCheck: string | null;
+    lastHealthStatus: string | null;
+    lastHealthDetail: string | null;
+    adapterMeta: any;
+    quotaWindows: Array<{ label: string; usedPercent: number | null; resetsAt: string | null; valueLabel: string | null }> | null;
+    circuitBreakers: Record<string, { state: string; tripCount: number; failureCount: number }>;
+    monthlySpendCents: number;
+    models: Array<{ id: string; displayName: string; tier: number }>;
+    // Computed helpers
+    icon?: string;
+    status?: ConnectionStatus;
     quota?: ProviderQuota;
-    models?: ProviderModel[];
     config?: {
       apiKey?: string;
       subscriptionPlan?: string;
@@ -125,7 +136,8 @@
       unconfigured: 0,
     };
     for (const p of providers) {
-      counts[p.status] = (counts[p.status] ?? 0) + 1;
+      const s = p.connectionStatus ?? p.status ?? 'unconfigured';
+      if (s in counts) counts[s as ConnectionStatus] = (counts[s as ConnectionStatus] ?? 0) + 1;
     }
     return counts;
   });
@@ -152,7 +164,7 @@
     return breakers;
   });
 
-  let providersWithQuota = $derived(providers.filter((p) => p.quota));
+  let providersWithQuota = $derived(providers.filter((p) => p.quotaWindows && p.quotaWindows.length > 0));
 
   let hasAnyData = $derived(providers.length > 0);
 
@@ -162,7 +174,18 @@
     try {
       const res = await api(`/api/companies/${companyId}/providers`);
       const data = await res.json();
-      providers = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
+      const raw = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
+      // Normalize API response to match Provider interface
+      providers = raw.map((p: any) => ({
+        ...p,
+        // Ensure status field maps from connectionStatus
+        status: p.connectionStatus ?? p.status ?? 'unconfigured',
+        connectionStatus: p.connectionStatus ?? p.status ?? 'unconfigured',
+        // Map quota windows to the quota shape expected by the template
+        quota: p.quotaWindows && p.quotaWindows.length > 0
+          ? { windows: p.quotaWindows, resetsAt: p.quotaWindows.find((w: any) => w.resetsAt)?.resetsAt ?? null }
+          : null,
+      }));
       lastRefreshed = new Date();
     } catch {
       providers = [];
@@ -264,7 +287,7 @@
   }
 
   async function saveProviderConfig(providerId: string) {
-    if (!companyId) return;
+    if (!companyId || !providerId) return;
     savingConfig = true;
     try {
       await api(`/api/companies/${companyId}/providers/${providerId}/config`, {
@@ -447,7 +470,7 @@
     <!-- ── Provider Cards Grid ───────────────────────────────────────── -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {#each providers as provider (provider.adapterType)}
-        {@const meta = getStatusMeta(provider.status)}
+        {@const meta = getStatusMeta(provider.connectionStatus)}
         {@const isExpanded = expandedProviderId === provider.id}
         {@const brand = getProviderBrand(provider.adapterType)}
         {@const ProviderIcon = brand.icon}
@@ -486,11 +509,11 @@
             <div class="mt-4 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
               <span class="inline-flex items-center gap-1">
                 <Brain class="h-3.5 w-3.5" />
-                {provider.modelCount} model{provider.modelCount !== 1 ? 's' : ''}
+                {provider.models?.length ?? 0} model{(provider.models?.length ?? 0) !== 1 ? 's' : ''}
               </span>
               <span class="inline-flex items-center gap-1">
                 <DollarSign class="h-3.5 w-3.5" />
-                {formatCurrency(provider.monthlySpend)} this month
+                {formatCurrency((provider.monthlySpendCents ?? 0) / 100)} this month
               </span>
               <span class="inline-flex items-center gap-1">
                 <Shield class="h-3.5 w-3.5" />
@@ -711,37 +734,48 @@
       <div class="rounded-xl border border-border bg-card p-5">
         <h2 class="text-base font-semibold text-foreground mb-4 flex items-center gap-2">
           <Gauge class="h-5 w-5 text-muted-foreground" />
-          Quotas
+          Quotas & Rate Limits
         </h2>
         <div class="space-y-4">
           {#each providersWithQuota as provider (provider.adapterType)}
-            {#if provider.quota}
-              {@const pct = provider.quota.limit > 0 ? Math.min(100, (provider.quota.used / provider.quota.limit) * 100) : 0}
-              <div class="space-y-1.5">
-                <div class="flex items-center justify-between">
-                  <div class="flex items-center gap-2">
-                    <span class="text-sm font-medium text-foreground">{provider.displayName}</span>
-                    <span class="text-xs text-muted-foreground">{provider.quota.label}</span>
+            {#if provider.quotaWindows}
+              {#each provider.quotaWindows as window}
+                {@const pct = window.usedPercent ?? 0}
+                <div class="space-y-1.5">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <ProviderIcon adapterType={provider.adapterType} size={14} />
+                      <span class="text-sm font-medium text-foreground">{provider.displayName}</span>
+                      <span class="text-xs text-muted-foreground">{window.label}</span>
+                    </div>
+                    <div class="flex items-center gap-3 text-xs text-muted-foreground">
+                      {#if window.valueLabel}
+                        <span class="font-mono">{window.valueLabel}</span>
+                      {/if}
+                      {#if window.usedPercent != null}
+                        <span class="font-medium {pct >= 90 ? 'text-red-500' : pct >= 70 ? 'text-yellow-500' : 'text-emerald-500'}">{pct.toFixed(0)}%</span>
+                      {/if}
+                      {#if window.resetsAt}
+                        <span class="inline-flex items-center gap-1">
+                          <Clock class="h-3 w-3" />
+                          {window.resetsAt}
+                        </span>
+                      {/if}
+                    </div>
                   </div>
-                  <div class="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span class="font-mono">{provider.quota.used.toLocaleString()} / {provider.quota.limit.toLocaleString()}</span>
-                    <span class="font-medium {pct >= 90 ? 'text-red-500' : pct >= 70 ? 'text-yellow-500' : 'text-emerald-500'}">{pct.toFixed(1)}%</span>
-                    {#if quotaCountdowns[provider.id]}
-                      <span class="inline-flex items-center gap-1">
-                        <Clock class="h-3 w-3" />
-                        Resets in: {quotaCountdowns[provider.id]}
-                      </span>
-                    {/if}
-                  </div>
+                  {#if window.usedPercent != null}
+                    <div class="h-2 w-full rounded-full {quotaBarBgColor(pct)} overflow-hidden">
+                      <div
+                        class="h-full rounded-full transition-all duration-500 {quotaBarColor(pct)}"
+                        style="width: {pct}%"
+                      ></div>
+                    </div>
+                  {/if}
+                  {#if window.detail}
+                    <p class="text-[11px] text-muted-foreground">{window.detail}</p>
+                  {/if}
                 </div>
-                <!-- Progress bar -->
-                <div class="h-2 w-full rounded-full {quotaBarBgColor(pct)} overflow-hidden">
-                  <div
-                    class="h-full rounded-full transition-all duration-500 {quotaBarColor(pct)}"
-                    style="width: {pct}%"
-                  ></div>
-                </div>
-              </div>
+              {/each}
             {/if}
           {/each}
         </div>
