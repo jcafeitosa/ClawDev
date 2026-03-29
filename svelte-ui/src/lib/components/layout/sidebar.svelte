@@ -11,7 +11,7 @@
     ListTodo,
     RotateCcw,
     Target,
-    FolderKanban,
+    Boxes,
     Bot,
     ShieldCheck,
     Box,
@@ -100,50 +100,49 @@
   // Badge data fetches
   // ---------------------------------------------------------------------------
   let inboxUnread = $state(0);
-  let issueCount = $state<number | null>(null);
   let activeRunCount = $state<number | null>(null);
   let hasAgentErrors = $state(false);
 
+  // Sidebar badges — use the dedicated endpoint
   $effect(() => {
     if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/inbox?status=unread&limit=0`)
+    fetch(`/api/companies/${companyStore.selectedCompanyId}/sidebar-badges`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.total != null) inboxUnread = data.total;
+        if (data) {
+          inboxUnread = (data.approvals ?? 0) + (data.failedRuns ?? 0) + (data.inboxItems ?? 0);
+        }
       })
       .catch(() => {});
   });
 
-  $effect(() => {
-    if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/issues?limit=0`)
-      .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.total != null) issueCount = data.total;
-        else if (Array.isArray(data)) issueCount = data.length;
-      })
-      .catch(() => {});
-  });
-
-  // Active run count with periodic refresh
+  // Active run count with periodic refresh via /live-runs
   let runBadgeInterval: ReturnType<typeof setInterval> | undefined;
+  let liveRunsByAgent = $state<Map<string, number>>(new Map());
 
   function fetchActiveRunCount() {
     if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/runs?status=running&limit=0`)
+    fetch(`/api/companies/${companyStore.selectedCompanyId}/live-runs`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.total != null) activeRunCount = data.total;
-        else if (Array.isArray(data)) activeRunCount = data.length;
-        else activeRunCount = null;
+        const list = Array.isArray(data) ? data : data?.runs ?? [];
+        const activeRuns = list.filter((r: any) => r.status === "running" || r.status === "queued");
+        activeRunCount = activeRuns.length;
+        // Build per-agent live count map
+        const map = new Map<string, number>();
+        for (const run of activeRuns) {
+          const agentId = run.agentId;
+          if (agentId) map.set(agentId, (map.get(agentId) ?? 0) + 1);
+        }
+        liveRunsByAgent = map;
       })
-      .catch(() => { activeRunCount = null; });
+      .catch(() => { activeRunCount = null; liveRunsByAgent = new Map(); });
   }
 
   $effect(() => {
     if (!companyStore.selectedCompanyId) return;
     fetchActiveRunCount();
-    runBadgeInterval = setInterval(fetchActiveRunCount, 15_000);
+    runBadgeInterval = setInterval(fetchActiveRunCount, 10_000);
     return () => { if (runBadgeInterval) clearInterval(runBadgeInterval); };
   });
 
@@ -217,33 +216,11 @@
   // ---------------------------------------------------------------------------
   const sections: NavSection[] = [
     {
-      key: "overview",
-      label: "Overview",
-      defaultOpen: true,
-      items: [
-        {
-          label: "Dashboard",
-          href: "dashboard",
-          icon: LayoutDashboard,
-          badge: () => activeRunCount != null && activeRunCount > 0 ? `${activeRunCount} live` : null,
-          badgeStyle: "live",
-        },
-        {
-          label: "Inbox",
-          href: "inbox",
-          icon: Inbox,
-          badge: () => inboxUnread > 0 ? inboxUnread : null,
-          badgeStyle: "count",
-        },
-      ],
-    },
-    {
       key: "work",
       label: "Work",
       defaultOpen: true,
       items: [
         { label: "Issues", href: "issues", icon: ListTodo },
-        { label: "Runs", href: "runs", icon: Play },
         { label: "Routines", href: "routines", icon: RotateCcw, betaBadge: true },
         { label: "Goals", href: "goals", icon: Target },
       ],
@@ -251,16 +228,15 @@
   ];
 
   // ---------------------------------------------------------------------------
-  // "More" section — less-used pages under a collapsible group
+  // "Company" section — company-level management pages
   // ---------------------------------------------------------------------------
   const moreSection: NavSection = {
-    key: "more",
-    label: "More",
-    defaultOpen: false,
+    key: "company",
+    label: "Company",
+    defaultOpen: true,
     items: [
-      { label: "Approvals", href: "approvals", icon: ShieldCheck },
-      { label: "Workspaces", href: "workspaces", icon: Box },
       { label: "Org", href: "org", icon: Building2 },
+      { label: "Skills", href: "skills", icon: Boxes },
       { label: "Costs", href: "costs", icon: DollarSign },
       { label: "Activity", href: "activity", icon: Activity },
       { label: "Settings", href: "settings", icon: Settings },
@@ -382,8 +358,8 @@
   data-slot="sidebar"
   class={cn(
     "flex h-full w-60 shrink-0 flex-col border-r",
-    "bg-[var(--clawdev-bg-base)] text-[var(--clawdev-text-primary)] border-[var(--clawdev-bg-surface-border)]",
-    sidebarStore.isMobile && "fixed inset-y-0 left-0 z-50 shadow-xl",
+    "bg-[var(--clawdev-bg-surface)] text-[var(--clawdev-text-primary)] border-[var(--clawdev-bg-surface-border)]",
+    sidebarStore.isMobile && "fixed inset-y-0 left-0 z-50 shadow-2xl",
     sidebarStore.isMobile && !sidebarStore.open && "-translate-x-full",
     "transition-transform duration-200",
   )}
@@ -400,7 +376,7 @@
           <!-- Company avatar with status dot -->
           <div class="relative shrink-0">
             <div
-              class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white uppercase select-none"
+              class="flex h-8 w-8 items-center justify-center rounded-lg text-xs font-bold text-white uppercase select-none shadow-sm"
               style:background-color={companyBrandColor}
             >
               {companyName.charAt(0)}
@@ -420,22 +396,23 @@
         </button>
 
         {#if companySwitcherOpen}
-          <div class="absolute top-full left-0 mt-1 w-56 rounded-lg border border-[var(--clawdev-bg-surface-border)] bg-[#11111a] shadow-xl z-50 py-1" onclick={(e) => e.stopPropagation()}>
-            <div class="px-3 py-1.5 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest">
+          <div class="absolute top-full left-0 mt-1.5 w-56 rounded-xl border border-[var(--clawdev-bg-surface-border)] bg-[var(--clawdev-card-bg)] shadow-xl z-50 py-1.5" onclick={(e) => e.stopPropagation()}>
+            <div class="px-3 py-1.5 text-[10px] font-semibold text-[var(--clawdev-text-tertiary)] uppercase tracking-widest">
               Companies
             </div>
             {#each companyStore.companies as c (c.id)}
               <button
                 class={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors",
+                  "flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors rounded-lg mx-1.5",
                   c.id === companyStore.selectedCompanyId
-                    ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
-                    : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
+                    ? "bg-[rgba(59,130,246,0.10)] text-[var(--clawdev-text-primary)] font-medium"
+                    : "text-[var(--clawdev-text-muted)] hover:bg-[var(--clawdev-card-hover)] hover:text-[var(--clawdev-text-primary)]",
                 )}
+                style="width: calc(100% - 0.75rem);"
                 onclick={() => switchCompany(c)}
               >
                 <div
-                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white uppercase"
+                  class="flex h-5 w-5 shrink-0 items-center justify-center rounded text-[8px] font-bold text-white uppercase"
                   style:background-color={(c.brandColor as string) || "#3B82F6"}
                 >
                   {c.name.charAt(0)}
@@ -443,10 +420,10 @@
                 <span class="truncate">{c.name}</span>
               </button>
             {/each}
-            <div class="border-t border-[var(--clawdev-bg-surface-border)] mt-1 pt-1">
+            <div class="border-t border-[var(--clawdev-bg-surface-border)] mt-1.5 pt-1.5 mx-1.5">
               <a
                 href="/companies"
-                class="flex items-center gap-2 px-3 py-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.05)] transition-colors"
+                class="flex items-center gap-2 px-3 py-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[var(--clawdev-card-hover)] transition-colors rounded-lg"
               >
                 <Plus class="size-3" />
                 Manage Companies
@@ -479,7 +456,7 @@
     <div class="flex items-center gap-1">
       <button
         onclick={openSearch}
-        class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+        class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--clawdev-text-tertiary)] hover:text-[var(--clawdev-text-primary)] hover:bg-[var(--clawdev-card-hover)] transition-colors"
         aria-label="Search (Ctrl+K)"
         title="Search (Ctrl+K)"
       >
@@ -487,7 +464,7 @@
       </button>
       {#if sidebarStore.isMobile}
         <button
-          class="text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] p-1 rounded-md"
+          class="text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] p-1 rounded-lg hover:bg-[var(--clawdev-card-hover)]"
           onclick={() => sidebarStore.set(false)}
           aria-label="Close sidebar"
         >
@@ -501,7 +478,7 @@
   <div class="px-3 pt-3 pb-1">
     <button
       onclick={openNewIssueDialog}
-      class="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-[var(--clawdev-primary)] px-3 text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors"
+      class="flex h-7 w-full items-center justify-center gap-1.5 rounded-md bg-[var(--clawdev-primary)] px-3 text-xs font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors"
     >
       <Plus class="size-3.5" />
       New Issue
@@ -509,13 +486,52 @@
   </div>
 
   <!-- Navigation -->
-  <nav class="flex-1 overflow-y-auto px-3 pt-2 pb-4">
-    <!-- Standard nav sections (Overview, Work) -->
+  <nav class="flex-1 overflow-y-auto px-3 pt-3 pb-4">
+    <!-- Top-level nav items (ungrouped like original) -->
+    <div class="space-y-0.5">
+      <a
+        href={`/${prefix}/dashboard`}
+        class={cn(
+          "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors",
+          isActive("dashboard")
+            ? "bg-[rgba(59,130,246,0.10)] text-[var(--clawdev-primary)] font-medium"
+            : "text-[var(--clawdev-text-muted)] hover:bg-[var(--clawdev-card-hover)] hover:text-[var(--clawdev-text-primary)]",
+        )}
+      >
+        <LayoutDashboard class="size-4 shrink-0" />
+        <span class="flex-1 truncate">Dashboard</span>
+        {#if activeRunCount != null && activeRunCount > 0}
+          <span class="ml-auto flex items-center gap-1 text-[11px] font-medium tabular-nums text-[#60a5fa]">
+            <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#3b82f6] animate-pulse"></span>
+            {activeRunCount} live
+          </span>
+        {/if}
+      </a>
+      <a
+        href={`/${prefix}/inbox`}
+        class={cn(
+          "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors",
+          isActive("inbox")
+            ? "bg-[rgba(59,130,246,0.10)] text-[var(--clawdev-primary)] font-medium"
+            : "text-[var(--clawdev-text-muted)] hover:bg-[var(--clawdev-card-hover)] hover:text-[var(--clawdev-text-primary)]",
+        )}
+      >
+        <Inbox class="size-4 shrink-0" />
+        <span class="flex-1 truncate">Inbox</span>
+        {#if inboxUnread > 0}
+          <span class="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums bg-[#ef4444] text-white">
+            {formatBadge(inboxUnread)}
+          </span>
+        {/if}
+      </a>
+    </div>
+
+    <!-- Standard nav sections (Work, Company) -->
     {#each sections as section (section.key)}
-      <div class="mt-3 first:mt-0">
+      <div class="mt-4 first:mt-0">
         <button
           onclick={() => toggleSection(section.key)}
-          class="flex w-full items-center gap-1 px-1.5 py-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm group"
+          class="flex w-full items-center gap-1 px-2 py-1 text-[10px] font-semibold text-[var(--clawdev-text-tertiary)] uppercase tracking-widest hover:text-[var(--clawdev-text-muted)] transition-colors rounded-md group"
           aria-expanded={sectionOpen[section.key]}
         >
           <ChevronRight
@@ -528,15 +544,15 @@
         </button>
 
         {#if sectionOpen[section.key]}
-          <div class="mt-0.5 space-y-px">
+          <div class="mt-1 space-y-0.5">
             {#each section.items as item (item.href)}
               <a
                 href={`/${prefix}/${item.href}`}
                 class={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors",
                   isActive(item.href)
-                    ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
-                    : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
+                    ? "bg-[rgba(59,130,246,0.10)] text-[var(--clawdev-primary)] font-medium"
+                    : "text-[var(--clawdev-text-muted)] hover:bg-[var(--clawdev-card-hover)] hover:text-[var(--clawdev-text-primary)]",
                 )}
               >
                 <item.icon class="size-4 shrink-0" />
@@ -580,11 +596,11 @@
     <!-- ================================================================== -->
     <!-- PROJECTS section with individual items                              -->
     <!-- ================================================================== -->
-    <div class="mt-3">
-      <div class="flex items-center justify-between px-1.5 py-1">
+    <div class="mt-4">
+      <div class="flex items-center justify-between px-2 py-1">
         <button
           onclick={() => toggleSection("projects")}
-          class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm"
+          class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-tertiary)] uppercase tracking-widest hover:text-[var(--clawdev-text-muted)] transition-colors rounded-md"
           aria-expanded={sectionOpen["projects"]}
         >
           <ChevronRight
@@ -597,7 +613,7 @@
         </button>
         <a
           href={`/${prefix}/projects?new=true`}
-          class="flex h-5 w-5 items-center justify-center rounded text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+          class="flex h-5 w-5 items-center justify-center rounded-md text-[var(--clawdev-text-tertiary)] hover:text-[var(--clawdev-text-primary)] hover:bg-[var(--clawdev-card-hover)] transition-colors"
           title="New project"
           aria-label="New project"
         >
@@ -606,9 +622,9 @@
       </div>
 
       {#if sectionOpen["projects"]}
-        <div class="mt-0.5 space-y-px">
+        <div class="mt-1 space-y-0.5">
           {#if allProjects.length === 0}
-            <div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">
+            <div class="px-3 py-2 text-xs text-[var(--clawdev-text-tertiary)] italic">
               No projects yet
             </div>
           {:else}
@@ -616,10 +632,10 @@
               <a
                 href={`/${prefix}/projects/${proj.slug ?? proj.id}/issues`}
                 class={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors",
                   $page.url.pathname.includes(`/projects/${proj.slug ?? proj.id}`)
-                    ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
-                    : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
+                    ? "bg-[rgba(59,130,246,0.10)] text-[var(--clawdev-primary)] font-medium"
+                    : "text-[var(--clawdev-text-muted)] hover:bg-[var(--clawdev-card-hover)] hover:text-[var(--clawdev-text-primary)]",
                 )}
               >
                 <span
@@ -633,7 +649,7 @@
             {#if hasMoreProjects}
               <button
                 onclick={() => { projectsExpanded = !projectsExpanded; }}
-                class="flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--clawdev-text-muted)]/60 hover:text-[var(--clawdev-text-muted)] transition-colors w-full"
+                class="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[var(--clawdev-text-tertiary)] hover:text-[var(--clawdev-text-muted)] transition-colors w-full rounded-lg"
               >
                 {#if projectsExpanded}
                   Show fewer
@@ -650,11 +666,11 @@
     <!-- ================================================================== -->
     <!-- AGENTS section with individual items                                -->
     <!-- ================================================================== -->
-    <div class="mt-3">
-      <div class="flex items-center justify-between px-1.5 py-1">
+    <div class="mt-4">
+      <div class="flex items-center justify-between px-2 py-1">
         <button
           onclick={() => toggleSection("agents")}
-          class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm"
+          class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-tertiary)] uppercase tracking-widest hover:text-[var(--clawdev-text-muted)] transition-colors rounded-md"
           aria-expanded={sectionOpen["agents"]}
         >
           <ChevronRight
@@ -667,7 +683,7 @@
         </button>
         <a
           href={`/${prefix}/agents/new`}
-          class="flex h-5 w-5 items-center justify-center rounded text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+          class="flex h-5 w-5 items-center justify-center rounded-md text-[var(--clawdev-text-tertiary)] hover:text-[var(--clawdev-text-primary)] hover:bg-[var(--clawdev-card-hover)] transition-colors"
           title="New agent"
           aria-label="New agent"
         >
@@ -676,9 +692,9 @@
       </div>
 
       {#if sectionOpen["agents"]}
-        <div class="mt-0.5 space-y-px">
+        <div class="mt-1 space-y-0.5">
           {#if allAgents.length === 0}
-            <div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">
+            <div class="px-3 py-2 text-xs text-[var(--clawdev-text-tertiary)] italic">
               No agents yet
             </div>
           {:else}
@@ -686,10 +702,10 @@
               <a
                 href={`/${prefix}/agents/${agent.slug ?? agent.urlKey ?? agent.id}`}
                 class={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                  "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors",
                   $page.url.pathname.includes(`/agents/${agent.slug ?? agent.urlKey ?? agent.id}`)
-                    ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
-                    : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
+                    ? "bg-[rgba(59,130,246,0.10)] text-[var(--clawdev-primary)] font-medium"
+                    : "text-[var(--clawdev-text-muted)] hover:bg-[var(--clawdev-card-hover)] hover:text-[var(--clawdev-text-primary)]",
                 )}
               >
                 <!-- Agent icon with status dot -->
@@ -699,7 +715,7 @@
                       {agent.icon}
                     </span>
                   {:else}
-                    <span class="flex h-5 w-5 items-center justify-center rounded bg-[rgba(255,255,255,0.08)] text-[9px] font-bold text-[var(--clawdev-text-muted)] uppercase">
+                    <span class="flex h-5 w-5 items-center justify-center rounded-md bg-[var(--clawdev-card-hover)] text-[9px] font-bold text-[var(--clawdev-text-muted)] uppercase">
                       {agentInitials(agent)}
                     </span>
                   {/if}
@@ -714,13 +730,19 @@
                   {/if}
                 </div>
                 <span class="flex-1 truncate">{agent.name}</span>
+                {#if liveRunsByAgent.get(agent.id)}
+                  <span class="ml-auto flex items-center gap-1 text-[10px] font-medium tabular-nums text-[#60a5fa]">
+                    <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#3b82f6] animate-pulse"></span>
+                    {liveRunsByAgent.get(agent.id)} live
+                  </span>
+                {/if}
               </a>
             {/each}
 
             {#if hasMoreAgents}
               <button
                 onclick={() => { agentsExpanded = !agentsExpanded; }}
-                class="flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--clawdev-text-muted)]/60 hover:text-[var(--clawdev-text-muted)] transition-colors w-full"
+                class="flex items-center gap-2 px-3 py-1.5 text-[11px] text-[var(--clawdev-text-tertiary)] hover:text-[var(--clawdev-text-muted)] transition-colors w-full rounded-lg"
               >
                 {#if agentsExpanded}
                   Show fewer
@@ -737,10 +759,10 @@
     <!-- ================================================================== -->
     <!-- MORE section (less-used pages)                                      -->
     <!-- ================================================================== -->
-    <div class="mt-3">
+    <div class="mt-4">
       <button
         onclick={() => toggleSection(moreSection.key)}
-        class="flex w-full items-center gap-1 px-1.5 py-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm group"
+        class="flex w-full items-center gap-1 px-2 py-1 text-[10px] font-semibold text-[var(--clawdev-text-tertiary)] uppercase tracking-widest hover:text-[var(--clawdev-text-muted)] transition-colors rounded-md group"
         aria-expanded={sectionOpen[moreSection.key]}
       >
         <ChevronRight
@@ -753,15 +775,15 @@
       </button>
 
       {#if sectionOpen[moreSection.key]}
-        <div class="mt-0.5 space-y-px">
+        <div class="mt-1 space-y-0.5">
           {#each moreSection.items as item (item.href)}
             <a
               href={`/${prefix}/${item.href}`}
               class={cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors",
                 isActive(item.href)
-                  ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
-                  : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
+                  ? "bg-[rgba(59,130,246,0.10)] text-[var(--clawdev-primary)] font-medium"
+                  : "text-[var(--clawdev-text-muted)] hover:bg-[var(--clawdev-card-hover)] hover:text-[var(--clawdev-text-primary)]",
               )}
             >
               <item.icon class="size-4 shrink-0" />
@@ -774,12 +796,12 @@
   </nav>
 
   <!-- Footer -->
-  <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-1.5">
+  <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-2">
     <a
       href="/docs"
       target="_blank"
       rel="noopener noreferrer"
-      class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors"
+      class="flex items-center gap-2.5 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors rounded-lg px-1 py-1 hover:bg-[var(--clawdev-card-hover)] -mx-1"
     >
       <BookOpen class="size-3.5" />
       Documentation
@@ -787,14 +809,14 @@
     <div class="flex items-center justify-between">
       <a
         href="/settings/general"
-        class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors"
+        class="flex items-center gap-2.5 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors rounded-lg px-1 py-1 hover:bg-[var(--clawdev-card-hover)] -mx-1"
       >
         <Cog class="size-3.5" />
         Instance Settings
       </a>
       <button
         onclick={toggleTheme}
-        class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+        class="flex h-7 w-7 items-center justify-center rounded-lg text-[var(--clawdev-text-tertiary)] hover:text-[var(--clawdev-text-primary)] hover:bg-[var(--clawdev-card-hover)] transition-colors"
         aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
         title={isDark ? "Switch to light mode" : "Switch to dark mode"}
       >
@@ -805,7 +827,7 @@
         {/if}
       </button>
     </div>
-    <div class="text-[10px] text-[var(--clawdev-text-muted)]/50 select-none">ClawDev v0.3.1</div>
+    <div class="text-[10px] text-[var(--clawdev-text-tertiary)] select-none pt-0.5">ClawDev v0.3.1</div>
   </div>
 </aside>
 
