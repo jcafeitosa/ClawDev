@@ -150,22 +150,23 @@
       class="oc-card group"
       onclick={(e) => e.stopPropagation()}
     >
-      <!-- Icon -->
-      <div class="oc-icon">
-        <RoleIcon class="h-4 w-4 text-zinc-400" />
+      <!-- Avatar with status dot -->
+      <div class="oc-avatar">
+        <RoleIcon class="h-5 w-5 text-zinc-400" />
+        <span
+          class="oc-status-dot"
+          style="background:{STATUS_DOT[agent.status ?? 'idle'] ?? '#71717A'}"
+          class:animate-pulse={agent.status === 'running'}
+        ></span>
       </div>
       <!-- Text -->
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-bold text-zinc-100 group-hover:text-blue-400 transition-colors">{agent.name}</p>
-        <p class="text-xs text-zinc-400 truncate">{agent.title ?? agent.role ?? ''}</p>
-        <p class="text-[11px] text-zinc-500">{ADAPTER[agent.adapterType ?? ''] ?? agent.adapterType ?? ''}</p>
+      <div class="oc-text">
+        <p class="oc-name">{agent.name}</p>
+        {#if agent.title ?? agent.role}
+          <p class="oc-title">{agent.title ?? agent.role ?? ''}</p>
+        {/if}
+        <p class="oc-adapter">{ADAPTER[agent.adapterType ?? ''] ?? agent.adapterType ?? ''}</p>
       </div>
-      <!-- Status dot -->
-      <div
-        class="absolute bottom-3 left-3 h-2.5 w-2.5 rounded-full"
-        style="background:{STATUS_DOT[agent.status ?? 'idle'] ?? '#71717A'}"
-        class:animate-pulse={agent.status === 'running'}
-      ></div>
     </a>
 
     <!-- Connector to children -->
@@ -227,15 +228,17 @@
   .oc-card {
     position: relative;
     display: flex;
-    align-items: flex-start;
-    gap: 12px;
-    padding: 16px 20px;
-    min-width: 220px;
-    max-width: 280px;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 8px;
+    padding: 20px 24px 16px;
+    width: 200px;
     border-radius: 12px;
     border: 1px solid rgba(255,255,255,0.08);
     background: #1a1a24;
     transition: border-color .2s, box-shadow .2s;
+    text-decoration: none;
   }
   .oc-card:hover {
     border-color: rgba(59,130,246,0.4);
@@ -250,21 +253,62 @@
     border-color: #93C5FD;
     box-shadow: 0 2px 8px rgba(59,130,246,0.12);
   }
-  :global(:root:not(.dark)) .oc-card p.text-zinc-100 { color: #111827 !important; }
-  :global(:root:not(.dark)) .oc-card p.text-zinc-400 { color: #6B7280 !important; }
-  :global(:root:not(.dark)) .oc-card p.text-zinc-500 { color: #9CA3AF !important; }
 
-  .oc-icon {
+  .oc-avatar {
+    position: relative;
     flex-shrink: 0;
     display: flex;
-    height: 36px;
-    width: 36px;
+    height: 44px;
+    width: 44px;
     align-items: center;
     justify-content: center;
-    border-radius: 10px;
+    border-radius: 50%;
     background: rgba(255,255,255,0.06);
   }
-  :global(:root:not(.dark)) .oc-icon { background: #F3F4F6; }
+  :global(:root:not(.dark)) .oc-avatar { background: #F3F4F6; }
+
+  .oc-status-dot {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+    height: 10px;
+    width: 10px;
+    border-radius: 50%;
+    border: 2px solid #1a1a24;
+  }
+  :global(:root:not(.dark)) .oc-status-dot { border-color: #FFFFFF; }
+
+  .oc-text {
+    min-width: 0;
+    width: 100%;
+  }
+  .oc-name {
+    font-size: 13px;
+    font-weight: 700;
+    color: #F1F5F9;
+    transition: color .15s;
+    line-height: 1.3;
+  }
+  .oc-card:hover .oc-name { color: #60A5FA; }
+  :global(:root:not(.dark)) .oc-name { color: #111827; }
+  :global(:root:not(.dark)) .oc-card:hover .oc-name { color: #2563EB; }
+
+  .oc-title {
+    font-size: 11px;
+    color: #94A3B8;
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  :global(:root:not(.dark)) .oc-title { color: #6B7280; }
+
+  .oc-adapter {
+    font-size: 10px;
+    color: #64748B;
+    margin-top: 2px;
+  }
+  :global(:root:not(.dark)) .oc-adapter { color: #9CA3AF; }
 
   .oc-vline {
     width: 1px;
