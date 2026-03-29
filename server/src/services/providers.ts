@@ -111,6 +111,8 @@ export interface ProviderStatus {
   configured: boolean;
   enabled: boolean;
   priority: number;
+  /** Derived connection status */
+  connectionStatus: "connected" | "degraded" | "disconnected" | "rate_limited" | "auth_expired" | "unconfigured";
   authMethod: string | null;
   subscriptionPlan: string | null;
   subscriptionLimitMonthly: number | null;
@@ -239,6 +241,47 @@ export function providerService(db: Db) {
     }
   }
 
+  // ── Connection status derivation ────────────────────────────────────────
+
+  function deriveConnectionStatus(
+    adapterType: string,
+    config: ProviderConfig | undefined,
+    quotaWindows: QuotaWindow[] | null,
+    breakerEntries: Record<string, ProviderBreakerInfo>,
+    meta: AdapterMeta | null,
+  ): ProviderStatus["connectionStatus"] {
+    // If explicit health status from last check
+    if (config?.lastHealthStatus === "auth_expired") return "auth_expired";
+    if (config?.lastHealthStatus === "down") return "disconnected";
+    if (config?.lastHealthStatus === "degraded") return "degraded";
+
+    // Check circuit breakers — if any model is OPEN, provider is degraded
+    const breakerValues = Object.values(breakerEntries);
+    const allOpen = breakerValues.length > 0 && breakerValues.every(b => b.state === "OPEN");
+    const someOpen = breakerValues.some(b => b.state === "OPEN");
+    if (allOpen) return "disconnected";
+    if (someOpen) return "degraded";
+
+    // Check quota — if any window > 90% used, rate limited
+    if (quotaWindows && quotaWindows.length > 0) {
+      const hasHighUsage = quotaWindows.some(w => w.usedPercent != null && w.usedPercent >= 90);
+      if (hasHighUsage) return "rate_limited";
+      // If quota windows respond, the provider is connected
+      return "connected";
+    }
+
+    // For adapters that don't support quota, infer from existence
+    if (meta) {
+      // Free/local adapters are always "connected" if the CLI exists
+      if (!meta.hasQuotaWindows) {
+        // Check if adapter has test environment (all do)
+        return "connected";
+      }
+    }
+
+    return "unconfigured";
+  }
+
   // ── Consolidated status ───────────────────────────────────────────────────
 
   async function getConsolidatedStatus(companyId: string): Promise<ProviderStatus[]> {
@@ -298,12 +341,16 @@ export function providerService(db: Db) {
         .listModels({ adapterType })
         .map((m) => ({ id: m.id, displayName: m.displayName, tier: m.tier }));
 
+      const adapterBreakers = breakersByAdapter.get(adapterType) ?? {};
+      const connectionStatus = deriveConnectionStatus(adapterType, config, quotaWindows, adapterBreakers, meta);
+
       statuses.push({
         adapterType,
         displayName: config?.displayName ?? ADAPTER_DISPLAY_NAMES[adapterType] ?? adapterType,
         configured: config != null,
-        enabled: config?.enabled ?? false,
+        enabled: config?.enabled ?? (connectionStatus === "connected" || connectionStatus === "rate_limited"),
         priority: config?.priority ?? 0,
+        connectionStatus,
         authMethod: config?.authMethod ?? null,
         subscriptionPlan: config?.subscriptionPlan ?? null,
         subscriptionLimitMonthly: config?.subscriptionLimitMonthly ?? null,
@@ -313,7 +360,7 @@ export function providerService(db: Db) {
         lastHealthDetail: config?.lastHealthDetail ?? null,
         adapterMeta: meta,
         quotaWindows,
-        circuitBreakers: breakersByAdapter.get(adapterType) ?? {},
+        circuitBreakers: adapterBreakers,
         monthlySpendCents: monthlySpend.get(adapterType) ?? 0,
         models: registryModels,
       });
