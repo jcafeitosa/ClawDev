@@ -16,6 +16,7 @@
 
 import { createHash } from "node:crypto";
 import { Elysia, t } from "elysia";
+import { node } from "@elysiajs/node";
 import type { Db } from "@clawdev/db";
 import { agentApiKeys, companyMemberships, instanceUserRoles } from "@clawdev/db";
 import { and, eq, isNull } from "drizzle-orm";
@@ -46,7 +47,7 @@ export function liveEventsElysiaWs(
   /** Map of WebSocket ID → cleanup function (live event unsubscribe) */
   const cleanupMap = new Map<string, () => void>();
 
-  return new Elysia()
+  return new Elysia({ adapter: node() })
     .ws("/api/companies/:companyId/events/ws", {
       params: t.Object({ companyId: t.String() }),
 
