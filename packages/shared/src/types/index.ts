@@ -201,3 +201,10 @@ export type {
   TaskSignals,
   RoutingMode,
 } from "./routing.js";
+export type {
+  AdapterMeta,
+  ProviderConfig,
+  ProviderStatus,
+  ProviderModelSummary,
+  ProviderHealthEvent,
+} from "./provider.js";

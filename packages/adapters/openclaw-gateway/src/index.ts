@@ -1,5 +1,19 @@
+import type { AdapterMeta } from "@clawdev/shared";
+
 export const type = "openclaw_gateway";
 export const label = "OpenClaw Gateway";
+
+export const meta: AdapterMeta = {
+  type: "openclaw_gateway",
+  label: "OpenClaw Gateway",
+  icon: "Globe",
+  authMethods: ["api_key"],
+  envVarNames: ["OPENCLAW_API_KEY"],
+  docsUrl: "",
+  supportsQuota: false,
+  supportsHealthCheck: false,
+  billingModel: "metered_api",
+};
 
 export const models: { id: string; label: string }[] = [];
 

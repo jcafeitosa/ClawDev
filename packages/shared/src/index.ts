@@ -319,6 +319,11 @@ export type {
   RoutingAlternative,
   TaskSignals,
   RoutingMode,
+  AdapterMeta,
+  ProviderConfig,
+  ProviderStatus,
+  ProviderModelSummary,
+  ProviderHealthEvent,
 } from "./types/index.js";
 
 export {

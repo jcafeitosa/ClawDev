@@ -1,5 +1,19 @@
+import type { AdapterMeta } from "@clawdev/shared";
+
 export const type = "copilot_local";
 export const label = "GitHub Copilot (local)";
+
+export const meta: AdapterMeta = {
+  type: "copilot_local",
+  label: "GitHub Copilot",
+  icon: "Github",
+  authMethods: ["cli_auth"],
+  envVarNames: ["GITHUB_TOKEN"],
+  docsUrl: "https://docs.github.com/copilot",
+  supportsQuota: false,
+  supportsHealthCheck: true,
+  billingModel: "subscription",
+};
 
 export const models = [
   { id: "gpt-4.1", label: "GPT-4.1" },

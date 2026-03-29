@@ -1,5 +1,19 @@
+import type { AdapterMeta } from "@clawdev/shared";
+
 export const type = "opencode_local";
 export const label = "OpenCode (local)";
+
+export const meta: AdapterMeta = {
+  type: "opencode_local",
+  label: "OpenCode",
+  icon: "Terminal",
+  authMethods: ["none"],
+  envVarNames: [],
+  docsUrl: "https://github.com/anomalyco/opencode",
+  supportsQuota: false,
+  supportsHealthCheck: true,
+  billingModel: "free",
+};
 
 export const models: Array<{ id: string; label: string }> = [];
 

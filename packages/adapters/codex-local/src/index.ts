@@ -1,5 +1,19 @@
+import type { AdapterMeta } from "@clawdev/shared";
+
 export const type = "codex_local";
 export const label = "Codex (local)";
+
+export const meta: AdapterMeta = {
+  type: "codex_local",
+  label: "OpenAI Codex",
+  icon: "Code",
+  authMethods: ["cli_auth", "api_key"],
+  envVarNames: ["OPENAI_API_KEY"],
+  docsUrl: "https://openai.com/codex",
+  supportsQuota: true,
+  supportsHealthCheck: true,
+  billingModel: "credits",
+};
 export const DEFAULT_CODEX_LOCAL_MODEL = "gpt-5.3-codex";
 export const DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX = true;
 

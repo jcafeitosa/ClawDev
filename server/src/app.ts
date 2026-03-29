@@ -71,6 +71,7 @@ import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 import { assetRoutes } from "./routes/assets.js";
 import { companySkillRoutes } from "./routes/company-skills.js";
 import { routingRoutes } from "./routes/routing.js";
+import { providerRoutes } from "./routes/providers.js";
 
 // WebSocket
 import { liveEventsWs } from "./realtime/live-events-ws.js";
@@ -212,6 +213,7 @@ export function createApp(opts: AppOptions) {
     .use(executionWorkspaceRoutes(db, auth))
     .use(costRoutes(db, auth))
     .use(routingRoutes(db, auth))
+    .use(providerRoutes(db, auth))
     .use(companyRoutes(db, auth, storageService))
     .use(agentRoutes(db, auth))
     .use(issueRoutes(db, auth, storageService!))

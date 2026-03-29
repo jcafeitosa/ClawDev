@@ -1,5 +1,19 @@
+import type { AdapterMeta } from "@clawdev/shared";
+
 export const type = "cursor";
 export const label = "Cursor CLI (local)";
+
+export const meta: AdapterMeta = {
+  type: "cursor",
+  label: "Cursor",
+  icon: "MousePointer",
+  authMethods: ["cli_auth"],
+  envVarNames: [],
+  docsUrl: "https://cursor.com",
+  supportsQuota: false,
+  supportsHealthCheck: true,
+  billingModel: "subscription",
+};
 export const DEFAULT_CURSOR_LOCAL_MODEL = "auto";
 
 const CURSOR_FALLBACK_MODEL_IDS = [

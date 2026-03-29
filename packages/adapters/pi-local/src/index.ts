@@ -1,5 +1,19 @@
+import type { AdapterMeta } from "@clawdev/shared";
+
 export const type = "pi_local";
 export const label = "Pi (local)";
+
+export const meta: AdapterMeta = {
+  type: "pi_local",
+  label: "Pi",
+  icon: "Circle",
+  authMethods: ["none"],
+  envVarNames: [],
+  docsUrl: "",
+  supportsQuota: false,
+  supportsHealthCheck: true,
+  billingModel: "free",
+};
 
 export const models: Array<{ id: string; label: string }> = [];
 

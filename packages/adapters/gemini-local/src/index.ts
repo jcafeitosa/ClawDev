@@ -1,5 +1,19 @@
+import type { AdapterMeta } from "@clawdev/shared";
+
 export const type = "gemini_local";
 export const label = "Gemini CLI (local)";
+
+export const meta: AdapterMeta = {
+  type: "gemini_local",
+  label: "Google Gemini",
+  icon: "Sparkles",
+  authMethods: ["api_key", "cli_auth"],
+  envVarNames: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+  docsUrl: "https://ai.google.dev",
+  supportsQuota: false,
+  supportsHealthCheck: true,
+  billingModel: "metered_api",
+};
 export const DEFAULT_GEMINI_LOCAL_MODEL = "auto";
 
 export const models = [
