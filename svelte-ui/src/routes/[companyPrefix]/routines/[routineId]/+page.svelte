@@ -3,10 +3,11 @@
   import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
+  import { companyStore } from "$stores/company.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { goto } from "$app/navigation";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Input, Textarea, Select, SelectTrigger, SelectContent, SelectItem } from "$components/ui/index.js";
-  import { Pencil, Trash2 } from "lucide-svelte";
+  import { Pencil, Trash2, Copy, Check, RotateCw, Activity } from "lucide-svelte";
   import { onMount } from "svelte";
 
   // ---------------------------------------------------------------------------
@@ -28,9 +29,23 @@
   interface Trigger {
     id: string;
     kind: string;
+    label?: string | null;
     cronExpression?: string | null;
     enabled?: boolean;
     publicId?: string | null;
+    secret?: string | null;
+    createdAt?: string;
+    [key: string]: unknown;
+  }
+
+  interface ActivityEntry {
+    id: string;
+    action: string;
+    actorType?: string;
+    actorId?: string;
+    entityType?: string;
+    entityId?: string;
+    details?: Record<string, unknown>;
     createdAt?: string;
     [key: string]: unknown;
   }
@@ -78,10 +93,26 @@
   let deletingTriggerId = $state<string | null>(null);
   let confirmingTriggerDeleteId = $state<string | null>(null);
 
+  // Edit trigger
+  let editingTriggerId = $state<string | null>(null);
+  let editTriggerLabel = $state("");
+  let editTriggerCron = $state("");
+  let savingTrigger = $state(false);
+
+  // Webhook secret
+  let rotatingSecretId = $state<string | null>(null);
+  let rotatedSecret = $state<string | null>(null);
+  let copiedWebhookUrl = $state<string | null>(null);
+
+  // Activity tab
+  let activityEntries = $state<ActivityEntry[]>([]);
+  let activityLoading = $state(false);
+
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
   let routineId = $derived($page.params.routineId);
+  let companyId = $derived(companyStore.selectedCompany?.id ?? routine?.companyId);
   let triggers = $derived(routine?.triggers ?? []);
   let cronTriggers = $derived(triggers.filter((t) => t.kind === "cron"));
   let webhookTriggers = $derived(triggers.filter((t) => t.kind === "webhook"));
@@ -230,6 +261,94 @@
     }
   }
 
+  function startTriggerEdit(trigger: Trigger) {
+    editingTriggerId = trigger.id;
+    editTriggerLabel = (trigger.label as string) ?? "";
+    editTriggerCron = trigger.cronExpression ?? "";
+  }
+
+  function cancelTriggerEdit() {
+    editingTriggerId = null;
+    editTriggerLabel = "";
+    editTriggerCron = "";
+  }
+
+  async function saveTriggerEdit(trigger: Trigger) {
+    if (!editingTriggerId) return;
+    savingTrigger = true;
+    try {
+      const payload: Record<string, unknown> = { label: editTriggerLabel.trim() || null };
+      if (trigger.kind === "cron") {
+        payload.cronExpression = editTriggerCron.trim() || null;
+      }
+      const res = await api(`/api/routine-triggers/${editingTriggerId}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Trigger updated", tone: "success" });
+      editingTriggerId = null;
+      await loadRoutine();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to update trigger", body: err?.message, tone: "error" });
+    } finally {
+      savingTrigger = false;
+    }
+  }
+
+  async function rotateSecret(triggerId: string) {
+    rotatingSecretId = triggerId;
+    rotatedSecret = null;
+    try {
+      const res = await api(`/api/routine-triggers/${triggerId}/rotate-secret`, {
+        method: "POST",
+        body: JSON.stringify({}),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      rotatedSecret = data.secret ?? data.plainSecret ?? null;
+      toastStore.push({ title: "Secret rotated", body: "Copy the new secret now — it won't be shown again.", tone: "success" });
+      await loadRoutine();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to rotate secret", body: err?.message, tone: "error" });
+    } finally {
+      rotatingSecretId = null;
+    }
+  }
+
+  function webhookUrl(trigger: Trigger): string {
+    const base = typeof window !== "undefined" ? window.location.origin : "";
+    return `${base}/api/routine-triggers/public/${trigger.publicId}/fire`;
+  }
+
+  async function copyToClipboard(text: string, id: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copiedWebhookUrl = id;
+      setTimeout(() => { copiedWebhookUrl = null; }, 2000);
+    } catch {
+      toastStore.push({ title: "Failed to copy", tone: "error" });
+    }
+  }
+
+  async function loadActivity() {
+    if (!companyId || !routineId) return;
+    activityLoading = true;
+    try {
+      const res = await api(`/api/companies/${companyId}/activity?entityType=routine&entityId=${routineId}&limit=50`);
+      if (res.ok) {
+        const data = await res.json();
+        activityEntries = Array.isArray(data) ? data : data.activities ?? data.items ?? [];
+      } else {
+        activityEntries = [];
+      }
+    } catch {
+      activityEntries = [];
+    } finally {
+      activityLoading = false;
+    }
+  }
+
   onMount(() => {
     loadRoutine();
     loadRuns();
@@ -373,6 +492,7 @@
             <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="runs">Executions ({runs.length})</TabsTrigger>
             <TabsTrigger value="triggers">Triggers ({triggers.length})</TabsTrigger>
+            <TabsTrigger value="activity" onclick={() => { if (activityEntries.length === 0 && !activityLoading) loadActivity(); }}>Activity</TabsTrigger>
           </TabsList>
 
           <TabsContent value="overview">
@@ -524,42 +644,139 @@
                   {#each triggers as trigger}
                     <Card>
                       <CardContent class="pt-6">
-                        <div class="flex items-start justify-between">
-                          <div class="space-y-1">
-                            <div class="flex items-center gap-2">
-                              <span class="font-medium text-sm">{triggerKindLabel(trigger.kind)}</span>
-                              <Badge variant={trigger.enabled ? "default" : "secondary"} class="text-xs">
-                                {trigger.enabled ? "Enabled" : "Disabled"}
-                              </Badge>
+                        {#if editingTriggerId === trigger.id}
+                          <!-- Edit mode -->
+                          <form onsubmit={(e) => { e.preventDefault(); saveTriggerEdit(trigger); }} class="space-y-4">
+                            <div>
+                              <label for="edit-trigger-label-{trigger.id}" class="block text-sm font-medium mb-1">Label</label>
+                              <Input id="edit-trigger-label-{trigger.id}" bind:value={editTriggerLabel} placeholder="Trigger label (optional)" />
                             </div>
-                            {#if trigger.kind === "cron" && trigger.cronExpression}
-                              <div class="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
-                                <span>{cronLabel(trigger.cronExpression)}</span>
-                                <span class="font-mono text-xs">{trigger.cronExpression}</span>
+                            {#if trigger.kind === "cron"}
+                              <div>
+                                <label for="edit-trigger-cron-{trigger.id}" class="block text-sm font-medium mb-1">Cron Expression</label>
+                                <Input id="edit-trigger-cron-{trigger.id}" bind:value={editTriggerCron} placeholder="e.g. 0 9 * * 1-5" />
+                                <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Standard cron format: minute hour day month weekday</p>
                               </div>
                             {/if}
-                            {#if trigger.kind === "webhook" && trigger.publicId}
-                              <div class="text-xs font-mono text-zinc-500 dark:text-zinc-400 break-all">
-                                Public ID: {trigger.publicId}
-                              </div>
-                            {/if}
-                          </div>
-                          <div class="flex items-center gap-3 shrink-0">
-                            <span class="text-xs text-zinc-500">
-                              <TimeAgo date={trigger.createdAt} />
-                            </span>
-                            {#if confirmingTriggerDeleteId === trigger.id}
-                              <Button variant="destructive" size="sm" disabled={deletingTriggerId === trigger.id} onclick={() => deleteTrigger(trigger.id)}>
-                                {deletingTriggerId === trigger.id ? "Deleting..." : "Confirm"}
+                            <div class="flex items-center gap-2 justify-end">
+                              <Button variant="outline" size="sm" type="button" onclick={cancelTriggerEdit}>Cancel</Button>
+                              <Button size="sm" type="submit" disabled={savingTrigger}>
+                                {savingTrigger ? "Saving..." : "Save"}
                               </Button>
-                              <Button variant="outline" size="sm" onclick={() => (confirmingTriggerDeleteId = null)}>Cancel</Button>
-                            {:else}
-                              <Button variant="outline" size="sm" onclick={() => (confirmingTriggerDeleteId = trigger.id)}>Delete</Button>
-                            {/if}
+                            </div>
+                          </form>
+                        {:else}
+                          <!-- Display mode -->
+                          <div class="flex items-start justify-between">
+                            <div class="space-y-1">
+                              <div class="flex items-center gap-2">
+                                <span class="font-medium text-sm">
+                                  {trigger.label || triggerKindLabel(trigger.kind)}
+                                </span>
+                                {#if trigger.label}
+                                  <Badge variant="outline" class="text-xs">{triggerKindLabel(trigger.kind)}</Badge>
+                                {/if}
+                                <Badge variant={trigger.enabled ? "default" : "secondary"} class="text-xs">
+                                  {trigger.enabled ? "Enabled" : "Disabled"}
+                                </Badge>
+                              </div>
+                              {#if trigger.kind === "cron" && trigger.cronExpression}
+                                <div class="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                                  <span>{cronLabel(trigger.cronExpression)}</span>
+                                  <span class="font-mono text-xs">{trigger.cronExpression}</span>
+                                </div>
+                              {/if}
+                              {#if trigger.kind === "webhook" && trigger.publicId}
+                                <div class="mt-2 space-y-2">
+                                  <div class="flex items-center gap-2">
+                                    <span class="text-xs text-zinc-500 dark:text-zinc-400 shrink-0">Webhook URL:</span>
+                                    <code class="text-xs font-mono bg-zinc-100 dark:bg-zinc-800 rounded px-2 py-1 break-all flex-1">{webhookUrl(trigger)}</code>
+                                    <Button variant="outline" size="sm" onclick={() => copyToClipboard(webhookUrl(trigger), trigger.id)}>
+                                      {#if copiedWebhookUrl === trigger.id}
+                                        <Check class="w-3.5 h-3.5" />
+                                      {:else}
+                                        <Copy class="w-3.5 h-3.5" />
+                                      {/if}
+                                    </Button>
+                                  </div>
+                                  <div class="flex items-center gap-2">
+                                    <Button variant="outline" size="sm" disabled={rotatingSecretId === trigger.id} onclick={() => rotateSecret(trigger.id)}>
+                                      <RotateCw class="w-3.5 h-3.5 mr-1" />
+                                      {rotatingSecretId === trigger.id ? "Rotating..." : "Rotate Secret"}
+                                    </Button>
+                                  </div>
+                                  {#if rotatedSecret && rotatingSecretId === null}
+                                    <div class="flex items-center gap-2 p-2 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md">
+                                      <span class="text-xs text-yellow-800 dark:text-yellow-200 shrink-0">New secret:</span>
+                                      <code class="text-xs font-mono break-all flex-1">{rotatedSecret}</code>
+                                      <Button variant="outline" size="sm" onclick={() => copyToClipboard(rotatedSecret!, 'secret')}>
+                                        {#if copiedWebhookUrl === 'secret'}
+                                          <Check class="w-3.5 h-3.5" />
+                                        {:else}
+                                          <Copy class="w-3.5 h-3.5" />
+                                        {/if}
+                                      </Button>
+                                    </div>
+                                  {/if}
+                                </div>
+                              {/if}
+                            </div>
+                            <div class="flex items-center gap-2 shrink-0 ml-4">
+                              <span class="text-xs text-zinc-500">
+                                <TimeAgo date={trigger.createdAt} />
+                              </span>
+                              <Button variant="outline" size="sm" onclick={() => startTriggerEdit(trigger)}>
+                                <Pencil class="w-3.5 h-3.5" />
+                              </Button>
+                              {#if confirmingTriggerDeleteId === trigger.id}
+                                <Button variant="destructive" size="sm" disabled={deletingTriggerId === trigger.id} onclick={() => deleteTrigger(trigger.id)}>
+                                  {deletingTriggerId === trigger.id ? "Deleting..." : "Confirm"}
+                                </Button>
+                                <Button variant="outline" size="sm" onclick={() => (confirmingTriggerDeleteId = null)}>Cancel</Button>
+                              {:else}
+                                <Button variant="outline" size="sm" onclick={() => (confirmingTriggerDeleteId = trigger.id)}>
+                                  <Trash2 class="w-3.5 h-3.5" />
+                                </Button>
+                              {/if}
+                            </div>
                           </div>
-                        </div>
+                        {/if}
                       </CardContent>
                     </Card>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="activity">
+            <div class="mt-4">
+              {#if activityLoading}
+                <PageSkeleton lines={4} />
+              {:else if activityEntries.length === 0}
+                <EmptyState title="No activity" description="No activity has been recorded for this routine yet." icon="📋" />
+              {:else}
+                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                  {#each activityEntries as entry}
+                    <div class="flex items-start justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                      <div class="flex items-center gap-3 min-w-0">
+                        <Activity class="w-4 h-4 text-zinc-400 shrink-0" />
+                        <div class="min-w-0">
+                          <span class="font-medium">{entry.action.replace(/_/g, " ").replace(/\./g, " / ")}</span>
+                          {#if entry.actorType}
+                            <span class="ml-2 text-xs text-zinc-500 dark:text-zinc-400">by {entry.actorType}{entry.actorId ? ` ${entry.actorId.slice(0, 8)}` : ""}</span>
+                          {/if}
+                          {#if entry.details && Object.keys(entry.details).length > 0}
+                            <div class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">
+                              {JSON.stringify(entry.details)}
+                            </div>
+                          {/if}
+                        </div>
+                      </div>
+                      <div class="shrink-0 ml-4">
+                        <TimeAgo date={entry.createdAt} class="text-xs" />
+                      </div>
+                    </div>
                   {/each}
                 </div>
               {/if}

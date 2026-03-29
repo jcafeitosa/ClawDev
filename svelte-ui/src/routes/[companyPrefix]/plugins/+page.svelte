@@ -11,7 +11,7 @@
     Button, Input, Separator, Skeleton,
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
   } from '$components/ui/index.js';
-  import { Plus, Package, Download, Loader2, X, Puzzle } from 'lucide-svelte';
+  import { Plus, Package, Download, Loader2, X, Puzzle, Power, Trash2, AlertCircle } from 'lucide-svelte';
 
   // ---------------------------------------------------------------------------
   // Types
@@ -22,6 +22,8 @@
     version?: string;
     author?: string;
     enabled?: boolean;
+    status?: 'ready' | 'installed' | 'error' | 'disabled' | string;
+    lastError?: string | null;
     description?: string;
     [key: string]: unknown;
   }
@@ -42,8 +44,17 @@
   // Install dialog
   let showInstallDialog = $state(false);
   let installPackageName = $state('');
+  let installLocalPath = $state(false);
   let installing = $state(false);
   let installError = $state<string | null>(null);
+
+  // Uninstall confirmation
+  let showUninstallDialog = $state(false);
+  let uninstallTarget = $state<Plugin | null>(null);
+  let uninstalling = $state(false);
+
+  // Toggle (enable/disable) in-flight tracker
+  let togglingPluginId = $state<string | null>(null);
 
   // Examples
   let examples = $state<ExamplePlugin[]>([]);
@@ -88,9 +99,11 @@
     installing = true;
     installError = null;
     try {
+      const payload: Record<string, unknown> = { packageName };
+      if (installLocalPath) payload.isLocalPath = true;
       const res = await api('/api/plugins/install', {
         method: 'POST',
-        body: JSON.stringify({ packageName }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) {
         const errText = await res.text();
@@ -101,6 +114,7 @@
       toastStore.push({ title: 'Plugin installed', body: `${packageName} installed successfully.`, tone: 'success' });
       showInstallDialog = false;
       installPackageName = '';
+      installLocalPath = false;
       await loadPlugins();
     } catch (err: any) {
       installError = err?.message ?? 'Installation failed.';
@@ -131,6 +145,70 @@
     }
   }
 
+  // ---------------------------------------------------------------------------
+  // Toggle enable / disable
+  // ---------------------------------------------------------------------------
+  async function togglePlugin(plugin: Plugin) {
+    togglingPluginId = plugin.id;
+    const action = plugin.enabled ? 'disable' : 'enable';
+    try {
+      const res = await api(`/api/plugins/${plugin.id}/${action}`, { method: 'POST' });
+      if (!res.ok) {
+        const errText = await res.text();
+        let errMsg: string;
+        try { errMsg = JSON.parse(errText).message ?? errText; } catch { errMsg = errText; }
+        throw new Error(errMsg);
+      }
+      toastStore.push({ title: `Plugin ${action}d`, body: `${plugin.name} has been ${action}d.`, tone: 'success' });
+      await loadPlugins();
+    } catch (err: any) {
+      toastStore.push({ title: `Failed to ${action} plugin`, body: err?.message ?? 'Unknown error', tone: 'error' });
+    } finally {
+      togglingPluginId = null;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Uninstall
+  // ---------------------------------------------------------------------------
+  function confirmUninstall(plugin: Plugin) {
+    uninstallTarget = plugin;
+    uninstalling = false;
+    showUninstallDialog = true;
+  }
+
+  async function executeUninstall() {
+    if (!uninstallTarget) return;
+    uninstalling = true;
+    try {
+      const res = await api(`/api/plugins/${uninstallTarget.id}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errText = await res.text();
+        let errMsg: string;
+        try { errMsg = JSON.parse(errText).message ?? errText; } catch { errMsg = errText; }
+        throw new Error(errMsg);
+      }
+      toastStore.push({ title: 'Plugin uninstalled', body: `${uninstallTarget.name} has been removed.`, tone: 'success' });
+      showUninstallDialog = false;
+      uninstallTarget = null;
+      await loadPlugins();
+    } catch (err: any) {
+      toastStore.push({ title: 'Uninstall failed', body: err?.message ?? 'Unknown error', tone: 'error' });
+    } finally {
+      uninstalling = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Status badge helper
+  // ---------------------------------------------------------------------------
+  function pluginStatusBadge(plugin: Plugin): { label: string; color: string } {
+    if (plugin.status === 'error') return { label: 'Error', color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' };
+    if (plugin.status === 'ready' || (plugin.enabled && plugin.status !== 'error')) return { label: 'Ready', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' };
+    if (plugin.status === 'disabled' || !plugin.enabled) return { label: 'Disabled', color: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' };
+    return { label: plugin.status ?? 'Installed', color: 'bg-zinc-100 text-zinc-600 dark:bg-zinc-800 dark:text-zinc-400' };
+  }
+
   function handleInstallSubmit() {
     if (!installPackageName.trim()) return;
     installPlugin(installPackageName.trim());
@@ -145,6 +223,7 @@
 
   function openInstallDialog() {
     installPackageName = '';
+    installLocalPath = false;
     installError = null;
     installing = false;
     showInstallDialog = true;
@@ -188,17 +267,56 @@
   {:else}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {#each plugins as p (p.id)}
+        {@const badge = pluginStatusBadge(p)}
+        {@const isToggling = togglingPluginId === p.id}
         <CardHoverEffect>
-          <a href="/{$page.params.companyPrefix}/plugins/{p.id}" class="block p-5">
-            <div class="flex items-center justify-between">
-              <h3 class="font-medium text-zinc-900 dark:text-zinc-100">{p.name}</h3>
-              <StatusBadge status={p.enabled ? 'enabled' : 'disabled'} />
-            </div>
-            {#if p.description}
-              <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{p.description}</p>
+          <div class="p-5">
+            <a href="/{$page.params.companyPrefix}/plugins/{p.id}" class="block">
+              <div class="flex items-center justify-between">
+                <h3 class="font-medium text-zinc-900 dark:text-zinc-100 truncate">{p.name}</h3>
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium {badge.color}">
+                  {badge.label}
+                </span>
+              </div>
+              {#if p.description}
+                <p class="mt-1.5 text-xs text-zinc-500 dark:text-zinc-400 line-clamp-2">{p.description}</p>
+              {/if}
+              <p class="mt-1 text-xs text-zinc-500">{p.version ?? '0.0.0'} · {p.author ?? 'Unknown'}</p>
+            </a>
+
+            {#if p.status === 'error' && p.lastError}
+              <div class="mt-3 rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-2.5 flex items-start gap-2">
+                <AlertCircle class="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                <p class="text-xs text-red-700 dark:text-red-300 line-clamp-3">{p.lastError}</p>
+              </div>
             {/if}
-            <p class="mt-1 text-xs text-zinc-500">{p.version ?? '0.0.0'} · {p.author ?? 'Unknown'}</p>
-          </a>
+
+            <div class="mt-3 flex items-center justify-end gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={isToggling}
+                onclick={(e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); togglePlugin(p); }}
+                title={p.enabled ? 'Disable plugin' : 'Enable plugin'}
+              >
+                {#if isToggling}
+                  <span class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent"></span>
+                {:else}
+                  <Power class="h-3.5 w-3.5 {p.enabled ? 'text-emerald-500' : 'text-zinc-400'}" />
+                {/if}
+                <span class="ml-1.5">{p.enabled ? 'Disable' : 'Enable'}</span>
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onclick={(e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); confirmUninstall(p); }}
+                title="Uninstall plugin"
+                class="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300"
+              >
+                <Trash2 class="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          </div>
         </CardHoverEffect>
       {/each}
     </div>
@@ -288,6 +406,16 @@
         />
       </div>
 
+      <label class="flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          bind:checked={installLocalPath}
+          disabled={installing}
+          class="h-4 w-4 rounded border-zinc-300 dark:border-zinc-600 text-indigo-600 focus:ring-indigo-500"
+        />
+        <span class="text-sm text-zinc-700 dark:text-zinc-300">Install from local path</span>
+      </label>
+
       {#if installError}
         <div class="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-3">
           <p class="text-sm text-red-700 dark:text-red-300">{installError}</p>
@@ -313,6 +441,43 @@
         {:else}
           <Download class="h-4 w-4 mr-1.5" />
           Install
+        {/if}
+      </Button>
+    </DialogFooter>
+  </DialogContent>
+</Dialog>
+
+<!-- ======================================================================= -->
+<!-- Uninstall Confirmation Dialog                                            -->
+<!-- ======================================================================= -->
+<Dialog bind:open={showUninstallDialog}>
+  <DialogContent class="sm:max-w-sm">
+    <DialogHeader>
+      <DialogTitle>Uninstall Plugin</DialogTitle>
+      <DialogDescription>
+        Are you sure you want to uninstall <strong>{uninstallTarget?.name ?? 'this plugin'}</strong>? This action cannot be undone.
+      </DialogDescription>
+    </DialogHeader>
+
+    <DialogFooter>
+      <Button
+        variant="outline"
+        onclick={() => { showUninstallDialog = false; uninstallTarget = null; }}
+        disabled={uninstalling}
+      >
+        Cancel
+      </Button>
+      <Button
+        variant="destructive"
+        disabled={uninstalling}
+        onclick={executeUninstall}
+      >
+        {#if uninstalling}
+          <span class="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent mr-1.5"></span>
+          Removing...
+        {:else}
+          <Trash2 class="h-4 w-4 mr-1.5" />
+          Uninstall
         {/if}
       </Button>
     </DialogFooter>

@@ -4,7 +4,7 @@
   import { companyStore } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
-  import { Plus, RefreshCw, ChevronRight, Search, Clock, Play, Pause, Archive } from 'lucide-svelte';
+  import { Plus, RefreshCw, ChevronRight, Search, Clock, Play, Pause, Archive, MoreHorizontal, Trash2 } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Routines' }]));
 
@@ -39,7 +39,12 @@
   let newTitle = $state('');
   let newDescription = $state('');
   let newAssigneeAgentId = $state('');
+  let newProjectId = $state('');
   let creating = $state(false);
+  let togglingId = $state<string | null>(null);
+  let runningId = $state<string | null>(null);
+  let deletingId = $state<string | null>(null);
+  let openDropdownId = $state<string | null>(null);
 
   // Agents for assignee dropdown
   interface Agent {
@@ -49,6 +54,15 @@
   }
   let agents = $state<Agent[]>([]);
   let agentsLoading = $state(false);
+
+  // Projects for project dropdown
+  interface Project {
+    id: string;
+    name: string;
+    [key: string]: unknown;
+  }
+  let projects = $state<Project[]>([]);
+  let projectsLoading = $state(false);
 
   let companyId = $derived(companyStore.selectedCompany?.id ?? companyStore.selectedCompanyId);
   let prefix = $derived($page.params.companyPrefix);
@@ -107,10 +121,21 @@
       .finally(() => { agentsLoading = false; });
   }
 
+  function loadProjects() {
+    if (!companyId) return;
+    projectsLoading = true;
+    api(`/api/companies/${companyId}/projects`)
+      .then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+      .then(d => { projects = (Array.isArray(d) ? d : d.projects ?? []) as Project[]; })
+      .catch(() => { projects = []; })
+      .finally(() => { projectsLoading = false; });
+  }
+
   $effect(() => {
     if (!companyId) return;
     loadRoutines();
     loadAgents();
+    loadProjects();
   });
 
   // ---------------------------------------------------------------------------
@@ -123,6 +148,7 @@
       const body: Record<string, string> = { title: newTitle.trim() };
       if (newDescription.trim()) body.description = newDescription.trim();
       if (newAssigneeAgentId) body.assigneeAgentId = newAssigneeAgentId;
+      if (newProjectId) body.projectId = newProjectId;
       const res = await api(`/api/companies/${companyId}/routines`, {
         method: 'POST',
         body: JSON.stringify(body),
@@ -133,11 +159,63 @@
       newTitle = '';
       newDescription = '';
       newAssigneeAgentId = '';
+      newProjectId = '';
       showCreate = false;
     } catch (e: any) {
       console.error('Failed to create routine:', e);
     } finally {
       creating = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Row actions
+  // ---------------------------------------------------------------------------
+  async function toggleRoutineStatus(routine: Routine) {
+    if (!companyId) return;
+    togglingId = routine.id;
+    const newStatus = routine.status === 'active' ? 'paused' : 'active';
+    try {
+      const res = await api(`/api/routines/${routine.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      routines = routines.map(r => r.id === routine.id ? { ...r, status: newStatus } : r);
+    } catch (e: any) {
+      console.error('Failed to toggle routine status:', e);
+    } finally {
+      togglingId = null;
+    }
+  }
+
+  async function runRoutineNow(routine: Routine) {
+    if (!companyId) return;
+    runningId = routine.id;
+    openDropdownId = null;
+    try {
+      const res = await api(`/api/routines/${routine.id}/run`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      loadRoutines();
+    } catch (e: any) {
+      console.error('Failed to run routine:', e);
+    } finally {
+      runningId = null;
+    }
+  }
+
+  async function deleteRoutine(routine: Routine) {
+    if (!confirm(`Delete routine "${routine.title}"? This action cannot be undone.`)) return;
+    deletingId = routine.id;
+    openDropdownId = null;
+    try {
+      const res = await api(`/api/routines/${routine.id}`, { method: 'DELETE' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      routines = routines.filter(r => r.id !== routine.id);
+    } catch (e: any) {
+      console.error('Failed to delete routine:', e);
+    } finally {
+      deletingId = null;
     }
   }
 
@@ -260,6 +338,25 @@
           <p class="text-xs text-muted-foreground mt-1">Loading agents...</p>
         {/if}
       </div>
+      <div>
+        <label for="routine-project" class="block text-sm font-medium text-foreground mb-1">
+          Project <span class="text-muted-foreground font-normal">(optional)</span>
+        </label>
+        <select
+          id="routine-project"
+          bind:value={newProjectId}
+          disabled={projectsLoading}
+          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        >
+          <option value="">No project</option>
+          {#each projects as project}
+            <option value={project.id}>{project.name}</option>
+          {/each}
+        </select>
+        {#if projectsLoading}
+          <p class="text-xs text-muted-foreground mt-1">Loading projects...</p>
+        {/if}
+      </div>
       <div class="flex items-center gap-3">
         <button
           type="submit"
@@ -270,7 +367,7 @@
         </button>
         <button
           type="button"
-          onclick={() => { showCreate = false; newTitle = ''; newDescription = ''; newAssigneeAgentId = ''; }}
+          onclick={() => { showCreate = false; newTitle = ''; newDescription = ''; newAssigneeAgentId = ''; newProjectId = ''; }}
           class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40"
         >
           Cancel
@@ -352,51 +449,123 @@
   {:else}
     <div class="rounded-xl border border-border bg-card overflow-hidden">
       {#each filteredRoutines as routine, i (routine.id)}
-        <a
-          href="/{prefix}/routines/{routine.id}"
+        <div
           class="group flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
-            {i < filteredRoutines.length - 1 ? 'border-b border-border/50' : ''}"
+            {i < filteredRoutines.length - 1 ? 'border-b border-border/50' : ''}
+            {deletingId === routine.id ? 'opacity-50 pointer-events-none' : ''}"
         >
-          <!-- Status dot -->
-          <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(routine.status)}"></span>
-
-          <!-- Content -->
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-3 mb-0.5">
-              <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-blue-400 transition-colors">
-                {routine.title}
-              </h3>
-              <span class="inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {statusBadgeClass(routine.status)}">
-                {routine.status}
+          <!-- Enable/disable toggle -->
+          <button
+            onclick={(e) => { e.stopPropagation(); toggleRoutineStatus(routine); }}
+            disabled={togglingId === routine.id || routine.status === 'archived'}
+            class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-card disabled:opacity-40
+              {routine.status === 'active' ? 'bg-emerald-500' : 'bg-zinc-600'}"
+            title={routine.status === 'active' ? 'Pause routine' : 'Enable routine'}
+          >
+            <span
+              class="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform shadow-sm
+                {routine.status === 'active' ? 'translate-x-[18px]' : 'translate-x-[3px]'}"
+            ></span>
+            {#if togglingId === routine.id}
+              <span class="absolute inset-0 flex items-center justify-center">
+                <RefreshCw class="w-3 h-3 text-white animate-spin" />
               </span>
+            {/if}
+          </button>
+
+          <!-- Clickable row area -->
+          <a
+            href="/{prefix}/routines/{routine.id}"
+            class="min-w-0 flex-1 flex items-center gap-4"
+          >
+            <!-- Status dot -->
+            <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(routine.status)}"></span>
+
+            <!-- Content -->
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-3 mb-0.5">
+                <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-blue-400 transition-colors">
+                  {routine.title}
+                </h3>
+                <span class="inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {statusBadgeClass(routine.status)}">
+                  {routine.status}
+                </span>
+              </div>
+
+              <div class="flex items-center gap-3 mt-1">
+                {#if routine.assigneeAgentId || routine.agentName}
+                  <span class="text-xs text-muted-foreground font-mono truncate max-w-[120px]">
+                    {routine.agentName ?? truncateId(routine.assigneeAgentId)}
+                  </span>
+                {/if}
+
+                {#if scheduleDisplay(routine)}
+                  <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Clock class="w-3 h-3 shrink-0" />
+                    <span class="font-mono">{scheduleDisplay(routine)}</span>
+                  </span>
+                {/if}
+              </div>
             </div>
 
-            <div class="flex items-center gap-3 mt-1">
-              <!-- Assignee agent ID -->
-              {#if routine.assigneeAgentId || routine.agentName}
-                <span class="text-xs text-muted-foreground font-mono truncate max-w-[120px]">
-                  {routine.agentName ?? truncateId(routine.assigneeAgentId)}
-                </span>
-              {/if}
+            <!-- Last run -->
+            <span class="text-xs text-muted-foreground shrink-0 tabular-nums w-20 text-right">
+              {timeAgo(routine.lastRunAt)}
+            </span>
 
-              <!-- Schedule -->
-              {#if scheduleDisplay(routine)}
-                <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Clock class="w-3 h-3 shrink-0" />
-                  <span class="font-mono">{scheduleDisplay(routine)}</span>
-                </span>
-              {/if}
-            </div>
+            <!-- Arrow -->
+            <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          </a>
+
+          <!-- Actions dropdown -->
+          <div class="relative shrink-0">
+            <button
+              onclick={(e) => { e.stopPropagation(); openDropdownId = openDropdownId === routine.id ? null : routine.id; }}
+              class="rounded-md p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+              title="Actions"
+            >
+              <MoreHorizontal class="w-4 h-4" />
+            </button>
+
+            {#if openDropdownId === routine.id}
+              <!-- Backdrop to close dropdown -->
+              <!-- svelte-ignore a11y_no_static_element_interactions -->
+              <div class="fixed inset-0 z-40" onclick={() => { openDropdownId = null; }} onkeydown={() => {}}></div>
+              <div class="absolute right-0 top-full mt-1 z-50 w-44 rounded-lg border border-border bg-card shadow-lg py-1">
+                <button
+                  onclick={(e) => { e.stopPropagation(); runRoutineNow(routine); }}
+                  disabled={runningId === routine.id}
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent/60 transition-colors disabled:opacity-50"
+                >
+                  <Play class="w-3.5 h-3.5" />
+                  {runningId === routine.id ? 'Running...' : 'Run Now'}
+                </button>
+                <button
+                  onclick={(e) => { e.stopPropagation(); openDropdownId = null; toggleRoutineStatus(routine); }}
+                  disabled={togglingId === routine.id || routine.status === 'archived'}
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-foreground hover:bg-accent/60 transition-colors disabled:opacity-50"
+                >
+                  {#if routine.status === 'active'}
+                    <Pause class="w-3.5 h-3.5" />
+                    Pause
+                  {:else}
+                    <Play class="w-3.5 h-3.5" />
+                    Enable
+                  {/if}
+                </button>
+                <div class="my-1 border-t border-border/50"></div>
+                <button
+                  onclick={(e) => { e.stopPropagation(); deleteRoutine(routine); }}
+                  disabled={deletingId === routine.id}
+                  class="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors disabled:opacity-50"
+                >
+                  <Trash2 class="w-3.5 h-3.5" />
+                  {deletingId === routine.id ? 'Deleting...' : 'Delete'}
+                </button>
+              </div>
+            {/if}
           </div>
-
-          <!-- Last run -->
-          <span class="text-xs text-muted-foreground shrink-0 tabular-nums w-20 text-right">
-            {timeAgo(routine.lastRunAt)}
-          </span>
-
-          <!-- Arrow -->
-          <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-        </a>
+        </div>
       {/each}
     </div>
 
