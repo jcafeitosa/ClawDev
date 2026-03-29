@@ -279,3 +279,12 @@ export {
   type SetPluginState,
   type ListPluginState,
 } from "./plugin.js";
+
+export {
+  routingConstraintsSchema,
+  routingPolicySchema,
+  updateRoutingPolicySchema,
+  type RoutingConstraintsInput,
+  type RoutingPolicyInput,
+  type UpdateRoutingPolicyInput,
+} from "./routing.js";

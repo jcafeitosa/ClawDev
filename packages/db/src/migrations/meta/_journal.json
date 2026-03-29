@@ -330,6 +330,13 @@
       "when": 1774944000000,
       "tag": "0046_agent_nickname_icon_color",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1774944100000,
+      "tag": "0047_routing_support",
+      "breakpoints": true
     }
   ]
 }

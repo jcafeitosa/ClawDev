@@ -192,3 +192,12 @@ export type {
   PluginJobRunRecord,
   PluginWebhookDeliveryRecord,
 } from "./plugin.js";
+export type {
+  RoutingPolicy,
+  RoutingConstraints,
+  ModelCapability,
+  RoutingDecision,
+  RoutingAlternative,
+  TaskSignals,
+  RoutingMode,
+} from "./routing.js";

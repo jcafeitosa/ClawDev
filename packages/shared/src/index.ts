@@ -312,6 +312,13 @@ export type {
   PluginWebhookDeliveryRecord,
   QuotaWindow,
   ProviderQuotaResult,
+  RoutingPolicy,
+  RoutingConstraints,
+  ModelCapability,
+  RoutingDecision,
+  RoutingAlternative,
+  TaskSignals,
+  RoutingMode,
 } from "./types/index.js";
 
 export {
@@ -534,6 +541,12 @@ export {
   type PluginStateScopeKey,
   type SetPluginState,
   type ListPluginState,
+  routingConstraintsSchema,
+  routingPolicySchema,
+  updateRoutingPolicySchema,
+  type RoutingConstraintsInput,
+  type RoutingPolicyInput,
+  type UpdateRoutingPolicyInput,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";
