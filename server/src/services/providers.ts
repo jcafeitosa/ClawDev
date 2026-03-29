@@ -261,6 +261,7 @@ export function providerService(db: Db) {
     quotaWindows: QuotaWindow[] | null,
     breakerEntries: Record<string, ProviderBreakerInfo>,
     meta: AdapterMeta | null,
+    liveDetails: ProviderLiveDetails | null,
   ): ProviderStatus["connectionStatus"] {
     // If explicit health status from last check
     if (config?.lastHealthStatus === "auth_expired") return "auth_expired";
@@ -276,20 +277,24 @@ export function providerService(db: Db) {
 
     // Check quota — if any window > 90% used, rate limited
     if (quotaWindows && quotaWindows.length > 0) {
-      const hasHighUsage = quotaWindows.some(w => w.usedPercent != null && w.usedPercent >= 90);
-      if (hasHighUsage) return "rate_limited";
-      // If quota windows respond, the provider is connected
-      return "connected";
-    }
-
-    // For adapters that don't support quota, infer from existence
-    if (meta) {
-      // Free/local adapters are always "connected" if the CLI exists
-      if (!meta.hasQuotaWindows) {
-        // Check if adapter has test environment (all do)
+      // Filter to only native quota windows (ones with usedPercent)
+      const nativeWindows = quotaWindows.filter(w => w.usedPercent != null);
+      if (nativeWindows.length > 0) {
+        const hasHighUsage = nativeWindows.some(w => (w.usedPercent ?? 0) >= 90);
+        if (hasHighUsage) return "rate_limited";
         return "connected";
       }
     }
+
+    // If we have live details with a CLI version, the CLI is installed → connected
+    if (liveDetails?.cliVersion) return "connected";
+
+    // If probe ran but no CLI version found → not installed
+    if (liveDetails !== null && !liveDetails.cliVersion) return "disconnected";
+
+    // Generic adapters (process, http) and ones without probes
+    if (adapterType === "process" || adapterType === "http") return "unconfigured";
+    if (adapterType === "openclaw_gateway" || adapterType === "hermes_local") return "unconfigured";
 
     return "unconfigured";
   }
@@ -544,7 +549,7 @@ export function providerService(db: Db) {
       const registryModels = adapterModels;
 
       const adapterBreakers = breakersByAdapter.get(adapterType) ?? {};
-      const connectionStatus = deriveConnectionStatus(adapterType, config, quotaWindows, adapterBreakers, meta);
+      const connectionStatus = deriveConnectionStatus(adapterType, config, quotaWindows, adapterBreakers, meta, liveDetails);
 
       statuses.push({
         adapterType,
