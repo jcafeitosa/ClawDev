@@ -105,6 +105,16 @@ export interface ProviderBreakerInfo {
   failureCount: number;
 }
 
+/** Real-time provider details from CLI probes */
+export interface ProviderLiveDetails {
+  cliVersion: string | null;
+  authenticatedUser: string | null;
+  defaultModel: string | null;
+  availableModels: string[];
+  billingType: string | null;
+  authCommand: string | null;
+}
+
 export interface ProviderStatus {
   adapterType: string;
   displayName: string;
@@ -130,6 +140,8 @@ export interface ProviderStatus {
   monthlySpendCents: number;
   /** Models from the model registry for this adapter */
   models: Array<{ id: string; displayName: string; tier: number }>;
+  /** Live details probed from CLI */
+  liveDetails: ProviderLiveDetails | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -282,18 +294,123 @@ export function providerService(db: Db) {
     return "unconfigured";
   }
 
+  // ── Real-time CLI probes ───────────────────────────────────────────────────
+
+  async function probeCli(command: string, args: string[], timeoutMs = 5000): Promise<string> {
+    const { execFile } = await import("node:child_process");
+    return new Promise((resolve) => {
+      const proc = execFile(command, args, { timeout: timeoutMs, env: { ...process.env } }, (err, stdout) => {
+        resolve(stdout?.trim() ?? "");
+      });
+      proc.on("error", () => resolve(""));
+    });
+  }
+
+  async function probeProviderDetails(adapterType: string): Promise<ProviderLiveDetails | null> {
+    try {
+      switch (adapterType) {
+        case "claude_local": {
+          const version = await probeCli("claude", ["--version"]);
+          return {
+            cliVersion: version || null,
+            authenticatedUser: null, // Claude doesn't expose this easily
+            defaultModel: null, // Derived from quota response
+            availableModels: [],
+            billingType: process.env.ANTHROPIC_API_KEY ? "api" : "subscription",
+            authCommand: "claude login",
+          };
+        }
+        case "copilot_local": {
+          const [version, ghAuth] = await Promise.all([
+            probeCli("copilot", ["--version"]),
+            probeCli("gh", ["auth", "status"]),
+          ]);
+          // Parse gh auth status for username
+          const userMatch = ghAuth.match(/account\s+(\S+)/);
+          const user = userMatch?.[1] ?? null;
+          return {
+            cliVersion: version ? version.split("\n")[0] : null,
+            authenticatedUser: user,
+            defaultModel: "gpt-4.1",
+            availableModels: ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano", "o3", "o4-mini"],
+            billingType: "subscription",
+            authCommand: "gh auth login",
+          };
+        }
+        case "codex_local": {
+          const version = await probeCli("codex", ["--version"]);
+          return {
+            cliVersion: version || null,
+            authenticatedUser: null,
+            defaultModel: "o3",
+            availableModels: [],
+            billingType: process.env.OPENAI_API_KEY ? "api" : "subscription",
+            authCommand: "codex auth",
+          };
+        }
+        case "opencode_local": {
+          const [version, modelsRaw] = await Promise.all([
+            probeCli("opencode", ["--version"]),
+            probeCli("opencode", ["models"]),
+          ]);
+          const models = modelsRaw.split("\n").filter(Boolean);
+          return {
+            cliVersion: version || null,
+            authenticatedUser: null,
+            defaultModel: models[0] ?? null,
+            availableModels: models,
+            billingType: "free",
+            authCommand: null,
+          };
+        }
+        case "gemini_local": {
+          return {
+            cliVersion: null,
+            authenticatedUser: null,
+            defaultModel: "gemini-2.5-pro",
+            availableModels: [],
+            billingType: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY ? "api" : null,
+            authCommand: "gcloud auth login",
+          };
+        }
+        default:
+          return null;
+      }
+    } catch (err) {
+      logger.debug({ err, adapterType }, "Provider probe failed");
+      return null;
+    }
+  }
+
+  // Cache for probed details (5 minute TTL)
+  const probeCache = new Map<string, { data: ProviderLiveDetails | null; ts: number }>();
+  const PROBE_CACHE_TTL = 5 * 60 * 1000;
+
+  async function getCachedProbe(adapterType: string): Promise<ProviderLiveDetails | null> {
+    const cached = probeCache.get(adapterType);
+    if (cached && Date.now() - cached.ts < PROBE_CACHE_TTL) return cached.data;
+    const data = await probeProviderDetails(adapterType);
+    probeCache.set(adapterType, { data, ts: Date.now() });
+    return data;
+  }
+
   // ── Consolidated status ───────────────────────────────────────────────────
 
   async function getConsolidatedStatus(companyId: string): Promise<ProviderStatus[]> {
     // Kick off all data-fetching in parallel
-    const [configs, quotaResults, monthlySpend] = await Promise.all([
+    const adaptersToProbe = ["claude_local", "copilot_local", "codex_local", "opencode_local", "gemini_local"];
+    const [configs, quotaResults, monthlySpend, ...probeResults] = await Promise.all([
       listConfigs(companyId),
       fetchAllQuotaWindows().catch((err: unknown) => {
         logger.warn({ err }, "Failed to fetch quota windows for consolidated status");
         return [] as ProviderQuotaResult[];
       }),
       getMonthlySpendByProvider(companyId),
+      ...adaptersToProbe.map(at => getCachedProbe(at)),
     ]);
+    // Build probe map
+    const probeMap = new Map<string, ProviderLiveDetails | null>();
+    adaptersToProbe.forEach((at, i) => probeMap.set(at, probeResults[i] ?? null));
 
     // Index configs by adapter type
     const configByAdapter = new Map<string, ProviderConfig>();
@@ -363,6 +480,7 @@ export function providerService(db: Db) {
         circuitBreakers: adapterBreakers,
         monthlySpendCents: monthlySpend.get(adapterType) ?? 0,
         models: registryModels,
+        liveDetails: probeMap.get(adapterType) ?? null,
       });
     }
 

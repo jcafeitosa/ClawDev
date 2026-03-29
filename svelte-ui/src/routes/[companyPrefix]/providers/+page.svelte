@@ -545,26 +545,39 @@
               {/if}
             </div>
 
-            <!-- Subscription & billing info -->
-            {#if getAuthInfo(provider.adapterType).subscription || getAuthInfo(provider.adapterType).defaultModel}
+            <!-- Live details from CLI probe -->
+            {#if provider.liveDetails}
               <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-                {#if getAuthInfo(provider.adapterType).subscription}
-                  <span title="Subscription plan">📋 {getAuthInfo(provider.adapterType).subscription}</span>
+                {#if provider.liveDetails.cliVersion}
+                  <span title="CLI version">⚡ v{provider.liveDetails.cliVersion}</span>
                 {/if}
-                {#if getAuthInfo(provider.adapterType).billing}
-                  <span title="Billing model">💰 {getAuthInfo(provider.adapterType).billing}</span>
+                {#if provider.liveDetails.authenticatedUser}
+                  <span title="Authenticated user">👤 {provider.liveDetails.authenticatedUser}</span>
                 {/if}
-                {#if getAuthInfo(provider.adapterType).defaultModel}
-                  <span title="Default model">🤖 {getAuthInfo(provider.adapterType).defaultModel}</span>
+                {#if provider.liveDetails.billingType}
+                  <span title="Billing type">💰 {provider.liveDetails.billingType}</span>
+                {/if}
+                {#if provider.liveDetails.defaultModel}
+                  <span title="Default model">🤖 {provider.liveDetails.defaultModel}</span>
+                {/if}
+                {#if provider.liveDetails.availableModels && provider.liveDetails.availableModels.length > 0}
+                  <span title="Available models">📦 {provider.liveDetails.availableModels.length} models</span>
                 {/if}
               </div>
+            {:else}
+              <!-- Fallback static info for providers without CLI probe -->
+              {#if getAuthInfo(provider.adapterType).billing}
+                <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                  <span>💰 {getAuthInfo(provider.adapterType).billing}</span>
+                </div>
+              {/if}
             {/if}
 
             <!-- Auth instruction (if CLI-based and not connected) -->
-            {#if getAuthInfo(provider.adapterType).command && provider.connectionStatus !== 'connected'}
+            {#if provider.liveDetails?.authCommand && provider.connectionStatus !== 'connected' && provider.connectionStatus !== 'rate_limited'}
               <div class="mt-3 rounded-lg bg-amber-500/5 border border-amber-500/20 px-3 py-2">
                 <p class="text-[11px] text-amber-700 dark:text-amber-400">
-                  Run <code class="bg-amber-500/10 px-1 rounded font-mono">{getAuthInfo(provider.adapterType).command}</code> in terminal to authenticate
+                  Run <code class="bg-amber-500/10 px-1 rounded font-mono">{provider.liveDetails.authCommand}</code> to authenticate
                 </p>
               </div>
             {/if}
