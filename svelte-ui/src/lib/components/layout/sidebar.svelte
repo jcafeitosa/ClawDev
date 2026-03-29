@@ -685,7 +685,7 @@
             {:else}
               {#each visibleProjects as proj (proj.id)}
                 <a
-                  href={`/${prefix}/projects/${proj.slug ?? proj.id}/issues`}
+                  href={`/${prefix}/projects/${proj.slug ?? proj.id}`}
                   class={cn(
                     "flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] transition-colors",
                     $page.url.pathname.includes(`/projects/${proj.slug ?? proj.id}`)
@@ -723,7 +723,7 @@
           <div class="mt-1 space-y-0.5">
             {#each allProjects.slice(0, 5) as proj (proj.id)}
               <a
-                href={`/${prefix}/projects/${proj.slug ?? proj.id}/issues`}
+                href={`/${prefix}/projects/${proj.slug ?? proj.id}`}
                 class={cn(
                   "flex items-center justify-center rounded-lg px-3 py-2 transition-colors",
                   $page.url.pathname.includes(`/projects/${proj.slug ?? proj.id}`)
@@ -1255,7 +1255,7 @@
             {:else}
               {#each visibleProjects as proj (proj.id)}
                 <a
-                  href={`/${prefix}/projects/${proj.slug ?? proj.id}/issues`}
+                  href={`/${prefix}/projects/${proj.slug ?? proj.id}`}
                   class={cn(
                     "flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] transition-colors",
                     $page.url.pathname.includes(`/projects/${proj.slug ?? proj.id}`)

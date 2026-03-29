@@ -36,6 +36,14 @@
     Brain,
     Bot,
     DollarSign,
+    Github,
+    Code,
+    MousePointer,
+    Sparkles,
+    Terminal,
+    Circle,
+    Globe,
+    Cpu,
     Hash,
     Loader2,
     RefreshCw,
@@ -318,13 +326,16 @@
   }
 
   // ── Status styling ────────────────────────────────────────────────
-  const STATUS_META: Record<ConnectionStatus, { label: string; color: string; bgColor: string; dotColor: string }> = {
+  const DEFAULT_STATUS = { label: 'Unknown', color: 'text-gray-500 dark:text-gray-400', bgColor: 'bg-gray-500/10', dotColor: 'bg-gray-400' };
+  const STATUS_META: Record<string, { label: string; color: string; bgColor: string; dotColor: string }> = {
     connected: { label: 'Connected', color: 'text-emerald-600 dark:text-emerald-400', bgColor: 'bg-emerald-500/10', dotColor: 'bg-emerald-500' },
     degraded: { label: 'Degraded', color: 'text-yellow-600 dark:text-yellow-400', bgColor: 'bg-yellow-500/10', dotColor: 'bg-yellow-500' },
     disconnected: { label: 'Disconnected', color: 'text-red-600 dark:text-red-400', bgColor: 'bg-red-500/10', dotColor: 'bg-red-500' },
     rate_limited: { label: 'Rate Limited', color: 'text-blue-600 dark:text-blue-400', bgColor: 'bg-blue-500/10', dotColor: 'bg-blue-500' },
-    unconfigured: { label: 'Unconfigured', color: 'text-gray-500 dark:text-gray-400', bgColor: 'bg-gray-500/10', dotColor: 'bg-gray-400' },
+    auth_expired: { label: 'Auth Expired', color: 'text-orange-600 dark:text-orange-400', bgColor: 'bg-orange-500/10', dotColor: 'bg-orange-500' },
+    unconfigured: { label: 'Not Configured', color: 'text-gray-500 dark:text-gray-400', bgColor: 'bg-gray-500/10', dotColor: 'bg-gray-400' },
   };
+  function getStatusMeta(status: string) { return STATUS_META[status] ?? DEFAULT_STATUS; }
 
   const CIRCUIT_META: Record<CircuitState, { label: string; color: string; bgColor: string }> = {
     CLOSED: { label: 'Closed', color: 'text-emerald-600 dark:text-emerald-400', bgColor: 'bg-emerald-500/10' },
@@ -347,18 +358,39 @@
     { value: 'enterprise', label: 'Enterprise' },
   ];
 
-  // Map icon strings to lucide components
+  // Map adapter types and icon names to lucide components
   const ICON_MAP: Record<string, any> = {
+    // By adapter type
+    claude_local: Brain,
+    copilot_local: Github,
+    codex_local: Code,
+    cursor: MousePointer,
+    gemini_local: Sparkles,
+    opencode_local: Terminal,
+    pi_local: Circle,
+    openclaw_gateway: Globe,
+    hermes_local: Cpu,
+    process: Server,
+    http: Globe,
+    // By icon name (from AdapterMeta.icon)
     brain: Brain,
     bot: Bot,
     server: Server,
     zap: Zap,
     plug: Plug,
     activity: Activity,
+    github: Github,
+    code: Code,
+    mousepointer: MousePointer,
+    sparkles: Sparkles,
+    terminal: Terminal,
+    circle: Circle,
+    globe: Globe,
+    cpu: Cpu,
   };
 
-  function getProviderIcon(iconName: string): any {
-    return ICON_MAP[iconName?.toLowerCase()] ?? Server;
+  function getProviderIcon(provider: { adapterType?: string; icon?: string }): any {
+    return ICON_MAP[provider.adapterType ?? ''] ?? ICON_MAP[provider.icon?.toLowerCase() ?? ''] ?? Server;
   }
 
   // Show/hide api key in config form
@@ -418,7 +450,7 @@
     <div class="flex flex-wrap gap-2">
       {#each Object.entries(statusCounts) as [status, count]}
         {#if count > 0}
-          {@const meta = STATUS_META[status as ConnectionStatus]}
+          {@const meta = getStatusMeta(status)}
           <span class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-medium {meta.bgColor} {meta.color}">
             <span class="h-1.5 w-1.5 rounded-full {meta.dotColor}"></span>
             {count} {meta.label}
@@ -430,9 +462,9 @@
     <!-- ── Provider Cards Grid ───────────────────────────────────────── -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {#each providers as provider (provider.id)}
-        {@const meta = STATUS_META[provider.status]}
+        {@const meta = getStatusMeta(provider.status)}
         {@const isExpanded = expandedProviderId === provider.id}
-        {@const ProviderIcon = getProviderIcon(provider.icon)}
+        {@const ProviderIcon = getProviderIcon(provider)}
         <div
           class="rounded-xl border border-border bg-card transition-all duration-200 hover:shadow-md {isExpanded ? 'col-span-1 sm:col-span-2 lg:col-span-3 ring-1 ring-blue-500/30' : ''}"
         >
