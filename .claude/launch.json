@@ -2,12 +2,12 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "ClawDev Server",
-      "runtimeExecutable": "bun",
-      "runtimeArgs": ["run", "server/src/index.ts"],
-      "port": 3101,
+      "name": "clawdev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@clawdev/server", "dev"],
+      "port": 3100,
       "env": {
-        "PORT": "3101"
+        "PORT": "3100"
       }
     }
   ]

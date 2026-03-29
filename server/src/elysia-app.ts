@@ -287,6 +287,24 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     if (uiDist) {
       const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
 
+      const mimeTypes: Record<string, string> = {
+        ".html": "text/html; charset=utf-8",
+        ".js": "application/javascript; charset=utf-8",
+        ".mjs": "application/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".jpeg": "image/jpeg",
+        ".webp": "image/webp",
+        ".ico": "image/x-icon",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+        ".ttf": "font/ttf",
+        ".map": "application/json",
+      };
+
       const serveStaticUi = async ({ request, set }: any) => {
         const url = new URL(request.url);
         if (
@@ -300,11 +318,18 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
 
         const filePath = path.join(uiDist, url.pathname);
         if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
-          return (globalThis as any).Bun?.file?.(filePath) ?? new Response(fs.readFileSync(filePath));
+          const ext = path.extname(filePath).toLowerCase();
+          const mime = mimeTypes[ext] ?? "application/octet-stream";
+          const headers: Record<string, string> = { "content-type": mime };
+          if (url.pathname.includes("/immutable/")) {
+            headers["cache-control"] = "public, max-age=31536000, immutable";
+          }
+          return new Response(fs.readFileSync(filePath), { headers });
         }
 
-        set.headers["content-type"] = "text/html; charset=utf-8";
-        return indexHtml;
+        return new Response(indexHtml, {
+          headers: { "content-type": "text/html; charset=utf-8" },
+        });
       };
 
       rootApp
