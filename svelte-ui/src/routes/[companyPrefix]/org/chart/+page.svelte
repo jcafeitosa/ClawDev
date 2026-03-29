@@ -82,32 +82,38 @@
   function roleIcon(role: string) { return ROLE_ICONS[role?.toLowerCase()] ?? Bot; }
 </script>
 
-<div class="flex h-full flex-col">
-  <!-- Top bar -->
-  <div class="flex items-center gap-6 border-b border-border px-5 py-3 shrink-0">
-    <span class="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Org Chart</span>
-    <a href="/{prefix}/import" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-      <Upload class="h-3.5 w-3.5" /> Import company
-    </a>
-    <a href="/{prefix}/export" class="inline-flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground">
-      <Download class="h-3.5 w-3.5" /> Export company
-    </a>
+<div class="flex h-full flex-col p-6 gap-4">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <div>
+      <h1 class="text-2xl font-bold text-foreground">Org Chart</h1>
+      <p class="mt-1 text-sm text-muted-foreground">Visual hierarchy of agents and their reporting structure</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <a href="/{prefix}/import" class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground transition-colors">
+        <Upload class="h-3.5 w-3.5" /> Import
+      </a>
+      <a href="/{prefix}/export" class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground transition-colors">
+        <Download class="h-3.5 w-3.5" /> Export
+      </a>
+    </div>
   </div>
 
-  <!-- Canvas -->
-  <div
-    class="relative flex-1 overflow-hidden"
-    style="cursor:{dragging?'grabbing':'grab'};background-color:var(--org-bg,#0C0C12);background-image:radial-gradient(var(--org-dot,#333340) 1px, transparent 1px);background-size:20px 20px"
-    role="application"
-    aria-label="Org chart"
-    onmousedown={onMouseDown}
-    onmousemove={onMouseMove}
-    onmouseup={onMouseUp}
-    onmouseleave={onMouseUp}
-    onwheel={onWheel}
-  >
+  <!-- Canvas card -->
+  <div class="rounded-xl border border-border/50 bg-card overflow-hidden flex-1 relative">
+    <div
+      class="h-full overflow-hidden"
+      style="cursor:{dragging?'grabbing':'grab'};background-color:var(--org-bg,#0C0C12);background-image:radial-gradient(var(--org-dot,#333340) 1px, transparent 1px);background-size:20px 20px"
+      role="application"
+      aria-label="Org chart"
+      onmousedown={onMouseDown}
+      onmousemove={onMouseMove}
+      onmouseup={onMouseUp}
+      onmouseleave={onMouseUp}
+      onwheel={onWheel}
+    >
     <!-- Zoom buttons -->
-    <div class="absolute top-3 right-3 z-10 flex flex-col gap-1">
+    <div class="absolute top-3 right-3 z-10 flex items-center gap-1 rounded-lg border border-border/50 bg-card/80 backdrop-blur-sm p-1">
       <button onclick={zoomIn} class="oc-btn" aria-label="Zoom in"><Plus class="h-4 w-4" /></button>
       <button onclick={zoomOut} class="oc-btn" aria-label="Zoom out"><Minus class="h-4 w-4" /></button>
       <button onclick={fit} class="oc-btn text-[10px] font-bold" aria-label="Fit">Fit</button>
@@ -137,6 +143,7 @@
         </div>
       </div>
     {/if}
+    </div>
   </div>
 </div>
 
@@ -208,23 +215,21 @@
 
   .oc-btn {
     display: flex;
-    height: 32px;
-    width: 32px;
+    height: 28px;
+    width: 28px;
     align-items: center;
     justify-content: center;
-    border-radius: 8px;
-    border: 1px solid rgba(255,255,255,0.1);
-    background: #1a1a24;
+    border-radius: 6px;
+    border: none;
+    background: transparent;
     color: #94A3B8;
     transition: all .15s;
   }
-  .oc-btn:hover { color: #F8FAFC; background: #252530; }
+  .oc-btn:hover { color: #F8FAFC; background: rgba(255,255,255,0.08); }
   :global(:root:not(.dark)) .oc-btn {
-    border-color: #D1D5DB;
-    background: #FFFFFF;
     color: #6B7280;
   }
-  :global(:root:not(.dark)) .oc-btn:hover { color: #111827; background: #F3F4F6; }
+  :global(:root:not(.dark)) .oc-btn:hover { color: #111827; background: rgba(0,0,0,0.06); }
 
   .oc-card {
     position: relative;

@@ -358,39 +358,23 @@
     { value: 'enterprise', label: 'Enterprise' },
   ];
 
-  // Map adapter types and icon names to lucide components
-  const ICON_MAP: Record<string, any> = {
-    // By adapter type
-    claude_local: Brain,
-    copilot_local: Github,
-    codex_local: Code,
-    cursor: MousePointer,
-    gemini_local: Sparkles,
-    opencode_local: Terminal,
-    pi_local: Circle,
-    openclaw_gateway: Globe,
-    hermes_local: Cpu,
-    process: Server,
-    http: Globe,
-    // By icon name (from AdapterMeta.icon)
-    brain: Brain,
-    bot: Bot,
-    server: Server,
-    zap: Zap,
-    plug: Plug,
-    activity: Activity,
-    github: Github,
-    code: Code,
-    mousepointer: MousePointer,
-    sparkles: Sparkles,
-    terminal: Terminal,
-    circle: Circle,
-    globe: Globe,
-    cpu: Cpu,
+  // Provider brand colors and icons
+  const PROVIDER_BRANDS: Record<string, { icon: any; color: string; emoji?: string }> = {
+    claude_local:      { icon: Brain,        color: '#D97757', emoji: '🧠' },  // Anthropic orange
+    copilot_local:     { icon: Github,       color: '#6E40C9', emoji: '🐙' },  // GitHub purple
+    codex_local:       { icon: Code,         color: '#10A37F', emoji: '💚' },  // OpenAI green
+    cursor:            { icon: MousePointer, color: '#00D1FF', emoji: '🖱' },  // Cursor cyan
+    gemini_local:      { icon: Sparkles,     color: '#4285F4', emoji: '✨' },  // Google blue
+    opencode_local:    { icon: Terminal,     color: '#FF6B35', emoji: '⌨' },   // OpenCode orange
+    pi_local:          { icon: Circle,       color: '#8B5CF6', emoji: '🟣' },  // Pi purple
+    openclaw_gateway:  { icon: Globe,        color: '#10B981', emoji: '🌐' },  // OpenClaw green
+    hermes_local:      { icon: Cpu,          color: '#F59E0B', emoji: '⚡' },  // Hermes amber
+    process:           { icon: Server,       color: '#6B7280', emoji: '⚙' },
+    http:              { icon: Globe,        color: '#6B7280', emoji: '🌍' },
   };
 
-  function getProviderIcon(provider: { adapterType?: string; icon?: string }): any {
-    return ICON_MAP[provider.adapterType ?? ''] ?? ICON_MAP[provider.icon?.toLowerCase() ?? ''] ?? Server;
+  function getProviderBrand(adapterType: string) {
+    return PROVIDER_BRANDS[adapterType] ?? { icon: Server, color: '#6B7280' };
   }
 
   // Show/hide api key in config form
@@ -461,10 +445,11 @@
 
     <!-- ── Provider Cards Grid ───────────────────────────────────────── -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-      {#each providers as provider (provider.id)}
+      {#each providers as provider (provider.adapterType)}
         {@const meta = getStatusMeta(provider.status)}
         {@const isExpanded = expandedProviderId === provider.id}
-        {@const ProviderIcon = getProviderIcon(provider)}
+        {@const brand = getProviderBrand(provider.adapterType)}
+        {@const ProviderIcon = brand.icon}
         <div
           class="rounded-xl border border-border bg-card transition-all duration-200 hover:shadow-md {isExpanded ? 'col-span-1 sm:col-span-2 lg:col-span-3 ring-1 ring-blue-500/30' : ''}"
         >
@@ -475,8 +460,8 @@
           >
             <div class="flex items-start justify-between gap-3">
               <div class="flex items-center gap-3 min-w-0">
-                <div class="rounded-lg {meta.bgColor} p-2.5 shrink-0">
-                  <svelte:component this={ProviderIcon} class="h-5 w-5 {meta.color}" />
+                <div class="rounded-lg p-2.5 shrink-0" style="background-color: {brand.color}20">
+                  <svelte:component this={ProviderIcon} class="h-5 w-5" style="color: {brand.color}" />
                 </div>
                 <div class="min-w-0">
                   <h3 class="text-sm font-semibold text-foreground truncate">{provider.displayName}</h3>
@@ -728,7 +713,7 @@
           Quotas
         </h2>
         <div class="space-y-4">
-          {#each providersWithQuota as provider (provider.id)}
+          {#each providersWithQuota as provider (provider.adapterType)}
             {#if provider.quota}
               {@const pct = provider.quota.limit > 0 ? Math.min(100, (provider.quota.used / provider.quota.limit) * 100) : 0}
               <div class="space-y-1.5">
