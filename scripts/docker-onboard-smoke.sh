@@ -93,7 +93,7 @@ generate_bootstrap_invite_url() {
       -e CLAWDEV_PUBLIC_URL="$CLAWDEV_PUBLIC_URL" \
       -e CLAWDEV_HOME="/clawdev" \
       "$CONTAINER_NAME" bash -lc \
-      'timeout 20s npx --yes "clawdev@${CLAWDEVAI_VERSION}" auth bootstrap-ceo --data-dir "$CLAWDEV_HOME" --base-url "$CLAWDEV_PUBLIC_URL"' \
+      'timeout 20s npx --yes "clawdevai@${CLAWDEVAI_VERSION}" auth bootstrap-ceo --data-dir "$CLAWDEV_HOME" --base-url "$CLAWDEV_PUBLIC_URL"' \
       2>&1
   )"; then
     bootstrap_status=0

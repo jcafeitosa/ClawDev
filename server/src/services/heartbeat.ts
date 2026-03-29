@@ -61,10 +61,10 @@ import {
 const MAX_LIVE_LOG_CHUNK_BYTES = 8 * 1024;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_DEFAULT = 1;
 const HEARTBEAT_MAX_CONCURRENT_RUNS_MAX = 10;
-const DEFERRED_WAKE_CONTEXT_KEY = "_clawdevWakeContext";
+const DEFERRED_WAKE_CONTEXT_KEY = "_paperclipWakeContext";
 const DETACHED_PROCESS_ERROR_CODE = "process_detached";
 const startLocksByAgent = new Map<string, Promise<void>>();
-const REPO_ONLY_CWD_SENTINEL = "/__clawdev_repo_only__";
+const REPO_ONLY_CWD_SENTINEL = "/__paperclip_repo_only__";
 const MANAGED_WORKSPACE_GIT_CLONE_TIMEOUT_MS = 10 * 60 * 1000;
 const execFile = promisify(execFileCallback);
 const SESSIONED_LOCAL_ADAPTERS = new Set([
@@ -552,7 +552,7 @@ export function shouldResetTaskSessionForWake(
 export function formatRuntimeWorkspaceWarningLog(warning: string) {
   return {
     stream: "stdout" as const,
-    chunk: `[clawdev] ${warning}\n`,
+    chunk: `[paperclip] ${warning}\n`,
   };
 }
 
@@ -979,7 +979,7 @@ export function heartbeatService(db: Db) {
       readNonEmptyString(latestRun.error);
 
     const handoffMarkdown = [
-      "ClawDev session handoff:",
+      "Paperclip session handoff:",
       `- Previous session: ${sessionId}`,
       issueId ? `- Issue: ${issueId}` : "",
       `- Rotation reason: ${reason}`,
@@ -2058,7 +2058,7 @@ export function heartbeatService(db: Db) {
     const runtimeSkillEntries = await companySkills.listRuntimeSkillEntries(agent.companyId);
     const runtimeConfig = {
       ...resolvedConfig,
-      clawdevRuntimeSkills: runtimeSkillEntries,
+      paperclipRuntimeSkills: runtimeSkillEntries,
     };
     const issueRef = issueContext
       ? {
@@ -2259,7 +2259,7 @@ export function heartbeatService(db: Db) {
           ]
         : []),
     ];
-    context.clawdevWorkspace = {
+    context.paperclipWorkspace = {
       cwd: executionWorkspace.cwd,
       source: executionWorkspace.source,
       mode: executionWorkspaceMode,
@@ -2276,7 +2276,7 @@ export function heartbeatService(db: Db) {
         return home;
       })(),
     };
-    context.clawdevWorkspaces = resolvedWorkspace.workspaceHints;
+    context.paperclipWorkspaces = resolvedWorkspace.workspaceHints;
     const runtimeServiceIntents = (() => {
       const runtimeConfig = parseObject(resolvedConfig.workspaceRuntime);
       return Array.isArray(runtimeConfig.services)
@@ -2286,9 +2286,9 @@ export function heartbeatService(db: Db) {
         : [];
     })();
     if (runtimeServiceIntents.length > 0) {
-      context.clawdevRuntimeServiceIntents = runtimeServiceIntents;
+      context.paperclipRuntimeServiceIntents = runtimeServiceIntents;
     } else {
-      delete context.clawdevRuntimeServiceIntents;
+      delete context.paperclipRuntimeServiceIntents;
     }
     if (executionWorkspace.projectId && !readNonEmptyString(context.projectId)) {
       context.projectId = executionWorkspace.projectId;
@@ -2311,9 +2311,9 @@ export function heartbeatService(db: Db) {
       issueId,
     });
     if (sessionCompaction.rotate) {
-      context.clawdevSessionHandoffMarkdown = sessionCompaction.handoffMarkdown;
-      context.clawdevSessionRotationReason = sessionCompaction.reason;
-      context.clawdevPreviousSessionId = previousSessionDisplayId ?? runtimeSessionIdForAdapter;
+      context.paperclipSessionHandoffMarkdown = sessionCompaction.handoffMarkdown;
+      context.paperclipSessionRotationReason = sessionCompaction.reason;
+      context.paperclipPreviousSessionId = previousSessionDisplayId ?? runtimeSessionIdForAdapter;
       runtimeSessionIdForAdapter = null;
       runtimeSessionParamsForAdapter = null;
       previousSessionDisplayId = null;
@@ -2323,9 +2323,9 @@ export function heartbeatService(db: Db) {
         );
       }
     } else {
-      delete context.clawdevSessionHandoffMarkdown;
-      delete context.clawdevSessionRotationReason;
-      delete context.clawdevPreviousSessionId;
+      delete context.paperclipSessionHandoffMarkdown;
+      delete context.paperclipSessionRotationReason;
+      delete context.paperclipPreviousSessionId;
     }
 
     const runtimeForAdapter = {
@@ -2454,8 +2454,8 @@ export function heartbeatService(db: Db) {
         onLog,
       });
       if (runtimeServices.length > 0) {
-        context.clawdevRuntimeServices = runtimeServices;
-        context.clawdevRuntimePrimaryUrl =
+        context.paperclipRuntimeServices = runtimeServices;
+        context.paperclipRuntimePrimaryUrl =
           runtimeServices.find((service) => readNonEmptyString(service.url))?.url ?? null;
         await db
           .update(heartbeatRuns)
@@ -2478,7 +2478,7 @@ export function heartbeatService(db: Db) {
         } catch (err) {
           await onLog(
             "stderr",
-            `[clawdev] Failed to post workspace-ready comment: ${err instanceof Error ? err.message : String(err)}\n`,
+            `[paperclip] Failed to post workspace-ready comment: ${err instanceof Error ? err.message : String(err)}\n`,
           );
         }
       }
@@ -2509,7 +2509,7 @@ export function heartbeatService(db: Db) {
             runId: run.id,
             adapterType: agent.adapterType,
           },
-          "local agent jwt secret missing or invalid; running without injected CLAWDEV_API_KEY",
+          "local agent jwt secret missing or invalid; running without injected PAPERCLIP_API_KEY",
         );
       }
       const adapterResult = await adapter.execute({
@@ -2545,8 +2545,8 @@ export function heartbeatService(db: Db) {
           ...runtimeServices,
           ...adapterManagedRuntimeServices,
         ];
-        context.clawdevRuntimeServices = combinedRuntimeServices;
-        context.clawdevRuntimePrimaryUrl =
+        context.paperclipRuntimeServices = combinedRuntimeServices;
+        context.paperclipRuntimePrimaryUrl =
           combinedRuntimeServices.find((service) => readNonEmptyString(service.url))?.url ?? null;
         await db
           .update(heartbeatRuns)
@@ -2568,7 +2568,7 @@ export function heartbeatService(db: Db) {
           } catch (err) {
             await onLog(
               "stderr",
-              `[clawdev] Failed to post adapter-managed runtime comment: ${err instanceof Error ? err.message : String(err)}\n`,
+              `[paperclip] Failed to post adapter-managed runtime comment: ${err instanceof Error ? err.message : String(err)}\n`,
             );
           }
         }

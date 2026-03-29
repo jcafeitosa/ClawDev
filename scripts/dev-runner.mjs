@@ -14,7 +14,7 @@ const autoRestartPollIntervalMs = 2500;
 const gracefulShutdownTimeoutMs = 10_000;
 const changedPathSampleLimit = 5;
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const devServerStatusFilePath = path.join(repoRoot, ".clawdev", "dev-server-status.json");
+const devServerStatusFilePath = path.join(repoRoot, ".paperclip", "dev-server-status.json");
 
 const watchedDirectories = [
   "cli",
@@ -47,7 +47,7 @@ const ignoredDirectoryNames = new Set([
 ]);
 
 const ignoredRelativePaths = new Set([
-  ".clawdev/dev-server-status.json",
+  ".paperclip/dev-server-status.json",
 ]);
 
 const tailscaleAuthFlagNames = new Set([
@@ -75,71 +75,26 @@ if (process.env.npm_config_authenticated_private === "true") {
 
 const env = {
   ...process.env,
-  CLAWDEV_UI_DEV_MIDDLEWARE: "true",
+  PAPERCLIP_UI_DEV_MIDDLEWARE: "true",
 };
 
-// Auto-detect local Redis if not explicitly configured
-if (!env.REDIS_URL && !env.CLAWDEV_REDIS_URL) {
-  try {
-    const { execSync } = await import("node:child_process");
-    execSync("redis-cli ping", { stdio: "pipe", timeout: 2000 });
-    env.REDIS_URL = "redis://localhost:6379";
-    console.log("[clawdev] auto-detected local Redis at redis://localhost:6379");
-  } catch {
-    // Redis not available — server will use setInterval fallback
-  }
-}
-
-// Auto-generate Agent JWT secret if not configured
-// Persists to the instance .env file so agents get stable API keys across restarts
-if (!env.CLAWDEV_AGENT_JWT_SECRET) {
-  const { randomBytes } = await import("node:crypto");
-  const { existsSync, readFileSync, writeFileSync, mkdirSync } = await import("node:fs");
-  const { join, dirname } = await import("node:path");
-  const { homedir } = await import("node:os");
-  const envFilePath = join(homedir(), ".clawdev", "instances", "default", ".env");
-
-  // Check if already persisted in instance .env
-  let existingSecret = null;
-  if (existsSync(envFilePath)) {
-    const content = readFileSync(envFilePath, "utf-8");
-    const match = content.match(/^CLAWDEV_AGENT_JWT_SECRET=(.+)$/m);
-    if (match) existingSecret = match[1].trim();
-  }
-
-  if (existingSecret) {
-    env.CLAWDEV_AGENT_JWT_SECRET = existingSecret;
-  } else {
-    const secret = randomBytes(32).toString("hex");
-    env.CLAWDEV_AGENT_JWT_SECRET = secret;
-    mkdirSync(dirname(envFilePath), { recursive: true });
-    const line = `CLAWDEV_AGENT_JWT_SECRET=${secret}\n`;
-    if (existsSync(envFilePath)) {
-      writeFileSync(envFilePath, readFileSync(envFilePath, "utf-8") + line);
-    } else {
-      writeFileSync(envFilePath, line);
-    }
-    console.log("[clawdev] generated Agent JWT secret and saved to", envFilePath);
-  }
-}
-
 if (mode === "dev") {
-  env.CLAWDEV_DEV_SERVER_STATUS_FILE = devServerStatusFilePath;
+  env.PAPERCLIP_DEV_SERVER_STATUS_FILE = devServerStatusFilePath;
 }
 
 if (mode === "watch") {
-  env.CLAWDEV_MIGRATION_PROMPT ??= "never";
-  env.CLAWDEV_MIGRATION_AUTO_APPLY ??= "true";
+  env.PAPERCLIP_MIGRATION_PROMPT ??= "never";
+  env.PAPERCLIP_MIGRATION_AUTO_APPLY ??= "true";
 }
 
 if (tailscaleAuth) {
-  env.CLAWDEV_DEPLOYMENT_MODE = "authenticated";
-  env.CLAWDEV_DEPLOYMENT_EXPOSURE = "private";
-  env.CLAWDEV_AUTH_BASE_URL_MODE = "auto";
+  env.PAPERCLIP_DEPLOYMENT_MODE = "authenticated";
+  env.PAPERCLIP_DEPLOYMENT_EXPOSURE = "private";
+  env.PAPERCLIP_AUTH_BASE_URL_MODE = "auto";
   env.HOST = "0.0.0.0";
-  console.log("[clawdev] dev mode: authenticated/private (tailscale-friendly) on 0.0.0.0");
+  console.log("[paperclip] dev mode: authenticated/private (tailscale-friendly) on 0.0.0.0");
 } else {
-  console.log("[clawdev] dev mode: local_trusted (default)");
+  console.log("[paperclip] dev mode: local_trusted (default)");
 }
 
 const pnpmBin = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
@@ -333,7 +288,7 @@ async function getMigrationStatusPayload() {
     process.stderr.write(
       status.stderr ||
         status.stdout ||
-        `[clawdev] Command failed with code ${status.code}: pnpm --filter @clawdev/db exec tsx src/migration-status.ts --json\n`,
+        `[paperclip] Command failed with code ${status.code}: pnpm --filter @clawdev/db exec tsx src/migration-status.ts --json\n`,
     );
     process.exit(status.code);
   }
@@ -344,7 +299,7 @@ async function getMigrationStatusPayload() {
     process.stderr.write(
       status.stderr ||
         status.stdout ||
-        "[clawdev] migration-status returned invalid JSON payload\n",
+        "[paperclip] migration-status returned invalid JSON payload\n",
     );
     throw toError(error, "Unable to parse migration-status JSON output");
   }
@@ -362,7 +317,7 @@ async function refreshPendingMigrations() {
 
 async function maybePreflightMigrations(options = {}) {
   const interactive = options.interactive ?? mode === "watch";
-  const autoApply = options.autoApply ?? env.CLAWDEV_MIGRATION_AUTO_APPLY === "true";
+  const autoApply = options.autoApply ?? env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true";
   const exitOnDecline = options.exitOnDecline ?? mode === "watch";
 
   const payload = await refreshPendingMigrations();
@@ -395,7 +350,7 @@ async function maybePreflightMigrations(options = {}) {
   if (!shouldApply) {
     if (exitOnDecline) {
       process.stderr.write(
-        `[clawdev] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). ` +
+        `[paperclip] Pending migrations detected (${formatPendingMigrationSummary(pendingMigrations)}). ` +
           "Refusing to start watch mode against a stale schema.\n",
       );
       process.exit(1);
@@ -423,7 +378,7 @@ async function maybePreflightMigrations(options = {}) {
 }
 
 async function buildPluginSdk() {
-  console.log("[clawdev] building plugin sdk...");
+  console.log("[paperclip] building plugin sdk...");
   const result = await runPnpm(
     ["--filter", "@clawdev/plugin-sdk", "build"],
     { stdio: "inherit" },
@@ -433,7 +388,7 @@ async function buildPluginSdk() {
     return;
   }
   if (result.code !== 0) {
-    console.error("[clawdev] plugin sdk build failed");
+    console.error("[paperclip] plugin sdk build failed");
     process.exit(result.code);
   }
 }
@@ -500,23 +455,7 @@ async function stopChildForRestart() {
 async function startServerChild() {
   await buildPluginSdk();
 
-  // Prefer Bun runtime when available — native Elysia support, WebSocket, better perf
-  let hasBun = false;
-  try {
-    const { execSync } = await import("node:child_process");
-    execSync("bun --version", { stdio: "pipe", timeout: 2000 });
-    hasBun = true;
-  } catch { /* Bun not available */ }
-
-  let serverScript;
-  if (hasBun) {
-    serverScript = mode === "watch" ? "dev:bun:watch" : "dev:bun";
-    console.log("[clawdev] using Bun runtime (native Elysia + WebSocket)");
-  } else {
-    serverScript = mode === "watch" ? "dev:watch" : "dev";
-    console.log("[clawdev] using Node.js/tsx runtime");
-  }
-
+  const serverScript = mode === "watch" ? "dev:watch" : "dev";
   child = spawn(
     pnpmBin,
     ["--filter", "@clawdev/server", serverScript, ...forwardedArgs],

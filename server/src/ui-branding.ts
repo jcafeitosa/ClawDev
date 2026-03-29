@@ -1,7 +1,7 @@
-const FAVICON_BLOCK_START = "<!-- CLAWDEV_FAVICON_START -->";
-const FAVICON_BLOCK_END = "<!-- CLAWDEV_FAVICON_END -->";
-const RUNTIME_BRANDING_BLOCK_START = "<!-- CLAWDEV_RUNTIME_BRANDING_START -->";
-const RUNTIME_BRANDING_BLOCK_END = "<!-- CLAWDEV_RUNTIME_BRANDING_END -->";
+const FAVICON_BLOCK_START = "<!-- PAPERCLIP_FAVICON_START -->";
+const FAVICON_BLOCK_END = "<!-- PAPERCLIP_FAVICON_END -->";
+const RUNTIME_BRANDING_BLOCK_START = "<!-- PAPERCLIP_RUNTIME_BRANDING_START -->";
+const RUNTIME_BRANDING_BLOCK_END = "<!-- PAPERCLIP_RUNTIME_BRANDING_END -->";
 
 const DEFAULT_FAVICON_LINKS = [
   '<link rel="icon" href="/favicon.ico" sizes="48x48" />',
@@ -141,7 +141,7 @@ function createFaviconDataUrl(background: string, foreground: string): string {
 }
 
 export function isWorktreeUiBrandingEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
-  return isTruthyEnvValue(env.CLAWDEV_IN_WORKTREE);
+  return isTruthyEnvValue(env.PAPERCLIP_IN_WORKTREE);
 }
 
 export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): WorktreeUiBranding {
@@ -155,8 +155,8 @@ export function getWorktreeUiBranding(env: NodeJS.ProcessEnv = process.env): Wor
     };
   }
 
-  const name = nonEmpty(env.CLAWDEV_WORKTREE_NAME) ?? nonEmpty(env.CLAWDEV_INSTANCE_ID) ?? "worktree";
-  const color = normalizeHexColor(env.CLAWDEV_WORKTREE_COLOR) ?? deriveColorFromSeed(name);
+  const name = nonEmpty(env.PAPERCLIP_WORKTREE_NAME) ?? nonEmpty(env.PAPERCLIP_INSTANCE_ID) ?? "worktree";
+  const color = normalizeHexColor(env.PAPERCLIP_WORKTREE_COLOR) ?? deriveColorFromSeed(name);
   const textColor = pickReadableTextColor(color);
 
   return {
@@ -182,10 +182,10 @@ export function renderRuntimeBrandingMeta(branding: WorktreeUiBranding): string 
   if (!branding.enabled || !branding.name || !branding.color || !branding.textColor) return "";
 
   return [
-    '<meta name="clawdev-worktree-enabled" content="true" />',
-    `<meta name="clawdev-worktree-name" content="${escapeHtmlAttribute(branding.name)}" />`,
-    `<meta name="clawdev-worktree-color" content="${escapeHtmlAttribute(branding.color)}" />`,
-    `<meta name="clawdev-worktree-text-color" content="${escapeHtmlAttribute(branding.textColor)}" />`,
+    '<meta name="paperclip-worktree-enabled" content="true" />',
+    `<meta name="paperclip-worktree-name" content="${escapeHtmlAttribute(branding.name)}" />`,
+    `<meta name="paperclip-worktree-color" content="${escapeHtmlAttribute(branding.color)}" />`,
+    `<meta name="paperclip-worktree-text-color" content="${escapeHtmlAttribute(branding.textColor)}" />`,
   ].join("\n");
 }
 

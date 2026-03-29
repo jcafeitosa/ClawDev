@@ -1,19 +1,5 @@
-import type { AdapterMeta } from "@clawdev/shared";
-
 export const type = "cursor";
 export const label = "Cursor CLI (local)";
-
-export const meta: AdapterMeta = {
-  type: "cursor",
-  label: "Cursor",
-  icon: "MousePointer",
-  authMethods: ["cli_auth"],
-  envVarNames: [],
-  docsUrl: "https://cursor.com",
-  supportsQuota: false,
-  supportsHealthCheck: true,
-  billingModel: "subscription",
-};
 export const DEFAULT_CURSOR_LOCAL_MODEL = "auto";
 
 const CURSOR_FALLBACK_MODEL_IDS = [
@@ -65,7 +51,7 @@ export const agentConfigurationDoc = `# cursor agent configuration
 Adapter: cursor
 
 Use when:
-- You want ClawDev to run Cursor Agent CLI locally as the agent runtime
+- You want Paperclip to run Cursor Agent CLI locally as the agent runtime
 - You want Cursor chat session resume across heartbeats via --resume
 - You want structured stream output in run logs via --output-format stream-json
 
@@ -92,6 +78,6 @@ Notes:
 - Runs are executed with: agent -p --output-format stream-json ...
 - Prompts are piped to Cursor via stdin.
 - Sessions are resumed with --resume when stored session cwd matches current cwd.
-- ClawDev auto-injects local skills into "~/.cursor/skills" when missing, so Cursor can discover "$clawdev" and related skills on local runs.
-- ClawDev auto-adds --yolo unless one of --trust/--yolo/-f is already present in extraArgs.
+- Paperclip auto-injects local skills into "~/.cursor/skills" when missing, so Cursor can discover "$paperclip" and related skills on local runs.
+- Paperclip auto-adds --yolo unless one of --trust/--yolo/-f is already present in extraArgs.
 `;

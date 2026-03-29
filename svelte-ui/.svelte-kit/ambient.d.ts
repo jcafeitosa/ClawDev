@@ -50,19 +50,17 @@ declare module '$env/static/private' {
 	export const npm_package_devDependencies_vite: string;
 	export const TMPDIR: string;
 	export const npm_package_devDependencies_clsx: string;
+	export const npm_package_dependencies__paperclipai_shared: string;
 	export const npm_package_scripts_dev: string;
 	export const MallocNanoZone: string;
-	export const CLAUDE_AGENT_SDK_VERSION: string;
 	export const DEFAULT_LLM_MODEL: string;
 	export const USE_LOCAL_OAUTH: string;
 	export const CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: string;
 	export const npm_package_devDependencies__sveltejs_kit: string;
 	export const npm_config_registry: string;
-	export const npm_package_dependencies_svelte_echarts: string;
 	export const GIT_EDITOR: string;
 	export const USER: string;
 	export const npm_package_description: string;
-	export const npm_package_dependencies_svelte_motion: string;
 	export const npm_package_devDependencies_tailwind_variants: string;
 	export const npm_config_recursive: string;
 	export const npm_package_license: string;
@@ -73,7 +71,6 @@ declare module '$env/static/private' {
 	export const ENABLE_TOOL_SEARCH: string;
 	export const npm_package_devDependencies__tailwindcss_vite: string;
 	export const SSH_AUTH_SOCK: string;
-	export const npm_package_dependencies__clawdev_shared: string;
 	export const __CF_USER_TEXT_ENCODING: string;
 	export const npm_execpath: string;
 	export const npm_package_devDependencies_svelte: string;
@@ -84,7 +81,6 @@ declare module '$env/static/private' {
 	export const npm_package_scripts_typecheck: string;
 	export const OPERON_SANDBOXED_NETWORK: string;
 	export const __CFBundleIdentifier: string;
-	export const npm_package_dependencies_better_auth: string;
 	export const npm_config_auto_install_peers: string;
 	export const PWD: string;
 	export const npm_package_devDependencies_tailwindcss: string;
@@ -112,10 +108,8 @@ declare module '$env/static/private' {
 	export const ANTHROPIC_BASE_URL: string;
 	export const CLAUDE_CODE_DISABLE_CRON: string;
 	export const DISABLE_MICROCOMPACT: string;
-	export const npm_package_dependencies_echarts: string;
 	export const LOGNAME: string;
 	export const npm_lifecycle_script: string;
-	export const npm_package_dependencies__elysiajs_eden: string;
 	export const COREPACK_ENABLE_AUTO_PIN: string;
 	export const npm_config_user_agent: string;
 	export const DISABLE_AUTOUPDATER: string;
@@ -124,7 +118,6 @@ declare module '$env/static/private' {
 	export const npm_package_scripts_clean: string;
 	export const USE_STAGING_OAUTH: string;
 	export const npm_node_execpath: string;
-	export const NODE_ENV: string;
 }
 
 /**
@@ -223,19 +216,17 @@ declare module '$env/dynamic/private' {
 		npm_package_devDependencies_vite: string;
 		TMPDIR: string;
 		npm_package_devDependencies_clsx: string;
+		npm_package_dependencies__paperclipai_shared: string;
 		npm_package_scripts_dev: string;
 		MallocNanoZone: string;
-		CLAUDE_AGENT_SDK_VERSION: string;
 		DEFAULT_LLM_MODEL: string;
 		USE_LOCAL_OAUTH: string;
 		CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST: string;
 		npm_package_devDependencies__sveltejs_kit: string;
 		npm_config_registry: string;
-		npm_package_dependencies_svelte_echarts: string;
 		GIT_EDITOR: string;
 		USER: string;
 		npm_package_description: string;
-		npm_package_dependencies_svelte_motion: string;
 		npm_package_devDependencies_tailwind_variants: string;
 		npm_config_recursive: string;
 		npm_package_license: string;
@@ -246,7 +237,6 @@ declare module '$env/dynamic/private' {
 		ENABLE_TOOL_SEARCH: string;
 		npm_package_devDependencies__tailwindcss_vite: string;
 		SSH_AUTH_SOCK: string;
-		npm_package_dependencies__clawdev_shared: string;
 		__CF_USER_TEXT_ENCODING: string;
 		npm_execpath: string;
 		npm_package_devDependencies_svelte: string;
@@ -257,7 +247,6 @@ declare module '$env/dynamic/private' {
 		npm_package_scripts_typecheck: string;
 		OPERON_SANDBOXED_NETWORK: string;
 		__CFBundleIdentifier: string;
-		npm_package_dependencies_better_auth: string;
 		npm_config_auto_install_peers: string;
 		PWD: string;
 		npm_package_devDependencies_tailwindcss: string;
@@ -285,10 +274,8 @@ declare module '$env/dynamic/private' {
 		ANTHROPIC_BASE_URL: string;
 		CLAUDE_CODE_DISABLE_CRON: string;
 		DISABLE_MICROCOMPACT: string;
-		npm_package_dependencies_echarts: string;
 		LOGNAME: string;
 		npm_lifecycle_script: string;
-		npm_package_dependencies__elysiajs_eden: string;
 		COREPACK_ENABLE_AUTO_PIN: string;
 		npm_config_user_agent: string;
 		DISABLE_AUTOUPDATER: string;
@@ -297,7 +284,6 @@ declare module '$env/dynamic/private' {
 		npm_package_scripts_clean: string;
 		USE_STAGING_OAUTH: string;
 		npm_node_execpath: string;
-		NODE_ENV: string;
 		[key: `PUBLIC_${string}`]: undefined;
 		[key: `${string}`]: string | undefined;
 	}

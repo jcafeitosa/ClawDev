@@ -1,15 +1,15 @@
 import fs from "node:fs";
-import { clawdevConfigSchema, type ClawDevConfig } from "@clawdev/shared";
-import { resolveClawDevConfigPath } from "./paths.js";
+import { paperclipConfigSchema, type PaperclipConfig } from "@clawdev/shared";
+import { resolvePaperclipConfigPath } from "./paths.js";
 
-export function readConfigFile(): ClawDevConfig | null {
-  const configPath = resolveClawDevConfigPath();
+export function readConfigFile(): PaperclipConfig | null {
+  const configPath = resolvePaperclipConfigPath();
 
   if (!fs.existsSync(configPath)) return null;
 
   try {
     const raw = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-    return clawdevConfigSchema.parse(raw);
+    return paperclipConfigSchema.parse(raw);
   } catch {
     return null;
   }

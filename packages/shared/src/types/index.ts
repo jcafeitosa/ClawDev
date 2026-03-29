@@ -182,7 +182,7 @@ export type {
   PluginLauncherDeclaration,
   PluginMinimumHostVersion,
   PluginUiDeclaration,
-  ClawDevPluginManifestV1,
+  PaperclipPluginManifestV1,
   PluginRecord,
   PluginStateRecord,
   PluginConfig,
@@ -192,19 +192,3 @@ export type {
   PluginJobRunRecord,
   PluginWebhookDeliveryRecord,
 } from "./plugin.js";
-export type {
-  RoutingPolicy,
-  RoutingConstraints,
-  ModelCapability,
-  RoutingDecision,
-  RoutingAlternative,
-  TaskSignals,
-  RoutingMode,
-} from "./routing.js";
-export type {
-  AdapterMeta,
-  ProviderConfig,
-  ProviderStatus,
-  ProviderModelSummary,
-  ProviderHealthEvent,
-} from "./provider.js";

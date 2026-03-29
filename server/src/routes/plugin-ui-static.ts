@@ -1,201 +1,184 @@
-import { Elysia } from "elysia";
-import { createHash } from "node:crypto";
-import fs from "node:fs";
+/**
+ * Plugin UI static file serving — Elysia port.
+ *
+ * Serves plugin UI bundles from the plugin's dist/ui/ directory.
+ * See PLUGIN_SPEC.md §19.0.3 (Bundle Serving).
+ *
+ * Security: path traversal prevented via realpath + containment check.
+ * Cache: content-hashed files → immutable; others → ETag-based revalidation.
+ */
+
+import { Elysia, t } from "elysia";
 import path from "node:path";
+import fs from "node:fs";
+import crypto from "node:crypto";
 import type { Db } from "@clawdev/db";
 import { pluginRegistryService } from "../services/plugin-registry.js";
+import { resolvePluginUiDir } from "../routes/plugin-ui-static.js";
 import { logger } from "../middleware/logger.js";
 
-const log = logger.child({ module: "plugin-ui-static" });
-
 const CONTENT_HASH_PATTERN = /[.-][a-fA-F0-9]{8,}\.\w+$/;
-const CACHE_CONTROL_IMMUTABLE = "public, max-age=31536000, immutable";
+const ONE_YEAR_SECONDS = 365 * 24 * 60 * 60;
+const CACHE_CONTROL_IMMUTABLE = `public, max-age=${ONE_YEAR_SECONDS}, immutable`;
 const CACHE_CONTROL_REVALIDATE = "public, max-age=0, must-revalidate";
 
 const MIME_TYPES: Record<string, string> = {
-  ".js": "application/javascript", ".mjs": "application/javascript",
-  ".css": "text/css", ".json": "application/json",
-  ".map": "application/json", ".html": "text/html",
-  ".svg": "image/svg+xml", ".png": "image/png",
-  ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
-  ".gif": "image/gif", ".webp": "image/webp",
-  ".woff": "font/woff", ".woff2": "font/woff2",
-  ".ttf": "font/ttf", ".eot": "application/vnd.ms-fontobject",
-  ".ico": "image/x-icon", ".txt": "text/plain",
+  ".js": "application/javascript; charset=utf-8",
+  ".mjs": "application/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".map": "application/json; charset=utf-8",
+  ".html": "text/html; charset=utf-8",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".woff": "font/woff",
+  ".woff2": "font/woff2",
+  ".ttf": "font/ttf",
+  ".ico": "image/x-icon",
 };
 
 function computeETag(size: number, mtimeMs: number): string {
-  return `"${createHash("md5").update(`${size}-${mtimeMs}`).digest("hex").slice(0, 16)}"`;
+  const hash = crypto
+    .createHash("md5")
+    .update(`v2:${size}-${mtimeMs}`)
+    .digest("hex")
+    .slice(0, 16);
+  return `"${hash}"`;
 }
 
-/**
- * Resolve a plugin's UI directory from its package location.
- *
- * @param localPluginDir - The plugin installation directory
- * @param packageName - The npm package name
- * @param entrypointsUi - The UI entrypoint path from the manifest (e.g., "./dist/ui/")
- * @param packagePath - Optional persisted package path for local-path installs
- * @returns Absolute path to the UI directory, or null if not found
- */
-export function resolvePluginUiDir(
-  localPluginDir: string,
-  packageName: string,
-  entrypointsUi: string,
-  packagePath?: string | null,
-): string | null {
-  // For local-path installs, prefer the persisted package path.
-  if (packagePath) {
-    const resolvedPackagePath = path.resolve(packagePath);
-    if (fs.existsSync(resolvedPackagePath)) {
-      const uiDirFromPackagePath = path.resolve(resolvedPackagePath, entrypointsUi);
-      if (
-        uiDirFromPackagePath.startsWith(resolvedPackagePath)
-        && fs.existsSync(uiDirFromPackagePath)
-      ) {
-        return uiDirFromPackagePath;
-      }
-    }
-  }
-
-  // Resolve the package root within the local plugin directory's node_modules.
-  let packageRoot: string;
-  if (packageName.startsWith("@")) {
-    // Scoped package: @scope/name -> node_modules/@scope/name
-    packageRoot = path.join(localPluginDir, "node_modules", ...packageName.split("/"));
-  } else {
-    packageRoot = path.join(localPluginDir, "node_modules", packageName);
-  }
-
-  if (!fs.existsSync(packageRoot)) {
-    // For local-path installs, check if the package exists directly at the
-    // localPluginDir level.
-    const directPath = path.join(localPluginDir, packageName);
-    if (fs.existsSync(directPath)) {
-      packageRoot = directPath;
-    } else {
-      return null;
-    }
-  }
-
-  // Resolve the UI directory relative to the package root
-  const uiDir = path.resolve(packageRoot, entrypointsUi);
-
-  if (!fs.existsSync(uiDir)) {
-    return null;
-  }
-
-  return uiDir;
-}
-
-export interface ElysiaPluginUiStaticOptions {
+export interface PluginUiStaticRouteOptions {
   localPluginDir: string;
 }
 
-export function pluginUiStaticRoutes(db: Db, options: ElysiaPluginUiStaticOptions) {
+export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions) {
   const registry = pluginRegistryService(db);
+  const log = logger.child({ service: "plugin-ui-static" });
 
   return new Elysia()
-    .get("/_plugins/:pluginId/ui/*", async ({ params, request, set }) => {
-      const pluginId = params.pluginId;
-      const rawFilePath = (params as Record<string, string>)["*"];
+    .get(
+      "/_plugins/:pluginId/ui/*",
+      async ({ params, set, request }) => {
+        const { pluginId } = params;
+        const rawFilePath = (params as Record<string, string>)["*"];
 
-      if (!rawFilePath || rawFilePath.length === 0) {
-        set.status = 400;
-        return { error: "File path is required" };
-      }
+        if (!rawFilePath || rawFilePath.length === 0) {
+          set.status = 400;
+          return { error: "File path is required" };
+        }
 
-      // Step 1: Look up the plugin
-      let plugin = null;
-      try { plugin = await registry.getById(pluginId); } catch (error) {
-        const maybeCode = typeof error === "object" && error !== null && "code" in error ? (error as { code?: unknown }).code : undefined;
-        if (maybeCode !== "22P02") throw error;
-      }
-      if (!plugin) plugin = await registry.getByKey(pluginId);
-      if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
+        // Look up plugin
+        let plugin = null;
+        try {
+          plugin = await registry.getById(pluginId);
+        } catch (error) {
+          const maybeCode =
+            typeof error === "object" && error !== null && "code" in error
+              ? (error as { code?: unknown }).code
+              : undefined;
+          if (maybeCode !== "22P02") throw error;
+        }
+        if (!plugin) plugin = await registry.getByKey(pluginId);
 
-      // Step 2: Verify ready + UI declared
-      if (plugin.status !== "ready") { set.status = 403; return { error: `Plugin UI is not available (status: ${plugin.status})` }; }
-      const manifest = plugin.manifestJson;
-      if (!manifest?.entrypoints?.ui) { set.status = 404; return { error: "Plugin does not declare a UI bundle" }; }
+        if (!plugin) {
+          set.status = 404;
+          return { error: "Plugin not found" };
+        }
 
-      // Step 2b: Dev proxy
-      try {
-        const configRow = await registry.getConfig(plugin.id);
-        const devUiUrl = configRow && typeof configRow === "object" && "configJson" in configRow
-          ? ((configRow as { configJson: Record<string, unknown> }).configJson?.devUiUrl as string | undefined)
-          : undefined;
+        if (plugin.status !== "ready") {
+          set.status = 403;
+          return { error: `Plugin UI is not available (status: ${plugin.status})` };
+        }
 
-        if (typeof devUiUrl === "string" && devUiUrl.length > 0) {
-          if (process.env.NODE_ENV !== "production") {
-            let decodedPath: string;
-            try { decodedPath = decodeURIComponent(rawFilePath); } catch { set.status = 400; return { error: "Invalid file path" }; }
-            if (decodedPath.includes("://") || decodedPath.startsWith("//") || decodedPath.startsWith("\\\\")) { set.status = 400; return { error: "Invalid file path" }; }
-            const targetUrl = new URL(rawFilePath, devUiUrl.endsWith("/") ? devUiUrl : devUiUrl + "/");
-            if (targetUrl.protocol !== "http:" && targetUrl.protocol !== "https:") { set.status = 400; return { error: "devUiUrl must use http or https protocol" }; }
-            const devHost = targetUrl.hostname;
-            const isLoopback = devHost === "localhost" || devHost === "127.0.0.1" || devHost === "::1" || devHost === "[::1]";
-            if (!isLoopback) { set.status = 400; return { error: "devUiUrl must target localhost" }; }
-            try {
-              const controller = new AbortController();
-              const timeout = setTimeout(() => controller.abort(), 10_000);
-              try {
-                const upstream = await fetch(targetUrl.href, { signal: controller.signal });
-                if (!upstream.ok) { set.status = upstream.status; return { error: `Dev server returned ${upstream.status}` }; }
-                const contentType = upstream.headers.get("content-type");
-                const body = await upstream.arrayBuffer();
-                const headers: Record<string, string> = { "cache-control": "no-cache, no-store, must-revalidate", "access-control-allow-origin": "*" };
-                if (contentType) headers["content-type"] = contentType;
-                return new Response(body, { headers });
-              } finally { clearTimeout(timeout); }
-            } catch { /* fall through to static serving */ }
+        const manifest = plugin.manifestJson;
+        if (!manifest?.entrypoints?.ui) {
+          set.status = 404;
+          return { error: "Plugin does not declare a UI bundle" };
+        }
+
+        // Resolve UI directory
+        const uiDir = resolvePluginUiDir(
+          options.localPluginDir,
+          plugin.packageName,
+          manifest.entrypoints.ui,
+          plugin.packagePath,
+        );
+
+        if (!uiDir) {
+          log.warn(
+            { pluginId: plugin.id, pluginKey: plugin.pluginKey, packageName: plugin.packageName },
+            "plugin-ui-static: UI directory not found on disk",
+          );
+          set.status = 404;
+          return { error: "Plugin UI directory not found" };
+        }
+
+        // Resolve file path and prevent traversal
+        const resolvedFilePath = path.resolve(uiDir, rawFilePath);
+
+        let fileStat: fs.Stats;
+        try {
+          fileStat = fs.statSync(resolvedFilePath);
+        } catch {
+          set.status = 404;
+          return { error: "File not found" };
+        }
+
+        // Symlink traversal check
+        let realFilePath: string;
+        let realUiDir: string;
+        try {
+          realFilePath = fs.realpathSync(resolvedFilePath);
+          realUiDir = fs.realpathSync(uiDir);
+        } catch {
+          set.status = 404;
+          return { error: "File not found" };
+        }
+
+        const relative = path.relative(realUiDir, realFilePath);
+        if (relative.startsWith("..") || path.isAbsolute(relative)) {
+          set.status = 403;
+          return { error: "Access denied" };
+        }
+
+        if (!fileStat.isFile()) {
+          set.status = 404;
+          return { error: "File not found" };
+        }
+
+        // Cache strategy
+        const basename = path.basename(resolvedFilePath);
+        const isContentHashed = CONTENT_HASH_PATTERN.test(basename);
+
+        if (isContentHashed) {
+          set.headers["cache-control"] = CACHE_CONTROL_IMMUTABLE;
+        } else {
+          set.headers["cache-control"] = CACHE_CONTROL_REVALIDATE;
+          const etag = computeETag(fileStat.size, fileStat.mtimeMs);
+          set.headers["etag"] = etag;
+
+          const ifNoneMatch = request.headers.get("if-none-match");
+          if (ifNoneMatch === etag) {
+            set.status = 304;
+            return "";
           }
         }
-      } catch { /* config lookup failure — fall through */ }
 
-      // Step 3: Resolve UI directory
-      const uiDir = resolvePluginUiDir(options.localPluginDir, plugin.packageName, manifest.entrypoints.ui, plugin.packagePath);
-      if (!uiDir) { set.status = 404; return { error: "Plugin UI directory not found" }; }
+        // Content-Type
+        const ext = path.extname(resolvedFilePath).toLowerCase();
+        const contentType = MIME_TYPES[ext];
+        if (contentType) {
+          set.headers["content-type"] = contentType;
+        }
 
-      // Step 4: Resolve file path + traversal prevention
-      const resolvedFilePath = path.resolve(uiDir, rawFilePath);
-      let fileStat: fs.Stats;
-      try { fileStat = fs.statSync(resolvedFilePath); } catch { set.status = 404; return { error: "File not found" }; }
+        // CORS
+        set.headers["access-control-allow-origin"] = "*";
 
-      let realFilePath: string;
-      let realUiDir: string;
-      try { realFilePath = fs.realpathSync(resolvedFilePath); realUiDir = fs.realpathSync(uiDir); } catch { set.status = 404; return { error: "File not found" }; }
-      const relative = path.relative(realUiDir, realFilePath);
-      if (relative.startsWith("..") || path.isAbsolute(relative)) { set.status = 403; return { error: "Access denied" }; }
-      if (!fileStat.isFile()) { set.status = 404; return { error: "File not found" }; }
-
-      // Step 5: Cache + ETag
-      const basename = path.basename(resolvedFilePath);
-      const isContentHashed = CONTENT_HASH_PATTERN.test(basename);
-      const headers: Record<string, string> = { "access-control-allow-origin": "*" };
-
-      if (isContentHashed) {
-        headers["cache-control"] = CACHE_CONTROL_IMMUTABLE;
-      } else {
-        headers["cache-control"] = CACHE_CONTROL_REVALIDATE;
-        const etag = computeETag(fileStat.size, fileStat.mtimeMs);
-        headers["etag"] = etag;
-        const ifNoneMatch = request.headers.get("if-none-match");
-        if (ifNoneMatch === etag) return new Response(null, { status: 304, headers });
-      }
-
-      // Step 6: Content-Type
-      const ext = path.extname(resolvedFilePath).toLowerCase();
-      const contentType = MIME_TYPES[ext];
-      if (contentType) headers["content-type"] = contentType;
-
-      // Step 7: Serve file using Bun.file() for optimal performance
-      try {
-        const fileContent = fs.readFileSync(resolvedFilePath);
-        return new Response(fileContent, { headers });
-      } catch (err) {
-        log.error({ err, pluginId: plugin.id, filePath: resolvedFilePath }, "plugin-ui-static: error serving file");
-        set.status = 500;
-        return { error: "Failed to serve file" };
-      }
-    });
+        // Send file
+        return Bun.file(resolvedFilePath);
+      },
+    );
 }

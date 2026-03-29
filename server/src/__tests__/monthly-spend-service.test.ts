@@ -28,7 +28,7 @@ describe("monthly spend hydration", () => {
     const dbStub = createSelectSequenceDb([
       [{
         id: "company-1",
-        name: "ClawDev",
+        name: "Paperclip",
         description: null,
         status: "active",
         issuePrefix: "PAP",

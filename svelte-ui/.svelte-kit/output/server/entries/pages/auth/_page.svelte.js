@@ -1,20 +1,9 @@
 import "clsx";
-import { a as authClient } from "../../../chunks/auth-client.js";
-import "@sveltejs/kit/internal";
-import "../../../chunks/exports.js";
-import "../../../chunks/utils2.js";
-import "@sveltejs/kit/internal/server";
-import "../../../chunks/root.js";
-import "../../../chunks/state.svelte.js";
-function _page($$renderer, $$props) {
-  $$renderer.component(($$renderer2) => {
-    authClient.useSession();
-    {
-      $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<div class="auth-page svelte-1s728sz" style="align-items:center;justify-content:center;"><p style="color:#64748b;font-size:0.875rem;">Loading…</p></div>`);
-    }
-    $$renderer2.push(`<!--]-->`);
-  });
+import { B as Box } from "../../../chunks/box.js";
+function _page($$renderer) {
+  $$renderer.push(`<div class="flex h-full items-center justify-center"><div class="flex flex-col items-center gap-6 w-full max-w-sm px-4"><div class="flex flex-col items-center gap-2">`);
+  Box($$renderer, { class: "size-10 text-foreground" });
+  $$renderer.push(`<!----> <h1 class="text-xl font-semibold">ClawDev</h1> <p class="text-sm text-muted-foreground">Sign in to continue</p></div> <div class="w-full space-y-3"><p class="text-sm text-muted-foreground text-center">Auth page — migration in progress.</p></div></div></div>`);
 }
 export {
   _page as default

@@ -1,70 +1,33 @@
-import { Elysia } from "elysia";
-import { z } from "zod";
+/**
+ * Activity routes — Elysia port.
+ *
+ * Provides activity feed for companies.
+ */
+
+import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { notFound } from "../errors.js";
-import { activityService } from "../services/activity.js";
-import { issueService } from "../services/index.js";
-import { sanitizeRecord } from "../redaction.js";
-import { assertBoard, assertCompanyAccess } from "./authz.js";
-import { authPlugin } from "../plugins/auth.js";
+import { activityLogs } from "@clawdev/db";
+import { eq, desc } from "drizzle-orm";
+import { companyIdParam, paginationQuery } from "../middleware/index.js";
 
-const createActivitySchema = z.object({
-  actorType: z.enum(["agent", "user", "system"]).optional().default("system"),
-  actorId: z.string().min(1),
-  action: z.string().min(1),
-  entityType: z.string().min(1),
-  entityId: z.string().min(1),
-  agentId: z.string().uuid().optional().nullable(),
-  details: z.record(z.unknown()).optional().nullable(),
-});
-
-export function activityRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
-  const svc = activityService(db);
-  const issueSvc = issueService(db);
-
-  async function resolveIssueByRef(rawId: string) {
-    if (/^[A-Z]+-\d+$/i.test(rawId)) {
-      return issueSvc.getByIdentifier(rawId);
-    }
-    return issueSvc.getById(rawId);
-  }
-
+export function activityRoutes(db: Db) {
   return new Elysia()
-    .use(authPlugin)
-    .get("/companies/:companyId/activity", async ({ params, query, actor }) => {
-      assertCompanyAccess(actor, params.companyId);
-      const filters = {
-        companyId: params.companyId,
-        agentId: (query as Record<string, string>).agentId,
-        entityType: (query as Record<string, string>).entityType,
-        entityId: (query as Record<string, string>).entityId,
-      };
-      return svc.list(filters);
-    })
-    .post("/companies/:companyId/activity", async ({ params, body, actor, set }) => {
-      assertBoard(actor);
-      const parsed = createActivitySchema.parse(body);
-      const event = await svc.create({
-        companyId: params.companyId,
-        ...parsed,
-        details: parsed.details ? sanitizeRecord(parsed.details) : null,
-      });
-      set.status = 201;
-      return event;
-    })
-    .get("/issues/:id/activity", async ({ params, actor }) => {
-      const issue = await resolveIssueByRef(params.id);
-      if (!issue) throw notFound("Issue not found");
-      assertCompanyAccess(actor, issue.companyId);
-      return svc.forIssue(issue.id);
-    })
-    .get("/issues/:id/runs", async ({ params, actor }) => {
-      const issue = await resolveIssueByRef(params.id);
-      if (!issue) throw notFound("Issue not found");
-      assertCompanyAccess(actor, issue.companyId);
-      return svc.runsForIssue(issue.companyId, issue.id);
-    })
-    .get("/heartbeat-runs/:runId/issues", async ({ params }) => {
-      return svc.issuesForRun(params.runId);
-    });
+    .get(
+      "/companies/:companyId/activity",
+      async ({ params, query }) => {
+        const limit = Number(query.limit) || 50;
+        const offset = ((Number(query.page) || 1) - 1) * limit;
+
+        const rows = await db
+          .select()
+          .from(activityLogs)
+          .where(eq(activityLogs.companyId, params.companyId))
+          .orderBy(desc(activityLogs.createdAt))
+          .limit(limit)
+          .offset(offset);
+
+        return { activities: rows };
+      },
+      { params: companyIdParam },
+    );
 }

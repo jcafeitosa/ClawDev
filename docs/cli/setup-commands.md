@@ -5,32 +5,32 @@ summary: Onboard, run, doctor, and configure
 
 Instance setup and diagnostics commands.
 
-## `clawdev run`
+## `paperclipai run`
 
 One-command bootstrap and start:
 
 ```sh
-pnpm clawdev run
+pnpm paperclipai run
 ```
 
 Does:
 
 1. Auto-onboards if config is missing
-2. Runs `clawdev doctor` with repair enabled
+2. Runs `paperclipai doctor` with repair enabled
 3. Starts the server when checks pass
 
 Choose a specific instance:
 
 ```sh
-pnpm clawdev run --instance dev
+pnpm paperclipai run --instance dev
 ```
 
-## `clawdev onboard`
+## `paperclipai onboard`
 
 Interactive first-time setup:
 
 ```sh
-pnpm clawdev onboard
+pnpm paperclipai onboard
 ```
 
 First prompt:
@@ -41,22 +41,22 @@ First prompt:
 Start immediately after onboarding:
 
 ```sh
-pnpm clawdev onboard --run
+pnpm paperclipai onboard --run
 ```
 
 Non-interactive defaults + immediate start (opens browser on server listen):
 
 ```sh
-pnpm clawdev onboard --yes
+pnpm paperclipai onboard --yes
 ```
 
-## `clawdev doctor`
+## `paperclipai doctor`
 
 Health checks with optional auto-repair:
 
 ```sh
-pnpm clawdev doctor
-pnpm clawdev doctor --repair
+pnpm paperclipai doctor
+pnpm paperclipai doctor --repair
 ```
 
 Validates:
@@ -67,51 +67,51 @@ Validates:
 - Storage configuration
 - Missing key files
 
-## `clawdev configure`
+## `paperclipai configure`
 
 Update configuration sections:
 
 ```sh
-pnpm clawdev configure --section server
-pnpm clawdev configure --section secrets
-pnpm clawdev configure --section storage
+pnpm paperclipai configure --section server
+pnpm paperclipai configure --section secrets
+pnpm paperclipai configure --section storage
 ```
 
-## `clawdev env`
+## `paperclipai env`
 
 Show resolved environment configuration:
 
 ```sh
-pnpm clawdev env
+pnpm paperclipai env
 ```
 
-## `clawdev allowed-hostname`
+## `paperclipai allowed-hostname`
 
 Allow a private hostname for authenticated/private mode:
 
 ```sh
-pnpm clawdev allowed-hostname my-tailscale-host
+pnpm paperclipai allowed-hostname my-tailscale-host
 ```
 
 ## Local Storage Paths
 
 | Data | Default Path |
 |------|-------------|
-| Config | `~/.clawdev/instances/default/config.json` |
-| Database | `~/.clawdev/instances/default/db` |
-| Logs | `~/.clawdev/instances/default/logs` |
-| Storage | `~/.clawdev/instances/default/data/storage` |
-| Secrets key | `~/.clawdev/instances/default/secrets/master.key` |
+| Config | `~/.paperclip/instances/default/config.json` |
+| Database | `~/.paperclip/instances/default/db` |
+| Logs | `~/.paperclip/instances/default/logs` |
+| Storage | `~/.paperclip/instances/default/data/storage` |
+| Secrets key | `~/.paperclip/instances/default/secrets/master.key` |
 
 Override with:
 
 ```sh
-CLAWDEV_HOME=/custom/home CLAWDEV_INSTANCE_ID=dev pnpm clawdev run
+PAPERCLIP_HOME=/custom/home PAPERCLIP_INSTANCE_ID=dev pnpm paperclipai run
 ```
 
 Or pass `--data-dir` directly on any command:
 
 ```sh
-pnpm clawdev run --data-dir ./tmp/clawdev-dev
-pnpm clawdev doctor --data-dir ./tmp/clawdev-dev
+pnpm paperclipai run --data-dir ./tmp/paperclip-dev
+pnpm paperclipai doctor --data-dir ./tmp/paperclip-dev
 ```

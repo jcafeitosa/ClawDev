@@ -301,7 +301,7 @@ export type {
   PluginLauncherDeclaration,
   PluginMinimumHostVersion,
   PluginUiDeclaration,
-  ClawDevPluginManifestV1,
+  PaperclipPluginManifestV1,
   PluginRecord,
   PluginStateRecord,
   PluginConfig,
@@ -312,18 +312,6 @@ export type {
   PluginWebhookDeliveryRecord,
   QuotaWindow,
   ProviderQuotaResult,
-  RoutingPolicy,
-  RoutingConstraints,
-  ModelCapability,
-  RoutingDecision,
-  RoutingAlternative,
-  TaskSignals,
-  RoutingMode,
-  AdapterMeta,
-  ProviderConfig,
-  ProviderStatus,
-  ProviderModelSummary,
-  ProviderHealthEvent,
 } from "./types/index.js";
 
 export {
@@ -546,12 +534,6 @@ export {
   type PluginStateScopeKey,
   type SetPluginState,
   type ListPluginState,
-  routingConstraintsSchema,
-  routingPolicySchema,
-  updateRoutingPolicySchema,
-  type RoutingConstraintsInput,
-  type RoutingPolicyInput,
-  type UpdateRoutingPolicyInput,
 } from "./validators/index.js";
 
 export { API_PREFIX, API } from "./api.js";
@@ -571,7 +553,7 @@ export {
 } from "./project-mentions.js";
 
 export {
-  clawdevConfigSchema,
+  paperclipConfigSchema,
   configMetaSchema,
   llmConfigSchema,
   databaseBackupConfigSchema,
@@ -584,7 +566,7 @@ export {
   storageLocalDiskConfigSchema,
   storageS3ConfigSchema,
   secretsLocalEncryptedConfigSchema,
-  type ClawDevConfig,
+  type PaperclipConfig,
   type LlmConfig,
   type DatabaseBackupConfig,
   type DatabaseConfig,

@@ -29,8 +29,6 @@ export const AGENT_ADAPTER_TYPES = [
   "opencode_local",
   "pi_local",
   "cursor",
-  "gemini_local",
-  "copilot_local",
   "openclaw_gateway",
   "hermes_local",
 ] as const;
@@ -354,7 +352,7 @@ export const PERMISSION_KEYS = [
 export type PermissionKey = (typeof PERMISSION_KEYS)[number];
 
 // ---------------------------------------------------------------------------
-// Plugin System — see doc/plugins/PLUGIN_SPEC.md for the full specification
+// Plugin System — see internal-docs/plugins/PLUGIN_SPEC.md for the full specification
 // ---------------------------------------------------------------------------
 
 /**
@@ -464,7 +462,7 @@ export type PluginCapability = (typeof PLUGIN_CAPABILITIES)[number];
 
 /**
  * UI extension slot types. Each slot type corresponds to a mount point in the
- * ClawDev UI where plugin components can be rendered.
+ * Paperclip UI where plugin components can be rendered.
  *
  * @see PLUGIN_SPEC.md §19 — UI Extension Model
  */

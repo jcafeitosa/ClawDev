@@ -40,7 +40,7 @@ import type { Db } from "@clawdev/db";
 import type {
   PluginStatus,
   PluginRecord,
-  ClawDevPluginManifestV1,
+  PaperclipPluginManifestV1,
 } from "@clawdev/shared";
 import { pluginRegistryService } from "./plugin-registry.js";
 import { pluginLoader, type PluginLoader } from "./plugin-loader.js";

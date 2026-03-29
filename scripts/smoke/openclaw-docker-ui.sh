@@ -278,7 +278,7 @@ EOF
   Auto-detect failed. Try: http://host.docker.internal:${CLAWDEV_HOST_PORT}
   (Do not use http://127.0.0.1:${CLAWDEV_HOST_PORT} inside the container.)
   If ClawDev rejects the host, run on host machine:
-    pnpm clawdev allowed-hostname host.docker.internal
+    pnpm clawdevai allowed-hostname host.docker.internal
   Then restart ClawDev and re-run this script.
 EOF
   fi
@@ -311,7 +311,7 @@ EOF
   Auto-detect failed. Try: http://host.docker.internal:${CLAWDEV_HOST_PORT}
   (Do not use http://127.0.0.1:${CLAWDEV_HOST_PORT} inside the container.)
   If ClawDev rejects the host, run on host machine:
-    pnpm clawdev allowed-hostname host.docker.internal
+    pnpm clawdevai allowed-hostname host.docker.internal
   Then restart ClawDev and re-run this script.
 EOF
   fi

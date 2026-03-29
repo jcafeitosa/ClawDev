@@ -3,14 +3,14 @@ title: Storage
 summary: Local disk vs S3-compatible storage
 ---
 
-ClawDev stores uploaded files (issue attachments, images) using a configurable storage provider.
+Paperclip stores uploaded files (issue attachments, images) using a configurable storage provider.
 
 ## Local Disk (Default)
 
 Files are stored at:
 
 ```
-~/.clawdev/instances/default/data/storage
+~/.paperclip/instances/default/data/storage
 ```
 
 No configuration required. Suitable for local development and single-machine deployments.
@@ -22,7 +22,7 @@ For production or multi-node deployments, use S3-compatible object storage (AWS 
 Configure via CLI:
 
 ```sh
-pnpm clawdev configure --section storage
+pnpm paperclipai configure --section storage
 ```
 
 ## Configuration
@@ -35,5 +35,5 @@ pnpm clawdev configure --section storage
 Storage configuration is stored in the instance config file:
 
 ```
-~/.clawdev/instances/default/config.json
+~/.paperclip/instances/default/config.json
 ```

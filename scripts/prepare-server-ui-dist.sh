@@ -1,21 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# prepare-server-ui-dist.sh — Build the SvelteKit UI and copy it into server/ui-dist.
-# This keeps @clawdev/server publish artifacts self-contained for static UI serving.
+# prepare-server-ui-dist.sh — Build the UI and copy it into server/ui-dist.
+# This keeps @clawdevai/server publish artifacts self-contained for static UI serving.
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-UI_DIST="$REPO_ROOT/svelte-ui/build"
+UI_DIST="$REPO_ROOT/ui/dist"
 SERVER_UI_DIST="$REPO_ROOT/server/ui-dist"
 
-echo "  -> Building @clawdev/svelte-ui..."
-pnpm --dir "$REPO_ROOT" --filter @clawdev/svelte-ui build
+echo "  -> Building @clawdevai/ui..."
+pnpm --dir "$REPO_ROOT" --filter @clawdevai/ui build
 
 if [ ! -f "$UI_DIST/index.html" ]; then
-  echo "Error: SvelteKit build output missing at $UI_DIST/index.html"
+  echo "Error: UI build output missing at $UI_DIST/index.html"
   exit 1
 fi
 
 rm -rf "$SERVER_UI_DIST"
 cp -r "$UI_DIST" "$SERVER_UI_DIST"
-echo "  -> Copied svelte-ui/build to server/ui-dist"
+echo "  -> Copied ui/dist to server/ui-dist"

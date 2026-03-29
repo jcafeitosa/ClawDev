@@ -30,20 +30,7 @@ const options = {
   service_worker_options: void 0,
   server_error_boundaries: false,
   templates: {
-    app: ({ head, body, assets, nonce, env }) => '<!doctype html>\n<html lang="en">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <link rel="icon" href="' + assets + `/favicon.svg" />
-    <title>ClawDev</title>
-    <script>
-      // Restore theme before first paint to prevent flash
-      (function () {
-        var stored = localStorage.getItem('paperclip.theme');
-        // Also check legacy key
-        if (!stored) stored = localStorage.getItem('clawdev.theme');
-        var theme = stored === 'light' ? 'light' : stored === 'dark' ? 'dark' : 'light';
-        if (theme === 'dark') document.documentElement.classList.add('dark');
-        document.documentElement.style.colorScheme = theme;
-      })();
-    <\/script>
-    ` + head + '\n  </head>\n  <body data-sveltekit-preload-data="hover">\n    <div style="display: contents">' + body + "</div>\n  </body>\n</html>\n",
+    app: ({ head, body, assets, nonce, env }) => '<!doctype html>\n<html lang="en" class="dark">\n  <head>\n    <meta charset="utf-8" />\n    <meta name="viewport" content="width=device-width, initial-scale=1" />\n    <link rel="icon" href="' + assets + '/favicon.svg" />\n    <title>ClawDev</title>\n    ' + head + '\n  </head>\n  <body data-sveltekit-preload-data="hover">\n    <div style="display: contents">' + body + "</div>\n  </body>\n</html>\n",
     error: ({ status, message }) => '<!doctype html>\n<html lang="en">\n	<head>\n		<meta charset="utf-8" />\n		<title>' + message + `</title>
 
 		<style>
@@ -115,7 +102,7 @@ const options = {
 		<div class="error">
 			<span class="status">` + status + '</span>\n			<div class="message">\n				<h1>' + message + "</h1>\n			</div>\n		</div>\n	</body>\n</html>\n"
   },
-  version_hash: "oyho4y"
+  version_hash: "1i9hmgj"
 };
 async function get_hooks() {
   let handle;

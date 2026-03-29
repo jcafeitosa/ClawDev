@@ -7,16 +7,9 @@
   const crumbs = $derived(breadcrumbStore.items);
 </script>
 
-<header
-  data-slot="breadcrumb-bar"
-  class="flex h-14 shrink-0 items-center gap-3 border-b border-[var(--clawdev-bg-surface-border)] px-4 bg-[var(--clawdev-bg-base)]"
->
+<header data-slot="breadcrumb-bar" class="flex h-14 shrink-0 items-center gap-3 border-b px-4">
   {#if sidebarStore.isMobile}
-    <button
-      class="p-1 -ml-1 rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.1)]"
-      onclick={() => sidebarStore.toggle()}
-      aria-label="Toggle sidebar"
-    >
+    <button class="p-1 -ml-1 rounded-md hover:bg-accent" onclick={() => sidebarStore.toggle()} aria-label="Toggle sidebar">
       <Menu class="size-5" />
     </button>
   {/if}
@@ -24,17 +17,17 @@
   {#if crumbs.length === 0}
     <div></div>
   {:else if crumbs.length === 1}
-    <h1 class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">{crumbs[0].label}</h1>
+    <h1 class="text-sm font-semibold truncate">{crumbs[0].label}</h1>
   {:else}
-    <nav class="flex items-center gap-1.5 text-sm text-[var(--clawdev-text-muted)] truncate">
+    <nav class="flex items-center gap-1.5 text-sm text-muted-foreground truncate">
       {#each crumbs as crumb, i}
         {#if i > 0}
-          <span class="text-[var(--clawdev-text-muted)]/40">/</span>
+          <span class="text-muted-foreground/40">/</span>
         {/if}
         {#if i < crumbs.length - 1 && crumb.href}
-          <a href={crumb.href} class="hover:text-[var(--clawdev-text-primary)] transition-colors truncate max-w-[120px]">{crumb.label}</a>
+          <a href={crumb.href} class="hover:text-foreground transition-colors truncate max-w-[120px]">{crumb.label}</a>
         {:else}
-          <span class={cn(i === crumbs.length - 1 && "text-[var(--clawdev-text-primary)] font-medium", "truncate max-w-[200px]")}>{crumb.label}</span>
+          <span class={cn(i === crumbs.length - 1 && "text-foreground font-medium", "truncate max-w-[200px]")}>{crumb.label}</span>
         {/if}
       {/each}
     </nav>

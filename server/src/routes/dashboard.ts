@@ -1,17 +1,23 @@
+/**
+ * Dashboard routes — Elysia port.
+ *
+ * Provides aggregated dashboard data for companies.
+ */
+
 import { Elysia } from "elysia";
 import type { Db } from "@clawdev/db";
-import { dashboardService } from "../services/dashboard.js";
-import { assertCompanyAccess } from "./authz.js";
-import { authPlugin } from "../plugins/auth.js";
-import type { DeploymentMode } from "@clawdev/shared";
+import { dashboardService } from "../services/index.js";
+import { companyIdParam } from "../middleware/index.js";
 
-export function dashboardRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
+export function dashboardRoutes(db: Db) {
   const svc = dashboardService(db);
 
-  return new Elysia()
-    .use(authPlugin)
-    .get("/companies/:companyId/dashboard", async ({ params, actor }) => {
-      assertCompanyAccess(actor, params.companyId);
-      return svc.summary(params.companyId);
-    });
+  return new Elysia().get(
+    "/companies/:companyId/dashboard",
+    async ({ params }) => {
+      const data = await svc.getDashboard(params.companyId);
+      return data;
+    },
+    { params: companyIdParam },
+  );
 }

@@ -56,6 +56,3 @@ export { pluginEntities } from "./plugin_entities.js";
 export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
-export { routingDecisions } from "./routing_decisions.js";
-export { providerConfigs } from "./provider_configs.js";
-export { providerHealthEvents } from "./provider_health_events.js";

@@ -17,7 +17,7 @@ export {
   resolvePathValue,
   renderTemplate,
   redactEnvForLogs,
-  buildClawDevEnv,
+  buildPaperclipEnv,
   defaultPathForPlatform,
   ensurePathInEnv,
   ensureAbsoluteDirectory,

@@ -22,7 +22,7 @@ export type ResolvedDatabaseTarget =
   | {
       mode: "postgres";
       connectionString: string;
-      source: "DATABASE_URL" | "clawdev-env" | "config.database.connectionString";
+      source: "DATABASE_URL" | "paperclip-env" | "config.database.connectionString";
       configPath: string;
       envPath: string;
     }
@@ -41,31 +41,31 @@ function expandHomePrefix(value: string): string {
   return value;
 }
 
-function resolveClawDevHomeDir(): string {
-  const envHome = process.env.CLAWDEV_HOME?.trim();
+function resolvePaperclipHomeDir(): string {
+  const envHome = process.env.PAPERCLIP_HOME?.trim();
   if (envHome) return path.resolve(expandHomePrefix(envHome));
-  return path.resolve(os.homedir(), ".clawdev");
+  return path.resolve(os.homedir(), ".paperclip");
 }
 
-function resolveClawDevInstanceId(): string {
-  const raw = process.env.CLAWDEV_INSTANCE_ID?.trim() || DEFAULT_INSTANCE_ID;
+function resolvePaperclipInstanceId(): string {
+  const raw = process.env.PAPERCLIP_INSTANCE_ID?.trim() || DEFAULT_INSTANCE_ID;
   if (!INSTANCE_ID_RE.test(raw)) {
-    throw new Error(`Invalid CLAWDEV_INSTANCE_ID '${raw}'.`);
+    throw new Error(`Invalid PAPERCLIP_INSTANCE_ID '${raw}'.`);
   }
   return raw;
 }
 
 function resolveDefaultConfigPath(): string {
   return path.resolve(
-    resolveClawDevHomeDir(),
+    resolvePaperclipHomeDir(),
     "instances",
-    resolveClawDevInstanceId(),
+    resolvePaperclipInstanceId(),
     CONFIG_BASENAME,
   );
 }
 
 function resolveDefaultEmbeddedPostgresDir(): string {
-  return path.resolve(resolveClawDevHomeDir(), "instances", resolveClawDevInstanceId(), "db");
+  return path.resolve(resolvePaperclipHomeDir(), "instances", resolvePaperclipInstanceId(), "db");
 }
 
 function resolveHomeAwarePath(value: string): string {
@@ -76,7 +76,7 @@ function findConfigFileFromAncestors(startDir: string): string | null {
   let currentDir = path.resolve(startDir);
 
   while (true) {
-    const candidate = path.resolve(currentDir, ".clawdev", CONFIG_BASENAME);
+    const candidate = path.resolve(currentDir, ".paperclip", CONFIG_BASENAME);
     if (existsSync(candidate)) return candidate;
 
     const nextDir = path.resolve(currentDir, "..");
@@ -85,14 +85,14 @@ function findConfigFileFromAncestors(startDir: string): string | null {
   }
 }
 
-function resolveClawDevConfigPath(): string {
-  if (process.env.CLAWDEV_CONFIG?.trim()) {
-    return path.resolve(process.env.CLAWDEV_CONFIG.trim());
+function resolvePaperclipConfigPath(): string {
+  if (process.env.PAPERCLIP_CONFIG?.trim()) {
+    return path.resolve(process.env.PAPERCLIP_CONFIG.trim());
   }
   return findConfigFileFromAncestors(process.cwd()) ?? resolveDefaultConfigPath();
 }
 
-function resolveClawDevEnvPath(configPath: string): string {
+function resolvePaperclipEnvPath(configPath: string): string {
   return path.resolve(path.dirname(configPath), ENV_BASENAME);
 }
 
@@ -213,8 +213,8 @@ function readConfig(configPath: string): PartialConfig | null {
 }
 
 export function resolveDatabaseTarget(): ResolvedDatabaseTarget {
-  const configPath = resolveClawDevConfigPath();
-  const envPath = resolveClawDevEnvPath(configPath);
+  const configPath = resolvePaperclipConfigPath();
+  const envPath = resolvePaperclipEnvPath(configPath);
   const envEntries = readEnvEntries(envPath);
 
   const envUrl = process.env.DATABASE_URL?.trim();
@@ -233,7 +233,7 @@ export function resolveDatabaseTarget(): ResolvedDatabaseTarget {
     return {
       mode: "postgres",
       connectionString: fileEnvUrl,
-      source: "clawdev-env",
+      source: "paperclip-env",
       configPath,
       envPath,
     };

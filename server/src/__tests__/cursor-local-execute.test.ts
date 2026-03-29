@@ -8,12 +8,12 @@ async function writeFakeCursorCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
 const fs = require("node:fs");
 
-const capturePath = process.env.CLAWDEV_TEST_CAPTURE_PATH;
+const capturePath = process.env.PAPERCLIP_TEST_CAPTURE_PATH;
 const payload = {
   argv: process.argv.slice(2),
   prompt: fs.readFileSync(0, "utf8"),
-  clawdevEnvKeys: Object.keys(process.env)
-    .filter((key) => key.startsWith("CLAWDEV_"))
+  paperclipEnvKeys: Object.keys(process.env)
+    .filter((key) => key.startsWith("PAPERCLIP_"))
     .sort(),
 };
 if (capturePath) {
@@ -43,7 +43,7 @@ console.log(JSON.stringify({
 type CapturePayload = {
   argv: string[];
   prompt: string;
-  clawdevEnvKeys: string[];
+  paperclipEnvKeys: string[];
 };
 
 async function createSkillDir(root: string, name: string) {
@@ -54,8 +54,8 @@ async function createSkillDir(root: string, name: string) {
 }
 
 describe("cursor execute", () => {
-  it("injects clawdev env vars and prompt note by default", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "clawdev-cursor-execute-"));
+  it("injects paperclip env vars and prompt note by default", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "agent");
     const capturePath = path.join(root, "capture.json");
@@ -87,9 +87,9 @@ describe("cursor execute", () => {
           cwd: workspace,
           model: "auto",
           env: {
-            CLAWDEV_TEST_CAPTURE_PATH: capturePath,
+            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the clawdev heartbeat.",
+          promptTemplate: "Follow the paperclip heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -103,22 +103,22 @@ describe("cursor execute", () => {
       expect(result.errorMessage).toBeNull();
 
       const capture = JSON.parse(await fs.readFile(capturePath, "utf8")) as CapturePayload;
-      expect(capture.argv).not.toContain("Follow the clawdev heartbeat.");
+      expect(capture.argv).not.toContain("Follow the paperclip heartbeat.");
       expect(capture.argv).not.toContain("--mode");
       expect(capture.argv).not.toContain("ask");
-      expect(capture.clawdevEnvKeys).toEqual(
+      expect(capture.paperclipEnvKeys).toEqual(
         expect.arrayContaining([
-          "CLAWDEV_AGENT_ID",
-          "CLAWDEV_API_KEY",
-          "CLAWDEV_API_URL",
-          "CLAWDEV_COMPANY_ID",
-          "CLAWDEV_RUN_ID",
+          "PAPERCLIP_AGENT_ID",
+          "PAPERCLIP_API_KEY",
+          "PAPERCLIP_API_URL",
+          "PAPERCLIP_COMPANY_ID",
+          "PAPERCLIP_RUN_ID",
         ]),
       );
-      expect(capture.prompt).toContain("ClawDev runtime note:");
-      expect(capture.prompt).toContain("CLAWDEV_API_KEY");
-      expect(invocationPrompt).toContain("ClawDev runtime note:");
-      expect(invocationPrompt).toContain("CLAWDEV_API_URL");
+      expect(capture.prompt).toContain("Paperclip runtime note:");
+      expect(capture.prompt).toContain("PAPERCLIP_API_KEY");
+      expect(invocationPrompt).toContain("Paperclip runtime note:");
+      expect(invocationPrompt).toContain("PAPERCLIP_API_URL");
     } finally {
       if (previousHome === undefined) {
         delete process.env.HOME;
@@ -130,7 +130,7 @@ describe("cursor execute", () => {
   });
 
   it("passes --mode when explicitly configured", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "clawdev-cursor-execute-mode-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-mode-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "agent");
     const capturePath = path.join(root, "capture.json");
@@ -162,9 +162,9 @@ describe("cursor execute", () => {
           model: "auto",
           mode: "ask",
           env: {
-            CLAWDEV_TEST_CAPTURE_PATH: capturePath,
+            PAPERCLIP_TEST_CAPTURE_PATH: capturePath,
           },
-          promptTemplate: "Follow the clawdev heartbeat.",
+          promptTemplate: "Follow the paperclip heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",
@@ -188,14 +188,14 @@ describe("cursor execute", () => {
   });
 
   it("injects company-library runtime skills into the Cursor skills home before execution", async () => {
-    const root = await fs.mkdtemp(path.join(os.tmpdir(), "clawdev-cursor-execute-runtime-skill-"));
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-cursor-execute-runtime-skill-"));
     const workspace = path.join(root, "workspace");
     const commandPath = path.join(root, "agent");
     const runtimeSkillsRoot = path.join(root, "runtime-skills");
     await fs.mkdir(workspace, { recursive: true });
     await writeFakeCursorCommand(commandPath);
 
-    const clawdevDir = await createSkillDir(runtimeSkillsRoot, "clawdev");
+    const paperclipDir = await createSkillDir(runtimeSkillsRoot, "paperclip");
     const asciiHeartDir = await createSkillDir(runtimeSkillsRoot, "ascii-heart");
 
     const previousHome = process.env.HOME;
@@ -221,22 +221,22 @@ describe("cursor execute", () => {
           command: commandPath,
           cwd: workspace,
           model: "auto",
-          clawdevRuntimeSkills: [
+          paperclipRuntimeSkills: [
             {
-              name: "clawdev",
-              source: clawdevDir,
+              name: "paperclip",
+              source: paperclipDir,
               required: true,
-              requiredReason: "Bundled ClawDev skills are always available for local adapters.",
+              requiredReason: "Bundled Paperclip skills are always available for local adapters.",
             },
             {
               name: "ascii-heart",
               source: asciiHeartDir,
             },
           ],
-          clawdevSkillSync: {
+          paperclipSkillSync: {
             desiredSkills: ["ascii-heart"],
           },
-          promptTemplate: "Follow the clawdev heartbeat.",
+          promptTemplate: "Follow the paperclip heartbeat.",
         },
         context: {},
         authToken: "run-jwt-token",

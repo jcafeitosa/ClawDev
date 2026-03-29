@@ -15,28 +15,28 @@ afterEach(async () => {
 
 describe("resolveInlineSourceFromPath", () => {
   it("imports portable files from a zip archive instead of scanning the parent directory", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "clawdev-company-import-zip-"));
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "paperclip-company-import-zip-"));
     tempDirs.push(tempDir);
 
-    const archivePath = path.join(tempDir, "clawdev-demo.zip");
+    const archivePath = path.join(tempDir, "paperclip-demo.zip");
     const archive = createStoredZipArchive(
       {
         "COMPANY.md": "# Company\n",
-        ".clawdev.yaml": "schema: clawdev/v1\n",
+        ".paperclip.yaml": "schema: paperclip/v1\n",
         "agents/ceo/AGENT.md": "# CEO\n",
         "notes/todo.txt": "ignore me\n",
       },
-      "clawdev-demo",
+      "paperclip-demo",
     );
     await writeFile(archivePath, archive);
 
     const resolved = await resolveInlineSourceFromPath(archivePath);
 
     expect(resolved).toEqual({
-      rootPath: "clawdev-demo",
+      rootPath: "paperclip-demo",
       files: {
         "COMPANY.md": "# Company\n",
-        ".clawdev.yaml": "schema: clawdev/v1\n",
+        ".paperclip.yaml": "schema: paperclip/v1\n",
         "agents/ceo/AGENT.md": "# CEO\n",
       },
     });

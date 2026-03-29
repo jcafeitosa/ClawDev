@@ -67,15 +67,6 @@ import {
   agentConfigurationDoc as piAgentConfigurationDoc,
 } from "@clawdev/adapter-pi-local";
 import {
-  execute as copilotExecute,
-  testEnvironment as copilotTestEnvironment,
-  sessionCodec as copilotSessionCodec,
-} from "@clawdev/adapter-copilot-local/server";
-import {
-  agentConfigurationDoc as copilotAgentConfigurationDoc,
-  models as copilotModels,
-} from "@clawdev/adapter-copilot-local";
-import {
   execute as hermesExecute,
   testEnvironment as hermesTestEnvironment,
   sessionCodec as hermesSessionCodec,
@@ -180,17 +171,6 @@ const piLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: piAgentConfigurationDoc,
 };
 
-const copilotLocalAdapter: ServerAdapterModule = {
-  type: "copilot_local",
-  execute: copilotExecute,
-  testEnvironment: copilotTestEnvironment,
-  sessionCodec: copilotSessionCodec,
-  sessionManagement: getAdapterSessionManagement("copilot_local") ?? undefined,
-  models: copilotModels,
-  supportsLocalAgentJwt: true,
-  agentConfigurationDoc: copilotAgentConfigurationDoc,
-};
-
 const hermesLocalAdapter: ServerAdapterModule = {
   type: "hermes_local",
   execute: hermesExecute,
@@ -210,7 +190,6 @@ const adaptersByType = new Map<string, ServerAdapterModule>(
     cursorLocalAdapter,
     geminiLocalAdapter,
     openclawGatewayAdapter,
-    copilotLocalAdapter,
     hermesLocalAdapter,
     processAdapter,
     httpAdapter,

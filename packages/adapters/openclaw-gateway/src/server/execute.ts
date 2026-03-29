@@ -3,7 +3,7 @@ import type {
   AdapterExecutionResult,
   AdapterRuntimeServiceReport,
 } from "@clawdev/adapter-utils";
-import { asNumber, asString, buildClawDevEnv, parseObject } from "@clawdev/adapter-utils/server-utils";
+import { asNumber, asString, buildPaperclipEnv, parseObject } from "@clawdev/adapter-utils/server-utils";
 import crypto, { randomUUID } from "node:crypto";
 import { WebSocket } from "ws";
 
@@ -82,7 +82,7 @@ const PROTOCOL_VERSION = 3;
 const DEFAULT_SCOPES = ["operator.admin"];
 const DEFAULT_CLIENT_ID = "gateway-client";
 const DEFAULT_CLIENT_MODE = "backend";
-const DEFAULT_CLIENT_VERSION = "clawdev";
+const DEFAULT_CLIENT_VERSION = "paperclip";
 const DEFAULT_ROLE = "operator";
 
 const SENSITIVE_LOG_KEY_PATTERN =
@@ -132,9 +132,9 @@ function resolveSessionKey(input: {
   runId: string;
   issueId: string | null;
 }): string {
-  const fallback = input.configuredSessionKey ?? "clawdev";
-  if (input.strategy === "run") return `clawdev:run:${input.runId}`;
-  if (input.strategy === "issue" && input.issueId) return `clawdev:issue:${input.issueId}`;
+  const fallback = input.configuredSessionKey ?? "paperclip";
+  if (input.strategy === "run") return `paperclip:run:${input.runId}`;
+  if (input.strategy === "issue" && input.issueId) return `paperclip:issue:${input.issueId}`;
   return fallback;
 }
 
@@ -301,7 +301,7 @@ function buildWakePayload(ctx: AdapterExecutionContext): WakePayload {
   };
 }
 
-function resolveClawDevApiUrlOverride(value: unknown): string | null {
+function resolvePaperclipApiUrlOverride(value: unknown): string | null {
   const raw = nonEmpty(value);
   if (!raw) return null;
   try {
@@ -313,63 +313,63 @@ function resolveClawDevApiUrlOverride(value: unknown): string | null {
   }
 }
 
-function buildClawDevEnvForWake(ctx: AdapterExecutionContext, wakePayload: WakePayload): Record<string, string> {
-  const clawdevApiUrlOverride = resolveClawDevApiUrlOverride(ctx.config.clawdevApiUrl);
-  const clawdevEnv: Record<string, string> = {
-    ...buildClawDevEnv(ctx.agent),
-    CLAWDEV_RUN_ID: ctx.runId,
+function buildPaperclipEnvForWake(ctx: AdapterExecutionContext, wakePayload: WakePayload): Record<string, string> {
+  const paperclipApiUrlOverride = resolvePaperclipApiUrlOverride(ctx.config.paperclipApiUrl);
+  const paperclipEnv: Record<string, string> = {
+    ...buildPaperclipEnv(ctx.agent),
+    PAPERCLIP_RUN_ID: ctx.runId,
   };
 
-  if (clawdevApiUrlOverride) {
-    clawdevEnv.CLAWDEV_API_URL = clawdevApiUrlOverride;
+  if (paperclipApiUrlOverride) {
+    paperclipEnv.PAPERCLIP_API_URL = paperclipApiUrlOverride;
   }
-  if (wakePayload.taskId) clawdevEnv.CLAWDEV_TASK_ID = wakePayload.taskId;
-  if (wakePayload.wakeReason) clawdevEnv.CLAWDEV_WAKE_REASON = wakePayload.wakeReason;
-  if (wakePayload.wakeCommentId) clawdevEnv.CLAWDEV_WAKE_COMMENT_ID = wakePayload.wakeCommentId;
-  if (wakePayload.approvalId) clawdevEnv.CLAWDEV_APPROVAL_ID = wakePayload.approvalId;
-  if (wakePayload.approvalStatus) clawdevEnv.CLAWDEV_APPROVAL_STATUS = wakePayload.approvalStatus;
+  if (wakePayload.taskId) paperclipEnv.PAPERCLIP_TASK_ID = wakePayload.taskId;
+  if (wakePayload.wakeReason) paperclipEnv.PAPERCLIP_WAKE_REASON = wakePayload.wakeReason;
+  if (wakePayload.wakeCommentId) paperclipEnv.PAPERCLIP_WAKE_COMMENT_ID = wakePayload.wakeCommentId;
+  if (wakePayload.approvalId) paperclipEnv.PAPERCLIP_APPROVAL_ID = wakePayload.approvalId;
+  if (wakePayload.approvalStatus) paperclipEnv.PAPERCLIP_APPROVAL_STATUS = wakePayload.approvalStatus;
   if (wakePayload.issueIds.length > 0) {
-    clawdevEnv.CLAWDEV_LINKED_ISSUE_IDS = wakePayload.issueIds.join(",");
+    paperclipEnv.PAPERCLIP_LINKED_ISSUE_IDS = wakePayload.issueIds.join(",");
   }
 
-  return clawdevEnv;
+  return paperclipEnv;
 }
 
-function buildWakeText(payload: WakePayload, clawdevEnv: Record<string, string>): string {
-  const claimedApiKeyPath = "~/.openclaw/workspace/clawdev-claimed-api-key.json";
+function buildWakeText(payload: WakePayload, paperclipEnv: Record<string, string>): string {
+  const claimedApiKeyPath = "~/.openclaw/workspace/paperclip-claimed-api-key.json";
   const orderedKeys = [
-    "CLAWDEV_RUN_ID",
-    "CLAWDEV_AGENT_ID",
-    "CLAWDEV_COMPANY_ID",
-    "CLAWDEV_API_URL",
-    "CLAWDEV_TASK_ID",
-    "CLAWDEV_WAKE_REASON",
-    "CLAWDEV_WAKE_COMMENT_ID",
-    "CLAWDEV_APPROVAL_ID",
-    "CLAWDEV_APPROVAL_STATUS",
-    "CLAWDEV_LINKED_ISSUE_IDS",
+    "PAPERCLIP_RUN_ID",
+    "PAPERCLIP_AGENT_ID",
+    "PAPERCLIP_COMPANY_ID",
+    "PAPERCLIP_API_URL",
+    "PAPERCLIP_TASK_ID",
+    "PAPERCLIP_WAKE_REASON",
+    "PAPERCLIP_WAKE_COMMENT_ID",
+    "PAPERCLIP_APPROVAL_ID",
+    "PAPERCLIP_APPROVAL_STATUS",
+    "PAPERCLIP_LINKED_ISSUE_IDS",
   ];
 
   const envLines: string[] = [];
   for (const key of orderedKeys) {
-    const value = clawdevEnv[key];
+    const value = paperclipEnv[key];
     if (!value) continue;
     envLines.push(`${key}=${value}`);
   }
 
   const issueIdHint = payload.taskId ?? payload.issueId ?? "";
-  const apiBaseHint = clawdevEnv.CLAWDEV_API_URL ?? "<set CLAWDEV_API_URL>";
+  const apiBaseHint = paperclipEnv.PAPERCLIP_API_URL ?? "<set PAPERCLIP_API_URL>";
 
   const lines = [
-    "ClawDev wake event for a cloud adapter.",
+    "Paperclip wake event for a cloud adapter.",
     "",
     "Run this procedure now. Do not guess undocumented endpoints and do not ask for additional heartbeat docs.",
     "",
     "Set these values in your run context:",
     ...envLines,
-    `CLAWDEV_API_KEY=<token from ${claimedApiKeyPath}>`,
+    `PAPERCLIP_API_KEY=<token from ${claimedApiKeyPath}>`,
     "",
-    `Load CLAWDEV_API_KEY from ${claimedApiKeyPath} (the token you saved after claim-api-key).`,
+    `Load PAPERCLIP_API_KEY from ${claimedApiKeyPath} (the token you saved after claim-api-key).`,
     "",
     `api_base=${apiBaseHint}`,
     `task_id=${payload.taskId ?? ""}`,
@@ -381,23 +381,23 @@ function buildWakeText(payload: WakePayload, clawdevEnv: Record<string, string>)
     `linked_issue_ids=${payload.issueIds.join(",")}`,
     "",
     "HTTP rules:",
-    "- Use Authorization: Bearer $CLAWDEV_API_KEY on every API call.",
-    "- Use X-ClawDev-Run-Id: $CLAWDEV_RUN_ID on every mutating API call.",
+    "- Use Authorization: Bearer $PAPERCLIP_API_KEY on every API call.",
+    "- Use X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID on every mutating API call.",
     "- Use only /api endpoints listed below.",
     "- Do NOT call guessed endpoints like /api/cloud-adapter/*, /api/cloud-adapters/*, /api/adapters/cloud/*, or /api/heartbeat.",
     "",
     "Workflow:",
     "1) GET /api/agents/me",
-    `2) Determine issueId: CLAWDEV_TASK_ID if present, otherwise issue_id (${issueIdHint}).`,
+    `2) Determine issueId: PAPERCLIP_TASK_ID if present, otherwise issue_id (${issueIdHint}).`,
     "3) If issueId exists:",
-    "   - POST /api/issues/{issueId}/checkout with {\"agentId\":\"$CLAWDEV_AGENT_ID\",\"expectedStatuses\":[\"todo\",\"backlog\",\"blocked\"]}",
+    "   - POST /api/issues/{issueId}/checkout with {\"agentId\":\"$PAPERCLIP_AGENT_ID\",\"expectedStatuses\":[\"todo\",\"backlog\",\"blocked\"]}",
     "   - GET /api/issues/{issueId}",
     "   - GET /api/issues/{issueId}/comments",
     "   - Execute the issue instructions exactly.",
     "   - If instructions require a comment, POST /api/issues/{issueId}/comments with {\"body\":\"...\"}.",
     "   - PATCH /api/issues/{issueId} with {\"status\":\"done\",\"comment\":\"what changed and why\"}.",
     "4) If issueId does not exist:",
-    "   - GET /api/companies/$CLAWDEV_COMPANY_ID/issues?assigneeAgentId=$CLAWDEV_AGENT_ID&status=todo,in_progress,blocked",
+    "   - GET /api/companies/$PAPERCLIP_COMPANY_ID/issues?assigneeAgentId=$PAPERCLIP_AGENT_ID&status=todo,in_progress,blocked",
     "   - Pick in_progress first, then todo, then blocked, then execute step 3.",
     "",
     "Useful endpoints for issue work:",
@@ -415,25 +415,25 @@ function appendWakeText(baseText: string, wakeText: string): string {
   return trimmedBase.length > 0 ? `${trimmedBase}\n\n${wakeText}` : wakeText;
 }
 
-function buildStandardClawDevPayload(
+function buildStandardPaperclipPayload(
   ctx: AdapterExecutionContext,
   wakePayload: WakePayload,
-  clawdevEnv: Record<string, string>,
+  paperclipEnv: Record<string, string>,
   payloadTemplate: Record<string, unknown>,
 ): Record<string, unknown> {
-  const templateClawDev = parseObject(payloadTemplate.clawdev);
-  const workspace = asRecord(ctx.context.clawdevWorkspace);
-  const workspaces = Array.isArray(ctx.context.clawdevWorkspaces)
-    ? ctx.context.clawdevWorkspaces.filter((entry): entry is Record<string, unknown> => Boolean(asRecord(entry)))
+  const templatePaperclip = parseObject(payloadTemplate.paperclip);
+  const workspace = asRecord(ctx.context.paperclipWorkspace);
+  const workspaces = Array.isArray(ctx.context.paperclipWorkspaces)
+    ? ctx.context.paperclipWorkspaces.filter((entry): entry is Record<string, unknown> => Boolean(asRecord(entry)))
     : [];
   const configuredWorkspaceRuntime = parseObject(ctx.config.workspaceRuntime);
-  const runtimeServiceIntents = Array.isArray(ctx.context.clawdevRuntimeServiceIntents)
-    ? ctx.context.clawdevRuntimeServiceIntents.filter(
+  const runtimeServiceIntents = Array.isArray(ctx.context.paperclipRuntimeServiceIntents)
+    ? ctx.context.paperclipRuntimeServiceIntents.filter(
         (entry): entry is Record<string, unknown> => Boolean(asRecord(entry)),
       )
     : [];
 
-  const standardClawDev: Record<string, unknown> = {
+  const standardPaperclip: Record<string, unknown> = {
     runId: ctx.runId,
     companyId: ctx.agent.companyId,
     agentId: ctx.agent.id,
@@ -445,25 +445,25 @@ function buildStandardClawDevPayload(
     wakeCommentId: wakePayload.wakeCommentId,
     approvalId: wakePayload.approvalId,
     approvalStatus: wakePayload.approvalStatus,
-    apiUrl: clawdevEnv.CLAWDEV_API_URL ?? null,
+    apiUrl: paperclipEnv.PAPERCLIP_API_URL ?? null,
   };
 
   if (workspace) {
-    standardClawDev.workspace = workspace;
+    standardPaperclip.workspace = workspace;
   }
   if (workspaces.length > 0) {
-    standardClawDev.workspaces = workspaces;
+    standardPaperclip.workspaces = workspaces;
   }
   if (runtimeServiceIntents.length > 0 || Object.keys(configuredWorkspaceRuntime).length > 0) {
-    standardClawDev.workspaceRuntime = {
+    standardPaperclip.workspaceRuntime = {
       ...configuredWorkspaceRuntime,
       ...(runtimeServiceIntents.length > 0 ? { services: runtimeServiceIntents } : {}),
     };
   }
 
   return {
-    ...templateClawDev,
-    ...standardClawDev,
+    ...templatePaperclip,
+    ...standardPaperclip,
   };
 }
 
@@ -713,7 +713,7 @@ class GatewayWsClient {
 
   close() {
     if (!this.ws) return;
-    this.ws.close(1000, "clawdev-complete");
+    this.ws.close(1000, "paperclip-complete");
     this.ws = null;
   }
 
@@ -1052,8 +1052,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const disableDeviceAuth = parseBoolean(ctx.config.disableDeviceAuth, false);
 
   const wakePayload = buildWakePayload(ctx);
-  const clawdevEnv = buildClawDevEnvForWake(ctx, wakePayload);
-  const wakeText = buildWakeText(wakePayload, clawdevEnv);
+  const paperclipEnv = buildPaperclipEnvForWake(ctx, wakePayload);
+  const wakeText = buildWakeText(wakePayload, paperclipEnv);
 
   const sessionKeyStrategy = normalizeSessionKeyStrategy(ctx.config.sessionKeyStrategy);
   const configuredSessionKey = nonEmpty(ctx.config.sessionKey);
@@ -1066,7 +1066,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const templateMessage = nonEmpty(payloadTemplate.message) ?? nonEmpty(payloadTemplate.text);
   const message = templateMessage ? appendWakeText(templateMessage, wakeText) : wakeText;
-  const clawdevPayload = buildStandardClawDevPayload(ctx, wakePayload, clawdevEnv, payloadTemplate);
+  const paperclipPayload = buildStandardPaperclipPayload(ctx, wakePayload, paperclipEnv, payloadTemplate);
 
   const agentParams: Record<string, unknown> = {
     ...payloadTemplate,

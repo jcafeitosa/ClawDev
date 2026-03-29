@@ -16,7 +16,7 @@ describe("agent skill contract", () => {
       originLabel: "User-installed",
       locationLabel: "~/.claude/skills",
       readOnly: true,
-      detail: "Installed outside ClawDev management.",
+      detail: "Installed outside Paperclip management.",
     })).toMatchObject({
       origin: "user_installed",
       locationLabel: "~/.claude/skills",
@@ -31,8 +31,8 @@ describe("agent skill contract", () => {
       mode: "ephemeral",
       desiredSkills: [],
       entries: [{
-        key: "clawdev/clawdev/clawdev",
-        runtimeName: "clawdev",
+        key: "paperclipai/paperclip/paperclip",
+        runtimeName: "paperclip",
         desired: true,
         managed: true,
         state: "configured",
@@ -41,7 +41,7 @@ describe("agent skill contract", () => {
     })).toMatchObject({
       adapterType: "claude_local",
       entries: [{
-        key: "clawdev/clawdev/clawdev",
+        key: "paperclipai/paperclip/paperclip",
         state: "configured",
       }],
     });

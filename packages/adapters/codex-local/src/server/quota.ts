@@ -478,7 +478,7 @@ class CodexRpcClient {
   async initialize() {
     await this.request("initialize", {
       clientInfo: {
-        name: "clawdev",
+        name: "paperclip",
         version: "0.0.0",
       },
     });

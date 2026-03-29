@@ -2,13 +2,13 @@
   "name": "@clawdev/db",
   "version": "0.3.1",
   "license": "MIT",
-  "homepage": "https://github.com/clawdev/clawdev",
+  "homepage": "https://github.com/paperclipai/paperclip",
   "bugs": {
-    "url": "https://github.com/clawdev/clawdev/issues"
+    "url": "https://github.com/paperclipai/paperclip/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/clawdev/clawdev",
+    "url": "https://github.com/paperclipai/paperclip",
     "directory": "packages/db"
   },
   "type": "module",
@@ -35,25 +35,24 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && cp -r src/migrations dist/migrations && cp -r src/timescale-migrations dist/timescale-migrations",
+    "build": "tsc && cp -r src/migrations dist/migrations",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "generate": "tsc -p tsconfig.json && drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
-    "seed": "tsx src/seed.ts",
-    "timescale:migrate": "tsx src/timescale-migrate.ts"
+    "seed": "tsx src/seed.ts"
   },
   "dependencies": {
     "@clawdev/shared": "workspace:*",
     "drizzle-orm": "^0.38.4",
-    "embedded-postgres": "18.1.0-beta.16",
-    "postgres": "^3.4.8"
+    "embedded-postgres": "^18.1.0-beta.16",
+    "postgres": "^3.4.5"
   },
   "devDependencies": {
-    "@types/node": "^24.12.0",
-    "drizzle-kit": "^0.31.10",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "@types/node": "^24.6.0",
+    "drizzle-kit": "^0.31.9",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
   }
 }

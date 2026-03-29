@@ -162,7 +162,7 @@ export interface CompanyPortabilityExportResult {
   manifest: CompanyPortabilityManifest;
   files: Record<string, CompanyPortabilityFileEntry>;
   warnings: string[];
-  clawdevExtensionPath: string;
+  paperclipExtensionPath: string;
 }
 
 export interface CompanyPortabilityExportPreviewFile {
@@ -183,7 +183,7 @@ export interface CompanyPortabilityExportPreviewResult {
     issues: number;
   };
   warnings: string[];
-  clawdevExtensionPath: string;
+  paperclipExtensionPath: string;
 }
 
 export type CompanyPortabilitySource =

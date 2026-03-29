@@ -1,19 +1,5 @@
-import type { AdapterMeta } from "@clawdev/shared";
-
 export const type = "codex_local";
 export const label = "Codex (local)";
-
-export const meta: AdapterMeta = {
-  type: "codex_local",
-  label: "OpenAI Codex",
-  icon: "Code",
-  authMethods: ["cli_auth", "api_key"],
-  envVarNames: ["OPENAI_API_KEY"],
-  docsUrl: "https://openai.com/codex",
-  supportsQuota: true,
-  supportsHealthCheck: true,
-  billingModel: "credits",
-};
 export const DEFAULT_CODEX_LOCAL_MODEL = "gpt-5.3-codex";
 export const DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX = true;
 
@@ -54,10 +40,10 @@ Operational fields:
 
 Notes:
 - Prompts are piped via stdin (Codex receives "-" prompt argument).
-- If instructionsFilePath is configured, ClawDev prepends that file's contents to the stdin prompt on every run.
-- Codex exec automatically applies repo-scoped AGENTS.md instructions from the active workspace. ClawDev cannot suppress that discovery in exec mode, so repo AGENTS.md files may still apply even when you only configured an explicit instructionsFilePath.
-- ClawDev injects desired local skills into the effective CODEX_HOME/skills/ directory at execution time so Codex can discover "$clawdev" and related skills without polluting the project working directory. In managed-home mode (the default) this is ~/.clawdev/instances/<id>/companies/<companyId>/codex-home/skills/; when CODEX_HOME is explicitly overridden in adapter config, that override is used instead.
-- Unless explicitly overridden in adapter config, ClawDev runs Codex with a per-company managed CODEX_HOME under the active ClawDev instance and seeds auth/config from the shared Codex home (the CODEX_HOME env var, when set, or ~/.codex).
+- If instructionsFilePath is configured, Paperclip prepends that file's contents to the stdin prompt on every run.
+- Codex exec automatically applies repo-scoped AGENTS.md instructions from the active workspace. Paperclip cannot suppress that discovery in exec mode, so repo AGENTS.md files may still apply even when you only configured an explicit instructionsFilePath.
+- Paperclip injects desired local skills into the effective CODEX_HOME/skills/ directory at execution time so Codex can discover "$paperclip" and related skills without polluting the project working directory. In managed-home mode (the default) this is ~/.paperclip/instances/<id>/companies/<companyId>/codex-home/skills/; when CODEX_HOME is explicitly overridden in adapter config, that override is used instead.
+- Unless explicitly overridden in adapter config, Paperclip runs Codex with a per-company managed CODEX_HOME under the active Paperclip instance and seeds auth/config from the shared Codex home (the CODEX_HOME env var, when set, or ~/.codex).
 - Some model/tool combinations reject certain effort levels (for example minimal with web search enabled).
-- When ClawDev realizes a workspace/runtime for a run, it injects CLAWDEV_WORKSPACE_* and CLAWDEV_RUNTIME_* env vars for agent-side tooling.
+- When Paperclip realizes a workspace/runtime for a run, it injects PAPERCLIP_WORKSPACE_* and PAPERCLIP_RUNTIME_* env vars for agent-side tooling.
 `;

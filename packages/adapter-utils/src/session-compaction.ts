@@ -28,7 +28,7 @@ const DEFAULT_SESSION_COMPACTION_POLICY: SessionCompactionPolicy = {
 };
 
 // Adapters with native context management still participate in session resume,
-// but ClawDev should not rotate them using threshold-based compaction.
+// but Paperclip should not rotate them using threshold-based compaction.
 const ADAPTER_MANAGED_SESSION_POLICY: SessionCompactionPolicy = {
   enabled: true,
   maxSessionRuns: 0,
@@ -72,11 +72,6 @@ export const ADAPTER_SESSION_MANAGEMENT: Record<string, AdapterSessionManagement
     defaultSessionCompaction: DEFAULT_SESSION_COMPACTION_POLICY,
   },
   pi_local: {
-    supportsSessionResume: true,
-    nativeContextManagement: "unknown",
-    defaultSessionCompaction: DEFAULT_SESSION_COMPACTION_POLICY,
-  },
-  copilot_local: {
     supportsSessionResume: true,
     nativeContextManagement: "unknown",
     defaultSessionCompaction: DEFAULT_SESSION_COMPACTION_POLICY,

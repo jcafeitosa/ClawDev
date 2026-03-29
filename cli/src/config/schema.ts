@@ -1,5 +1,5 @@
 export {
-  clawdevConfigSchema,
+  paperclipConfigSchema,
   configMetaSchema,
   llmConfigSchema,
   databaseBackupConfigSchema,
@@ -12,7 +12,7 @@ export {
   storageS3ConfigSchema,
   secretsConfigSchema,
   secretsLocalEncryptedConfigSchema,
-  type ClawDevConfig,
+  type PaperclipConfig,
   type LlmConfig,
   type DatabaseBackupConfig,
   type DatabaseConfig,

@@ -83,4 +83,4 @@ env \
   HOST="$CLAWDEV_HOST" \
   PORT="$CLAWDEV_PORT" \
   CLAWDEV_OPEN_ON_LISTEN="$CLAWDEV_OPEN_ON_LISTEN" \
-  pnpm clawdev onboard --yes --data-dir "$PC_DATA"
+  pnpm clawdevai onboard --yes --data-dir "$PC_DATA"

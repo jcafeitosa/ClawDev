@@ -115,7 +115,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockCompanyService.update.mockResolvedValue({
     id: "company-1",
-    name: "ClawDev",
+    name: "Paperclip",
     budgetMonthlyCents: 100,
     spentMonthlyCents: 0,
   });

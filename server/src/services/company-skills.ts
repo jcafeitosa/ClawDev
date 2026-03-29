@@ -5,8 +5,8 @@ import { fileURLToPath } from "node:url";
 import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import { companySkills } from "@clawdev/db";
-import { readClawDevSkillSyncPreference, writeClawDevSkillSyncPreference } from "@clawdev/adapter-utils/server-utils";
-import type { ClawDevSkillEntry } from "@clawdev/adapter-utils/server-utils";
+import { readPaperclipSkillSyncPreference, writePaperclipSkillSyncPreference } from "@clawdev/adapter-utils/server-utils";
+import type { PaperclipSkillEntry } from "@clawdev/adapter-utils/server-utils";
 import type {
   CompanySkill,
   CompanySkillCreateRequest,
@@ -28,7 +28,7 @@ import type {
 } from "@clawdev/shared";
 import { normalizeAgentUrlKey } from "@clawdev/shared";
 import { findServerAdapter } from "../adapters/index.js";
-import { resolveClawDevInstanceRoot } from "../home-paths.js";
+import { resolvePaperclipInstanceRoot } from "../home-paths.js";
 import { notFound, unprocessable } from "../errors.js";
 import { agentService } from "./agents.js";
 import { projectService } from "./projects.js";
@@ -230,7 +230,7 @@ function uniqueImportedSkillKey(companyId: string, baseSlug: string, usedKeys: S
 }
 
 function buildSkillRuntimeName(key: string, slug: string) {
-  if (key.startsWith("clawdev/clawdev/")) return slug;
+  if (key.startsWith("paperclipai/paperclip/")) return slug;
   return `${slug}--${hashSkillValue(key)}`;
 }
 
@@ -240,13 +240,13 @@ function readCanonicalSkillKey(frontmatter: Record<string, unknown>, metadata: R
     ?? asString(frontmatter.skillKey)
     ?? asString(metadata?.skillKey)
     ?? asString(metadata?.canonicalKey)
-    ?? asString(metadata?.clawdevSkillKey),
+    ?? asString(metadata?.paperclipSkillKey),
   );
   if (direct) return direct;
-  const clawdev = isPlainRecord(metadata?.clawdev) ? metadata?.clawdev as Record<string, unknown> : null;
+  const paperclip = isPlainRecord(metadata?.paperclip) ? metadata?.paperclip as Record<string, unknown> : null;
   return normalizeSkillKey(
-    asString(clawdev?.skillKey)
-    ?? asString(clawdev?.key),
+    asString(paperclip?.skillKey)
+    ?? asString(paperclip?.key),
   );
 }
 
@@ -260,8 +260,8 @@ function deriveCanonicalSkillKey(
   if (explicitKey) return explicitKey;
 
   const sourceKind = asString(metadata?.sourceKind);
-  if (sourceKind === "clawdev_bundled") {
-    return `clawdev/clawdev/${slug}`;
+  if (sourceKind === "paperclip_bundled") {
+    return `paperclipai/paperclip/${slug}`;
   }
 
   const owner = normalizeSkillSlug(asString(metadata?.owner));
@@ -1232,7 +1232,7 @@ function resolveDesiredSkillKeys(
   skills: CompanySkill[],
   config: Record<string, unknown>,
 ) {
-  const preference = readClawDevSkillSyncPreference(config);
+  const preference = readPaperclipSkillSyncPreference(config);
   return Array.from(new Set(
     preference.desiredSkills
       .map((reference) => resolveSkillReference(skills, reference).skill?.key ?? normalizeSkillKey(reference))
@@ -1279,7 +1279,7 @@ export async function findMissingLocalSkillIds(
 }
 
 function resolveManagedSkillsRoot(companyId: string) {
-  return path.resolve(resolveClawDevInstanceRoot(), "skills", companyId);
+  return path.resolve(resolvePaperclipInstanceRoot(), "skills", companyId);
 }
 
 function resolveLocalSkillFilePath(skill: CompanySkill, relativePath: string) {
@@ -1325,12 +1325,12 @@ function deriveSkillSourceInfo(skill: CompanySkill): {
 } {
   const metadata = getSkillMeta(skill);
   const localSkillDir = normalizeSkillDirectory(skill);
-  if (metadata.sourceKind === "clawdev_bundled") {
+  if (metadata.sourceKind === "paperclip_bundled") {
     return {
       editable: false,
-      editableReason: "Bundled ClawDev skills are read-only.",
-      sourceLabel: "ClawDev bundled",
-      sourceBadge: "clawdev",
+      editableReason: "Bundled Paperclip skills are read-only.",
+      sourceLabel: "Paperclip bundled",
+      sourceBadge: "paperclip",
       sourcePath: null,
     };
   }
@@ -1378,8 +1378,8 @@ function deriveSkillSourceInfo(skill: CompanySkill): {
       return {
         editable: true,
         editableReason: null,
-        sourceLabel: "ClawDev workspace",
-        sourceBadge: "clawdev",
+        sourceLabel: "Paperclip workspace",
+        sourceBadge: "paperclip",
         sourcePath: managedRoot,
       };
     }
@@ -1457,12 +1457,12 @@ export function companySkillService(db: Db) {
             ...skill,
             metadata: {
               ...(skill.metadata ?? {}),
-              sourceKind: "clawdev_bundled",
+              sourceKind: "paperclip_bundled",
             },
           }),
           metadata: {
             ...(skill.metadata ?? {}),
-            sourceKind: "clawdev_bundled",
+            sourceKind: "paperclip_bundled",
           },
         })))
         .catch(() => [] as ImportedSkill[]);
@@ -1580,7 +1580,7 @@ export function companySkillService(db: Db) {
               adapterType: agent.adapterType,
               config: {
                 ...runtimeConfig,
-                clawdevRuntimeSkills: runtimeSkillEntries,
+                paperclipRuntimeSkills: runtimeSkillEntries,
               },
             });
             actualState = snapshot.entries.find((entry) => entry.key === key)?.state
@@ -2040,10 +2040,10 @@ export function companySkillService(db: Db) {
   async function listRuntimeSkillEntries(
     companyId: string,
     options: RuntimeSkillEntryOptions = {},
-  ): Promise<ClawDevSkillEntry[]> {
+  ): Promise<PaperclipSkillEntry[]> {
     const skills = await listFull(companyId);
 
-    const out: ClawDevSkillEntry[] = [];
+    const out: PaperclipSkillEntry[] = [];
     for (const skill of skills) {
       const sourceKind = asString(getSkillMeta(skill).sourceKind);
       let source = normalizeSkillDirectory(skill);
@@ -2054,14 +2054,14 @@ export function companySkillService(db: Db) {
       }
       if (!source) continue;
 
-      const required = sourceKind === "clawdev_bundled";
+      const required = sourceKind === "paperclip_bundled";
       out.push({
         key: skill.key,
         runtimeName: buildSkillRuntimeName(skill.key, skill.slug),
         source,
         required,
         requiredReason: required
-          ? "Bundled ClawDev skills are always available for local adapters."
+          ? "Bundled Paperclip skills are always available for local adapters."
           : null,
       });
     }
@@ -2202,10 +2202,10 @@ export function companySkillService(db: Db) {
       const incomingKind = asString(incomingMeta.sourceKind);
       if (
         existing
-        && existingMeta.sourceKind === "clawdev_bundled"
+        && existingMeta.sourceKind === "paperclip_bundled"
         && incomingKind === "github"
-        && incomingOwner === "clawdev"
-        && incomingRepo === "clawdev"
+        && incomingOwner === "paperclipai"
+        && incomingRepo === "paperclip"
       ) {
         out.push(existing);
         continue;
@@ -2304,7 +2304,7 @@ export function companySkillService(db: Db) {
     const allSkills = await listFull(companyId);
     for (const agent of agentRows) {
       const config = agent.adapterConfig as Record<string, unknown>;
-      const preference = readClawDevSkillSyncPreference(config);
+      const preference = readPaperclipSkillSyncPreference(config);
       const referencesSkill = preference.desiredSkills.some((ref) => {
         const resolved = resolveSkillReference(allSkills, ref);
         return resolved.skill?.id === skillId;
@@ -2315,7 +2315,7 @@ export function companySkillService(db: Db) {
           return resolved.skill?.id !== skillId;
         });
         await agents.update(agent.id, {
-          adapterConfig: writeClawDevSkillSyncPreference(config, filtered),
+          adapterConfig: writePaperclipSkillSyncPreference(config, filtered),
         });
       }
     }

@@ -1,31 +1,34 @@
-import { a as sanitize_props, b as spread_props, c as slot, d as attr_class, f as clsx, h as attr_style, e as escape_html, i as ensure_array_like, j as attr, k as store_get, l as unsubscribe_stores, m as derived, o as stringify } from "../../../chunks/index.js";
-import { p as page } from "../../../chunks/stores.js";
+import { clsx } from "clsx";
+import { g as getContext, a as sanitize_props, b as spread_props, c as slot, d as attr_class, f as clsx$1, e as escape_html, h as ensure_array_like, i as attr, j as derived, k as store_get, l as unsubscribe_stores } from "../../../chunks/index.js";
 import "@sveltejs/kit/internal";
 import "../../../chunks/exports.js";
 import "../../../chunks/utils2.js";
 import "@sveltejs/kit/internal/server";
 import "../../../chunks/root.js";
 import "../../../chunks/state.svelte.js";
-import "clsx";
-import { c as companyStore } from "../../../chunks/company.svelte.js";
-import "../../../chunks/client.js";
-import { c as cn } from "../../../chunks/cn.js";
-import { L as Layout_dashboard, D as Dollar_sign } from "../../../chunks/layout-dashboard.js";
+import { twMerge } from "tailwind-merge";
 import { I as Icon } from "../../../chunks/Icon.js";
-import { L as List_todo } from "../../../chunks/list-todo.js";
-import { T as Target, S as Settings } from "../../../chunks/target.js";
-import { S as Shield_check } from "../../../chunks/shield-check.js";
-import { B as Building_2 } from "../../../chunks/building-2.js";
-import { A as Activity } from "../../../chunks/activity.js";
-import { C as Chevron_down } from "../../../chunks/chevron-down.js";
-import { S as Search } from "../../../chunks/search.js";
-import { X } from "../../../chunks/x.js";
-import { P as Plus } from "../../../chunks/plus.js";
-import { t as toastStore } from "../../../chunks/toast.svelte.js";
-import { T as Terminal } from "../../../chunks/terminal.js";
-import { B as Bot } from "../../../chunks/bot.js";
-import { o as onDestroy } from "../../../chunks/index-server.js";
-import "../../../chunks/badge.js";
+const getStores = () => {
+  const stores$1 = getContext("__svelte__");
+  return {
+    /** @type {typeof page} */
+    page: {
+      subscribe: stores$1.page.subscribe
+    },
+    /** @type {typeof navigating} */
+    navigating: {
+      subscribe: stores$1.navigating.subscribe
+    },
+    /** @type {typeof updated} */
+    updated: stores$1.updated
+  };
+};
+const page = {
+  subscribe(fn) {
+    const store = getStores().page;
+    return store.subscribe(fn);
+  }
+};
 const MOBILE_BREAKPOINT = 768;
 function getIsMobile() {
   if (typeof window === "undefined") return false;
@@ -41,7 +44,21 @@ const sidebarStore = {
     return isMobile;
   }
 };
-function Book_open($$renderer, $$props) {
+const STORAGE_KEY$1 = "paperclip.selectedCompanyId";
+let companies = [];
+let selectedCompanyId = typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY$1) : null;
+const companyStore = {
+  get selectedCompanyId() {
+    return selectedCompanyId;
+  },
+  get selectedCompany() {
+    return companies.find((c) => c.id === selectedCompanyId) ?? null;
+  }
+};
+function cn(...inputs) {
+  return twMerge(clsx(inputs));
+}
+function Activity($$renderer, $$props) {
   const $$sanitized_props = sanitize_props($$props);
   /**
    * @license lucide-svelte v0.474.0 - ISC
@@ -64,23 +81,22 @@ function Book_open($$renderer, $$props) {
    *
    */
   const iconNode = [
-    ["path", { "d": "M12 7v14" }],
     [
       "path",
       {
-        "d": "M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"
+        "d": "M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"
       }
     ]
   ];
   Icon($$renderer, spread_props([
-    { name: "book-open" },
+    { name: "activity" },
     $$sanitized_props,
     {
       /**
-       * @component @name BookOpen
+       * @component @name Activity
        * @description Lucide SVG icon component, renders SVG Element with children.
        *
-       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNMTIgN3YxNCIgLz4KICA8cGF0aCBkPSJNMyAxOGExIDEgMCAwIDEtMS0xVjRhMSAxIDAgMCAxIDEtMWg1YTQgNCAwIDAgMSA0IDQgNCA0IDAgMCAxIDQtNGg1YTEgMSAwIDAgMSAxIDF2MTNhMSAxIDAgMCAxLTEgMWgtNmEzIDMgMCAwIDAtMyAzIDMgMyAwIDAgMC0zLTN6IiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/book-open
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNMjIgMTJoLTIuNDhhMiAyIDAgMCAwLTEuOTMgMS40NmwtMi4zNSA4LjM2YS4yNS4yNSAwIDAgMS0uNDggMEw5LjI0IDIuMThhLjI1LjI1IDAgMCAwLS40OCAwbC0yLjM1IDguMzZBMiAyIDAgMCAxIDQuNDkgMTJIMiIgLz4KPC9zdmc+Cg==) - https://lucide.dev/icons/activity
        * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
        *
        * @param {Object} props - Lucide icons props and any valid SVG attribute
@@ -97,7 +113,61 @@ function Book_open($$renderer, $$props) {
     }
   ]));
 }
-function Box($$renderer, $$props) {
+function Dollar_sign($$renderer, $$props) {
+  const $$sanitized_props = sanitize_props($$props);
+  /**
+   * @license lucide-svelte v0.474.0 - ISC
+   *
+   * ISC License
+   *
+   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+   *
+   * Permission to use, copy, modify, and/or distribute this software for any
+   * purpose with or without fee is hereby granted, provided that the above
+   * copyright notice and this permission notice appear in all copies.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+   *
+   */
+  const iconNode = [
+    ["line", { "x1": "12", "x2": "12", "y1": "2", "y2": "22" }],
+    [
+      "path",
+      { "d": "M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" }
+    ]
+  ];
+  Icon($$renderer, spread_props([
+    { name: "dollar-sign" },
+    $$sanitized_props,
+    {
+      /**
+       * @component @name DollarSign
+       * @description Lucide SVG icon component, renders SVG Element with children.
+       *
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8bGluZSB4MT0iMTIiIHgyPSIxMiIgeTE9IjIiIHkyPSIyMiIgLz4KICA8cGF0aCBkPSJNMTcgNUg5LjVhMy41IDMuNSAwIDAgMCAwIDdoNWEzLjUgMy41IDAgMCAxIDAgN0g2IiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/dollar-sign
+       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
+       *
+       * @param {Object} props - Lucide icons props and any valid SVG attribute
+       * @returns {FunctionalComponent} Svelte component
+       *
+       */
+      iconNode,
+      children: ($$renderer2) => {
+        $$renderer2.push(`<!--[-->`);
+        slot($$renderer2, $$props, "default", {});
+        $$renderer2.push(`<!--]-->`);
+      },
+      $$slots: { default: true }
+    }
+  ]));
+}
+function Folder_kanban($$renderer, $$props) {
   const $$sanitized_props = sanitize_props($$props);
   /**
    * @license lucide-svelte v0.474.0 - ISC
@@ -123,186 +193,22 @@ function Box($$renderer, $$props) {
     [
       "path",
       {
-        "d": "M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"
+        "d": "M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.93a2 2 0 0 1-1.66-.9l-.82-1.2A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z"
       }
     ],
-    ["path", { "d": "m3.3 7 8.7 5 8.7-5" }],
-    ["path", { "d": "M12 22V12" }]
+    ["path", { "d": "M8 10v4" }],
+    ["path", { "d": "M12 10v2" }],
+    ["path", { "d": "M16 10v6" }]
   ];
   Icon($$renderer, spread_props([
-    { name: "box" },
+    { name: "folder-kanban" },
     $$sanitized_props,
     {
       /**
-       * @component @name Box
+       * @component @name FolderKanban
        * @description Lucide SVG icon component, renders SVG Element with children.
        *
-       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNMjEgOGEyIDIgMCAwIDAtMS0xLjczbC03LTRhMiAyIDAgMCAwLTIgMGwtNyA0QTIgMiAwIDAgMCAzIDh2OGEyIDIgMCAwIDAgMSAxLjczbDcgNGEyIDIgMCAwIDAgMiAwbDctNEEyIDIgMCAwIDAgMjEgMTZaIiAvPgogIDxwYXRoIGQ9Im0zLjMgNyA4LjcgNSA4LjctNSIgLz4KICA8cGF0aCBkPSJNMTIgMjJWMTIiIC8+Cjwvc3ZnPgo=) - https://lucide.dev/icons/box
-       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
-       *
-       * @param {Object} props - Lucide icons props and any valid SVG attribute
-       * @returns {FunctionalComponent} Svelte component
-       *
-       */
-      iconNode,
-      children: ($$renderer2) => {
-        $$renderer2.push(`<!--[-->`);
-        slot($$renderer2, $$props, "default", {});
-        $$renderer2.push(`<!--]-->`);
-      },
-      $$slots: { default: true }
-    }
-  ]));
-}
-function Chevron_right($$renderer, $$props) {
-  const $$sanitized_props = sanitize_props($$props);
-  /**
-   * @license lucide-svelte v0.474.0 - ISC
-   *
-   * ISC License
-   *
-   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
-   *
-   * Permission to use, copy, modify, and/or distribute this software for any
-   * purpose with or without fee is hereby granted, provided that the above
-   * copyright notice and this permission notice appear in all copies.
-   *
-   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-   *
-   */
-  const iconNode = [["path", { "d": "m9 18 6-6-6-6" }]];
-  Icon($$renderer, spread_props([
-    { name: "chevron-right" },
-    $$sanitized_props,
-    {
-      /**
-       * @component @name ChevronRight
-       * @description Lucide SVG icon component, renders SVG Element with children.
-       *
-       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJtOSAxOCA2LTYtNi02IiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/chevron-right
-       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
-       *
-       * @param {Object} props - Lucide icons props and any valid SVG attribute
-       * @returns {FunctionalComponent} Svelte component
-       *
-       */
-      iconNode,
-      children: ($$renderer2) => {
-        $$renderer2.push(`<!--[-->`);
-        slot($$renderer2, $$props, "default", {});
-        $$renderer2.push(`<!--]-->`);
-      },
-      $$slots: { default: true }
-    }
-  ]));
-}
-function Cog($$renderer, $$props) {
-  const $$sanitized_props = sanitize_props($$props);
-  /**
-   * @license lucide-svelte v0.474.0 - ISC
-   *
-   * ISC License
-   *
-   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
-   *
-   * Permission to use, copy, modify, and/or distribute this software for any
-   * purpose with or without fee is hereby granted, provided that the above
-   * copyright notice and this permission notice appear in all copies.
-   *
-   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-   *
-   */
-  const iconNode = [
-    ["path", { "d": "M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z" }],
-    ["path", { "d": "M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z" }],
-    ["path", { "d": "M12 2v2" }],
-    ["path", { "d": "M12 22v-2" }],
-    ["path", { "d": "m17 20.66-1-1.73" }],
-    ["path", { "d": "M11 10.27 7 3.34" }],
-    ["path", { "d": "m20.66 17-1.73-1" }],
-    ["path", { "d": "m3.34 7 1.73 1" }],
-    ["path", { "d": "M14 12h8" }],
-    ["path", { "d": "M2 12h2" }],
-    ["path", { "d": "m20.66 7-1.73 1" }],
-    ["path", { "d": "m3.34 17 1.73-1" }],
-    ["path", { "d": "m17 3.34-1 1.73" }],
-    ["path", { "d": "m11 13.73-4 6.93" }]
-  ];
-  Icon($$renderer, spread_props([
-    { name: "cog" },
-    $$sanitized_props,
-    {
-      /**
-       * @component @name Cog
-       * @description Lucide SVG icon component, renders SVG Element with children.
-       *
-       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNMTIgMjBhOCA4IDAgMSAwIDAtMTYgOCA4IDAgMCAwIDAgMTZaIiAvPgogIDxwYXRoIGQ9Ik0xMiAxNGEyIDIgMCAxIDAgMC00IDIgMiAwIDAgMCAwIDRaIiAvPgogIDxwYXRoIGQ9Ik0xMiAydjIiIC8+CiAgPHBhdGggZD0iTTEyIDIydi0yIiAvPgogIDxwYXRoIGQ9Im0xNyAyMC42Ni0xLTEuNzMiIC8+CiAgPHBhdGggZD0iTTExIDEwLjI3IDcgMy4zNCIgLz4KICA8cGF0aCBkPSJtMjAuNjYgMTctMS43My0xIiAvPgogIDxwYXRoIGQ9Im0zLjM0IDcgMS43MyAxIiAvPgogIDxwYXRoIGQ9Ik0xNCAxMmg4IiAvPgogIDxwYXRoIGQ9Ik0yIDEyaDIiIC8+CiAgPHBhdGggZD0ibTIwLjY2IDctMS43MyAxIiAvPgogIDxwYXRoIGQ9Im0zLjM0IDE3IDEuNzMtMSIgLz4KICA8cGF0aCBkPSJtMTcgMy4zNC0xIDEuNzMiIC8+CiAgPHBhdGggZD0ibTExIDEzLjczLTQgNi45MyIgLz4KPC9zdmc+Cg==) - https://lucide.dev/icons/cog
-       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
-       *
-       * @param {Object} props - Lucide icons props and any valid SVG attribute
-       * @returns {FunctionalComponent} Svelte component
-       *
-       */
-      iconNode,
-      children: ($$renderer2) => {
-        $$renderer2.push(`<!--[-->`);
-        slot($$renderer2, $$props, "default", {});
-        $$renderer2.push(`<!--]-->`);
-      },
-      $$slots: { default: true }
-    }
-  ]));
-}
-function Git_fork($$renderer, $$props) {
-  const $$sanitized_props = sanitize_props($$props);
-  /**
-   * @license lucide-svelte v0.474.0 - ISC
-   *
-   * ISC License
-   *
-   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
-   *
-   * Permission to use, copy, modify, and/or distribute this software for any
-   * purpose with or without fee is hereby granted, provided that the above
-   * copyright notice and this permission notice appear in all copies.
-   *
-   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
-   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
-   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
-   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-   *
-   */
-  const iconNode = [
-    ["circle", { "cx": "12", "cy": "18", "r": "3" }],
-    ["circle", { "cx": "6", "cy": "6", "r": "3" }],
-    ["circle", { "cx": "18", "cy": "6", "r": "3" }],
-    ["path", { "d": "M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9" }],
-    ["path", { "d": "M12 12v3" }]
-  ];
-  Icon($$renderer, spread_props([
-    { name: "git-fork" },
-    $$sanitized_props,
-    {
-      /**
-       * @component @name GitFork
-       * @description Lucide SVG icon component, renders SVG Element with children.
-       *
-       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjE4IiByPSIzIiAvPgogIDxjaXJjbGUgY3g9IjYiIGN5PSI2IiByPSIzIiAvPgogIDxjaXJjbGUgY3g9IjE4IiBjeT0iNiIgcj0iMyIgLz4KICA8cGF0aCBkPSJNMTggOXYyYzAgLjYtLjQgMS0xIDFIN2MtLjYgMC0xLS40LTEtMVY5IiAvPgogIDxwYXRoIGQ9Ik0xMiAxMnYzIiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/git-fork
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNNCAyMGgxNmEyIDIgMCAwIDAgMi0yVjhhMiAyIDAgMCAwLTItMmgtNy45M2EyIDIgMCAwIDEtMS42Ni0uOWwtLjgyLTEuMkEyIDIgMCAwIDAgNy45MyAzSDRhMiAyIDAgMCAwLTIgMnYxM2MwIDEuMS45IDIgMiAyWiIgLz4KICA8cGF0aCBkPSJNOCAxMHY0IiAvPgogIDxwYXRoIGQ9Ik0xMiAxMHYyIiAvPgogIDxwYXRoIGQ9Ik0xNiAxMHY2IiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/folder-kanban
        * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
        *
        * @param {Object} props - Lucide icons props and any valid SVG attribute
@@ -378,6 +284,128 @@ function Inbox($$renderer, $$props) {
     }
   ]));
 }
+function Layout_dashboard($$renderer, $$props) {
+  const $$sanitized_props = sanitize_props($$props);
+  /**
+   * @license lucide-svelte v0.474.0 - ISC
+   *
+   * ISC License
+   *
+   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+   *
+   * Permission to use, copy, modify, and/or distribute this software for any
+   * purpose with or without fee is hereby granted, provided that the above
+   * copyright notice and this permission notice appear in all copies.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+   *
+   */
+  const iconNode = [
+    [
+      "rect",
+      { "width": "7", "height": "9", "x": "3", "y": "3", "rx": "1" }
+    ],
+    [
+      "rect",
+      { "width": "7", "height": "5", "x": "14", "y": "3", "rx": "1" }
+    ],
+    [
+      "rect",
+      { "width": "7", "height": "9", "x": "14", "y": "12", "rx": "1" }
+    ],
+    [
+      "rect",
+      { "width": "7", "height": "5", "x": "3", "y": "16", "rx": "1" }
+    ]
+  ];
+  Icon($$renderer, spread_props([
+    { name: "layout-dashboard" },
+    $$sanitized_props,
+    {
+      /**
+       * @component @name LayoutDashboard
+       * @description Lucide SVG icon component, renders SVG Element with children.
+       *
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cmVjdCB3aWR0aD0iNyIgaGVpZ2h0PSI5IiB4PSIzIiB5PSIzIiByeD0iMSIgLz4KICA8cmVjdCB3aWR0aD0iNyIgaGVpZ2h0PSI1IiB4PSIxNCIgeT0iMyIgcng9IjEiIC8+CiAgPHJlY3Qgd2lkdGg9IjciIGhlaWdodD0iOSIgeD0iMTQiIHk9IjEyIiByeD0iMSIgLz4KICA8cmVjdCB3aWR0aD0iNyIgaGVpZ2h0PSI1IiB4PSIzIiB5PSIxNiIgcng9IjEiIC8+Cjwvc3ZnPgo=) - https://lucide.dev/icons/layout-dashboard
+       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
+       *
+       * @param {Object} props - Lucide icons props and any valid SVG attribute
+       * @returns {FunctionalComponent} Svelte component
+       *
+       */
+      iconNode,
+      children: ($$renderer2) => {
+        $$renderer2.push(`<!--[-->`);
+        slot($$renderer2, $$props, "default", {});
+        $$renderer2.push(`<!--]-->`);
+      },
+      $$slots: { default: true }
+    }
+  ]));
+}
+function List_todo($$renderer, $$props) {
+  const $$sanitized_props = sanitize_props($$props);
+  /**
+   * @license lucide-svelte v0.474.0 - ISC
+   *
+   * ISC License
+   *
+   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+   *
+   * Permission to use, copy, modify, and/or distribute this software for any
+   * purpose with or without fee is hereby granted, provided that the above
+   * copyright notice and this permission notice appear in all copies.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+   *
+   */
+  const iconNode = [
+    [
+      "rect",
+      { "x": "3", "y": "5", "width": "6", "height": "6", "rx": "1" }
+    ],
+    ["path", { "d": "m3 17 2 2 4-4" }],
+    ["path", { "d": "M13 6h8" }],
+    ["path", { "d": "M13 12h8" }],
+    ["path", { "d": "M13 18h8" }]
+  ];
+  Icon($$renderer, spread_props([
+    { name: "list-todo" },
+    $$sanitized_props,
+    {
+      /**
+       * @component @name ListTodo
+       * @description Lucide SVG icon component, renders SVG Element with children.
+       *
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cmVjdCB4PSIzIiB5PSI1IiB3aWR0aD0iNiIgaGVpZ2h0PSI2IiByeD0iMSIgLz4KICA8cGF0aCBkPSJtMyAxNyAyIDIgNC00IiAvPgogIDxwYXRoIGQ9Ik0xMyA2aDgiIC8+CiAgPHBhdGggZD0iTTEzIDEyaDgiIC8+CiAgPHBhdGggZD0iTTEzIDE4aDgiIC8+Cjwvc3ZnPgo=) - https://lucide.dev/icons/list-todo
+       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
+       *
+       * @param {Object} props - Lucide icons props and any valid SVG attribute
+       * @returns {FunctionalComponent} Svelte component
+       *
+       */
+      iconNode,
+      children: ($$renderer2) => {
+        $$renderer2.push(`<!--[-->`);
+        slot($$renderer2, $$props, "default", {});
+        $$renderer2.push(`<!--]-->`);
+      },
+      $$slots: { default: true }
+    }
+  ]));
+}
 function Menu($$renderer, $$props) {
   const $$sanitized_props = sanitize_props($$props);
   /**
@@ -430,7 +458,7 @@ function Menu($$renderer, $$props) {
     }
   ]));
 }
-function Play($$renderer, $$props) {
+function Plus($$renderer, $$props) {
   const $$sanitized_props = sanitize_props($$props);
   /**
    * @license lucide-svelte v0.474.0 - ISC
@@ -452,16 +480,16 @@ function Play($$renderer, $$props) {
    * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
    *
    */
-  const iconNode = [["polygon", { "points": "6 3 20 12 6 21 6 3" }]];
+  const iconNode = [["path", { "d": "M5 12h14" }], ["path", { "d": "M12 5v14" }]];
   Icon($$renderer, spread_props([
-    { name: "play" },
+    { name: "plus" },
     $$sanitized_props,
     {
       /**
-       * @component @name Play
+       * @component @name Plus
        * @description Lucide SVG icon component, renders SVG Element with children.
        *
-       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cG9seWdvbiBwb2ludHM9IjYgMyAyMCAxMiA2IDIxIDYgMyIgLz4KPC9zdmc+Cg==) - https://lucide.dev/icons/play
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNNSAxMmgxNCIgLz4KICA8cGF0aCBkPSJNMTIgNXYxNCIgLz4KPC9zdmc+Cg==) - https://lucide.dev/icons/plus
        * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
        *
        * @param {Object} props - Lucide icons props and any valid SVG attribute
@@ -478,7 +506,58 @@ function Play($$renderer, $$props) {
     }
   ]));
 }
-function Rotate_ccw($$renderer, $$props) {
+function Search($$renderer, $$props) {
+  const $$sanitized_props = sanitize_props($$props);
+  /**
+   * @license lucide-svelte v0.474.0 - ISC
+   *
+   * ISC License
+   *
+   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+   *
+   * Permission to use, copy, modify, and/or distribute this software for any
+   * purpose with or without fee is hereby granted, provided that the above
+   * copyright notice and this permission notice appear in all copies.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+   *
+   */
+  const iconNode = [
+    ["circle", { "cx": "11", "cy": "11", "r": "8" }],
+    ["path", { "d": "m21 21-4.3-4.3" }]
+  ];
+  Icon($$renderer, spread_props([
+    { name: "search" },
+    $$sanitized_props,
+    {
+      /**
+       * @component @name Search
+       * @description Lucide SVG icon component, renders SVG Element with children.
+       *
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8Y2lyY2xlIGN4PSIxMSIgY3k9IjExIiByPSI4IiAvPgogIDxwYXRoIGQ9Im0yMSAyMS00LjMtNC4zIiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/search
+       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
+       *
+       * @param {Object} props - Lucide icons props and any valid SVG attribute
+       * @returns {FunctionalComponent} Svelte component
+       *
+       */
+      iconNode,
+      children: ($$renderer2) => {
+        $$renderer2.push(`<!--[-->`);
+        slot($$renderer2, $$props, "default", {});
+        $$renderer2.push(`<!--]-->`);
+      },
+      $$slots: { default: true }
+    }
+  ]));
+}
+function Settings($$renderer, $$props) {
   const $$sanitized_props = sanitize_props($$props);
   /**
    * @license lucide-svelte v0.474.0 - ISC
@@ -503,19 +582,21 @@ function Rotate_ccw($$renderer, $$props) {
   const iconNode = [
     [
       "path",
-      { "d": "M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" }
+      {
+        "d": "M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"
+      }
     ],
-    ["path", { "d": "M3 3v5h5" }]
+    ["circle", { "cx": "12", "cy": "12", "r": "3" }]
   ];
   Icon($$renderer, spread_props([
-    { name: "rotate-ccw" },
+    { name: "settings" },
     $$sanitized_props,
     {
       /**
-       * @component @name RotateCcw
+       * @component @name Settings
        * @description Lucide SVG icon component, renders SVG Element with children.
        *
-       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNMyAxMmE5IDkgMCAxIDAgOS05IDkuNzUgOS43NSAwIDAgMC02Ljc0IDIuNzRMMyA4IiAvPgogIDxwYXRoIGQ9Ik0zIDN2NWg1IiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/rotate-ccw
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNMTIuMjIgMmgtLjQ0YTIgMiAwIDAgMC0yIDJ2LjE4YTIgMiAwIDAgMS0xIDEuNzNsLS40My4yNWEyIDIgMCAwIDEtMiAwbC0uMTUtLjA4YTIgMiAwIDAgMC0yLjczLjczbC0uMjIuMzhhMiAyIDAgMCAwIC43MyAyLjczbC4xNS4xYTIgMiAwIDAgMSAxIDEuNzJ2LjUxYTIgMiAwIDAgMS0xIDEuNzRsLS4xNS4wOWEyIDIgMCAwIDAtLjczIDIuNzNsLjIyLjM4YTIgMiAwIDAgMCAyLjczLjczbC4xNS0uMDhhMiAyIDAgMCAxIDIgMGwuNDMuMjVhMiAyIDAgMCAxIDEgMS43M1YyMGEyIDIgMCAwIDAgMiAyaC40NGEyIDIgMCAwIDAgMi0ydi0uMThhMiAyIDAgMCAxIDEtMS43M2wuNDMtLjI1YTIgMiAwIDAgMSAyIDBsLjE1LjA4YTIgMiAwIDAgMCAyLjczLS43M2wuMjItLjM5YTIgMiAwIDAgMC0uNzMtMi43M2wtLjE1LS4wOGEyIDIgMCAwIDEtMS0xLjc0di0uNWEyIDIgMCAwIDEgMS0xLjc0bC4xNS0uMDlhMiAyIDAgMCAwIC43My0yLjczbC0uMjItLjM4YTIgMiAwIDAgMC0yLjczLS43M2wtLjE1LjA4YTIgMiAwIDAgMS0yIDBsLS40My0uMjVhMiAyIDAgMCAxLTEtMS43M1Y0YTIgMiAwIDAgMC0yLTJ6IiAvPgogIDxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjMiIC8+Cjwvc3ZnPgo=) - https://lucide.dev/icons/settings
        * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
        *
        * @param {Object} props - Lucide icons props and any valid SVG attribute
@@ -532,7 +613,7 @@ function Rotate_ccw($$renderer, $$props) {
     }
   ]));
 }
-function Sun($$renderer, $$props) {
+function Target($$renderer, $$props) {
   const $$sanitized_props = sanitize_props($$props);
   /**
    * @license lucide-svelte v0.474.0 - ISC
@@ -555,25 +636,19 @@ function Sun($$renderer, $$props) {
    *
    */
   const iconNode = [
-    ["circle", { "cx": "12", "cy": "12", "r": "4" }],
-    ["path", { "d": "M12 2v2" }],
-    ["path", { "d": "M12 20v2" }],
-    ["path", { "d": "m4.93 4.93 1.41 1.41" }],
-    ["path", { "d": "m17.66 17.66 1.41 1.41" }],
-    ["path", { "d": "M2 12h2" }],
-    ["path", { "d": "M20 12h2" }],
-    ["path", { "d": "m6.34 17.66-1.41 1.41" }],
-    ["path", { "d": "m19.07 4.93-1.41 1.41" }]
+    ["circle", { "cx": "12", "cy": "12", "r": "10" }],
+    ["circle", { "cx": "12", "cy": "12", "r": "6" }],
+    ["circle", { "cx": "12", "cy": "12", "r": "2" }]
   ];
   Icon($$renderer, spread_props([
-    { name: "sun" },
+    { name: "target" },
     $$sanitized_props,
     {
       /**
-       * @component @name Sun
+       * @component @name Target
        * @description Lucide SVG icon component, renders SVG Element with children.
        *
-       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI0IiAvPgogIDxwYXRoIGQ9Ik0xMiAydjIiIC8+CiAgPHBhdGggZD0iTTEyIDIwdjIiIC8+CiAgPHBhdGggZD0ibTQuOTMgNC45MyAxLjQxIDEuNDEiIC8+CiAgPHBhdGggZD0ibTE3LjY2IDE3LjY2IDEuNDEgMS40MSIgLz4KICA8cGF0aCBkPSJNMiAxMmgyIiAvPgogIDxwYXRoIGQ9Ik0yMCAxMmgyIiAvPgogIDxwYXRoIGQ9Im02LjM0IDE3LjY2LTEuNDEgMS40MSIgLz4KICA8cGF0aCBkPSJtMTkuMDcgNC45My0xLjQxIDEuNDEiIC8+Cjwvc3ZnPgo=) - https://lucide.dev/icons/sun
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSIxMCIgLz4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjEyIiByPSI2IiAvPgogIDxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjIiIC8+Cjwvc3ZnPgo=) - https://lucide.dev/icons/target
        * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
        *
        * @param {Object} props - Lucide icons props and any valid SVG attribute
@@ -590,389 +665,303 @@ function Sun($$renderer, $$props) {
     }
   ]));
 }
-function New_issue_dialog($$renderer, $$props) {
-  $$renderer.component(($$renderer2) => {
+function Timer($$renderer, $$props) {
+  const $$sanitized_props = sanitize_props($$props);
+  /**
+   * @license lucide-svelte v0.474.0 - ISC
+   *
+   * ISC License
+   *
+   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+   *
+   * Permission to use, copy, modify, and/or distribute this software for any
+   * purpose with or without fee is hereby granted, provided that the above
+   * copyright notice and this permission notice appear in all copies.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+   *
+   */
+  const iconNode = [
+    ["line", { "x1": "10", "x2": "14", "y1": "2", "y2": "2" }],
+    ["line", { "x1": "12", "x2": "15", "y1": "14", "y2": "11" }],
+    ["circle", { "cx": "12", "cy": "14", "r": "8" }]
+  ];
+  Icon($$renderer, spread_props([
+    { name: "timer" },
+    $$sanitized_props,
     {
-      $$renderer2.push("<!--[-1-->");
+      /**
+       * @component @name Timer
+       * @description Lucide SVG icon component, renders SVG Element with children.
+       *
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8bGluZSB4MT0iMTAiIHgyPSIxNCIgeTE9IjIiIHkyPSIyIiAvPgogIDxsaW5lIHgxPSIxMiIgeDI9IjE1IiB5MT0iMTQiIHkyPSIxMSIgLz4KICA8Y2lyY2xlIGN4PSIxMiIgY3k9IjE0IiByPSI4IiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/timer
+       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
+       *
+       * @param {Object} props - Lucide icons props and any valid SVG attribute
+       * @returns {FunctionalComponent} Svelte component
+       *
+       */
+      iconNode,
+      children: ($$renderer2) => {
+        $$renderer2.push(`<!--[-->`);
+        slot($$renderer2, $$props, "default", {});
+        $$renderer2.push(`<!--]-->`);
+      },
+      $$slots: { default: true }
     }
-    $$renderer2.push(`<!--]-->`);
-  });
+  ]));
+}
+function Users($$renderer, $$props) {
+  const $$sanitized_props = sanitize_props($$props);
+  /**
+   * @license lucide-svelte v0.474.0 - ISC
+   *
+   * ISC License
+   *
+   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+   *
+   * Permission to use, copy, modify, and/or distribute this software for any
+   * purpose with or without fee is hereby granted, provided that the above
+   * copyright notice and this permission notice appear in all copies.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+   *
+   */
+  const iconNode = [
+    ["path", { "d": "M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" }],
+    ["circle", { "cx": "9", "cy": "7", "r": "4" }],
+    ["path", { "d": "M22 21v-2a4 4 0 0 0-3-3.87" }],
+    ["path", { "d": "M16 3.13a4 4 0 0 1 0 7.75" }]
+  ];
+  Icon($$renderer, spread_props([
+    { name: "users" },
+    $$sanitized_props,
+    {
+      /**
+       * @component @name Users
+       * @description Lucide SVG icon component, renders SVG Element with children.
+       *
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNMTYgMjF2LTJhNCA0IDAgMCAwLTQtNEg2YTQgNCAwIDAgMC00IDR2MiIgLz4KICA8Y2lyY2xlIGN4PSI5IiBjeT0iNyIgcj0iNCIgLz4KICA8cGF0aCBkPSJNMjIgMjF2LTJhNCA0IDAgMCAwLTMtMy44NyIgLz4KICA8cGF0aCBkPSJNMTYgMy4xM2E0IDQgMCAwIDEgMCA3Ljc1IiAvPgo8L3N2Zz4K) - https://lucide.dev/icons/users
+       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
+       *
+       * @param {Object} props - Lucide icons props and any valid SVG attribute
+       * @returns {FunctionalComponent} Svelte component
+       *
+       */
+      iconNode,
+      children: ($$renderer2) => {
+        $$renderer2.push(`<!--[-->`);
+        slot($$renderer2, $$props, "default", {});
+        $$renderer2.push(`<!--]-->`);
+      },
+      $$slots: { default: true }
+    }
+  ]));
+}
+function X($$renderer, $$props) {
+  const $$sanitized_props = sanitize_props($$props);
+  /**
+   * @license lucide-svelte v0.474.0 - ISC
+   *
+   * ISC License
+   *
+   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+   *
+   * Permission to use, copy, modify, and/or distribute this software for any
+   * purpose with or without fee is hereby granted, provided that the above
+   * copyright notice and this permission notice appear in all copies.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+   *
+   */
+  const iconNode = [
+    ["path", { "d": "M18 6 6 18" }],
+    ["path", { "d": "m6 6 12 12" }]
+  ];
+  Icon($$renderer, spread_props([
+    { name: "x" },
+    $$sanitized_props,
+    {
+      /**
+       * @component @name X
+       * @description Lucide SVG icon component, renders SVG Element with children.
+       *
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNMTggNiA2IDE4IiAvPgogIDxwYXRoIGQ9Im02IDYgMTIgMTIiIC8+Cjwvc3ZnPgo=) - https://lucide.dev/icons/x
+       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
+       *
+       * @param {Object} props - Lucide icons props and any valid SVG attribute
+       * @returns {FunctionalComponent} Svelte component
+       *
+       */
+      iconNode,
+      children: ($$renderer2) => {
+        $$renderer2.push(`<!--[-->`);
+        slot($$renderer2, $$props, "default", {});
+        $$renderer2.push(`<!--]-->`);
+      },
+      $$slots: { default: true }
+    }
+  ]));
+}
+function Zap($$renderer, $$props) {
+  const $$sanitized_props = sanitize_props($$props);
+  /**
+   * @license lucide-svelte v0.474.0 - ISC
+   *
+   * ISC License
+   *
+   * Copyright (c) for portions of Lucide are held by Cole Bemis 2013-2022 as part of Feather (MIT). All other copyright (c) for Lucide are held by Lucide Contributors 2022.
+   *
+   * Permission to use, copy, modify, and/or distribute this software for any
+   * purpose with or without fee is hereby granted, provided that the above
+   * copyright notice and this permission notice appear in all copies.
+   *
+   * THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+   * WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+   * MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+   * ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+   * WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+   * ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+   * OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+   *
+   */
+  const iconNode = [
+    [
+      "path",
+      {
+        "d": "M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"
+      }
+    ]
+  ];
+  Icon($$renderer, spread_props([
+    { name: "zap" },
+    $$sanitized_props,
+    {
+      /**
+       * @component @name Zap
+       * @description Lucide SVG icon component, renders SVG Element with children.
+       *
+       * @preview ![img](data:image/svg+xml;base64,PHN2ZyAgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIgogIHdpZHRoPSIyNCIKICBoZWlnaHQ9IjI0IgogIHZpZXdCb3g9IjAgMCAyNCAyNCIKICBmaWxsPSJub25lIgogIHN0cm9rZT0iIzAwMCIgc3R5bGU9ImJhY2tncm91bmQtY29sb3I6ICNmZmY7IGJvcmRlci1yYWRpdXM6IDJweCIKICBzdHJva2Utd2lkdGg9IjIiCiAgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIgogIHN0cm9rZS1saW5lam9pbj0icm91bmQiCj4KICA8cGF0aCBkPSJNNCAxNGExIDEgMCAwIDEtLjc4LTEuNjNsOS45LTEwLjJhLjUuNSAwIDAgMSAuODYuNDZsLTEuOTIgNi4wMkExIDEgMCAwIDAgMTMgMTBoN2ExIDEgMCAwIDEgLjc4IDEuNjNsLTkuOSAxMC4yYS41LjUgMCAwIDEtLjg2LS40NmwxLjkyLTYuMDJBMSAxIDAgMCAwIDExIDE0eiIgLz4KPC9zdmc+Cg==) - https://lucide.dev/icons/zap
+       * @see https://lucide.dev/guide/packages/lucide-svelte - Documentation
+       *
+       * @param {Object} props - Lucide icons props and any valid SVG attribute
+       * @returns {FunctionalComponent} Svelte component
+       *
+       */
+      iconNode,
+      children: ($$renderer2) => {
+        $$renderer2.push(`<!--[-->`);
+        slot($$renderer2, $$props, "default", {});
+        $$renderer2.push(`<!--]-->`);
+      },
+      $$slots: { default: true }
+    }
+  ]));
 }
 function Sidebar($$renderer, $$props) {
   $$renderer.component(($$renderer2) => {
     var $$store_subs;
     const prefix = derived(() => companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? "");
-    const companyName = derived(() => companyStore.selectedCompany?.name ?? "ClawDev");
-    const companyBrandColor = derived(() => companyStore.selectedCompany?.brandColor ?? "#3B82F6");
-    const hasMultipleCompanies = derived(() => companyStore.companies.length > 1);
-    let activeRunCount = null;
-    let allProjects = [];
-    const PROJECTS_COLLAPSED_LIMIT = 10;
-    let visibleProjects = derived(() => allProjects.slice(0, PROJECTS_COLLAPSED_LIMIT));
-    let hasMoreProjects = derived(() => allProjects.length > PROJECTS_COLLAPSED_LIMIT);
-    let allAgents = [];
-    const AGENTS_COLLAPSED_LIMIT = 10;
-    let visibleAgents = derived(() => allAgents.slice(0, AGENTS_COLLAPSED_LIMIT));
-    let hasMoreAgents = derived(() => allAgents.length > AGENTS_COLLAPSED_LIMIT);
-    const avatarStatusColor = derived(() => (
-      // red — errors present
-      null
-    ));
-    const sections = [
-      {
-        key: "overview",
-        label: "Overview",
-        defaultOpen: true,
-        items: [
-          {
-            label: "Dashboard",
-            href: "dashboard",
-            icon: Layout_dashboard,
-            badge: () => null,
-            badgeStyle: "live"
-          },
-          {
-            label: "Inbox",
-            href: "inbox",
-            icon: Inbox,
-            badge: () => null,
-            badgeStyle: "count"
-          }
-        ]
-      },
-      {
-        key: "work",
-        label: "Work",
-        defaultOpen: true,
-        items: [
-          { label: "Issues", href: "issues", icon: List_todo },
-          { label: "Runs", href: "runs", icon: Play },
-          {
-            label: "Routines",
-            href: "routines",
-            icon: Rotate_ccw,
-            betaBadge: true
-          },
-          { label: "Goals", href: "goals", icon: Target }
-        ]
-      }
+    const primaryNav = [
+      { label: "Dashboard", href: "dashboard", icon: Layout_dashboard },
+      { label: "Inbox", href: "inbox", icon: Inbox }
     ];
-    const moreSection = {
-      key: "more",
-      label: "More",
-      defaultOpen: false,
-      items: [
-        { label: "Approvals", href: "approvals", icon: Shield_check },
-        { label: "Workspaces", href: "workspaces", icon: Box },
-        { label: "Org", href: "org", icon: Building_2 },
-        { label: "Costs", href: "costs", icon: Dollar_sign },
-        { label: "Activity", href: "activity", icon: Activity },
-        { label: "Settings", href: "settings", icon: Settings }
-      ]
-    };
-    const allSections = [...sections, moreSection];
-    const SECTION_STORAGE_KEY = "clawdev.sidebar.sections";
-    const ALL_SECTION_KEYS = [...allSections.map((s) => s.key), "projects", "agents"];
-    function loadSectionState() {
-      const defaults = {};
-      for (const s of allSections) defaults[s.key] = s.defaultOpen;
-      defaults["projects"] = true;
-      defaults["agents"] = true;
-      if (typeof window === "undefined") return defaults;
-      try {
-        const stored = localStorage.getItem(SECTION_STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          for (const key of ALL_SECTION_KEYS) {
-            if (parsed[key] != null) defaults[key] = parsed[key];
-          }
-        }
-      } catch {
-      }
-      return defaults;
-    }
-    let sectionOpen = loadSectionState();
-    let companySwitcherOpen = false;
+    const workNav = [
+      { label: "Issues", href: "issues", icon: List_todo },
+      { label: "Routines", href: "routines", icon: Timer },
+      { label: "Goals", href: "goals", icon: Target }
+    ];
+    const companyNav = [
+      { label: "Agents", href: "agents", icon: Zap },
+      { label: "Projects", href: "projects", icon: Folder_kanban },
+      { label: "Org", href: "org", icon: Users },
+      { label: "Costs", href: "costs", icon: Dollar_sign },
+      { label: "Activity", href: "activity", icon: Activity },
+      { label: "Settings", href: "settings", icon: Settings }
+    ];
     function isActive(href) {
       return store_get($$store_subs ??= {}, "$page", page).url.pathname.includes(`/${prefix()}/${href}`);
     }
-    function formatBadge(value) {
-      const num = typeof value === "string" ? parseInt(value, 10) : value;
-      if (isNaN(num)) return String(value);
-      if (num >= 1e3) return `${(num / 1e3).toFixed(1)}k`;
-      return String(num);
-    }
-    const PROJECT_COLORS = [
-      "#ef4444",
-      "#f97316",
-      "#eab308",
-      "#22c55e",
-      "#06b6d4",
-      "#3b82f6",
-      "#8b5cf6",
-      "#ec4899",
-      "#14b8a6",
-      "#f59e0b"
-    ];
-    function projectColor(proj) {
-      if (proj.color) return proj.color;
-      let hash = 0;
-      for (let i = 0; i < proj.name.length; i++) hash = hash * 31 + proj.name.charCodeAt(i) | 0;
-      return PROJECT_COLORS[Math.abs(hash) % PROJECT_COLORS.length];
-    }
-    function agentInitials(agent) {
-      if (agent.icon) return agent.icon;
-      return agent.name.slice(0, 2).toUpperCase();
-    }
-    const AGENT_STATUS_COLORS = {
-      running: "#3b82f6",
-      idle: "#22c55e",
-      paused: "#eab308",
-      error: "#ef4444",
-      stopped: "#6b7280"
-    };
-    function agentStatusColor(agent) {
-      if (!agent.status) return null;
-      return AGENT_STATUS_COLORS[agent.status] ?? null;
-    }
-    $$renderer2.push(`<aside data-slot="sidebar"${attr_class(clsx(cn("flex h-full w-60 shrink-0 flex-col border-r", "bg-[var(--clawdev-bg-base)] text-[var(--clawdev-text-primary)] border-[var(--clawdev-bg-surface-border)]", sidebarStore.isMobile && "fixed inset-y-0 left-0 z-50 shadow-xl", sidebarStore.isMobile && !sidebarStore.open && "-translate-x-full", "transition-transform duration-200")))}><div class="flex h-14 items-center justify-between px-4 border-b border-[var(--clawdev-bg-surface-border)]"><div class="relative flex items-center gap-2.5 min-w-0 flex-1">`);
-    if (hasMultipleCompanies()) {
-      $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<button class="flex items-center gap-2.5 min-w-0 hover:opacity-80 transition-opacity" aria-label="Switch company"><div class="relative shrink-0"><div class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white uppercase select-none"${attr_style("", { "background-color": companyBrandColor() })}>${escape_html(companyName().charAt(0))}</div> `);
-      if (avatarStatusColor()) {
-        $$renderer2.push("<!--[0-->");
-        $$renderer2.push(`<span${attr_class(clsx(cn("absolute -bottom-0.5 -right-0.5 block h-2.5 w-2.5 rounded-full border-2 border-[var(--clawdev-bg-base)]", activeRunCount != null)))}${attr_style("", { "background-color": avatarStatusColor() })}></span>`);
-      } else {
-        $$renderer2.push("<!--[-1-->");
-      }
-      $$renderer2.push(`<!--]--></div> <span class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">${escape_html(companyName())}</span> `);
-      Chevron_down($$renderer2, {
-        class: cn("size-3.5 shrink-0 text-[var(--clawdev-text-muted)] transition-transform duration-150", companySwitcherOpen)
-      });
-      $$renderer2.push(`<!----></button> `);
-      {
-        $$renderer2.push("<!--[-1-->");
-      }
-      $$renderer2.push(`<!--]-->`);
-    } else {
-      $$renderer2.push("<!--[-1-->");
-      $$renderer2.push(`<div class="relative shrink-0"><div class="flex h-8 w-8 items-center justify-center rounded-full text-xs font-bold text-white uppercase select-none"${attr_style("", { "background-color": companyBrandColor() })}>${escape_html(companyName().charAt(0))}</div> `);
-      if (avatarStatusColor()) {
-        $$renderer2.push("<!--[0-->");
-        $$renderer2.push(`<span${attr_class(clsx(cn("absolute -bottom-0.5 -right-0.5 block h-2.5 w-2.5 rounded-full border-2 border-[var(--clawdev-bg-base)]", activeRunCount != null)))}${attr_style("", { "background-color": avatarStatusColor() })}></span>`);
-      } else {
-        $$renderer2.push("<!--[-1-->");
-      }
-      $$renderer2.push(`<!--]--></div> <span class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">${escape_html(companyName())}</span>`);
-    }
-    $$renderer2.push(`<!--]--></div> <div class="flex items-center gap-1"><button class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors" aria-label="Search (Ctrl+K)" title="Search (Ctrl+K)">`);
+    $$renderer2.push(`<aside data-slot="sidebar"${attr_class(clsx$1(cn("bg-sidebar text-sidebar-foreground border-sidebar-border flex h-full w-60 shrink-0 flex-col border-r", sidebarStore.isMobile && "fixed inset-y-0 left-0 z-50 shadow-xl", sidebarStore.isMobile && !sidebarStore.open && "-translate-x-full", "transition-transform duration-200")))}><div class="flex h-14 items-center justify-between px-4"><span class="text-sm font-semibold truncate">${escape_html(companyStore.selectedCompany?.name ?? "ClawDev")}</span> <div class="flex items-center gap-1"><button class="text-sidebar-foreground/60 hover:text-sidebar-foreground p-1 rounded-md hover:bg-sidebar-accent" aria-label="Search">`);
     Search($$renderer2, { class: "size-4" });
     $$renderer2.push(`<!----></button> `);
     if (sidebarStore.isMobile) {
       $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<button class="text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] p-1 rounded-md" aria-label="Close sidebar">`);
+      $$renderer2.push(`<button class="text-sidebar-foreground/60 hover:text-sidebar-foreground p-1 rounded-md" aria-label="Close sidebar">`);
       X($$renderer2, { class: "size-4" });
       $$renderer2.push(`<!----></button>`);
     } else {
       $$renderer2.push("<!--[-1-->");
     }
-    $$renderer2.push(`<!--]--></div></div> <div class="px-3 pt-3 pb-1"><button class="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-[var(--clawdev-primary)] px-3 text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors">`);
+    $$renderer2.push(`<!--]--></div></div> <div class="px-3 pb-2"><button class="flex h-8 w-full items-center gap-2 rounded-md border border-sidebar-border px-3 text-xs font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors">`);
     Plus($$renderer2, { class: "size-3.5" });
-    $$renderer2.push(`<!----> New Issue</button></div> <nav class="flex-1 overflow-y-auto px-3 pt-2 pb-4"><!--[-->`);
-    const each_array_1 = ensure_array_like(sections);
-    for (let $$index_2 = 0, $$length = each_array_1.length; $$index_2 < $$length; $$index_2++) {
-      let section = each_array_1[$$index_2];
-      $$renderer2.push(`<div class="mt-3 first:mt-0"><button class="flex w-full items-center gap-1 px-1.5 py-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm group"${attr("aria-expanded", sectionOpen[section.key])}>`);
-      Chevron_right($$renderer2, {
-        class: cn("size-3 shrink-0 transition-transform duration-150", sectionOpen[section.key] && "rotate-90")
-      });
-      $$renderer2.push(`<!----> <span class="select-none">${escape_html(section.label)}</span></button> `);
-      if (sectionOpen[section.key]) {
-        $$renderer2.push("<!--[0-->");
-        $$renderer2.push(`<div class="mt-0.5 space-y-px"><!--[-->`);
-        const each_array_2 = ensure_array_like(section.items);
-        for (let $$index_1 = 0, $$length2 = each_array_2.length; $$index_1 < $$length2; $$index_1++) {
-          let item = each_array_2[$$index_1];
-          $$renderer2.push(`<a${attr("href", `/${prefix()}/${item.href}`)}${attr_class(clsx(cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors", isActive(item.href) ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium" : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]")))}>`);
-          if (item.icon) {
-            $$renderer2.push("<!--[-->");
-            item.icon($$renderer2, { class: "size-4 shrink-0" });
-            $$renderer2.push("<!--]-->");
-          } else {
-            $$renderer2.push("<!--[!-->");
-            $$renderer2.push("<!--]-->");
-          }
-          $$renderer2.push(` <span class="flex-1 truncate">${escape_html(item.label)}</span> `);
-          if (item.betaBadge) {
-            $$renderer2.push("<!--[0-->");
-            $$renderer2.push(`<span class="ml-0.5 inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase leading-tight bg-[rgba(245,158,11,0.15)] text-[#f59e0b]">Beta</span>`);
-          } else {
-            $$renderer2.push("<!--[-1-->");
-          }
-          $$renderer2.push(`<!--]--> `);
-          if (item.badge) {
-            $$renderer2.push("<!--[0-->");
-            const badgeValue = item.badge();
-            if (badgeValue != null) {
-              $$renderer2.push("<!--[0-->");
-              if (item.badgeStyle === "live") {
-                $$renderer2.push("<!--[0-->");
-                $$renderer2.push(`<span class="ml-auto flex items-center gap-1 text-[11px] font-medium tabular-nums text-[#60a5fa]"><span class="inline-block h-1.5 w-1.5 rounded-full bg-[#3b82f6] animate-pulse"></span> ${escape_html(typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue)}</span>`);
-              } else if (item.badgeStyle === "count") {
-                $$renderer2.push("<!--[1-->");
-                $$renderer2.push(`<span class="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums bg-[#ef4444] text-white">${escape_html(typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue)}</span>`);
-              } else {
-                $$renderer2.push("<!--[-1-->");
-                $$renderer2.push(`<span class="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-medium tabular-nums bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-muted)]">${escape_html(typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue)}</span>`);
-              }
-              $$renderer2.push(`<!--]-->`);
-            } else {
-              $$renderer2.push("<!--[-1-->");
-            }
-            $$renderer2.push(`<!--]-->`);
-          } else {
-            $$renderer2.push("<!--[-1-->");
-          }
-          $$renderer2.push(`<!--]--></a>`);
-        }
-        $$renderer2.push(`<!--]--></div>`);
+    $$renderer2.push(`<!----> New Issue</button></div> <nav class="flex-1 overflow-y-auto px-3 pb-4"><div class="space-y-0.5"><!--[-->`);
+    const each_array = ensure_array_like(primaryNav);
+    for (let $$index = 0, $$length = each_array.length; $$index < $$length; $$index++) {
+      let item = each_array[$$index];
+      $$renderer2.push(`<a${attr("href", `/${prefix()}/${item.href}`)}${attr("data-active", isActive(item.href))} class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-foreground transition-colors">`);
+      if (item.icon) {
+        $$renderer2.push("<!--[-->");
+        item.icon($$renderer2, { class: "size-4 shrink-0" });
+        $$renderer2.push("<!--]-->");
       } else {
-        $$renderer2.push("<!--[-1-->");
+        $$renderer2.push("<!--[!-->");
+        $$renderer2.push("<!--]-->");
       }
-      $$renderer2.push(`<!--]--></div>`);
+      $$renderer2.push(` ${escape_html(item.label)}</a>`);
     }
-    $$renderer2.push(`<!--]-->  <div class="mt-3"><div class="flex items-center justify-between px-1.5 py-1"><button class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm"${attr("aria-expanded", sectionOpen["projects"])}>`);
-    Chevron_right($$renderer2, {
-      class: cn("size-3 shrink-0 transition-transform duration-150", sectionOpen["projects"] && "rotate-90")
-    });
-    $$renderer2.push(`<!----> <span class="select-none">Projects</span></button> <a${attr("href", `/${prefix()}/projects?new=true`)} class="flex h-5 w-5 items-center justify-center rounded text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors" title="New project" aria-label="New project">`);
-    Plus($$renderer2, { class: "size-3" });
-    $$renderer2.push(`<!----></a></div> `);
-    if (sectionOpen["projects"]) {
-      $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<div class="mt-0.5 space-y-px">`);
-      if (allProjects.length === 0) {
-        $$renderer2.push("<!--[0-->");
-        $$renderer2.push(`<div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">No projects yet</div>`);
+    $$renderer2.push(`<!--]--></div> <div class="mt-6"><div class="mb-1 px-2 text-xs font-medium text-sidebar-foreground/40 uppercase tracking-wider">Work</div> <div class="space-y-0.5"><!--[-->`);
+    const each_array_1 = ensure_array_like(workNav);
+    for (let $$index_1 = 0, $$length = each_array_1.length; $$index_1 < $$length; $$index_1++) {
+      let item = each_array_1[$$index_1];
+      $$renderer2.push(`<a${attr("href", `/${prefix()}/${item.href}`)}${attr("data-active", isActive(item.href))} class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-foreground transition-colors">`);
+      if (item.icon) {
+        $$renderer2.push("<!--[-->");
+        item.icon($$renderer2, { class: "size-4 shrink-0" });
+        $$renderer2.push("<!--]-->");
       } else {
-        $$renderer2.push("<!--[-1-->");
-        $$renderer2.push(`<!--[-->`);
-        const each_array_3 = ensure_array_like(visibleProjects());
-        for (let $$index_3 = 0, $$length = each_array_3.length; $$index_3 < $$length; $$index_3++) {
-          let proj = each_array_3[$$index_3];
-          $$renderer2.push(`<a${attr("href", `/${prefix()}/projects/${proj.slug ?? proj.id}/issues`)}${attr_class(clsx(cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors", store_get($$store_subs ??= {}, "$page", page).url.pathname.includes(`/projects/${proj.slug ?? proj.id}`) ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium" : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]")))}><span class="h-2 w-2 rounded-full shrink-0"${attr_style("", { background: projectColor(proj) })}></span> <span class="flex-1 truncate">${escape_html(proj.name)}</span></a>`);
-        }
-        $$renderer2.push(`<!--]--> `);
-        if (hasMoreProjects()) {
-          $$renderer2.push("<!--[0-->");
-          $$renderer2.push(`<button class="flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--clawdev-text-muted)]/60 hover:text-[var(--clawdev-text-muted)] transition-colors w-full">`);
-          {
-            $$renderer2.push("<!--[-1-->");
-            $$renderer2.push(`Show ${escape_html(allProjects.length - PROJECTS_COLLAPSED_LIMIT)} more...`);
-          }
-          $$renderer2.push(`<!--]--></button>`);
-        } else {
-          $$renderer2.push("<!--[-1-->");
-        }
-        $$renderer2.push(`<!--]-->`);
+        $$renderer2.push("<!--[!-->");
+        $$renderer2.push("<!--]-->");
       }
-      $$renderer2.push(`<!--]--></div>`);
-    } else {
-      $$renderer2.push("<!--[-1-->");
+      $$renderer2.push(` ${escape_html(item.label)}</a>`);
     }
-    $$renderer2.push(`<!--]--></div>  <div class="mt-3"><div class="flex items-center justify-between px-1.5 py-1"><button class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm"${attr("aria-expanded", sectionOpen["agents"])}>`);
-    Chevron_right($$renderer2, {
-      class: cn("size-3 shrink-0 transition-transform duration-150", sectionOpen["agents"] && "rotate-90")
-    });
-    $$renderer2.push(`<!----> <span class="select-none">Agents</span></button> <a${attr("href", `/${prefix()}/agents/new`)} class="flex h-5 w-5 items-center justify-center rounded text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors" title="New agent" aria-label="New agent">`);
-    Plus($$renderer2, { class: "size-3" });
-    $$renderer2.push(`<!----></a></div> `);
-    if (sectionOpen["agents"]) {
-      $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<div class="mt-0.5 space-y-px">`);
-      if (allAgents.length === 0) {
-        $$renderer2.push("<!--[0-->");
-        $$renderer2.push(`<div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">No agents yet</div>`);
+    $$renderer2.push(`<!--]--></div></div> <div class="mt-6"><div class="mb-1 px-2 text-xs font-medium text-sidebar-foreground/40 uppercase tracking-wider">Company</div> <div class="space-y-0.5"><!--[-->`);
+    const each_array_2 = ensure_array_like(companyNav);
+    for (let $$index_2 = 0, $$length = each_array_2.length; $$index_2 < $$length; $$index_2++) {
+      let item = each_array_2[$$index_2];
+      $$renderer2.push(`<a${attr("href", `/${prefix()}/${item.href}`)}${attr("data-active", isActive(item.href))} class="flex items-center gap-2 rounded-md px-2 py-1.5 text-sm text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground data-[active=true]:bg-sidebar-accent data-[active=true]:text-sidebar-foreground transition-colors">`);
+      if (item.icon) {
+        $$renderer2.push("<!--[-->");
+        item.icon($$renderer2, { class: "size-4 shrink-0" });
+        $$renderer2.push("<!--]-->");
       } else {
-        $$renderer2.push("<!--[-1-->");
-        $$renderer2.push(`<!--[-->`);
-        const each_array_4 = ensure_array_like(visibleAgents());
-        for (let $$index_4 = 0, $$length = each_array_4.length; $$index_4 < $$length; $$index_4++) {
-          let agent = each_array_4[$$index_4];
-          $$renderer2.push(`<a${attr("href", `/${prefix()}/agents/${agent.slug ?? agent.urlKey ?? agent.id}`)}${attr_class(clsx(cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors", store_get($$store_subs ??= {}, "$page", page).url.pathname.includes(`/agents/${agent.slug ?? agent.urlKey ?? agent.id}`) ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium" : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]")))}><div class="relative shrink-0">`);
-          if (agent.icon) {
-            $$renderer2.push("<!--[0-->");
-            $$renderer2.push(`<span class="flex h-5 w-5 items-center justify-center text-sm"${attr("title", agent.name)}>${escape_html(agent.icon)}</span>`);
-          } else {
-            $$renderer2.push("<!--[-1-->");
-            $$renderer2.push(`<span class="flex h-5 w-5 items-center justify-center rounded bg-[rgba(255,255,255,0.08)] text-[9px] font-bold text-[var(--clawdev-text-muted)] uppercase">${escape_html(agentInitials(agent))}</span>`);
-          }
-          $$renderer2.push(`<!--]--> `);
-          if (agentStatusColor(agent)) {
-            $$renderer2.push("<!--[0-->");
-            $$renderer2.push(`<span${attr_class(clsx(cn("absolute -bottom-px -right-px block h-2 w-2 rounded-full border border-[var(--clawdev-bg-base)]", agent.status === "running" && "animate-pulse")))}${attr_style("", { "background-color": agentStatusColor(agent) })}></span>`);
-          } else {
-            $$renderer2.push("<!--[-1-->");
-          }
-          $$renderer2.push(`<!--]--></div> <span class="flex-1 truncate">${escape_html(agent.name)}</span></a>`);
-        }
-        $$renderer2.push(`<!--]--> `);
-        if (hasMoreAgents()) {
-          $$renderer2.push("<!--[0-->");
-          $$renderer2.push(`<button class="flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--clawdev-text-muted)]/60 hover:text-[var(--clawdev-text-muted)] transition-colors w-full">`);
-          {
-            $$renderer2.push("<!--[-1-->");
-            $$renderer2.push(`Show ${escape_html(allAgents.length - AGENTS_COLLAPSED_LIMIT)} more...`);
-          }
-          $$renderer2.push(`<!--]--></button>`);
-        } else {
-          $$renderer2.push("<!--[-1-->");
-        }
-        $$renderer2.push(`<!--]-->`);
+        $$renderer2.push("<!--[!-->");
+        $$renderer2.push("<!--]-->");
       }
-      $$renderer2.push(`<!--]--></div>`);
-    } else {
-      $$renderer2.push("<!--[-1-->");
+      $$renderer2.push(` ${escape_html(item.label)}</a>`);
     }
-    $$renderer2.push(`<!--]--></div>  <div class="mt-3"><button class="flex w-full items-center gap-1 px-1.5 py-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm group"${attr("aria-expanded", sectionOpen[moreSection.key])}>`);
-    Chevron_right($$renderer2, {
-      class: cn("size-3 shrink-0 transition-transform duration-150", sectionOpen[moreSection.key] && "rotate-90")
-    });
-    $$renderer2.push(`<!----> <span class="select-none">${escape_html(moreSection.label)}</span></button> `);
-    if (sectionOpen[moreSection.key]) {
-      $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<div class="mt-0.5 space-y-px"><!--[-->`);
-      const each_array_5 = ensure_array_like(moreSection.items);
-      for (let $$index_5 = 0, $$length = each_array_5.length; $$index_5 < $$length; $$index_5++) {
-        let item = each_array_5[$$index_5];
-        $$renderer2.push(`<a${attr("href", `/${prefix()}/${item.href}`)}${attr_class(clsx(cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors", isActive(item.href) ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium" : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]")))}>`);
-        if (item.icon) {
-          $$renderer2.push("<!--[-->");
-          item.icon($$renderer2, { class: "size-4 shrink-0" });
-          $$renderer2.push("<!--]-->");
-        } else {
-          $$renderer2.push("<!--[!-->");
-          $$renderer2.push("<!--]-->");
-        }
-        $$renderer2.push(` <span class="flex-1 truncate">${escape_html(item.label)}</span></a>`);
-      }
-      $$renderer2.push(`<!--]--></div>`);
-    } else {
-      $$renderer2.push("<!--[-1-->");
-    }
-    $$renderer2.push(`<!--]--></div></nav> <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-1.5"><a href="/docs" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors">`);
-    Book_open($$renderer2, { class: "size-3.5" });
-    $$renderer2.push(`<!----> Documentation</a> <div class="flex items-center justify-between"><a href="/settings/general" class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors">`);
-    Cog($$renderer2, { class: "size-3.5" });
-    $$renderer2.push(`<!----> Instance Settings</a> <button class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"${attr("aria-label", "Switch to light mode")}${attr("title", "Switch to light mode")}>`);
-    {
-      $$renderer2.push("<!--[0-->");
-      Sun($$renderer2, { class: "size-3.5" });
-    }
-    $$renderer2.push(`<!--]--></button></div> <div class="text-[10px] text-[var(--clawdev-text-muted)]/50 select-none">ClawDev v0.3.1</div></div></aside> `);
+    $$renderer2.push(`<!--]--></div></div></nav></aside> `);
     if (sidebarStore.isMobile && sidebarStore.open) {
       $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<button class="fixed inset-0 z-40 bg-black/60 backdrop-blur-sm" aria-label="Close sidebar"></button>`);
+      $$renderer2.push(`<button class="fixed inset-0 z-40 bg-black/50" aria-label="Close sidebar"></button>`);
     } else {
       $$renderer2.push("<!--[-1-->");
     }
@@ -989,10 +978,10 @@ const breadcrumbStore = {
 function Breadcrumb_bar($$renderer, $$props) {
   $$renderer.component(($$renderer2) => {
     const crumbs = derived(() => breadcrumbStore.items);
-    $$renderer2.push(`<header data-slot="breadcrumb-bar" class="flex h-14 shrink-0 items-center gap-3 border-b border-[var(--clawdev-bg-surface-border)] px-4 bg-[var(--clawdev-bg-base)]">`);
+    $$renderer2.push(`<header data-slot="breadcrumb-bar" class="flex h-14 shrink-0 items-center gap-3 border-b px-4">`);
     if (sidebarStore.isMobile) {
       $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<button class="p-1 -ml-1 rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.1)]" aria-label="Toggle sidebar">`);
+      $$renderer2.push(`<button class="p-1 -ml-1 rounded-md hover:bg-accent" aria-label="Toggle sidebar">`);
       Menu($$renderer2, { class: "size-5" });
       $$renderer2.push(`<!----></button>`);
     } else {
@@ -1004,26 +993,26 @@ function Breadcrumb_bar($$renderer, $$props) {
       $$renderer2.push(`<div></div>`);
     } else if (crumbs().length === 1) {
       $$renderer2.push("<!--[1-->");
-      $$renderer2.push(`<h1 class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">${escape_html(crumbs()[0].label)}</h1>`);
+      $$renderer2.push(`<h1 class="text-sm font-semibold truncate">${escape_html(crumbs()[0].label)}</h1>`);
     } else {
       $$renderer2.push("<!--[-1-->");
-      $$renderer2.push(`<nav class="flex items-center gap-1.5 text-sm text-[var(--clawdev-text-muted)] truncate"><!--[-->`);
+      $$renderer2.push(`<nav class="flex items-center gap-1.5 text-sm text-muted-foreground truncate"><!--[-->`);
       const each_array = ensure_array_like(crumbs());
       for (let i = 0, $$length = each_array.length; i < $$length; i++) {
         let crumb = each_array[i];
         if (i > 0) {
           $$renderer2.push("<!--[0-->");
-          $$renderer2.push(`<span class="text-[var(--clawdev-text-muted)]/40">/</span>`);
+          $$renderer2.push(`<span class="text-muted-foreground/40">/</span>`);
         } else {
           $$renderer2.push("<!--[-1-->");
         }
         $$renderer2.push(`<!--]--> `);
         if (i < crumbs().length - 1 && crumb.href) {
           $$renderer2.push("<!--[0-->");
-          $$renderer2.push(`<a${attr("href", crumb.href)} class="hover:text-[var(--clawdev-text-primary)] transition-colors truncate max-w-[120px]">${escape_html(crumb.label)}</a>`);
+          $$renderer2.push(`<a${attr("href", crumb.href)} class="hover:text-foreground transition-colors truncate max-w-[120px]">${escape_html(crumb.label)}</a>`);
         } else {
           $$renderer2.push("<!--[-1-->");
-          $$renderer2.push(`<span${attr_class(clsx(cn(i === crumbs().length - 1 && "text-[var(--clawdev-text-primary)] font-medium", "truncate max-w-[200px]")))}>${escape_html(crumb.label)}</span>`);
+          $$renderer2.push(`<span${attr_class(clsx$1(cn(i === crumbs().length - 1 && "text-foreground font-medium", "truncate max-w-[200px]")))}>${escape_html(crumb.label)}</span>`);
         }
         $$renderer2.push(`<!--]-->`);
       }
@@ -1032,22 +1021,28 @@ function Breadcrumb_bar($$renderer, $$props) {
     $$renderer2.push(`<!--]--></header>`);
   });
 }
+let toasts = [];
+const toastStore = {
+  get items() {
+    return toasts;
+  }
+};
 function Toast_viewport($$renderer, $$props) {
   $$renderer.component(($$renderer2) => {
-    const toasts = derived(() => toastStore.items);
+    const toasts2 = derived(() => toastStore.items);
     const toneStyles = {
       info: "border-border bg-card text-card-foreground",
       success: "border-green-500/30 bg-green-950/80 text-green-100",
       warn: "border-yellow-500/30 bg-yellow-950/80 text-yellow-100",
       error: "border-destructive/30 bg-red-950/80 text-red-100"
     };
-    if (toasts().length > 0) {
+    if (toasts2().length > 0) {
       $$renderer2.push("<!--[0-->");
       $$renderer2.push(`<div class="fixed bottom-4 left-4 z-[120] flex flex-col gap-2 w-80" role="region" aria-live="polite" aria-label="Notifications"><!--[-->`);
-      const each_array = ensure_array_like(toasts());
+      const each_array = ensure_array_like(toasts2());
       for (let $$index = 0, $$length = each_array.length; $$index < $$length; $$index++) {
         let toast = each_array[$$index];
-        $$renderer2.push(`<div${attr_class(clsx(cn("flex items-start gap-3 rounded-md border px-4 py-3 shadow-lg animate-in slide-in-from-bottom-2 fade-in-0 duration-200", toneStyles[toast.tone])))}><div class="flex-1 min-w-0"><p class="text-sm font-medium truncate">${escape_html(toast.title)}</p> `);
+        $$renderer2.push(`<div${attr_class(clsx$1(cn("flex items-start gap-3 rounded-md border px-4 py-3 shadow-lg animate-in slide-in-from-bottom-2 fade-in-0 duration-200", toneStyles[toast.tone])))}><div class="flex-1 min-w-0"><p class="text-sm font-medium truncate">${escape_html(toast.title)}</p> `);
         if (toast.body) {
           $$renderer2.push("<!--[0-->");
           $$renderer2.push(`<p class="text-xs opacity-80 mt-0.5 line-clamp-2">${escape_html(toast.body)}</p>`);
@@ -1072,140 +1067,18 @@ function Toast_viewport($$renderer, $$props) {
     $$renderer2.push(`<!--]-->`);
   });
 }
-function Dev_banner($$renderer, $$props) {
-  $$renderer.component(($$renderer2) => {
-    let worktreePath = null;
-    let loaded = false;
-    let showDevBanner = derived(() => loaded);
-    let showWorktreeBanner = derived(() => loaded);
-    let showAny = derived(() => showDevBanner() || showWorktreeBanner());
-    if (showAny()) {
-      $$renderer2.push("<!--[0-->");
-      $$renderer2.push(`<div class="dev-banner-strip relative z-[60] w-full shrink-0">`);
-      if (showDevBanner()) {
-        $$renderer2.push("<!--[0-->");
-        $$renderer2.push(`<div class="flex items-center justify-center gap-2 bg-amber-500/15 border-b border-amber-500/20 px-4 py-1.5 text-xs text-amber-300">`);
-        Terminal($$renderer2, { class: "size-3.5 shrink-0" });
-        $$renderer2.push(`<!----> <span class="font-medium">Dev Mode</span> <span class="hidden sm:inline text-amber-300/70">— Auto-restart enabled</span> <button class="ml-auto rounded p-0.5 text-amber-400/60 hover:text-amber-300 hover:bg-amber-500/10 transition-colors" aria-label="Dismiss banner">`);
-        X($$renderer2, { class: "size-3.5" });
-        $$renderer2.push(`<!----></button></div>`);
-      } else {
-        $$renderer2.push("<!--[-1-->");
-      }
-      $$renderer2.push(`<!--]--> `);
-      if (showWorktreeBanner()) {
-        $$renderer2.push("<!--[0-->");
-        $$renderer2.push(`<div class="flex items-center justify-center gap-2 bg-blue-500/10 border-b border-blue-500/15 px-4 py-1.5 text-xs text-blue-300">`);
-        Git_fork($$renderer2, { class: "size-3.5 shrink-0" });
-        $$renderer2.push(`<!----> <span>Running in git worktree:</span> <code class="font-mono text-blue-200/80 truncate max-w-[300px]">${escape_html(worktreePath)}</code> `);
-        if (!showDevBanner()) {
-          $$renderer2.push("<!--[0-->");
-          $$renderer2.push(`<button class="ml-auto rounded p-0.5 text-blue-400/60 hover:text-blue-300 hover:bg-blue-500/10 transition-colors" aria-label="Dismiss banner">`);
-          X($$renderer2, { class: "size-3.5" });
-          $$renderer2.push(`<!----></button>`);
-        } else {
-          $$renderer2.push("<!--[-1-->");
-        }
-        $$renderer2.push(`<!--]--></div>`);
-      } else {
-        $$renderer2.push("<!--[-1-->");
-      }
-      $$renderer2.push(`<!--]--></div>`);
-    } else {
-      $$renderer2.push("<!--[-1-->");
-    }
-    $$renderer2.push(`<!--]-->`);
-  });
-}
-function Mobile_bottom_nav($$renderer, $$props) {
-  $$renderer.component(($$renderer2) => {
-    var $$store_subs;
-    let { companyPrefix, unreadCount = 0 } = $$props;
-    let navItems = derived(() => [
-      {
-        label: "Dashboard",
-        href: `/${companyPrefix}/dashboard`,
-        icon: Layout_dashboard,
-        match: "/dashboard"
-      },
-      {
-        label: "Issues",
-        href: `/${companyPrefix}/issues`,
-        icon: List_todo,
-        match: "/issues"
-      },
-      {
-        label: "Inbox",
-        href: `/${companyPrefix}/inbox`,
-        icon: Inbox,
-        match: "/inbox"
-      },
-      {
-        label: "Agents",
-        href: `/${companyPrefix}/agents`,
-        icon: Bot,
-        match: "/agents"
-      }
-    ]);
-    let currentPath = derived(() => store_get($$store_subs ??= {}, "$page", page).url.pathname);
-    function isActive(match) {
-      const base = `/${companyPrefix}${match}`;
-      return currentPath() === base || currentPath().startsWith(base + "/");
-    }
-    $$renderer2.push(`<nav class="fixed bottom-0 inset-x-0 z-50 flex md:hidden items-center justify-around bg-[#0a0a0f] border-t border-white/[0.08] pb-[env(safe-area-inset-bottom,0px)]" aria-label="Mobile navigation"><!--[-->`);
-    const each_array = ensure_array_like(navItems());
-    for (let $$index = 0, $$length = each_array.length; $$index < $$length; $$index++) {
-      let item = each_array[$$index];
-      const active = isActive(item.match);
-      $$renderer2.push(`<a${attr("href", item.href)}${attr_class(`flex flex-col items-center gap-0.5 py-2 px-3 min-w-0 relative transition-colors ${stringify(active ? "text-blue-400" : "text-zinc-500 hover:text-zinc-300")}`)}${attr("aria-current", active ? "page" : void 0)}>`);
-      if (item.match === "/inbox" && unreadCount > 0) {
-        $$renderer2.push("<!--[0-->");
-        $$renderer2.push(`<span class="relative">`);
-        if (item.icon) {
-          $$renderer2.push("<!--[-->");
-          item.icon($$renderer2, { class: "size-5" });
-          $$renderer2.push("<!--]-->");
-        } else {
-          $$renderer2.push("<!--[!-->");
-          $$renderer2.push("<!--]-->");
-        }
-        $$renderer2.push(` <span class="absolute -top-1.5 -right-2 flex items-center justify-center min-w-[16px] h-4 rounded-full bg-red-500 text-white text-[10px] font-bold px-1 leading-none">${escape_html(unreadCount > 99 ? "99+" : unreadCount)}</span></span>`);
-      } else {
-        $$renderer2.push("<!--[-1-->");
-        if (item.icon) {
-          $$renderer2.push("<!--[-->");
-          item.icon($$renderer2, { class: "size-5" });
-          $$renderer2.push("<!--]-->");
-        } else {
-          $$renderer2.push("<!--[!-->");
-          $$renderer2.push("<!--]-->");
-        }
-      }
-      $$renderer2.push(`<!--]--> <span class="text-[10px] font-medium leading-tight">${escape_html(item.label)}</span></a>`);
-    }
-    $$renderer2.push(`<!--]--> <button class="flex flex-col items-center gap-0.5 py-2 px-3 min-w-0 transition-colors text-zinc-500 hover:text-zinc-300" aria-label="Toggle menu">`);
-    Menu($$renderer2, { class: "size-5" });
-    $$renderer2.push(`<!----> <span class="text-[10px] font-medium leading-tight">Menu</span></button></nav>`);
-    if ($$store_subs) unsubscribe_stores($$store_subs);
-  });
-}
 const STORAGE_KEY = "paperclip.theme";
 function resolveInitialTheme() {
   if (typeof window === "undefined") return "dark";
   const stored = localStorage.getItem(STORAGE_KEY);
   if (stored === "light" || stored === "dark") return stored;
-  return document.documentElement.classList.contains("dark") ? "dark" : "light";
+  return document.documentElement.classList.contains("dark") ? "dark" : "dark";
 }
 resolveInitialTheme();
 function _layout($$renderer, $$props) {
   $$renderer.component(($$renderer2) => {
-    var $$store_subs;
     let { children } = $$props;
-    onDestroy(() => {
-    });
-    $$renderer2.push(`<div class="flex h-full flex-col overflow-hidden bg-[var(--clawdev-bg-base)]">`);
-    Dev_banner($$renderer2);
-    $$renderer2.push(`<!----> <div class="flex flex-1 overflow-hidden">`);
+    $$renderer2.push(`<div class="flex h-full overflow-hidden">`);
     if (sidebarStore.open || !sidebarStore.isMobile) {
       $$renderer2.push("<!--[0-->");
       Sidebar($$renderer2);
@@ -1214,18 +1087,11 @@ function _layout($$renderer, $$props) {
     }
     $$renderer2.push(`<!--]--> <div class="flex flex-1 flex-col min-w-0 overflow-hidden">`);
     Breadcrumb_bar($$renderer2);
-    $$renderer2.push(`<!----> <main class="flex-1 overflow-y-auto bg-[var(--clawdev-bg-base)] pb-16 md:pb-0">`);
+    $$renderer2.push(`<!----> <main class="flex-1 overflow-y-auto">`);
     children($$renderer2);
-    $$renderer2.push(`<!----></main></div></div></div> `);
-    Mobile_bottom_nav($$renderer2, {
-      companyPrefix: store_get($$store_subs ??= {}, "$page", page).params.companyPrefix
-    });
-    $$renderer2.push(`<!----> `);
-    New_issue_dialog($$renderer2);
-    $$renderer2.push(`<!----> `);
+    $$renderer2.push(`<!----></main></div></div> `);
     Toast_viewport($$renderer2);
     $$renderer2.push(`<!---->`);
-    if ($$store_subs) unsubscribe_stores($$store_subs);
   });
 }
 export {

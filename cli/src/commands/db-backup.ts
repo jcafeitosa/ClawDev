@@ -5,10 +5,10 @@ import { formatDatabaseBackupResult, runDatabaseBackup } from "@clawdev/db";
 import {
   expandHomePrefix,
   resolveDefaultBackupDir,
-  resolveClawDevInstanceId,
+  resolvePaperclipInstanceId,
 } from "../config/home.js";
 import { readConfig, resolveConfigPath } from "../config/store.js";
-import { printClawDevCliBanner } from "../utils/banner.js";
+import { printPaperclipCliBanner } from "../utils/banner.js";
 
 type DbBackupOptions = {
   config?: string;
@@ -29,7 +29,7 @@ function resolveConnectionString(configPath?: string): { value: string; source: 
 
   const port = config?.database.embeddedPostgresPort ?? 54329;
   return {
-    value: `postgres://clawdev:clawdev@127.0.0.1:${port}/clawdev`,
+    value: `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`,
     source: `embedded-postgres@${port}`,
   };
 }
@@ -47,20 +47,20 @@ function resolveBackupDir(raw: string): string {
 }
 
 export async function dbBackupCommand(opts: DbBackupOptions): Promise<void> {
-  printClawDevCliBanner();
-  p.intro(pc.bgCyan(pc.black(" clawdev db:backup ")));
+  printPaperclipCliBanner();
+  p.intro(pc.bgCyan(pc.black(" paperclip db:backup ")));
 
   const configPath = resolveConfigPath(opts.config);
   const config = readConfig(opts.config);
   const connection = resolveConnectionString(opts.config);
-  const defaultDir = resolveDefaultBackupDir(resolveClawDevInstanceId());
+  const defaultDir = resolveDefaultBackupDir(resolvePaperclipInstanceId());
   const configuredDir = opts.dir?.trim() || config?.database.backup.dir || defaultDir;
   const backupDir = resolveBackupDir(configuredDir);
   const retentionDays = normalizeRetentionDays(
     opts.retentionDays,
     config?.database.backup.retentionDays ?? 30,
   );
-  const filenamePrefix = opts.filenamePrefix?.trim() || "clawdev";
+  const filenamePrefix = opts.filenamePrefix?.trim() || "paperclip";
 
   p.log.message(pc.dim(`Config: ${configPath}`));
   p.log.message(pc.dim(`Connection source: ${connection.source}`));

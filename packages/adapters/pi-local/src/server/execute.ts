@@ -8,15 +8,15 @@ import {
   asNumber,
   asStringArray,
   parseObject,
-  buildClawDevEnv,
+  buildPaperclipEnv,
   joinPromptSections,
   redactEnvForLogs,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
-  ensureClawDevSkillSymlink,
+  ensurePaperclipSkillSymlink,
   ensurePathInEnv,
-  readClawDevRuntimeSkillEntries,
-  resolveClawDevDesiredSkillNames,
+  readPaperclipRuntimeSkillEntries,
+  resolvePaperclipDesiredSkillNames,
   removeMaintainerOnlySkillSymlinks,
   renderTemplate,
   runChildProcess,
@@ -26,7 +26,7 @@ import { ensurePiModelConfiguredAndAvailable } from "./models.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
-const CLAWDEV_SESSIONS_DIR = path.join(os.homedir(), ".pi", "clawdevs");
+const PAPERCLIP_SESSIONS_DIR = path.join(os.homedir(), ".pi", "paperclips");
 const PI_AGENT_SKILLS_DIR = path.join(os.homedir(), ".pi", "agent", "skills");
 
 function firstNonEmptyLine(text: string): string {
@@ -68,7 +68,7 @@ async function ensurePiSkillsInjected(
   for (const skillName of removedSkills) {
     await onLog(
       "stderr",
-      `[clawdev] Removed maintainer-only Pi skill "${skillName}" from ${PI_AGENT_SKILLS_DIR}\n`,
+      `[paperclip] Removed maintainer-only Pi skill "${skillName}" from ${PI_AGENT_SKILLS_DIR}\n`,
     );
   }
 
@@ -76,16 +76,16 @@ async function ensurePiSkillsInjected(
     const target = path.join(PI_AGENT_SKILLS_DIR, entry.runtimeName);
 
     try {
-      const result = await ensureClawDevSkillSymlink(entry.source, target);
+      const result = await ensurePaperclipSkillSymlink(entry.source, target);
       if (result === "skipped") continue;
       await onLog(
         "stderr",
-        `[clawdev] ${result === "repaired" ? "Repaired" : "Injected"} Pi skill "${entry.runtimeName}" into ${PI_AGENT_SKILLS_DIR}\n`,
+        `[paperclip] ${result === "repaired" ? "Repaired" : "Injected"} Pi skill "${entry.runtimeName}" into ${PI_AGENT_SKILLS_DIR}\n`,
       );
     } catch (err) {
       await onLog(
         "stderr",
-        `[clawdev] Failed to inject Pi skill "${entry.runtimeName}" into ${PI_AGENT_SKILLS_DIR}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[paperclip] Failed to inject Pi skill "${entry.runtimeName}" into ${PI_AGENT_SKILLS_DIR}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }
@@ -96,13 +96,13 @@ function resolvePiBiller(env: Record<string, string>, provider: string | null): 
 }
 
 async function ensureSessionsDir(): Promise<string> {
-  await fs.mkdir(CLAWDEV_SESSIONS_DIR, { recursive: true });
-  return CLAWDEV_SESSIONS_DIR;
+  await fs.mkdir(PAPERCLIP_SESSIONS_DIR, { recursive: true });
+  return PAPERCLIP_SESSIONS_DIR;
 }
 
 function buildSessionPath(agentId: string, timestamp: string): string {
   const safeTimestamp = timestamp.replace(/[:.]/g, "-");
-  return path.join(CLAWDEV_SESSIONS_DIR, `${safeTimestamp}-${agentId}.jsonl`);
+  return path.join(PAPERCLIP_SESSIONS_DIR, `${safeTimestamp}-${agentId}.jsonl`);
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -110,7 +110,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const promptTemplate = asString(
     config.promptTemplate,
-    "You are agent {{agent.id}} ({{agent.name}}). Continue your ClawDev work.",
+    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
   const command = asString(config.command, "pi");
   const model = asString(config.model, "").trim();
@@ -120,15 +120,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const provider = parseModelProvider(model);
   const modelId = parseModelId(model);
 
-  const workspaceContext = parseObject(context.clawdevWorkspace);
+  const workspaceContext = parseObject(context.paperclipWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
   const workspaceId = asString(workspaceContext.workspaceId, "");
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "");
   const workspaceRepoRef = asString(workspaceContext.repoRef, "");
   const agentHome = asString(workspaceContext.agentHome, "");
-  const workspaceHints = Array.isArray(context.clawdevWorkspaces)
-    ? context.clawdevWorkspaces.filter(
+  const workspaceHints = Array.isArray(context.paperclipWorkspaces)
+    ? context.paperclipWorkspaces.filter(
         (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
       )
     : [];
@@ -142,16 +142,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   await ensureSessionsDir();
   
   // Inject skills
-  const piSkillEntries = await readClawDevRuntimeSkillEntries(config, __moduleDir);
-  const desiredPiSkillNames = resolveClawDevDesiredSkillNames(config, piSkillEntries);
+  const piSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
+  const desiredPiSkillNames = resolvePaperclipDesiredSkillNames(config, piSkillEntries);
   await ensurePiSkillsInjected(onLog, piSkillEntries, desiredPiSkillNames);
 
   // Build environment
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
-    typeof envConfig.CLAWDEV_API_KEY === "string" && envConfig.CLAWDEV_API_KEY.trim().length > 0;
-  const env: Record<string, string> = { ...buildClawDevEnv(agent) };
-  env.CLAWDEV_RUN_ID = runId;
+    typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
+  const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
+  env.PAPERCLIP_RUN_ID = runId;
   
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
@@ -177,25 +177,25 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
     
-  if (wakeTaskId) env.CLAWDEV_TASK_ID = wakeTaskId;
-  if (wakeReason) env.CLAWDEV_WAKE_REASON = wakeReason;
-  if (wakeCommentId) env.CLAWDEV_WAKE_COMMENT_ID = wakeCommentId;
-  if (approvalId) env.CLAWDEV_APPROVAL_ID = approvalId;
-  if (approvalStatus) env.CLAWDEV_APPROVAL_STATUS = approvalStatus;
-  if (linkedIssueIds.length > 0) env.CLAWDEV_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
-  if (workspaceCwd) env.CLAWDEV_WORKSPACE_CWD = workspaceCwd;
-  if (workspaceSource) env.CLAWDEV_WORKSPACE_SOURCE = workspaceSource;
-  if (workspaceId) env.CLAWDEV_WORKSPACE_ID = workspaceId;
-  if (workspaceRepoUrl) env.CLAWDEV_WORKSPACE_REPO_URL = workspaceRepoUrl;
-  if (workspaceRepoRef) env.CLAWDEV_WORKSPACE_REPO_REF = workspaceRepoRef;
+  if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
+  if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
+  if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
+  if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
+  if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
+  if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (workspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = workspaceCwd;
+  if (workspaceSource) env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
+  if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
+  if (workspaceRepoUrl) env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
+  if (workspaceRepoRef) env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
   if (agentHome) env.AGENT_HOME = agentHome;
-  if (workspaceHints.length > 0) env.CLAWDEV_WORKSPACES_JSON = JSON.stringify(workspaceHints);
+  if (workspaceHints.length > 0) env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(workspaceHints);
 
   for (const [key, value] of Object.entries(envConfig)) {
     if (typeof value === "string") env[key] = value;
   }
   if (!hasExplicitApiKey && authToken) {
-    env.CLAWDEV_API_KEY = authToken;
+    env.PAPERCLIP_API_KEY = authToken;
   }
   
   const runtimeEnv = Object.fromEntries(
@@ -233,7 +233,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (runtimeSessionId && !canResumeSession) {
     await onLog(
       "stdout",
-      `[clawdev] Pi session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
+      `[paperclip] Pi session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
     );
   }
 
@@ -265,13 +265,13 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         `${instructionsContents}\n\n` +
         `The above agent instructions were loaded from ${resolvedInstructionsFilePath}. ` +
         `Resolve any relative file references from ${instructionsFileDir}.\n\n` +
-        `You are agent {{agent.id}} ({{agent.name}}). Continue your ClawDev work.`;
+        `You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.`;
     } catch (err) {
       instructionsReadFailed = true;
       const reason = err instanceof Error ? err.message : String(err);
       await onLog(
         "stdout",
-        `[clawdev] Warning: could not read agent instructions file "${resolvedInstructionsFilePath}": ${reason}\n`,
+        `[paperclip] Warning: could not read agent instructions file "${resolvedInstructionsFilePath}": ${reason}\n`,
       );
       // Fall back to base prompt template
       systemPromptExtension = promptTemplate;
@@ -296,7 +296,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     !canResumeSession && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
-  const sessionHandoffNote = asString(context.clawdevSessionHandoffMarkdown, "").trim();
+  const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const userPrompt = joinPromptSections([
     renderedBootstrapPrompt,
     sessionHandoffNote,
@@ -340,7 +340,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     args.push("--tools", "read,bash,edit,write,grep,find,ls");
     args.push("--session", sessionFile);
 
-    // Add ClawDev skills directory so Pi can load the clawdev skill
+    // Add Paperclip skills directory so Pi can load the paperclip skill
     args.push("--skill", PI_AGENT_SKILLS_DIR);
 
     if (extraArgs.length > 0) args.push(...extraArgs);
@@ -476,7 +476,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   ) {
     await onLog(
       "stdout",
-      `[clawdev] Pi session "${runtimeSessionId}" is unavailable; retrying with a fresh session.\n`,
+      `[paperclip] Pi session "${runtimeSessionId}" is unavailable; retrying with a fresh session.\n`,
     );
     const newSessionPath = buildSessionPath(agent.id, new Date().toISOString());
     try {

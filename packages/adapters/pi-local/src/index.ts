@@ -1,19 +1,5 @@
-import type { AdapterMeta } from "@clawdev/shared";
-
 export const type = "pi_local";
-export const label = "Pi (multi-provider)";
-
-export const meta: AdapterMeta = {
-  type: "pi_local",
-  label: "Pi (multi-provider)",
-  icon: "Circle",
-  authMethods: ["api_key", "cli_auth"],
-  envVarNames: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"],
-  docsUrl: "https://github.com/badlogic/pi-mono",
-  supportsQuota: false,
-  supportsHealthCheck: true,
-  billingModel: "metered_api",
-};
+export const label = "Pi (local)";
 
 export const models: Array<{ id: string; label: string }> = [];
 
@@ -22,7 +8,7 @@ export const agentConfigurationDoc = `# pi_local agent configuration
 Adapter: pi_local
 
 Use when:
-- You want ClawDev to run Pi (the AI coding agent) locally as the agent runtime
+- You want Paperclip to run Pi (the AI coding agent) locally as the agent runtime
 - You want provider/model routing in Pi format (--provider <name> --model <id>)
 - You want Pi session resume across heartbeats via --session
 - You need Pi's tool set (read, bash, edit, write, grep, find, ls)
@@ -47,8 +33,8 @@ Operational fields:
 
 Notes:
 - Pi supports multiple providers and models. Use \`pi --list-models\` to list available options.
-- ClawDev requires an explicit \`model\` value for \`pi_local\` agents.
-- Sessions are stored in ~/.pi/clawdevs/ and resumed with --session.
+- Paperclip requires an explicit \`model\` value for \`pi_local\` agents.
+- Sessions are stored in ~/.pi/paperclips/ and resumed with --session.
 - All tools (read, bash, edit, write, grep, find, ls) are enabled by default.
 - Agent instructions are appended to Pi's system prompt via --append-system-prompt, while the user task is sent via -p.
 `;

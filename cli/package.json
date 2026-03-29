@@ -1,13 +1,13 @@
 {
-  "name": "clawdev",
+  "name": "paperclipai",
   "version": "0.3.1",
-  "description": "ClawDev CLI — orchestrate AI agent teams to run a business",
+  "description": "Paperclip CLI — orchestrate AI agent teams to run a business",
   "type": "module",
   "bin": {
-    "clawdev": "./dist/index.js"
+    "paperclipai": "./dist/index.js"
   },
   "keywords": [
-    "clawdev",
+    "paperclip",
     "ai",
     "agents",
     "orchestration",
@@ -16,12 +16,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/clawdev/clawdev",
+    "url": "https://github.com/paperclipai/paperclip",
     "directory": "cli"
   },
-  "homepage": "https://github.com/clawdev/clawdev",
+  "homepage": "https://github.com/paperclipai/paperclip",
   "bugs": {
-    "url": "https://github.com/clawdev/clawdev/issues"
+    "url": "https://github.com/paperclipai/paperclip/issues"
   },
   "files": [
     "dist"
@@ -36,27 +36,27 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clack/prompts": "^0.10.1",
+    "@clack/prompts": "^0.10.0",
     "@clawdev/adapter-claude-local": "workspace:*",
     "@clawdev/adapter-codex-local": "workspace:*",
     "@clawdev/adapter-cursor-local": "workspace:*",
     "@clawdev/adapter-gemini-local": "workspace:*",
-    "@clawdev/adapter-openclaw-gateway": "workspace:*",
     "@clawdev/adapter-opencode-local": "workspace:*",
     "@clawdev/adapter-pi-local": "workspace:*",
+    "@clawdev/adapter-openclaw-gateway": "workspace:*",
     "@clawdev/adapter-utils": "workspace:*",
     "@clawdev/db": "workspace:*",
     "@clawdev/server": "workspace:*",
     "@clawdev/shared": "workspace:*",
-    "commander": "^13.1.0",
-    "dotenv": "^17.3.1",
     "drizzle-orm": "0.38.4",
-    "embedded-postgres": "18.1.0-beta.16",
+    "dotenv": "^17.0.1",
+    "commander": "^13.1.0",
+    "embedded-postgres": "^18.1.0-beta.16",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.19.15",
-    "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "@types/node": "^22.12.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
   }
 }

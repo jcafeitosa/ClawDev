@@ -21,7 +21,7 @@ import {
   instanceUserRoles,
 } from "@clawdev/db";
 import detectPort from "detect-port";
-import { createApp } from "./app.js";
+import { createElysiaApp } from "./elysia-app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
 import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService } from "./services/index.js";
@@ -29,8 +29,6 @@ import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
-import { registerRepeatingJob } from "./services/scheduler.js";
-import { isRedisConfigured, connectRedis } from "./redis.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -61,9 +59,6 @@ type EmbeddedPostgresCtor = new (opts: {
 }) => EmbeddedPostgresInstance;
 
 
-/** Re-export App type for Eden Treaty client generation */
-export type { App } from "./app.js";
-
 export interface StartedServer {
   host: string;
   listenPort: number;
@@ -73,14 +68,14 @@ export interface StartedServer {
 
 export async function startServer(): Promise<StartedServer> {
   let config = loadConfig();
-  if (process.env.CLAWDEV_SECRETS_PROVIDER === undefined) {
-    process.env.CLAWDEV_SECRETS_PROVIDER = config.secretsProvider;
+  if (process.env.PAPERCLIP_SECRETS_PROVIDER === undefined) {
+    process.env.PAPERCLIP_SECRETS_PROVIDER = config.secretsProvider;
   }
-  if (process.env.CLAWDEV_SECRETS_STRICT_MODE === undefined) {
-    process.env.CLAWDEV_SECRETS_STRICT_MODE = config.secretsStrictMode ? "true" : "false";
+  if (process.env.PAPERCLIP_SECRETS_STRICT_MODE === undefined) {
+    process.env.PAPERCLIP_SECRETS_STRICT_MODE = config.secretsStrictMode ? "true" : "false";
   }
-  if (process.env.CLAWDEV_SECRETS_MASTER_KEY_FILE === undefined) {
-    process.env.CLAWDEV_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
+  if (process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE === undefined) {
+    process.env.PAPERCLIP_SECRETS_MASTER_KEY_FILE = config.secretsMasterKeyFilePath;
   }
   
   type MigrationSummary =
@@ -97,8 +92,8 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   async function promptApplyMigrations(migrations: string[]): Promise<boolean> {
-    if (process.env.CLAWDEV_MIGRATION_AUTO_APPLY === "true") return true;
-    if (process.env.CLAWDEV_MIGRATION_PROMPT === "never") return false;
+    if (process.env.PAPERCLIP_MIGRATION_AUTO_APPLY === "true") return true;
+    if (process.env.PAPERCLIP_MIGRATION_PROMPT === "never") return false;
     if (!stdin.isTTY || !stdout.isTTY) return true;
   
     const prompt = createInterface({ input: stdin, output: stdout });
@@ -144,7 +139,7 @@ export async function startServer(): Promise<StartedServer> {
       if (!apply) {
         throw new Error(
           `${label} has pending migrations (${formatPendingMigrationSummary(state.pendingMigrations)}). ` +
-            "Refusing to start against a stale schema. Run pnpm db:migrate or set CLAWDEV_MIGRATION_AUTO_APPLY=true.",
+            "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
         );
       }
   
@@ -157,7 +152,7 @@ export async function startServer(): Promise<StartedServer> {
     if (!apply) {
       throw new Error(
         `${label} has pending migrations (${formatPendingMigrationSummary(state.pendingMigrations)}). ` +
-          "Refusing to start against a stale schema. Run pnpm db:migrate or set CLAWDEV_MIGRATION_AUTO_APPLY=true.",
+          "Refusing to start against a stale schema. Run pnpm db:migrate or set PAPERCLIP_MIGRATION_AUTO_APPLY=true.",
       );
     }
   
@@ -184,7 +179,7 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   const LOCAL_BOARD_USER_ID = "local-board";
-  const LOCAL_BOARD_USER_EMAIL = "local@clawdev.local";
+  const LOCAL_BOARD_USER_EMAIL = "local@paperclip.local";
   const LOCAL_BOARD_USER_NAME = "Board";
   
   async function ensureLocalTrustedBoardPrincipal(db: any): Promise<void> {
@@ -275,7 +270,7 @@ export async function startServer(): Promise<StartedServer> {
     const configuredPort = config.embeddedPostgresPort;
     let port = configuredPort;
     const logBuffer = createEmbeddedPostgresLogBuffer(120);
-    const verboseEmbeddedPostgresLogs = process.env.CLAWDEV_EMBEDDED_POSTGRES_VERBOSE === "true";
+    const verboseEmbeddedPostgresLogs = process.env.PAPERCLIP_EMBEDDED_POSTGRES_VERBOSE === "true";
     const appendEmbeddedPostgresLog = (message: unknown) => {
       logBuffer.append(message);
       if (!verboseEmbeddedPostgresLogs) {
@@ -339,7 +334,7 @@ export async function startServer(): Promise<StartedServer> {
     if (runningPid) {
       logger.warn(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
     } else {
-      const configuredAdminConnectionString = `postgres://clawdev:clawdev@127.0.0.1:${configuredPort}/postgres`;
+      const configuredAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${configuredPort}/postgres`;
       try {
         const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
         if (
@@ -348,7 +343,7 @@ export async function startServer(): Promise<StartedServer> {
         ) {
           throw new Error("reachable postgres does not use the expected embedded data directory");
         }
-        await ensurePostgresDatabase(configuredAdminConnectionString, "clawdev");
+        await ensurePostgresDatabase(configuredAdminConnectionString, "paperclip");
         logger.warn(
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
@@ -361,8 +356,8 @@ export async function startServer(): Promise<StartedServer> {
         logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
         embeddedPostgres = new EmbeddedPostgres({
           databaseDir: dataDir,
-          user: "clawdev",
-          password: "clawdev",
+          user: "paperclip",
+          password: "paperclip",
           port,
           persistent: true,
           initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
@@ -401,13 +396,13 @@ export async function startServer(): Promise<StartedServer> {
       }
     }
   
-    const embeddedAdminConnectionString = `postgres://clawdev:clawdev@127.0.0.1:${port}/postgres`;
-    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "clawdev");
+    const embeddedAdminConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/postgres`;
+    const dbStatus = await ensurePostgresDatabase(embeddedAdminConnectionString, "paperclip");
     if (dbStatus === "created") {
-      logger.info("Created embedded PostgreSQL database: clawdev");
+      logger.info("Created embedded PostgreSQL database: paperclip");
     }
   
-    const embeddedConnectionString = `postgres://clawdev:clawdev@127.0.0.1:${port}/clawdev`;
+    const embeddedConnectionString = `postgres://paperclip:paperclip@127.0.0.1:${port}/paperclip`;
     const shouldAutoApplyFirstRunMigrations = !clusterAlreadyInitialized || dbStatus === "created";
     if (shouldAutoApplyFirstRunMigrations) {
       logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
@@ -452,60 +447,28 @@ export async function startServer(): Promise<StartedServer> {
   let resolveSessionFromHeaders:
     | ((headers: Headers) => Promise<BetterAuthSessionResult | null>)
     | undefined;
-  let betterAuthHandler: { handler: (request: Request) => Promise<Response> | Response } | undefined;
   if (config.deploymentMode === "local_trusted") {
     await ensureLocalTrustedBoardPrincipal(db as any);
   }
-
-  // Initialize better-auth for both authenticated AND local_trusted modes.
-  // In local_trusted, this enables real user login (sign-in/sign-up) alongside
-  // the implicit board access fallback, so the UI auth flow works correctly.
-  if (config.deploymentMode === "authenticated" || config.deploymentMode === "local_trusted") {
+  if (config.deploymentMode === "authenticated") {
     const {
       createBetterAuthInstance,
       deriveAuthTrustedOrigins,
       resolveBetterAuthSessionFromHeaders,
     } = await import("./auth/better-auth.js");
-
-    // In local_trusted mode, derive a stable secret from the instance data directory
-    // so sessions survive restarts without requiring manual configuration.
-    const { createHash } = await import("node:crypto");
-    const derivedLocalSecret = config.deploymentMode === "local_trusted"
-      ? createHash("sha256").update(`clawdev:${config.dataDir ?? process.cwd()}`).digest("hex")
-      : undefined;
     const betterAuthSecret =
-      process.env.BETTER_AUTH_SECRET?.trim()
-      ?? process.env.CLAWDEV_AGENT_JWT_SECRET?.trim()
-      ?? derivedLocalSecret;
+      process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.PAPERCLIP_AGENT_JWT_SECRET?.trim();
     if (!betterAuthSecret) {
       throw new Error(
-        "authenticated mode requires BETTER_AUTH_SECRET (or CLAWDEV_AGENT_JWT_SECRET) to be set",
+        "authenticated mode requires BETTER_AUTH_SECRET (or PAPERCLIP_AGENT_JWT_SECRET) to be set",
       );
     }
-    // Ensure the secret is set for better-auth to pick up
-    if (!process.env.BETTER_AUTH_SECRET) {
-      process.env.BETTER_AUTH_SECRET = betterAuthSecret;
-    }
-
     const derivedTrustedOrigins = deriveAuthTrustedOrigins(config);
     const envTrustedOrigins = (process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "")
       .split(",")
       .map((value) => value.trim())
       .filter((value) => value.length > 0);
-
-    // In local_trusted mode, ensure the local server origin is trusted
-    const localOrigins: string[] = [];
-    if (config.deploymentMode === "local_trusted") {
-      const localBaseUrl = `http://${config.host ?? "127.0.0.1"}:${config.port}`;
-      localOrigins.push(localBaseUrl, `http://localhost:${config.port}`);
-      // Set base URL so better-auth knows where it lives
-      if (!config.authPublicBaseUrl) {
-        config.authPublicBaseUrl = localBaseUrl;
-        config.authBaseUrlMode = "explicit";
-      }
-    }
-
-    const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins, ...localOrigins]));
+    const effectiveTrustedOrigins = Array.from(new Set([...derivedTrustedOrigins, ...envTrustedOrigins]));
     logger.info(
       {
         authBaseUrlMode: config.authBaseUrlMode,
@@ -514,17 +477,13 @@ export async function startServer(): Promise<StartedServer> {
         trustedOriginsSource: {
           derived: derivedTrustedOrigins.length,
           env: envTrustedOrigins.length,
-          local: localOrigins.length,
         },
       },
-      `${config.deploymentMode} mode auth origin configuration`,
+      "Authenticated mode auth origin configuration",
     );
     const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
     resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
-    betterAuthHandler = auth;
-    if (config.deploymentMode === "authenticated") {
-      await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
-    }
+    await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
     authReady = true;
   }
   
@@ -543,42 +502,31 @@ export async function startServer(): Promise<StartedServer> {
     databasePort: resolvedEmbeddedPostgresPort,
   });
   const storageService = createStorageServiceFromConfig(config);
-
-  // Create Elysia app (Bun native — all routes)
-  const app = createApp({
+  const app = createElysiaApp({
     db: db as any,
     deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
     authReady,
     companyDeletionEnabled: config.companyDeletionEnabled,
-    storageService,
+    storage: storageService,
     serveUi: config.serveUi,
-    resolveSession: resolveSessionFromHeaders,
-    betterAuth: betterAuthHandler,
+    resolveSessionFromHeaders,
   });
-
-  // Start Elysia server (Bun native HTTP + WebSocket)
-  app.listen({ port: listenPort, hostname: config.host });
 
   if (listenPort !== config.port) {
     logger.warn(`Requested port is busy; using next free port (requestedPort=${config.port}, selectedPort=${listenPort})`);
   }
-
+  
   const runtimeListenHost = config.host;
   const runtimeApiHost =
     runtimeListenHost === "0.0.0.0" || runtimeListenHost === "::"
       ? "localhost"
       : runtimeListenHost;
-  process.env.CLAWDEV_LISTEN_HOST = runtimeListenHost;
-  process.env.CLAWDEV_LISTEN_PORT = String(listenPort);
-  process.env.CLAWDEV_API_URL = `http://${runtimeApiHost}:${listenPort}`;
-
-  logger.info(`Server listening on ${config.host}:${listenPort}`);
-
-  // Connect Redis if configured (enables BullMQ scheduler + Redis pub/sub)
-  if (isRedisConfigured()) {
-    await connectRedis();
-  }
+  process.env.PAPERCLIP_LISTEN_HOST = runtimeListenHost;
+  process.env.PAPERCLIP_LISTEN_PORT = String(listenPort);
+  process.env.PAPERCLIP_API_URL = `http://${runtimeApiHost}:${listenPort}`;
+  
+  // WebSocket is now handled natively by Elysia via liveEventsElysiaWs in elysia-app.ts
 
   void reconcilePersistedRuntimeServicesOnStartup(db as any)
     .then((result) => {
@@ -605,25 +553,38 @@ export async function startServer(): Promise<StartedServer> {
       .catch((err) => {
         logger.error({ err }, "startup heartbeat recovery failed");
       });
-    void registerRepeatingJob({
-      name: "heartbeat-tick",
-      intervalMs: config.heartbeatSchedulerIntervalMs,
-      handler: async () => {
-        const tickResult = await heartbeat.tickTimers(new Date());
-        if (tickResult.enqueued > 0) {
-          logger.info({ ...tickResult }, "heartbeat timer tick enqueued runs");
-        }
+    setInterval(() => {
+      void heartbeat
+        .tickTimers(new Date())
+        .then((result) => {
+          if (result.enqueued > 0) {
+            logger.info({ ...result }, "heartbeat timer tick enqueued runs");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "heartbeat timer tick failed");
+        });
 
-        const routineResult = await routines.tickScheduledTriggers(new Date());
-        if (routineResult.triggered > 0) {
-          logger.info({ ...routineResult }, "routine scheduler tick enqueued runs");
-        }
-
-        // Reap orphaned runs (5-min staleness) and resume queued work
-        await heartbeat.reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 });
-        await heartbeat.resumeQueuedRuns();
-      },
-    });
+      void routines
+        .tickScheduledTriggers(new Date())
+        .then((result) => {
+          if (result.triggered > 0) {
+            logger.info({ ...result }, "routine scheduler tick enqueued runs");
+          }
+        })
+        .catch((err) => {
+          logger.error({ err }, "routine scheduler tick failed");
+        });
+  
+      // Periodically reap orphaned runs (5-min staleness threshold) and make sure
+      // persisted queued work is still being driven forward.
+      void heartbeat
+        .reapOrphanedRuns({ staleThresholdMs: 5 * 60 * 1000 })
+        .then(() => heartbeat.resumeQueuedRuns())
+        .catch((err) => {
+          logger.error({ err }, "periodic heartbeat recovery failed");
+        });
+    }, config.heartbeatSchedulerIntervalMs);
   }
   
   if (config.databaseBackupEnabled) {
@@ -642,7 +603,7 @@ export async function startServer(): Promise<StartedServer> {
           connectionString: activeDatabaseConnectionString,
           backupDir: config.databaseBackupDir,
           retentionDays: config.databaseBackupRetentionDays,
-          filenamePrefix: "clawdev",
+          filenamePrefix: "paperclip",
         });
         logger.info(
           {
@@ -669,23 +630,29 @@ export async function startServer(): Promise<StartedServer> {
       },
       "Automatic database backups enabled",
     );
-    void registerRepeatingJob({
-      name: "database-backup",
-      intervalMs: backupIntervalMs,
-      handler: runScheduledBackup,
-    });
+    setInterval(() => {
+      void runScheduledBackup();
+    }, backupIntervalMs);
   }
   
-  // Open browser on startup if requested
-  if (process.env.CLAWDEV_OPEN_ON_LISTEN === "true") {
+  // Start Elysia server (Bun native HTTP + WebSocket)
+  app.listen({ port: listenPort, hostname: config.host });
+  logger.info(`Server listening on ${config.host}:${listenPort}`);
+
+  if (process.env.PAPERCLIP_OPEN_ON_LISTEN === "true") {
     const openHost = config.host === "0.0.0.0" || config.host === "::" ? "127.0.0.1" : config.host;
     const url = `http://${openHost}:${listenPort}`;
     void import("open")
       .then((mod) => mod.default(url))
-      .then(() => logger.info(`Opened browser at ${url}`))
-      .catch((err) => logger.warn({ err, url }, "Failed to open browser on startup"));
+      .then(() => {
+        logger.info(`Opened browser at ${url}`);
+      })
+      .catch((err) => {
+        logger.warn({ err, url }, "Failed to open browser on startup");
+      });
   }
 
+  const uiMode = config.serveUi ? "static" : "none";
   printStartupBanner({
     host: config.host,
     deploymentMode: config.deploymentMode,
@@ -693,7 +660,7 @@ export async function startServer(): Promise<StartedServer> {
     authReady,
     requestedPort: config.port,
     listenPort,
-    uiMode: config.serveUi ? "static" : "none",
+    uiMode,
     db: startupDbInfo,
     migrationSummary,
     heartbeatSchedulerEnabled: config.heartbeatSchedulerEnabled,
@@ -743,7 +710,7 @@ export async function startServer(): Promise<StartedServer> {
   return {
     host: config.host,
     listenPort,
-    apiUrl: process.env.CLAWDEV_API_URL ?? `http://${runtimeApiHost}:${listenPort}`,
+    apiUrl: process.env.PAPERCLIP_API_URL ?? `http://${runtimeApiHost}:${listenPort}`,
     databaseUrl: activeDatabaseConnectionString,
   };
 }
@@ -760,7 +727,7 @@ function isMainModule(metaUrl: string): boolean {
 
 if (isMainModule(import.meta.url)) {
   void startServer().catch((err) => {
-    logger.error({ err }, "ClawDev server failed to start");
+    logger.error({ err }, "Paperclip server failed to start");
     process.exit(1);
   });
 }

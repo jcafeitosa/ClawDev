@@ -50,7 +50,7 @@ interface ApiClientOptions {
   recoverAuth?: (input: RecoverAuthInput) => Promise<string | null>;
 }
 
-export class ClawDevApiClient {
+export class PaperclipApiClient {
   readonly apiBase: string;
   apiKey?: string;
   readonly runId?: string;
@@ -112,7 +112,7 @@ export class ClawDevApiClient {
     }
 
     if (this.runId) {
-      headers["x-clawdev-run-id"] = this.runId;
+      headers["x-paperclip-run-id"] = this.runId;
     }
 
     let response: Response;
@@ -205,7 +205,7 @@ function buildConnectionErrorMessage(input: {
 }): string {
   const healthUrl = buildHealthCheckUrl(input.url);
   const lines = [
-    "Could not reach the ClawDev API.",
+    "Could not reach the Paperclip API.",
     "",
     `Request: ${input.method} ${input.url}`,
   ];
@@ -214,12 +214,12 @@ function buildConnectionErrorMessage(input: {
   }
   lines.push(
     "",
-    "This usually means the ClawDev server is not running, the configured URL is wrong, or the request is being blocked before it reaches ClawDev.",
+    "This usually means the Paperclip server is not running, the configured URL is wrong, or the request is being blocked before it reaches Paperclip.",
     "",
     "Try:",
-    "- Start ClawDev with `pnpm dev` or `pnpm clawdev run`.",
+    "- Start Paperclip with `pnpm dev` or `pnpm paperclipai run`.",
     `- Verify the server is reachable with \`curl ${healthUrl}\`.`,
-    `- If ClawDev is running elsewhere, pass \`--api-base ${input.apiBase.replace(/\/+$/, "")}\` or set \`CLAWDEV_API_URL\`.`,
+    `- If Paperclip is running elsewhere, pass \`--api-base ${input.apiBase.replace(/\/+$/, "")}\` or set \`PAPERCLIP_API_URL\`.`,
   );
   return lines.join("\n");
 }

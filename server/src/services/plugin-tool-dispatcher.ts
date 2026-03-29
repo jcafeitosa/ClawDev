@@ -24,7 +24,7 @@
 
 import type { Db } from "@clawdev/db";
 import type {
-  ClawDevPluginManifestV1,
+  PaperclipPluginManifestV1,
   PluginRecord,
 } from "@clawdev/shared";
 import type { ToolRunContext, ToolResult } from "@clawdev/plugin-sdk";
@@ -155,7 +155,7 @@ export interface PluginToolDispatcher {
    */
   registerPluginTools(
     pluginId: string,
-    manifest: ClawDevPluginManifestV1,
+    manifest: PaperclipPluginManifestV1,
   ): void;
 
   /**
@@ -428,7 +428,7 @@ export function createPluginToolDispatcher(
 
     registerPluginTools(
       pluginId: string,
-      manifest: ClawDevPluginManifestV1,
+      manifest: PaperclipPluginManifestV1,
     ): void {
       registry.registerPlugin(pluginId, manifest);
     },

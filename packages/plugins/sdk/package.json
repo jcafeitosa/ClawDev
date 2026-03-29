@@ -1,15 +1,15 @@
 {
   "name": "@clawdev/plugin-sdk",
   "version": "1.0.0",
-  "description": "Stable public API for ClawDev plugins — worker-side context and UI bridge hooks",
+  "description": "Stable public API for Paperclip plugins — worker-side context and UI bridge hooks",
   "license": "MIT",
-  "homepage": "https://github.com/clawdev/clawdev",
+  "homepage": "https://github.com/paperclipai/paperclip",
   "bugs": {
-    "url": "https://github.com/clawdev/clawdev/issues"
+    "url": "https://github.com/paperclipai/paperclip/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/clawdev/clawdev",
+    "url": "https://github.com/paperclipai/paperclip",
     "directory": "packages/plugins/sdk"
   },
   "type": "module",
@@ -38,14 +38,6 @@
       "types": "./dist/ui/types.d.ts",
       "import": "./dist/ui/types.js"
     },
-    "./ui-svelte": {
-      "types": "./dist/ui-svelte/index.d.ts",
-      "import": "./dist/ui-svelte/index.js"
-    },
-    "./ui-svelte/stores": {
-      "types": "./dist/ui-svelte/stores.d.ts",
-      "import": "./dist/ui-svelte/stores.js"
-    },
     "./testing": {
       "types": "./dist/testing.d.ts",
       "import": "./dist/testing.js"
@@ -60,7 +52,7 @@
     }
   },
   "bin": {
-    "clawdev-plugin-dev-server": "./dist/dev-cli.js"
+    "paperclip-plugin-dev-server": "./dist/dev-cli.js"
   },
   "publishConfig": {
     "access": "public",
@@ -89,14 +81,6 @@
         "types": "./dist/ui/types.d.ts",
         "import": "./dist/ui/types.js"
       },
-      "./ui-svelte": {
-        "types": "./dist/ui-svelte/index.d.ts",
-        "import": "./dist/ui-svelte/index.js"
-      },
-      "./ui-svelte/stores": {
-        "types": "./dist/ui-svelte/stores.d.ts",
-        "import": "./dist/ui-svelte/stores.js"
-      },
       "./testing": {
         "types": "./dist/testing.d.ts",
         "import": "./dist/testing.js"
@@ -124,23 +108,18 @@
   },
   "dependencies": {
     "@clawdev/shared": "workspace:*",
-    "zod": "^3.25.76"
+    "zod": "^3.24.2"
   },
   "devDependencies": {
-    "@types/node": "^24.12.0",
-    "@types/react": "^19.2.14",
-    "svelte": "^5.55.0",
-    "typescript": "^5.9.3"
+    "@types/node": "^24.6.0",
+    "@types/react": "^19.0.8",
+    "typescript": "^5.7.3"
   },
   "peerDependencies": {
-    "react": ">=18",
-    "svelte": ">=5"
+    "react": ">=18"
   },
   "peerDependenciesMeta": {
     "react": {
-      "optional": true
-    },
-    "svelte": {
       "optional": true
     }
   }

@@ -1,19 +1,5 @@
-import type { AdapterMeta } from "@clawdev/shared";
-
 export const type = "claude_local";
 export const label = "Claude Code (local)";
-
-export const meta: AdapterMeta = {
-  type: "claude_local",
-  label: "Anthropic (Claude)",
-  icon: "Bot",
-  authMethods: ["cli_auth", "api_key"],
-  envVarNames: ["ANTHROPIC_API_KEY"],
-  docsUrl: "https://docs.anthropic.com",
-  supportsQuota: true,
-  supportsHealthCheck: true,
-  billingModel: "metered_api",
-};
 
 export const models = [
   { id: "claude-opus-4-6", label: "Claude Opus 4.6" },
@@ -47,5 +33,5 @@ Operational fields:
 - graceSec (number, optional): SIGTERM grace period in seconds
 
 Notes:
-- When ClawDev realizes a workspace/runtime for a run, it injects CLAWDEV_WORKSPACE_* and CLAWDEV_RUNTIME_* env vars for agent-side tooling.
+- When Paperclip realizes a workspace/runtime for a run, it injects PAPERCLIP_WORKSPACE_* and PAPERCLIP_RUNTIME_* env vars for agent-side tooling.
 `;

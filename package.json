@@ -1,5 +1,5 @@
 {
-  "name": "clawdev",
+  "name": "paperclip",
   "private": true,
   "type": "module",
   "scripts": {
@@ -7,7 +7,7 @@
     "dev:watch": "node scripts/dev-runner.mjs watch",
     "dev:once": "node scripts/dev-runner.mjs dev",
     "dev:server": "pnpm --filter @clawdev/server dev",
-    "dev:ui": "pnpm --filter @clawdev/svelte-ui dev",
+    "dev:ui": "pnpm --filter @clawdev/ui dev",
     "dev:svelte": "pnpm --filter @clawdev/svelte-ui dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
@@ -17,7 +17,7 @@
     "db:migrate": "pnpm --filter @clawdev/db migrate",
     "secrets:migrate-inline-env": "tsx scripts/migrate-inline-env-secrets.ts",
     "db:backup": "./scripts/backup-db.sh",
-    "clawdev": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
+    "paperclipai": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
     "build:npm": "./scripts/build-npm.sh",
     "release": "./scripts/release.sh",
     "release:canary": "./scripts/release.sh canary",
@@ -38,9 +38,9 @@
   "devDependencies": {
     "@playwright/test": "^1.58.2",
     "cross-env": "^10.1.0",
-    "esbuild": "^0.27.4",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "esbuild": "^0.27.3",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.5"
   },
   "engines": {
     "node": ">=20"

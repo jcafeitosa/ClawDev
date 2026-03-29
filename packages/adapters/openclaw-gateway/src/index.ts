@@ -1,19 +1,5 @@
-import type { AdapterMeta } from "@clawdev/shared";
-
 export const type = "openclaw_gateway";
 export const label = "OpenClaw Gateway";
-
-export const meta: AdapterMeta = {
-  type: "openclaw_gateway",
-  label: "OpenClaw Gateway",
-  icon: "Globe",
-  authMethods: ["api_key"],
-  envVarNames: ["OPENCLAW_API_KEY"],
-  docsUrl: "",
-  supportsQuota: false,
-  supportsHealthCheck: false,
-  billingModel: "metered_api",
-};
 
 export const models: { id: string; label: string }[] = [];
 
@@ -22,12 +8,12 @@ export const agentConfigurationDoc = `# openclaw_gateway agent configuration
 Adapter: openclaw_gateway
 
 Use when:
-- You want ClawDev to invoke OpenClaw over the Gateway WebSocket protocol.
+- You want Paperclip to invoke OpenClaw over the Gateway WebSocket protocol.
 - You want native gateway auth/connect semantics instead of HTTP /v1/responses or /hooks/*.
 
 Don't use when:
 - You only expose OpenClaw HTTP endpoints.
-- Your deployment does not permit outbound WebSocket access from the ClawDev server.
+- Your deployment does not permit outbound WebSocket access from the Paperclip server.
 
 Core fields:
 - url (string, required): OpenClaw gateway WebSocket URL (ws:// or wss://)
@@ -45,21 +31,21 @@ Gateway connect identity fields:
 
 Request behavior fields:
 - payloadTemplate (object, optional): additional fields merged into gateway agent params
-- workspaceRuntime (object, optional): desired runtime service intents; ClawDev forwards these in a standardized clawdev.workspaceRuntime block for remote execution environments
+- workspaceRuntime (object, optional): desired runtime service intents; Paperclip forwards these in a standardized paperclip.workspaceRuntime block for remote execution environments
 - timeoutSec (number, optional): adapter timeout in seconds (default 120)
 - waitTimeoutMs (number, optional): agent.wait timeout override (default timeoutSec * 1000)
 - autoPairOnFirstConnect (boolean, optional): on first "pairing required", attempt device.pair.list/device.pair.approve via shared auth, then retry once (default true)
-- clawdevApiUrl (string, optional): absolute ClawDev base URL advertised in wake text
+- paperclipApiUrl (string, optional): absolute Paperclip base URL advertised in wake text
 
 Session routing fields:
 - sessionKeyStrategy (string, optional): issue (default), fixed, or run
-- sessionKey (string, optional): fixed session key when strategy=fixed (default clawdev)
+- sessionKey (string, optional): fixed session key when strategy=fixed (default paperclip)
 
 Standard outbound payload additions:
-- clawdev (object): standardized ClawDev context added to every gateway agent request
-- clawdev.workspace (object, optional): resolved execution workspace for this run
-- clawdev.workspaces (array, optional): additional workspace hints ClawDev exposed to the run
-- clawdev.workspaceRuntime (object, optional): normalized runtime service intent config for the workspace
+- paperclip (object): standardized Paperclip context added to every gateway agent request
+- paperclip.workspace (object, optional): resolved execution workspace for this run
+- paperclip.workspaces (array, optional): additional workspace hints Paperclip exposed to the run
+- paperclip.workspaceRuntime (object, optional): normalized runtime service intent config for the workspace
 
 Standard result metadata supported:
 - meta.runtimeServices (array, optional): normalized adapter-managed runtime service reports

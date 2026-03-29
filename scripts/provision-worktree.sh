@@ -32,13 +32,13 @@ source_env_path="$(dirname "$source_config_path")/.env"
 mkdir -p "$clawdev_dir"
 
 run_isolated_worktree_init() {
-  if command -v pnpm >/dev/null 2>&1 && pnpm clawdev --help >/dev/null 2>&1; then
-    pnpm clawdev worktree init --force --seed-mode minimal --name "$worktree_name" --from-config "$source_config_path"
+  if command -v pnpm >/dev/null 2>&1 && pnpm clawdevai --help >/dev/null 2>&1; then
+    pnpm clawdevai worktree init --force --seed-mode minimal --name "$worktree_name" --from-config "$source_config_path"
     return 0
   fi
 
-  if command -v clawdev >/dev/null 2>&1; then
-    clawdev worktree init --force --seed-mode minimal --name "$worktree_name" --from-config "$source_config_path"
+  if command -v clawdevai >/dev/null 2>&1; then
+    clawdevai worktree init --force --seed-mode minimal --name "$worktree_name" --from-config "$source_config_path"
     return 0
   fi
 
@@ -296,7 +296,7 @@ EOF
 }
 
 if ! run_isolated_worktree_init; then
-  echo "clawdev CLI not available in this workspace; writing isolated fallback config without DB seeding." >&2
+  echo "clawdevai CLI not available in this workspace; writing isolated fallback config without DB seeding." >&2
   write_fallback_worktree_config
 fi
 

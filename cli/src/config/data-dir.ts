@@ -3,7 +3,7 @@ import {
   expandHomePrefix,
   resolveDefaultConfigPath,
   resolveDefaultContextPath,
-  resolveClawDevInstanceId,
+  resolvePaperclipInstanceId,
 } from "./home.js";
 
 export interface DataDirOptionLike {
@@ -26,21 +26,21 @@ export function applyDataDirOverride(
   if (!rawDataDir) return null;
 
   const resolvedDataDir = path.resolve(expandHomePrefix(rawDataDir));
-  process.env.CLAWDEV_HOME = resolvedDataDir;
+  process.env.PAPERCLIP_HOME = resolvedDataDir;
 
   if (support.hasConfigOption) {
-    const hasConfigOverride = Boolean(options.config?.trim()) || Boolean(process.env.CLAWDEV_CONFIG?.trim());
+    const hasConfigOverride = Boolean(options.config?.trim()) || Boolean(process.env.PAPERCLIP_CONFIG?.trim());
     if (!hasConfigOverride) {
-      const instanceId = resolveClawDevInstanceId(options.instance);
-      process.env.CLAWDEV_INSTANCE_ID = instanceId;
-      process.env.CLAWDEV_CONFIG = resolveDefaultConfigPath(instanceId);
+      const instanceId = resolvePaperclipInstanceId(options.instance);
+      process.env.PAPERCLIP_INSTANCE_ID = instanceId;
+      process.env.PAPERCLIP_CONFIG = resolveDefaultConfigPath(instanceId);
     }
   }
 
   if (support.hasContextOption) {
-    const hasContextOverride = Boolean(options.context?.trim()) || Boolean(process.env.CLAWDEV_CONTEXT?.trim());
+    const hasContextOverride = Boolean(options.context?.trim()) || Boolean(process.env.PAPERCLIP_CONTEXT?.trim());
     if (!hasContextOverride) {
-      process.env.CLAWDEV_CONTEXT = resolveDefaultContextPath();
+      process.env.PAPERCLIP_CONTEXT = resolveDefaultContextPath();
     }
   }
 

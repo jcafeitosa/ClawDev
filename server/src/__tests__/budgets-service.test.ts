@@ -175,7 +175,7 @@ describe("budgetService", () => {
       }],
       [{
         status: "active",
-        name: "ClawDev",
+        name: "Paperclip",
       }],
       [],
       [agentPolicy],
@@ -204,7 +204,7 @@ describe("budgetService", () => {
       [{
         status: "paused",
         pauseReason: "budget",
-        name: "ClawDev",
+        name: "Paperclip",
       }],
     ]);
 
@@ -214,7 +214,7 @@ describe("budgetService", () => {
     expect(block).toEqual({
       scopeType: "company",
       scopeId: "company-1",
-      scopeName: "ClawDev",
+      scopeName: "Paperclip",
       reason: "Company is paused because its budget hard-stop was reached.",
     });
   });
@@ -286,7 +286,7 @@ describe("budgetService", () => {
       [{ id: "approval-1", status: "approved" }],
       [{
         companyId: "company-1",
-        name: "ClawDev",
+        name: "Paperclip",
         status: "paused",
         pauseReason: "budget",
         pausedAt: now,

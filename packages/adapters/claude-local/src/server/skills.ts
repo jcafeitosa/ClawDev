@@ -7,9 +7,9 @@ import type {
   AdapterSkillSnapshot,
 } from "@clawdev/adapter-utils";
 import {
-  readClawDevRuntimeSkillEntries,
+  readPaperclipRuntimeSkillEntries,
   readInstalledSkillTargets,
-  resolveClawDevDesiredSkillNames,
+  resolvePaperclipDesiredSkillNames,
 } from "@clawdev/adapter-utils/server-utils";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
@@ -29,9 +29,9 @@ function resolveClaudeSkillsHome(config: Record<string, unknown>) {
 }
 
 async function buildClaudeSkillSnapshot(config: Record<string, unknown>): Promise<AdapterSkillSnapshot> {
-  const availableEntries = await readClawDevRuntimeSkillEntries(config, __moduleDir);
+  const availableEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const availableByKey = new Map(availableEntries.map((entry) => [entry.key, entry]));
-  const desiredSkills = resolveClawDevDesiredSkillNames(config, availableEntries);
+  const desiredSkills = resolvePaperclipDesiredSkillNames(config, availableEntries);
   const desiredSet = new Set(desiredSkills);
   const skillsHome = resolveClaudeSkillsHome(config);
   const installed = await readInstalledSkillTargets(skillsHome);
@@ -41,8 +41,8 @@ async function buildClaudeSkillSnapshot(config: Record<string, unknown>): Promis
     desired: desiredSet.has(entry.key),
     managed: true,
     state: desiredSet.has(entry.key) ? "configured" : "available",
-    origin: entry.required ? "clawdev_required" : "company_managed",
-    originLabel: entry.required ? "Required by ClawDev" : "Managed by ClawDev",
+    origin: entry.required ? "paperclip_required" : "company_managed",
+    originLabel: entry.required ? "Required by Paperclip" : "Managed by Paperclip",
     readOnly: false,
     sourcePath: entry.source,
     targetPath: null,
@@ -56,7 +56,7 @@ async function buildClaudeSkillSnapshot(config: Record<string, unknown>): Promis
 
   for (const desiredSkill of desiredSkills) {
     if (availableByKey.has(desiredSkill)) continue;
-    warnings.push(`Desired skill "${desiredSkill}" is not available from the ClawDev skills directory.`);
+    warnings.push(`Desired skill "${desiredSkill}" is not available from the Paperclip skills directory.`);
     entries.push({
       key: desiredSkill,
       runtimeName: null,
@@ -68,7 +68,7 @@ async function buildClaudeSkillSnapshot(config: Record<string, unknown>): Promis
       readOnly: false,
       sourcePath: undefined,
       targetPath: undefined,
-      detail: "ClawDev cannot find this skill in the local runtime skills directory.",
+      detail: "Paperclip cannot find this skill in the local runtime skills directory.",
     });
   }
 
@@ -86,7 +86,7 @@ async function buildClaudeSkillSnapshot(config: Record<string, unknown>): Promis
       readOnly: true,
       sourcePath: null,
       targetPath: installedEntry.targetPath ?? path.join(skillsHome, name),
-      detail: "Installed outside ClawDev management in the Claude skills home.",
+      detail: "Installed outside Paperclip management in the Claude skills home.",
     });
   }
 
@@ -117,5 +117,5 @@ export function resolveClaudeDesiredSkillNames(
   config: Record<string, unknown>,
   availableEntries: Array<{ key: string; required?: boolean }>,
 ) {
-  return resolveClawDevDesiredSkillNames(config, availableEntries);
+  return resolvePaperclipDesiredSkillNames(config, availableEntries);
 }

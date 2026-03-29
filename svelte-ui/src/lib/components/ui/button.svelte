@@ -37,14 +37,13 @@
 
 <script lang="ts">
   import { cn } from "$utils/index.js";
-  import type { HTMLButtonAttributes, HTMLAnchorAttributes } from "svelte/elements";
+  import type { HTMLButtonAttributes } from "svelte/elements";
   import type { Snippet } from "svelte";
 
-  type Props = (HTMLButtonAttributes | HTMLAnchorAttributes) & {
+  type Props = HTMLButtonAttributes & {
     variant?: ButtonVariant;
     size?: ButtonSize;
     class?: string;
-    href?: string;
     children?: Snippet;
   };
 
@@ -52,33 +51,17 @@
     variant = "default",
     size = "default",
     class: className,
-    href,
     children,
     ...rest
   }: Props = $props();
-
-  const classes = $derived(cn(buttonVariants({ variant, size }), className));
 </script>
 
-{#if href}
-  <a
-    {href}
-    data-slot="button"
-    data-variant={variant}
-    data-size={size}
-    class={classes}
-    {...rest}
-  >
-    {#if children}{@render children()}{/if}
-  </a>
-{:else}
-  <button
-    data-slot="button"
-    data-variant={variant}
-    data-size={size}
-    class={classes}
-    {...rest}
-  >
-    {#if children}{@render children()}{/if}
-  </button>
-{/if}
+<button
+  data-slot="button"
+  data-variant={variant}
+  data-size={size}
+  class={cn(buttonVariants({ variant, size }), className)}
+  {...rest}
+>
+  {#if children}{@render children()}{/if}
+</button>

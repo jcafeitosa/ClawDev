@@ -1,4 +1,4 @@
-import { H as HYDRATION_ERROR, C as COMMENT_NODE, r as HYDRATION_END, t as HYDRATION_START, v as HYDRATION_START_ELSE, w as get_next_sibling, x as effect_tracking, y as get, z as render_effect, A as source, B as untrack, D as increment, E as queue_micro_task, F as active_effect, G as BOUNDARY_EFFECT, I as block, J as branch, K as create_text, L as pause_effect, M as current_batch, N as move_effect, O as defer_effect, P as set_active_effect, Q as set_active_reaction, R as set_component_context, S as Batch, T as handle_error, U as active_reaction, V as component_context, W as internal_set, X as destroy_effect, Y as invoke_error_boundary, Z as svelte_boundary_reset_onerror, _ as HYDRATION_START_FAILED, $ as EFFECT_TRANSPARENT, a0 as EFFECT_PRESERVED, a1 as define_property, a2 as without_reactive_context, a3 as init_operations, a4 as get_first_child, a5 as hydration_failed, a6 as clear_text_content, a7 as component_root, a8 as array_from, a9 as is_passive_event, aa as push, ab as pop, ac as set, ad as LEGACY_PROPS, ae as flushSync, af as mutable_source, ag as render, ah as setContext, m as derived } from "./index.js";
+import { H as HYDRATION_ERROR, C as COMMENT_NODE, m as HYDRATION_END, o as HYDRATION_START, p as HYDRATION_START_ELSE, q as get_next_sibling, r as effect_tracking, t as get, v as render_effect, w as source, x as untrack, y as increment, z as queue_micro_task, A as active_effect, B as BOUNDARY_EFFECT, D as block, E as branch, F as create_text, G as pause_effect, I as current_batch, J as move_effect, K as defer_effect, L as set_active_effect, M as set_active_reaction, N as set_component_context, O as Batch, P as handle_error, Q as active_reaction, R as component_context, S as internal_set, T as destroy_effect, U as invoke_error_boundary, V as svelte_boundary_reset_onerror, W as HYDRATION_START_FAILED, X as EFFECT_TRANSPARENT, Y as EFFECT_PRESERVED, Z as define_property, _ as init_operations, $ as get_first_child, a0 as hydration_failed, a1 as clear_text_content, a2 as component_root, a3 as array_from, a4 as is_passive_event, a5 as push, a6 as pop, a7 as set, a8 as LEGACY_PROPS, a9 as flushSync, aa as mutable_source, ab as render, ac as setContext, j as derived } from "./index.js";
 function hydration_mismatch(location) {
   {
     console.warn(`https://svelte.dev/e/hydration_mismatch`);
@@ -468,32 +468,6 @@ class Boundary {
 const event_symbol = Symbol("events");
 const all_registered_events = /* @__PURE__ */ new Set();
 const root_event_handles = /* @__PURE__ */ new Set();
-function create_event(event_name, dom, handler, options = {}) {
-  function target_handler(event) {
-    if (!options.capture) {
-      handle_event_propagation.call(dom, event);
-    }
-    if (!event.cancelBubble) {
-      return without_reactive_context(() => {
-        return handler?.call(this, event);
-      });
-    }
-  }
-  if (event_name.startsWith("pointer") || event_name.startsWith("touch") || event_name === "wheel") {
-    queue_micro_task(() => {
-      dom.addEventListener(event_name, target_handler, options);
-    });
-  } else {
-    dom.addEventListener(event_name, target_handler, options);
-  }
-  return target_handler;
-}
-function on(element, type, handler, options = {}) {
-  var target_handler = create_event(type, element, handler, options);
-  return () => {
-    element.removeEventListener(type, target_handler, options);
-  };
-}
 let last_propagated_event = null;
 function handle_event_propagation(event) {
   var handler_element = this;
@@ -988,6 +962,5 @@ function Root($$renderer, $$props) {
 }
 const root = asClassComponent(Root);
 export {
-  on as o,
   root as r
 };

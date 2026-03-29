@@ -38,12 +38,12 @@ export const runningProcesses = new Map<string, RunningProcess>();
 export const MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
 export const MAX_EXCERPT_BYTES = 32 * 1024;
 const SENSITIVE_ENV_KEY = /(key|token|secret|password|passwd|authorization|cookie)/i;
-const CLAWDEV_SKILL_ROOT_RELATIVE_CANDIDATES = [
+const PAPERCLIP_SKILL_ROOT_RELATIVE_CANDIDATES = [
   "../../skills",
   "../../../../../skills",
 ];
 
-export interface ClawDevSkillEntry {
+export interface PaperclipSkillEntry {
   key: string;
   runtimeName: string;
   source: string;
@@ -58,7 +58,7 @@ export interface InstalledSkillTarget {
 
 interface PersistentSkillSnapshotOptions {
   adapterType: string;
-  availableEntries: ClawDevSkillEntry[];
+  availableEntries: PaperclipSkillEntry[];
   desiredSkills: string[];
   installed: Map<string, InstalledSkillTarget>;
   skillsHome: string;
@@ -90,14 +90,14 @@ function buildManagedSkillOrigin(entry: { required?: boolean }): Pick<
 > {
   if (entry.required) {
     return {
-      origin: "clawdev_required",
-      originLabel: "Required by ClawDev",
+      origin: "paperclip_required",
+      originLabel: "Required by Paperclip",
       readOnly: false,
     };
   }
   return {
     origin: "company_managed",
-    originLabel: "Managed by ClawDev",
+    originLabel: "Managed by Paperclip",
     readOnly: false,
   };
 }
@@ -201,7 +201,7 @@ export function redactEnvForLogs(env: Record<string, string>): Record<string, st
   return redacted;
 }
 
-export function buildClawDevEnv(agent: { id: string; companyId: string }): Record<string, string> {
+export function buildPaperclipEnv(agent: { id: string; companyId: string }): Record<string, string> {
   const resolveHostForUrl = (rawHost: string): string => {
     const host = rawHost.trim();
     if (!host || host === "0.0.0.0" || host === "::") return "localhost";
@@ -209,15 +209,15 @@ export function buildClawDevEnv(agent: { id: string; companyId: string }): Recor
     return host;
   };
   const vars: Record<string, string> = {
-    CLAWDEV_AGENT_ID: agent.id,
-    CLAWDEV_COMPANY_ID: agent.companyId,
+    PAPERCLIP_AGENT_ID: agent.id,
+    PAPERCLIP_COMPANY_ID: agent.companyId,
   };
   const runtimeHost = resolveHostForUrl(
-    process.env.CLAWDEV_LISTEN_HOST ?? process.env.HOST ?? "localhost",
+    process.env.PAPERCLIP_LISTEN_HOST ?? process.env.HOST ?? "localhost",
   );
-  const runtimePort = process.env.CLAWDEV_LISTEN_PORT ?? process.env.PORT ?? "3100";
-  const apiUrl = process.env.CLAWDEV_API_URL ?? `http://${runtimeHost}:${runtimePort}`;
-  vars.CLAWDEV_API_URL = apiUrl;
+  const runtimePort = process.env.PAPERCLIP_LISTEN_PORT ?? process.env.PORT ?? "3100";
+  const apiUrl = process.env.PAPERCLIP_API_URL ?? `http://${runtimeHost}:${runtimePort}`;
+  vars.PAPERCLIP_API_URL = apiUrl;
   return vars;
 }
 
@@ -343,12 +343,12 @@ export async function ensureAbsoluteDirectory(
   }
 }
 
-export async function resolveClawDevSkillsDir(
+export async function resolvePaperclipSkillsDir(
   moduleDir: string,
   additionalCandidates: string[] = [],
 ): Promise<string | null> {
   const candidates = [
-    ...CLAWDEV_SKILL_ROOT_RELATIVE_CANDIDATES.map((relativePath) => path.resolve(moduleDir, relativePath)),
+    ...PAPERCLIP_SKILL_ROOT_RELATIVE_CANDIDATES.map((relativePath) => path.resolve(moduleDir, relativePath)),
     ...additionalCandidates.map((candidate) => path.resolve(candidate)),
   ];
   const seenRoots = new Set<string>();
@@ -363,11 +363,11 @@ export async function resolveClawDevSkillsDir(
   return null;
 }
 
-export async function listClawDevSkillEntries(
+export async function listPaperclipSkillEntries(
   moduleDir: string,
   additionalCandidates: string[] = [],
-): Promise<ClawDevSkillEntry[]> {
-  const root = await resolveClawDevSkillsDir(moduleDir, additionalCandidates);
+): Promise<PaperclipSkillEntry[]> {
+  const root = await resolvePaperclipSkillsDir(moduleDir, additionalCandidates);
   if (!root) return [];
 
   try {
@@ -375,11 +375,11 @@ export async function listClawDevSkillEntries(
     return entries
       .filter((entry) => entry.isDirectory())
       .map((entry) => ({
-        key: `clawdev/clawdev/${entry.name}`,
+        key: `paperclipai/paperclip/${entry.name}`,
         runtimeName: entry.name,
         source: path.join(root, entry.name),
         required: true,
-        requiredReason: "Bundled ClawDev skills are always available for local adapters.",
+        requiredReason: "Bundled Paperclip skills are always available for local adapters.",
       }));
   } catch {
     return [];
@@ -453,7 +453,7 @@ export function buildPersistentSkillSnapshot(
 
   for (const desiredSkill of desiredSkills) {
     if (availableByKey.has(desiredSkill)) continue;
-    warnings.push(`Desired skill "${desiredSkill}" is not available from the ClawDev skills directory.`);
+    warnings.push(`Desired skill "${desiredSkill}" is not available from the Paperclip skills directory.`);
     entries.push({
       key: desiredSkill,
       runtimeName: null,
@@ -462,7 +462,7 @@ export function buildPersistentSkillSnapshot(
       state: "missing",
       sourcePath: null,
       targetPath: null,
-      detail: "ClawDev cannot find this skill in the local runtime skills directory.",
+      detail: "Paperclip cannot find this skill in the local runtime skills directory.",
       origin: "external_unknown",
       originLabel: "External or unavailable",
       readOnly: false,
@@ -499,9 +499,9 @@ export function buildPersistentSkillSnapshot(
   };
 }
 
-function normalizeConfiguredClawDevRuntimeSkills(value: unknown): ClawDevSkillEntry[] {
+function normalizeConfiguredPaperclipRuntimeSkills(value: unknown): PaperclipSkillEntry[] {
   if (!Array.isArray(value)) return [];
-  const out: ClawDevSkillEntry[] = [];
+  const out: PaperclipSkillEntry[] = [];
   for (const rawEntry of value) {
     const entry = parseObject(rawEntry);
     const key = asString(entry.key, asString(entry.name, "")).trim();
@@ -522,24 +522,24 @@ function normalizeConfiguredClawDevRuntimeSkills(value: unknown): ClawDevSkillEn
   return out;
 }
 
-export async function readClawDevRuntimeSkillEntries(
+export async function readPaperclipRuntimeSkillEntries(
   config: Record<string, unknown>,
   moduleDir: string,
   additionalCandidates: string[] = [],
-): Promise<ClawDevSkillEntry[]> {
-  const configuredEntries = normalizeConfiguredClawDevRuntimeSkills(config.clawdevRuntimeSkills);
+): Promise<PaperclipSkillEntry[]> {
+  const configuredEntries = normalizeConfiguredPaperclipRuntimeSkills(config.paperclipRuntimeSkills);
   if (configuredEntries.length > 0) return configuredEntries;
-  return listClawDevSkillEntries(moduleDir, additionalCandidates);
+  return listPaperclipSkillEntries(moduleDir, additionalCandidates);
 }
 
-export async function readClawDevSkillMarkdown(
+export async function readPaperclipSkillMarkdown(
   moduleDir: string,
   skillKey: string,
 ): Promise<string | null> {
   const normalized = skillKey.trim().toLowerCase();
   if (!normalized) return null;
 
-  const entries = await listClawDevSkillEntries(moduleDir);
+  const entries = await listPaperclipSkillEntries(moduleDir);
   const match = entries.find((entry) => entry.key === normalized);
   if (!match) return null;
 
@@ -550,11 +550,11 @@ export async function readClawDevSkillMarkdown(
   }
 }
 
-export function readClawDevSkillSyncPreference(config: Record<string, unknown>): {
+export function readPaperclipSkillSyncPreference(config: Record<string, unknown>): {
   explicit: boolean;
   desiredSkills: string[];
 } {
-  const raw = config.clawdevSkillSync;
+  const raw = config.paperclipSkillSync;
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
     return { explicit: false, desiredSkills: [] };
   }
@@ -572,7 +572,7 @@ export function readClawDevSkillSyncPreference(config: Record<string, unknown>):
   };
 }
 
-function canonicalizeDesiredClawDevSkillReference(
+function canonicalizeDesiredPaperclipSkillReference(
   reference: string,
   availableEntries: Array<{ key: string; runtimeName?: string | null }>,
 ): string {
@@ -595,11 +595,11 @@ function canonicalizeDesiredClawDevSkillReference(
   return normalizedReference;
 }
 
-export function resolveClawDevDesiredSkillNames(
+export function resolvePaperclipDesiredSkillNames(
   config: Record<string, unknown>,
   availableEntries: Array<{ key: string; runtimeName?: string | null; required?: boolean }>,
 ): string[] {
-  const preference = readClawDevSkillSyncPreference(config);
+  const preference = readPaperclipSkillSyncPreference(config);
   const requiredSkills = availableEntries
     .filter((entry) => entry.required)
     .map((entry) => entry.key);
@@ -607,17 +607,17 @@ export function resolveClawDevDesiredSkillNames(
     return Array.from(new Set(requiredSkills));
   }
   const desiredSkills = preference.desiredSkills
-    .map((reference) => canonicalizeDesiredClawDevSkillReference(reference, availableEntries))
+    .map((reference) => canonicalizeDesiredPaperclipSkillReference(reference, availableEntries))
     .filter(Boolean);
   return Array.from(new Set([...requiredSkills, ...desiredSkills]));
 }
 
-export function writeClawDevSkillSyncPreference(
+export function writePaperclipSkillSyncPreference(
   config: Record<string, unknown>,
   desiredSkills: string[],
 ): Record<string, unknown> {
   const next = { ...config };
-  const raw = next.clawdevSkillSync;
+  const raw = next.paperclipSkillSync;
   const current =
     typeof raw === "object" && raw !== null && !Array.isArray(raw)
       ? { ...(raw as Record<string, unknown>) }
@@ -629,11 +629,11 @@ export function writeClawDevSkillSyncPreference(
         .filter(Boolean),
     ),
   );
-  next.clawdevSkillSync = current;
+  next.paperclipSkillSync = current;
   return next;
 }
 
-export async function ensureClawDevSkillSymlink(
+export async function ensurePaperclipSkillSymlink(
   source: string,
   target: string,
   linkSkill: (source: string, target: string) => Promise<void> = (linkSource, linkTarget) =>
@@ -737,8 +737,8 @@ export async function runChildProcess(
 
     // Strip Claude Code nesting-guard env vars so spawned `claude` processes
     // don't refuse to start with "cannot be launched inside another session".
-    // These vars leak in when the ClawDev server itself is started from
-    // within a Claude Code session (e.g. `npx clawdev run` in a terminal
+    // These vars leak in when the Paperclip server itself is started from
+    // within a Claude Code session (e.g. `npx paperclipai run` in a terminal
     // owned by Claude Code) or when cron inherits a contaminated shell env.
     const CLAUDE_CODE_NESTING_VARS = [
       "CLAUDECODE",

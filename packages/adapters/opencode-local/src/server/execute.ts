@@ -8,17 +8,17 @@ import {
   asNumber,
   asStringArray,
   parseObject,
-  buildClawDevEnv,
+  buildPaperclipEnv,
   joinPromptSections,
   redactEnvForLogs,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
-  ensureClawDevSkillSymlink,
+  ensurePaperclipSkillSymlink,
   ensurePathInEnv,
   renderTemplate,
   runChildProcess,
-  readClawDevRuntimeSkillEntries,
-  resolveClawDevDesiredSkillNames,
+  readPaperclipRuntimeSkillEntries,
+  resolvePaperclipDesiredSkillNames,
 } from "@clawdev/adapter-utils/server-utils";
 import { isOpenCodeUnknownSessionError, parseOpenCodeJsonl } from "./parse.js";
 import { ensureOpenCodeModelConfiguredAndAvailable } from "./models.js";
@@ -67,23 +67,23 @@ async function ensureOpenCodeSkillsInjected(
   for (const skillName of removedSkills) {
     await onLog(
       "stderr",
-      `[clawdev] Removed maintainer-only OpenCode skill "${skillName}" from ${skillsHome}\n`,
+      `[paperclip] Removed maintainer-only OpenCode skill "${skillName}" from ${skillsHome}\n`,
     );
   }
   for (const entry of selectedEntries) {
     const target = path.join(skillsHome, entry.runtimeName);
 
     try {
-      const result = await ensureClawDevSkillSymlink(entry.source, target);
+      const result = await ensurePaperclipSkillSymlink(entry.source, target);
       if (result === "skipped") continue;
       await onLog(
         "stderr",
-        `[clawdev] ${result === "repaired" ? "Repaired" : "Injected"} OpenCode skill "${entry.key}" into ${skillsHome}\n`,
+        `[paperclip] ${result === "repaired" ? "Repaired" : "Injected"} OpenCode skill "${entry.key}" into ${skillsHome}\n`,
       );
     } catch (err) {
       await onLog(
         "stderr",
-        `[clawdev] Failed to inject OpenCode skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[paperclip] Failed to inject OpenCode skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }
@@ -94,21 +94,21 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const promptTemplate = asString(
     config.promptTemplate,
-    "You are agent {{agent.id}} ({{agent.name}}). Continue your ClawDev work.",
+    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
   const command = asString(config.command, "opencode");
   const model = asString(config.model, "").trim();
   const variant = asString(config.variant, "").trim();
 
-  const workspaceContext = parseObject(context.clawdevWorkspace);
+  const workspaceContext = parseObject(context.paperclipWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
   const workspaceId = asString(workspaceContext.workspaceId, "");
   const workspaceRepoUrl = asString(workspaceContext.repoUrl, "");
   const workspaceRepoRef = asString(workspaceContext.repoRef, "");
   const agentHome = asString(workspaceContext.agentHome, "");
-  const workspaceHints = Array.isArray(context.clawdevWorkspaces)
-    ? context.clawdevWorkspaces.filter(
+  const workspaceHints = Array.isArray(context.paperclipWorkspaces)
+    ? context.paperclipWorkspaces.filter(
         (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
       )
     : [];
@@ -117,8 +117,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
-  const openCodeSkillEntries = await readClawDevRuntimeSkillEntries(config, __moduleDir);
-  const desiredOpenCodeSkillNames = resolveClawDevDesiredSkillNames(config, openCodeSkillEntries);
+  const openCodeSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
+  const desiredOpenCodeSkillNames = resolvePaperclipDesiredSkillNames(config, openCodeSkillEntries);
   await ensureOpenCodeSkillsInjected(
     onLog,
     openCodeSkillEntries,
@@ -127,9 +127,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
-    typeof envConfig.CLAWDEV_API_KEY === "string" && envConfig.CLAWDEV_API_KEY.trim().length > 0;
-  const env: Record<string, string> = { ...buildClawDevEnv(agent) };
-  env.CLAWDEV_RUN_ID = runId;
+    typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
+  const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
+  env.PAPERCLIP_RUN_ID = runId;
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
@@ -153,19 +153,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
-  if (wakeTaskId) env.CLAWDEV_TASK_ID = wakeTaskId;
-  if (wakeReason) env.CLAWDEV_WAKE_REASON = wakeReason;
-  if (wakeCommentId) env.CLAWDEV_WAKE_COMMENT_ID = wakeCommentId;
-  if (approvalId) env.CLAWDEV_APPROVAL_ID = approvalId;
-  if (approvalStatus) env.CLAWDEV_APPROVAL_STATUS = approvalStatus;
-  if (linkedIssueIds.length > 0) env.CLAWDEV_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
-  if (effectiveWorkspaceCwd) env.CLAWDEV_WORKSPACE_CWD = effectiveWorkspaceCwd;
-  if (workspaceSource) env.CLAWDEV_WORKSPACE_SOURCE = workspaceSource;
-  if (workspaceId) env.CLAWDEV_WORKSPACE_ID = workspaceId;
-  if (workspaceRepoUrl) env.CLAWDEV_WORKSPACE_REPO_URL = workspaceRepoUrl;
-  if (workspaceRepoRef) env.CLAWDEV_WORKSPACE_REPO_REF = workspaceRepoRef;
+  if (wakeTaskId) env.PAPERCLIP_TASK_ID = wakeTaskId;
+  if (wakeReason) env.PAPERCLIP_WAKE_REASON = wakeReason;
+  if (wakeCommentId) env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
+  if (approvalId) env.PAPERCLIP_APPROVAL_ID = approvalId;
+  if (approvalStatus) env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
+  if (linkedIssueIds.length > 0) env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+  if (effectiveWorkspaceCwd) env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
+  if (workspaceSource) env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
+  if (workspaceId) env.PAPERCLIP_WORKSPACE_ID = workspaceId;
+  if (workspaceRepoUrl) env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
+  if (workspaceRepoRef) env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
   if (agentHome) env.AGENT_HOME = agentHome;
-  if (workspaceHints.length > 0) env.CLAWDEV_WORKSPACES_JSON = JSON.stringify(workspaceHints);
+  if (workspaceHints.length > 0) env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(workspaceHints);
 
   for (const [key, value] of Object.entries(envConfig)) {
     if (typeof value === "string") env[key] = value;
@@ -176,7 +176,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   // envConfig loop so user overrides cannot disable this guard.
   env.OPENCODE_DISABLE_PROJECT_CONFIG = "true";
   if (!hasExplicitApiKey && authToken) {
-    env.CLAWDEV_API_KEY = authToken;
+    env.PAPERCLIP_API_KEY = authToken;
   }
   const preparedRuntimeConfig = await prepareOpenCodeRuntimeConfig({ env, config });
   try {
@@ -212,7 +212,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (runtimeSessionId && !canResumeSession) {
       await onLog(
         "stdout",
-        `[clawdev] OpenCode session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
+        `[paperclip] OpenCode session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
       );
     }
 
@@ -233,7 +233,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         const reason = err instanceof Error ? err.message : String(err);
         await onLog(
           "stdout",
-          `[clawdev] Warning: could not read agent instructions file "${resolvedInstructionsFilePath}": ${reason}\n`,
+          `[paperclip] Warning: could not read agent instructions file "${resolvedInstructionsFilePath}": ${reason}\n`,
         );
       }
     }
@@ -269,7 +269,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       !sessionId && bootstrapPromptTemplate.trim().length > 0
         ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
         : "";
-    const sessionHandoffNote = asString(context.clawdevSessionHandoffMarkdown, "").trim();
+    const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
     const prompt = joinPromptSections([
       instructionsPrefix,
       renderedBootstrapPrompt,
@@ -403,7 +403,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ) {
       await onLog(
         "stdout",
-        `[clawdev] OpenCode session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+        `[paperclip] OpenCode session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
       );
       const retry = await runAttempt(null);
       return toResult(retry, true);

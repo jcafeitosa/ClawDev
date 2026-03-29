@@ -1,18 +1,18 @@
 services:
-  clawdev:
+  paperclip:
     build:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "${CLAWDEV_PORT:-3100}:3100"
+      - "${PAPERCLIP_PORT:-3100}:3100"
     environment:
       HOST: "0.0.0.0"
-      CLAWDEV_HOME: "/clawdev"
+      PAPERCLIP_HOME: "/paperclip"
       OPENAI_API_KEY: "${OPENAI_API_KEY:-}"
       ANTHROPIC_API_KEY: "${ANTHROPIC_API_KEY:-}"
-      CLAWDEV_DEPLOYMENT_MODE: "authenticated"
-      CLAWDEV_DEPLOYMENT_EXPOSURE: "private"
-      CLAWDEV_PUBLIC_URL: "${CLAWDEV_PUBLIC_URL:-http://localhost:3100}"
+      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
+      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
+      PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
     volumes:
-      - "${CLAWDEV_DATA_DIR:-./data/docker-clawdev}:/clawdev"
+      - "${PAPERCLIP_DATA_DIR:-./data/docker-paperclip}:/paperclip"

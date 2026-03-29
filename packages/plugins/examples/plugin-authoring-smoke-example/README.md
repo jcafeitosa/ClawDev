@@ -1,6 +1,6 @@
 # Plugin Authoring Smoke Example
 
-A ClawDev plugin
+A Paperclip plugin
 
 ## Development
 
@@ -11,10 +11,10 @@ pnpm dev:ui         # local dev server with hot-reload events
 pnpm test
 ```
 
-## Install Into ClawDev
+## Install Into Paperclip
 
 ```bash
-pnpm clawdev plugin install ./
+pnpm paperclipai plugin install ./
 ```
 
 ## Build Options

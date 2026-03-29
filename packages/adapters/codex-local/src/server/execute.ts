@@ -8,14 +8,14 @@ import {
   asBoolean,
   asStringArray,
   parseObject,
-  buildClawDevEnv,
+  buildPaperclipEnv,
   redactEnvForLogs,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
-  ensureClawDevSkillSymlink,
+  ensurePaperclipSkillSymlink,
   ensurePathInEnv,
-  readClawDevRuntimeSkillEntries,
-  resolveClawDevDesiredSkillNames,
+  readPaperclipRuntimeSkillEntries,
+  resolvePaperclipDesiredSkillNames,
   renderTemplate,
   joinPromptSections,
   runChildProcess,
@@ -68,7 +68,7 @@ function resolveCodexBiller(env: Record<string, string>, billingType: "api" | "s
   return billingType === "subscription" ? "chatgpt" : openAiCompatibleBiller ?? "openai";
 }
 
-async function isLikelyClawDevRepoRoot(candidate: string): Promise<boolean> {
+async function isLikelyPaperclipRepoRoot(candidate: string): Promise<boolean> {
   const [hasWorkspace, hasPackageJson, hasServerDir, hasAdapterUtilsDir] = await Promise.all([
     pathExists(path.join(candidate, "pnpm-workspace.yaml")),
     pathExists(path.join(candidate, "package.json")),
@@ -79,7 +79,7 @@ async function isLikelyClawDevRepoRoot(candidate: string): Promise<boolean> {
   return hasWorkspace && hasPackageJson && hasServerDir && hasAdapterUtilsDir;
 }
 
-async function isLikelyClawDevRuntimeSkillPath(
+async function isLikelyPaperclipRuntimeSkillPath(
   candidate: string,
   skillName: string,
   options: { requireSkillMarkdown?: boolean } = {},
@@ -93,7 +93,7 @@ async function isLikelyClawDevRuntimeSkillPath(
 
   let cursor = path.dirname(skillsRoot);
   for (let depth = 0; depth < 6; depth += 1) {
-    if (await isLikelyClawDevRepoRoot(cursor)) return true;
+    if (await isLikelyPaperclipRepoRoot(cursor)) return true;
     const parent = path.dirname(cursor);
     if (parent === cursor) break;
     cursor = parent;
@@ -102,7 +102,7 @@ async function isLikelyClawDevRuntimeSkillPath(
   return false;
 }
 
-async function pruneBrokenUnavailableClawDevSkillSymlinks(
+async function pruneBrokenUnavailablePaperclipSkillSymlinks(
   skillsHome: string,
   allowedSkillNames: Iterable<string>,
   onLog: AdapterExecutionContext["onLog"],
@@ -120,7 +120,7 @@ async function pruneBrokenUnavailableClawDevSkillSymlinks(
     const resolvedLinkedPath = path.resolve(path.dirname(target), linkedPath);
     if (await pathExists(resolvedLinkedPath)) continue;
     if (
-      !(await isLikelyClawDevRuntimeSkillPath(resolvedLinkedPath, entry.name, {
+      !(await isLikelyPaperclipRuntimeSkillPath(resolvedLinkedPath, entry.name, {
         requireSkillMarkdown: false,
       }))
     ) {
@@ -130,7 +130,7 @@ async function pruneBrokenUnavailableClawDevSkillSymlinks(
     await fs.unlink(target).catch(() => {});
     await onLog(
       "stdout",
-      `[clawdev] Removed stale Codex skill "${entry.name}" from ${skillsHome}\n`,
+      `[paperclip] Removed stale Codex skill "${entry.name}" from ${skillsHome}\n`,
     );
   }
 }
@@ -150,7 +150,7 @@ export async function ensureCodexSkillsInjected(
   onLog: AdapterExecutionContext["onLog"],
   options: EnsureCodexSkillsInjectedOptions = {},
 ) {
-  const allSkillsEntries = options.skillsEntries ?? await readClawDevRuntimeSkillEntries({}, __moduleDir);
+  const allSkillsEntries = options.skillsEntries ?? await readPaperclipRuntimeSkillEntries({}, __moduleDir);
   const desiredSkillNames =
     options.desiredSkillNames ?? allSkillsEntries.map((entry) => entry.key);
   const desiredSet = new Set(desiredSkillNames);
@@ -173,7 +173,7 @@ export async function ensureCodexSkillsInjected(
         if (
           resolvedLinkedPath &&
           resolvedLinkedPath !== entry.source &&
-          (await isLikelyClawDevRuntimeSkillPath(resolvedLinkedPath, entry.runtimeName))
+          (await isLikelyPaperclipRuntimeSkillPath(resolvedLinkedPath, entry.runtimeName))
         ) {
           await fs.unlink(target);
           if (linkSkill) {
@@ -183,28 +183,28 @@ export async function ensureCodexSkillsInjected(
           }
           await onLog(
             "stdout",
-            `[clawdev] Repaired Codex skill "${entry.runtimeName}" into ${skillsHome}\n`,
+            `[paperclip] Repaired Codex skill "${entry.runtimeName}" into ${skillsHome}\n`,
           );
           continue;
         }
       }
 
-      const result = await ensureClawDevSkillSymlink(entry.source, target, linkSkill);
+      const result = await ensurePaperclipSkillSymlink(entry.source, target, linkSkill);
       if (result === "skipped") continue;
 
       await onLog(
         "stdout",
-        `[clawdev] ${result === "repaired" ? "Repaired" : "Injected"} Codex skill "${entry.runtimeName}" into ${skillsHome}\n`,
+        `[paperclip] ${result === "repaired" ? "Repaired" : "Injected"} Codex skill "${entry.runtimeName}" into ${skillsHome}\n`,
       );
     } catch (err) {
       await onLog(
         "stderr",
-        `[clawdev] Failed to inject Codex skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[paperclip] Failed to inject Codex skill "${entry.key}" into ${skillsHome}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }
 
-  await pruneBrokenUnavailableClawDevSkillSymlinks(
+  await pruneBrokenUnavailablePaperclipSkillSymlinks(
     skillsHome,
     skillsEntries.map((entry) => entry.runtimeName),
     onLog,
@@ -216,7 +216,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const promptTemplate = asString(
     config.promptTemplate,
-    "You are agent {{agent.id}} ({{agent.name}}). Continue your ClawDev work.",
+    "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
   const command = asString(config.command, "codex");
   const model = asString(config.model, "");
@@ -230,7 +230,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     asBoolean(config.dangerouslyBypassSandbox, false),
   );
 
-  const workspaceContext = parseObject(context.clawdevWorkspace);
+  const workspaceContext = parseObject(context.paperclipWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
   const workspaceStrategy = asString(workspaceContext.strategy, "");
@@ -240,22 +240,22 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const workspaceBranch = asString(workspaceContext.branchName, "");
   const workspaceWorktreePath = asString(workspaceContext.worktreePath, "");
   const agentHome = asString(workspaceContext.agentHome, "");
-  const workspaceHints = Array.isArray(context.clawdevWorkspaces)
-    ? context.clawdevWorkspaces.filter(
+  const workspaceHints = Array.isArray(context.paperclipWorkspaces)
+    ? context.paperclipWorkspaces.filter(
         (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
       )
     : [];
-  const runtimeServiceIntents = Array.isArray(context.clawdevRuntimeServiceIntents)
-    ? context.clawdevRuntimeServiceIntents.filter(
+  const runtimeServiceIntents = Array.isArray(context.paperclipRuntimeServiceIntents)
+    ? context.paperclipRuntimeServiceIntents.filter(
         (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
       )
     : [];
-  const runtimeServices = Array.isArray(context.clawdevRuntimeServices)
-    ? context.clawdevRuntimeServices.filter(
+  const runtimeServices = Array.isArray(context.paperclipRuntimeServices)
+    ? context.paperclipRuntimeServices.filter(
         (value): value is Record<string, unknown> => typeof value === "object" && value !== null,
       )
     : [];
-  const runtimePrimaryUrl = asString(context.clawdevRuntimePrimaryUrl, "");
+  const runtimePrimaryUrl = asString(context.paperclipRuntimePrimaryUrl, "");
   const configuredCwd = asString(config.cwd, "");
   const useConfiguredInsteadOfAgentHome = workspaceSource === "agent_home" && configuredCwd.length > 0;
   const effectiveWorkspaceCwd = useConfiguredInsteadOfAgentHome ? "" : workspaceCwd;
@@ -265,7 +265,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     typeof envConfig.CODEX_HOME === "string" && envConfig.CODEX_HOME.trim().length > 0
       ? path.resolve(envConfig.CODEX_HOME.trim())
       : null;
-  const codexSkillEntries = await readClawDevRuntimeSkillEntries(config, __moduleDir);
+  const codexSkillEntries = await readPaperclipRuntimeSkillEntries(config, __moduleDir);
   const desiredSkillNames = resolveCodexDesiredSkillNames(config, codexSkillEntries);
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
   const preparedManagedCodexHome =
@@ -285,10 +285,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     },
   );
   const hasExplicitApiKey =
-    typeof envConfig.CLAWDEV_API_KEY === "string" && envConfig.CLAWDEV_API_KEY.trim().length > 0;
-  const env: Record<string, string> = { ...buildClawDevEnv(agent) };
+    typeof envConfig.PAPERCLIP_API_KEY === "string" && envConfig.PAPERCLIP_API_KEY.trim().length > 0;
+  const env: Record<string, string> = { ...buildPaperclipEnv(agent) };
   env.CODEX_HOME = effectiveCodexHome;
-  env.CLAWDEV_RUN_ID = runId;
+  env.PAPERCLIP_RUN_ID = runId;
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||
     (typeof context.issueId === "string" && context.issueId.trim().length > 0 && context.issueId.trim()) ||
@@ -313,67 +313,67 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
   if (wakeTaskId) {
-    env.CLAWDEV_TASK_ID = wakeTaskId;
+    env.PAPERCLIP_TASK_ID = wakeTaskId;
   }
   if (wakeReason) {
-    env.CLAWDEV_WAKE_REASON = wakeReason;
+    env.PAPERCLIP_WAKE_REASON = wakeReason;
   }
   if (wakeCommentId) {
-    env.CLAWDEV_WAKE_COMMENT_ID = wakeCommentId;
+    env.PAPERCLIP_WAKE_COMMENT_ID = wakeCommentId;
   }
   if (approvalId) {
-    env.CLAWDEV_APPROVAL_ID = approvalId;
+    env.PAPERCLIP_APPROVAL_ID = approvalId;
   }
   if (approvalStatus) {
-    env.CLAWDEV_APPROVAL_STATUS = approvalStatus;
+    env.PAPERCLIP_APPROVAL_STATUS = approvalStatus;
   }
   if (linkedIssueIds.length > 0) {
-    env.CLAWDEV_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
+    env.PAPERCLIP_LINKED_ISSUE_IDS = linkedIssueIds.join(",");
   }
   if (effectiveWorkspaceCwd) {
-    env.CLAWDEV_WORKSPACE_CWD = effectiveWorkspaceCwd;
+    env.PAPERCLIP_WORKSPACE_CWD = effectiveWorkspaceCwd;
   }
   if (workspaceSource) {
-    env.CLAWDEV_WORKSPACE_SOURCE = workspaceSource;
+    env.PAPERCLIP_WORKSPACE_SOURCE = workspaceSource;
   }
   if (workspaceStrategy) {
-    env.CLAWDEV_WORKSPACE_STRATEGY = workspaceStrategy;
+    env.PAPERCLIP_WORKSPACE_STRATEGY = workspaceStrategy;
   }
   if (workspaceId) {
-    env.CLAWDEV_WORKSPACE_ID = workspaceId;
+    env.PAPERCLIP_WORKSPACE_ID = workspaceId;
   }
   if (workspaceRepoUrl) {
-    env.CLAWDEV_WORKSPACE_REPO_URL = workspaceRepoUrl;
+    env.PAPERCLIP_WORKSPACE_REPO_URL = workspaceRepoUrl;
   }
   if (workspaceRepoRef) {
-    env.CLAWDEV_WORKSPACE_REPO_REF = workspaceRepoRef;
+    env.PAPERCLIP_WORKSPACE_REPO_REF = workspaceRepoRef;
   }
   if (workspaceBranch) {
-    env.CLAWDEV_WORKSPACE_BRANCH = workspaceBranch;
+    env.PAPERCLIP_WORKSPACE_BRANCH = workspaceBranch;
   }
   if (workspaceWorktreePath) {
-    env.CLAWDEV_WORKSPACE_WORKTREE_PATH = workspaceWorktreePath;
+    env.PAPERCLIP_WORKSPACE_WORKTREE_PATH = workspaceWorktreePath;
   }
   if (agentHome) {
     env.AGENT_HOME = agentHome;
   }
   if (workspaceHints.length > 0) {
-    env.CLAWDEV_WORKSPACES_JSON = JSON.stringify(workspaceHints);
+    env.PAPERCLIP_WORKSPACES_JSON = JSON.stringify(workspaceHints);
   }
   if (runtimeServiceIntents.length > 0) {
-    env.CLAWDEV_RUNTIME_SERVICE_INTENTS_JSON = JSON.stringify(runtimeServiceIntents);
+    env.PAPERCLIP_RUNTIME_SERVICE_INTENTS_JSON = JSON.stringify(runtimeServiceIntents);
   }
   if (runtimeServices.length > 0) {
-    env.CLAWDEV_RUNTIME_SERVICES_JSON = JSON.stringify(runtimeServices);
+    env.PAPERCLIP_RUNTIME_SERVICES_JSON = JSON.stringify(runtimeServices);
   }
   if (runtimePrimaryUrl) {
-    env.CLAWDEV_RUNTIME_PRIMARY_URL = runtimePrimaryUrl;
+    env.PAPERCLIP_RUNTIME_PRIMARY_URL = runtimePrimaryUrl;
   }
   for (const [k, v] of Object.entries(envConfig)) {
     if (typeof v === "string") env[k] = v;
   }
   if (!hasExplicitApiKey && authToken) {
-    env.CLAWDEV_API_KEY = authToken;
+    env.PAPERCLIP_API_KEY = authToken;
   }
   const effectiveEnv = Object.fromEntries(
     Object.entries({ ...process.env, ...env }).filter(
@@ -402,7 +402,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (runtimeSessionId && !canResumeSession) {
     await onLog(
       "stdout",
-      `[clawdev] Codex session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
+      `[paperclip] Codex session "${runtimeSessionId}" was saved for cwd "${runtimeSessionCwd}" and will not be resumed in "${cwd}".\n`,
     );
   }
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
@@ -421,12 +421,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       const reason = err instanceof Error ? err.message : String(err);
       await onLog(
         "stdout",
-        `[clawdev] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
+        `[paperclip] Warning: could not read agent instructions file "${instructionsFilePath}": ${reason}\n`,
       );
     }
   }
   const repoAgentsNote =
-    "Codex exec automatically applies repo-scoped AGENTS.md instructions from the current workspace; ClawDev does not currently suppress that discovery.";
+    "Codex exec automatically applies repo-scoped AGENTS.md instructions from the current workspace; Paperclip does not currently suppress that discovery.";
   const commandNotes = (() => {
     if (!instructionsFilePath) {
       return [repoAgentsNote];
@@ -458,7 +458,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     !sessionId && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
-  const sessionHandoffNote = asString(context.clawdevSessionHandoffMarkdown, "").trim();
+  const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
   const prompt = joinPromptSections([
     instructionsPrefix,
     renderedBootstrapPrompt,
@@ -598,7 +598,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   ) {
     await onLog(
       "stdout",
-      `[clawdev] Codex resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
+      `[paperclip] Codex resume session "${sessionId}" is unavailable; retrying with a fresh session.\n`,
     );
     const retry = await runAttempt(null);
     return toResult(retry, true);

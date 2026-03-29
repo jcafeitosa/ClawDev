@@ -1,37 +1,29 @@
-import { Elysia } from "elysia";
+/**
+ * LLM reflection routes — Elysia port.
+ *
+ * Provides text/plain endpoints for agent configuration discovery.
+ * These are mounted OUTSIDE the /api prefix (at root level).
+ */
+
+import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { AGENT_ICON_NAMES } from "@clawdev/shared";
-import { forbidden } from "../errors.js";
 import { listServerAdapters } from "../adapters/index.js";
 import { agentService } from "../services/agents.js";
-import { authPlugin, type Actor } from "../plugins/auth.js";
 
 function hasCreatePermission(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
   if (!agent.permissions || typeof agent.permissions !== "object") return false;
   return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
 }
 
-export function llmRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
+export function llmRoutes(db: Db) {
   const agentsSvc = agentService(db);
 
-  async function assertCanRead(actor: Actor) {
-    if (actor.type === "board") return;
-    if (actor.type !== "agent" || !actor.agentId) {
-      throw forbidden("Board or permitted agent authentication required");
-    }
-    const actorAgent = await agentsSvc.getById(actor.agentId);
-    if (!actorAgent || !hasCreatePermission(actorAgent)) {
-      throw forbidden("Missing permission to read agent configuration reflection");
-    }
-  }
-
-  return new Elysia()
-    .use(authPlugin)
-    .get("/llms/agent-configuration.txt", async ({ actor, set }) => {
-      await assertCanRead(actor);
+  return new Elysia({ prefix: "/llms" })
+    .get("/agent-configuration.txt", async ({ set }) => {
       const adapters = listServerAdapters().sort((a, b) => a.type.localeCompare(b.type));
       const lines = [
-        "# ClawDev Agent Configuration Index",
+        "# Paperclip Agent Configuration Index",
         "",
         "Installed adapters:",
         ...adapters.map((adapter) => `- ${adapter.type}: /llms/agent-configuration/${adapter.type}.txt`),
@@ -49,13 +41,13 @@ export function llmRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
         "- New hires may be created in pending_approval state depending on company settings.",
         "",
       ];
-      set.headers["content-type"] = "text/plain";
+      set.headers["content-type"] = "text/plain; charset=utf-8";
       return lines.join("\n");
     })
-    .get("/llms/agent-icons.txt", async ({ actor, set }) => {
-      await assertCanRead(actor);
+
+    .get("/agent-icons.txt", async ({ set }) => {
       const lines = [
-        "# ClawDev Agent Icon Names",
+        "# Paperclip Agent Icon Names",
         "",
         "Set the `icon` field on hire/create payloads to one of:",
         ...AGENT_ICON_NAMES.map((name) => `- ${name}`),
@@ -64,22 +56,25 @@ export function llmRoutes(db: Db, authPlugin: ReturnType<typeof authPlugin>) {
         '{ "name": "SearchOps", "role": "researcher", "icon": "search" }',
         "",
       ];
-      set.headers["content-type"] = "text/plain";
+      set.headers["content-type"] = "text/plain; charset=utf-8";
       return lines.join("\n");
     })
-    .get("/llms/agent-configuration/:adapterFile", async ({ params, actor, set }) => {
-      await assertCanRead(actor);
-      const adapterType = params.adapterFile.replace(/\.txt$/, "");
-      const adapter = listServerAdapters().find((entry) => entry.type === adapterType);
-      if (!adapter) {
-        set.status = 404;
-        set.headers["content-type"] = "text/plain";
-        return `Unknown adapter type: ${adapterType}`;
-      }
-      set.headers["content-type"] = "text/plain";
-      return (
-        adapter.agentConfigurationDoc ??
-        `# ${adapterType} agent configuration\n\nNo adapter-specific documentation registered.`
-      );
-    });
+
+    .get(
+      "/agent-configuration/:adapterType.txt",
+      async ({ params, set }) => {
+        const adapter = listServerAdapters().find((entry) => entry.type === params.adapterType);
+        if (!adapter) {
+          set.status = 404;
+          set.headers["content-type"] = "text/plain; charset=utf-8";
+          return `Unknown adapter type: ${params.adapterType}`;
+        }
+        set.headers["content-type"] = "text/plain; charset=utf-8";
+        return (
+          adapter.agentConfigurationDoc ??
+          `# ${params.adapterType} agent configuration\n\nNo adapter-specific documentation registered.`
+        );
+      },
+      { params: t.Object({ adapterType: t.String() }) },
+    );
 }

@@ -1,10 +1,10 @@
 import * as p from "@clack/prompts";
 import type { SecretProvider } from "@clawdev/shared";
 import type { SecretsConfig } from "../config/schema.js";
-import { resolveDefaultSecretsKeyFilePath, resolveClawDevInstanceId } from "../config/home.js";
+import { resolveDefaultSecretsKeyFilePath, resolvePaperclipInstanceId } from "../config/home.js";
 
 function defaultKeyFilePath(): string {
-  return resolveDefaultSecretsKeyFilePath(resolveClawDevInstanceId());
+  return resolveDefaultSecretsKeyFilePath(resolvePaperclipInstanceId());
 }
 
 export function defaultSecretsConfig(): SecretsConfig {

@@ -36,7 +36,7 @@ interface WsUpgradeContext {
   actorId: string;
 }
 
-export function liveEventsWs(
+export function liveEventsElysiaWs(
   db: Db,
   opts: {
     deploymentMode: DeploymentMode;

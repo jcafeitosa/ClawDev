@@ -3,12 +3,12 @@ title: CLI Overview
 summary: CLI installation and setup
 ---
 
-The ClawDev CLI handles instance setup, diagnostics, and control-plane operations.
+The Paperclip CLI handles instance setup, diagnostics, and control-plane operations.
 
 ## Usage
 
 ```sh
-pnpm clawdev --help
+pnpm paperclipai --help
 ```
 
 ## Global Options
@@ -17,7 +17,7 @@ All commands support:
 
 | Flag | Description |
 |------|-------------|
-| `--data-dir <path>` | Local ClawDev data root (isolates from `~/.clawdev`) |
+| `--data-dir <path>` | Local Paperclip data root (isolates from `~/.paperclip`) |
 | `--api-base <url>` | API base URL |
 | `--api-key <token>` | API authentication token |
 | `--context <path>` | Context file path |
@@ -29,7 +29,7 @@ Company-scoped commands also accept `--company-id <id>`.
 For clean local instances, pass `--data-dir` on the command you run:
 
 ```sh
-pnpm clawdev run --data-dir ./tmp/clawdev-dev
+pnpm paperclipai run --data-dir ./tmp/paperclip-dev
 ```
 
 ## Context Profiles
@@ -38,26 +38,26 @@ Store defaults to avoid repeating flags:
 
 ```sh
 # Set defaults
-pnpm clawdev context set --api-base http://localhost:3100 --company-id <id>
+pnpm paperclipai context set --api-base http://localhost:3100 --company-id <id>
 
 # View current context
-pnpm clawdev context show
+pnpm paperclipai context show
 
 # List profiles
-pnpm clawdev context list
+pnpm paperclipai context list
 
 # Switch profile
-pnpm clawdev context use default
+pnpm paperclipai context use default
 ```
 
 To avoid storing secrets in context, use an env var:
 
 ```sh
-pnpm clawdev context set --api-key-env-var-name CLAWDEV_API_KEY
-export CLAWDEV_API_KEY=...
+pnpm paperclipai context set --api-key-env-var-name PAPERCLIP_API_KEY
+export PAPERCLIP_API_KEY=...
 ```
 
-Context is stored at `~/.clawdev/context.json`.
+Context is stored at `~/.paperclip/context.json`.
 
 ## Command Categories
 

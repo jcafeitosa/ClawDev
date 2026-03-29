@@ -1,288 +1,276 @@
 <script lang="ts">
-  import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
-  import { toastStore } from '$stores/toast.svelte.js';
-  import { api } from '$lib/api';
-  import { onMount } from 'svelte';
-  import { Upload, Eye, Loader2, FileArchive, CheckCircle2, AlertTriangle } from 'lucide-svelte';
+  import { page } from "$app/stores";
+  import { api } from "$lib/api/client";
+  import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
+  import { companyStore } from "$stores/company.svelte.js";
+  import { toastStore } from "$stores/toast.svelte.js";
+  import { Upload, FileArchive, AlertCircle, Check } from "lucide-svelte";
+  import { onMount } from "svelte";
 
-  onMount(() => breadcrumbStore.set([{ label: 'Import' }]));
-
+  let companyPrefix = $derived($page.params.companyPrefix);
   let file = $state<File | null>(null);
-  let fileInfo = $state<{ name: string; size: string } | null>(null);
+  let preview = $state<any>(null);
   let importing = $state(false);
-  let previewing = $state(false);
-  let done = $state(false);
-  let dragover = $state(false);
+  let parsing = $state(false);
+  let error = $state<string | null>(null);
+  let success = $state(false);
+  let dragOver = $state(false);
 
-  let previewData = $state<any>(null);
-  let collisionStrategy = $state<'skip' | 'overwrite' | 'rename'>('skip');
-  let importResults = $state<any>(null);
+  let fileInputRef: HTMLInputElement;
 
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  onMount(() => {
+    breadcrumbStore.set([{ label: "Import" }]);
+  });
 
-  function handleFile(f: File) {
-    file = f;
-    fileInfo = { name: f.name, size: (f.size / 1024).toFixed(1) + ' KB' };
-    previewData = null;
-    importResults = null;
-    done = false;
-  }
-
-  function onDrop(e: DragEvent) {
+  function handleDragOver(e: DragEvent) {
     e.preventDefault();
-    dragover = false;
-    const f = e.dataTransfer?.files[0];
-    if (f) handleFile(f);
+    dragOver = true;
   }
 
-  function onInput(e: Event) {
-    const f = (e.target as HTMLInputElement).files?.[0];
-    if (f) handleFile(f);
+  function handleDragLeave() {
+    dragOver = false;
   }
 
-  function resetFile() {
-    file = null;
-    fileInfo = null;
-    previewData = null;
-    importResults = null;
-    done = false;
-  }
-
-  async function fetchPreview() {
-    if (!file || !companyId) return;
-    previewing = true;
-    try {
-      const fd = new FormData();
-      fd.append('file', file);
-      const res = await api(`/api/companies/${companyId}/imports/preview`, {
-        method: 'POST',
-        body: fd,
-      });
-      if (res.ok) {
-        previewData = await res.json();
-      } else {
-        toastStore.push({ title: 'Failed to generate preview', tone: 'error' });
-      }
-    } catch {
-      toastStore.push({ title: 'Failed to generate preview', tone: 'error' });
-    } finally {
-      previewing = false;
+  function handleDrop(e: DragEvent) {
+    e.preventDefault();
+    dragOver = false;
+    const dropped = e.dataTransfer?.files?.[0];
+    if (dropped) {
+      selectFile(dropped);
     }
   }
 
-  async function doImport() {
-    if (!file || !companyId) return;
-    importing = true;
-    importResults = null;
+  function handleFileInput(e: Event) {
+    const input = e.target as HTMLInputElement;
+    const selected = input.files?.[0];
+    if (selected) {
+      selectFile(selected);
+    }
+  }
+
+  async function selectFile(f: File) {
+    file = f;
+    preview = null;
+    error = null;
+    parsing = true;
+
     try {
-      const fd = new FormData();
-      fd.append('file', file);
-      fd.append('collisionStrategy', collisionStrategy);
-      const res = await api(`/api/companies/${companyId}/imports/apply`, {
-        method: 'POST',
-        body: fd,
-      });
-      if (res.ok) {
-        const data = await res.json();
-        importResults = data;
-        done = true;
-        toastStore.push({ title: 'Import completed successfully', tone: 'success' });
+      if (f.name.endsWith(".json")) {
+        const text = await f.text();
+        const data = JSON.parse(text);
+        preview = buildPreview(data);
+      } else if (f.name.endsWith(".zip")) {
+        // For ZIP files, show basic info
+        preview = {
+          type: "zip",
+          filename: f.name,
+          size: formatBytes(f.size),
+          sections: ["Contents will be analyzed on import"],
+        };
       } else {
-        toastStore.push({ title: 'Import failed', tone: 'error' });
+        error = "Unsupported file format. Please upload a .json or .zip file.";
+        file = null;
       }
     } catch {
-      toastStore.push({ title: 'Import failed', tone: 'error' });
+      error = "Failed to parse file. Ensure it is a valid export file.";
+      file = null;
+    } finally {
+      parsing = false;
+    }
+  }
+
+  function buildPreview(data: any): any {
+    const sections: string[] = [];
+    if (data.agents?.length) sections.push(`${data.agents.length} agents`);
+    if (data.issues?.length) sections.push(`${data.issues.length} issues`);
+    if (data.goals?.length) sections.push(`${data.goals.length} goals`);
+    if (data.projects?.length) sections.push(`${data.projects.length} projects`);
+    if (data.skills?.length) sections.push(`${data.skills.length} skills`);
+    if (data.routines?.length) sections.push(`${data.routines.length} routines`);
+    if (data.documents?.length) sections.push(`${data.documents.length} documents`);
+    if (data.settings) sections.push("Company settings");
+
+    return {
+      type: "json",
+      filename: file?.name,
+      size: formatBytes(file?.size ?? 0),
+      sections,
+      companyName: data.companyName ?? data.company?.name,
+      exportedAt: data.exportedAt,
+    };
+  }
+
+  function formatBytes(bytes: number): string {
+    if (bytes === 0) return "0 B";
+    const k = 1024;
+    const sizes = ["B", "KB", "MB", "GB"];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${sizes[i]}`;
+  }
+
+  function clearFile() {
+    file = null;
+    preview = null;
+    error = null;
+    success = false;
+    if (fileInputRef) fileInputRef.value = "";
+  }
+
+  async function handleImport() {
+    if (!file) return;
+    importing = true;
+    error = null;
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("companyId", companyStore.selectedCompanyId ?? "");
+
+      const res = await fetch(`/api/companies/${companyStore.selectedCompanyId}/import`, {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.message ?? `Import failed (${res.status})`);
+      }
+
+      success = true;
+      toastStore.push({ title: "Import complete", tone: "success" });
+    } catch (err) {
+      error = err instanceof Error ? err.message : "Import failed";
     } finally {
       importing = false;
     }
   }
 </script>
 
-<div class="mx-auto max-w-lg p-6 space-y-6">
-  <div>
-    <h1 class="text-xl font-bold text-foreground">Import Company Data</h1>
-    <p class="mt-1 text-sm text-muted-foreground">Upload a ZIP or JSON file to import data into your workspace</p>
+<div class="p-6 max-w-2xl space-y-6">
+  <div class="flex items-center gap-3">
+    <Upload class="size-5 text-muted-foreground" />
+    <div>
+      <h1 class="text-xl font-semibold text-foreground">Import Company Data</h1>
+      <p class="text-sm text-muted-foreground mt-0.5">
+        Upload an export file to import data into this company.
+      </p>
+    </div>
   </div>
 
-  <!-- Drop zone -->
-  {#if !done}
+  {#if success}
+    <div class="rounded-lg border border-green-500/50 bg-green-500/10 p-6 text-center space-y-3">
+      <Check class="size-10 text-green-500 mx-auto" />
+      <p class="text-sm font-medium text-green-500">Import completed successfully!</p>
+      <a
+        href="/{companyPrefix}"
+        class="inline-flex h-9 items-center justify-center rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors"
+      >
+        Go to Dashboard
+      </a>
+    </div>
+  {:else}
+    <!-- Drop zone -->
     <div
-      class="flex flex-col items-center justify-center rounded-xl border-2 border-dashed p-12 transition-colors
-        {dragover ? 'border-blue-500 bg-blue-500/5' : 'border-white/[0.12] hover:border-white/[0.2]'}"
-      ondragover={(e) => { e.preventDefault(); dragover = true; }}
-      ondragleave={() => { dragover = false; }}
-      ondrop={onDrop}
-      role="presentation"
+      role="button"
+      tabindex="0"
+      ondragover={handleDragOver}
+      ondragleave={handleDragLeave}
+      ondrop={handleDrop}
+      onclick={() => fileInputRef?.click()}
+      onkeydown={(e) => { if (e.key === "Enter" || e.key === " ") fileInputRef?.click(); }}
+      class="flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-10 transition-colors cursor-pointer
+        {dragOver ? 'border-primary bg-primary/5' : 'border-border hover:border-muted-foreground/50'}"
     >
-      <Upload class="mb-3 h-8 w-8 text-muted-foreground" />
-      <p class="text-sm text-muted-foreground">Drag & drop a ZIP or JSON file, or</p>
-      <label class="mt-3 cursor-pointer rounded-lg border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60">
-        Browse files
-        <input type="file" accept=".zip,.json" class="hidden" onchange={onInput} />
-      </label>
-    </div>
-  {/if}
-
-  <!-- File info -->
-  {#if fileInfo && !done}
-    <div class="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
-      <FileArchive class="h-5 w-5 text-blue-400" />
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-foreground truncate">{fileInfo.name}</p>
-        <p class="text-xs text-muted-foreground">{fileInfo.size}</p>
+      <FileArchive class="size-10 text-muted-foreground" />
+      <div class="text-center">
+        <p class="text-sm font-medium text-foreground">
+          {file ? file.name : "Drop your export file here"}
+        </p>
+        <p class="text-xs text-muted-foreground mt-0.5">
+          {file ? formatBytes(file.size) : "Supports .json and .zip files"}
+        </p>
       </div>
-      <button onclick={resetFile} class="text-xs text-muted-foreground hover:text-foreground transition-colors">Remove</button>
-    </div>
-  {/if}
-
-  <!-- Preview button -->
-  {#if file && !previewData && !done}
-    <button
-      onclick={fetchPreview}
-      disabled={previewing}
-      class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
-    >
-      {#if previewing}
-        <Loader2 class="h-4 w-4 animate-spin" />
-        Analyzing file...
-      {:else}
-        <Eye class="h-4 w-4" />
-        Preview Import
-      {/if}
-    </button>
-  {/if}
-
-  <!-- Preview data -->
-  {#if previewData && !done}
-    <div class="rounded-lg border border-border bg-card p-4 space-y-3">
-      <h3 class="text-sm font-medium text-foreground">Import Preview</h3>
-
-      <!-- Entity counts -->
-      {#if previewData.counts || previewData.entities}
-        {@const counts = previewData.counts ?? previewData.entities ?? previewData}
-        <div class="space-y-1">
-          {#each Object.entries(counts) as [key, value]}
-            <div class="flex items-center justify-between text-sm">
-              <span class="capitalize text-muted-foreground">{key}</span>
-              <span class="font-medium text-foreground">{value} items</span>
-            </div>
-          {/each}
-        </div>
-      {/if}
-
-      <!-- Conflicts warning -->
-      {#if previewData.conflicts && previewData.conflicts > 0}
-        <div class="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
-          <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-          <div>
-            <p class="text-sm font-medium text-amber-300">{previewData.conflicts} potential conflicts</p>
-            <p class="text-xs text-amber-400/70">Entities that already exist in your workspace</p>
-          </div>
-        </div>
-      {/if}
-
-      <!-- Collision strategy selector -->
-      <div class="space-y-2">
-        <label class="text-xs font-medium text-muted-foreground">Collision Strategy</label>
-        <select
-          bind:value={collisionStrategy}
-          class="w-full appearance-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      {#if file}
+        <button
+          onclick|stopPropagation={clearFile}
+          class="text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
-          <option value="skip">Skip existing - keep current data</option>
-          <option value="overwrite">Overwrite - replace with imported data</option>
-          <option value="rename">Rename - import as new with suffix</option>
-        </select>
-      </div>
-    </div>
-  {/if}
-
-  <!-- Import button -->
-  {#if file && !done}
-    <button
-      onclick={doImport}
-      disabled={importing}
-      class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-    >
-      {#if importing}
-        <Loader2 class="h-4 w-4 animate-spin" />
-        Importing...
-      {:else}
-        <Upload class="h-4 w-4" />
-        Apply Import
+          Choose a different file
+        </button>
       {/if}
-    </button>
-  {/if}
+    </div>
 
-  <!-- Import results -->
-  {#if done && importResults}
-    <div class="rounded-lg border border-green-500/20 bg-green-500/5 p-5 space-y-4">
+    <input
+      bind:this={fileInputRef}
+      type="file"
+      accept=".json,.zip"
+      onchange={handleFileInput}
+      class="hidden"
+    />
+
+    <!-- Preview -->
+    {#if parsing}
+      <div class="rounded-lg border border-border bg-card p-4 animate-pulse">
+        <div class="h-4 w-32 rounded bg-muted mb-2"></div>
+        <div class="h-3 w-64 rounded bg-muted"></div>
+      </div>
+    {:else if preview}
+      <div class="rounded-lg border border-border bg-card p-4 space-y-3">
+        <h3 class="text-sm font-medium text-foreground">Import Preview</h3>
+
+        {#if preview.companyName}
+          <div class="text-xs text-muted-foreground">
+            Source: <span class="text-foreground">{preview.companyName}</span>
+          </div>
+        {/if}
+
+        {#if preview.exportedAt}
+          <div class="text-xs text-muted-foreground">
+            Exported: <span class="text-foreground">{new Date(preview.exportedAt).toLocaleString()}</span>
+          </div>
+        {/if}
+
+        {#if preview.sections?.length}
+          <div class="space-y-1">
+            <p class="text-xs font-medium text-muted-foreground uppercase tracking-wider">Contents</p>
+            <ul class="space-y-0.5">
+              {#each preview.sections as section}
+                <li class="text-sm text-foreground flex items-center gap-2">
+                  <span class="size-1.5 rounded-full bg-primary/50"></span>
+                  {section}
+                </li>
+              {/each}
+            </ul>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    {#if error}
+      <div class="flex items-start gap-2 rounded-lg border border-destructive/50 bg-destructive/10 p-3">
+        <AlertCircle class="size-4 text-destructive shrink-0 mt-0.5" />
+        <p class="text-sm text-destructive">{error}</p>
+      </div>
+    {/if}
+
+    {#if file && preview && !parsing}
       <div class="flex items-center gap-3">
-        <CheckCircle2 class="h-6 w-6 text-green-400" />
-        <h3 class="text-lg font-semibold text-foreground">Import Complete</h3>
+        <button
+          onclick={handleImport}
+          disabled={importing}
+          class="inline-flex h-9 items-center justify-center gap-2 rounded-md bg-primary px-4 text-sm font-medium text-primary-foreground shadow hover:bg-primary/90 transition-colors disabled:opacity-50"
+        >
+          <Upload class="size-4" />
+          {importing ? "Importing..." : "Apply Import"}
+        </button>
+        <button
+          onclick={clearFile}
+          class="inline-flex h-9 items-center justify-center rounded-md border border-border px-4 text-sm font-medium text-foreground shadow-sm hover:bg-muted transition-colors"
+        >
+          Cancel
+        </button>
       </div>
-
-      <div class="space-y-1">
-        {#if importResults.created !== undefined}
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">Created</span>
-            <span class="font-medium text-green-400">{importResults.created}</span>
-          </div>
-        {/if}
-        {#if importResults.updated !== undefined}
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">Updated</span>
-            <span class="font-medium text-blue-400">{importResults.updated}</span>
-          </div>
-        {/if}
-        {#if importResults.skipped !== undefined}
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">Skipped</span>
-            <span class="font-medium text-muted-foreground">{importResults.skipped}</span>
-          </div>
-        {/if}
-        {#if importResults.errors !== undefined && importResults.errors > 0}
-          <div class="flex items-center justify-between text-sm">
-            <span class="text-muted-foreground">Errors</span>
-            <span class="font-medium text-red-400">{importResults.errors}</span>
-          </div>
-        {/if}
-      </div>
-
-      <!-- Per-entity breakdown if available -->
-      {#if importResults.details}
-        <div class="border-t border-border/50 pt-3 space-y-1">
-          <h4 class="text-xs font-medium text-muted-foreground">Breakdown</h4>
-          {#each Object.entries(importResults.details) as [entity, detail]}
-            <div class="flex items-center justify-between text-sm">
-              <span class="capitalize text-muted-foreground">{entity}</span>
-              <span class="text-xs text-foreground">
-                {(detail as any).created ?? 0} created, {(detail as any).updated ?? 0} updated, {(detail as any).skipped ?? 0} skipped
-              </span>
-            </div>
-          {/each}
-        </div>
-      {/if}
-
-      <button
-        onclick={resetFile}
-        class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
-      >
-        Import Another File
-      </button>
-    </div>
-  {:else if done}
-    <!-- Fallback if no structured results -->
-    <div class="flex flex-col items-center gap-3 rounded-lg border border-green-500/20 bg-green-500/5 p-6">
-      <CheckCircle2 class="h-8 w-8 text-green-400" />
-      <h3 class="text-lg font-semibold text-foreground">Import Complete</h3>
-      <p class="text-sm text-muted-foreground">Your data has been imported successfully</p>
-      <button
-        onclick={resetFile}
-        class="mt-2 inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
-      >
-        Import Another File
-      </button>
-    </div>
+    {/if}
   {/if}
 </div>
