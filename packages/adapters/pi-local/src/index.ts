@@ -1,18 +1,18 @@
 import type { AdapterMeta } from "@clawdev/shared";
 
 export const type = "pi_local";
-export const label = "Pi (local)";
+export const label = "Pi (pi-mono)";
 
 export const meta: AdapterMeta = {
   type: "pi_local",
-  label: "Pi",
+  label: "Pi (pi-mono)",
   icon: "Circle",
-  authMethods: ["none"],
-  envVarNames: [],
-  docsUrl: "",
+  authMethods: ["api_key", "cli_auth"],
+  envVarNames: ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY"],
+  docsUrl: "https://github.com/badlogic/pi-mono",
   supportsQuota: false,
   supportsHealthCheck: true,
-  billingModel: "free",
+  billingModel: "metered_api",
 };
 
 export const models: Array<{ id: string; label: string }> = [];

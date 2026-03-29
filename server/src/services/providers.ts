@@ -44,10 +44,10 @@ const ADAPTER_DISPLAY_NAMES: Record<string, string> = {
   gemini_local: "Gemini (Google)",
   opencode_local: "OpenCode",
   openclaw_gateway: "OpenClaw Gateway",
-  pi_local: "Pi",
+  pi_local: "Pi (pi-mono)",
   hermes_local: "Hermes",
-  process: "Process (generic)",
-  http: "HTTP (generic)",
+  process: "Ollama (local)",
+  http: "HTTP API",
 };
 
 function buildAdapterMeta(): Map<string, AdapterMeta> {
@@ -303,8 +303,12 @@ export function providerService(db: Db) {
 
   async function probeCli(command: string, args: string[], timeoutMs = 5000): Promise<string> {
     const { execFile } = await import("node:child_process");
+    // Ensure PATH includes common install locations
+    const env = { ...process.env };
+    const extraPaths = ["/opt/homebrew/bin", "/usr/local/bin", `${process.env.HOME}/.local/bin`];
+    env.PATH = [...extraPaths, env.PATH ?? ""].join(":");
     return new Promise((resolve) => {
-      const proc = execFile(command, args, { timeout: timeoutMs, env: { ...process.env } }, (err, stdout) => {
+      const proc = execFile(command, args, { timeout: timeoutMs, env }, (err, stdout) => {
         resolve(stdout?.trim() ?? "");
       });
       proc.on("error", () => resolve(""));
@@ -391,14 +395,19 @@ export function providerService(db: Db) {
           };
         }
         case "pi_local": {
-          const version = await probeCli("pi", ["--version"]).catch(() => "");
+          const [version, modelsRaw] = await Promise.all([
+            probeCli("pi", ["--version"]).catch(() => ""),
+            probeCli("pi", ["--list-models"]).catch(() => ""),
+          ]);
+          const models = modelsRaw.split("\n").filter(l => l.trim() && !l.startsWith("Available")).slice(0, 20);
+          const hasApiKey = !!(process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || process.env.GEMINI_API_KEY);
           return {
             cliVersion: version || null,
             authenticatedUser: null,
-            defaultModel: null,
-            availableModels: [],
-            billingType: "free",
-            authCommand: null,
+            defaultModel: models[0] ?? "google/gemini-2.5-flash",
+            availableModels: models,
+            billingType: hasApiKey ? "api" : "subscription",
+            authCommand: "pi /login",
           };
         }
         default:
