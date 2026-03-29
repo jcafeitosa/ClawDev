@@ -175,8 +175,9 @@
       const res = await api(`/api/companies/${companyId}/providers`);
       const data = await res.json();
       const raw = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
-      // Normalize API response to match Provider interface
-      providers = raw.map((p: any) => ({
+      // Filter out generic adapters and normalize API response
+      const HIDDEN_ADAPTERS = ['process', 'http'];
+      providers = raw.filter((p: any) => !HIDDEN_ADAPTERS.includes(p.adapterType)).map((p: any) => ({
         ...p,
         // Ensure status field maps from connectionStatus
         status: p.connectionStatus ?? p.status ?? 'unconfigured',
@@ -401,6 +402,23 @@
     return PROVIDER_BRANDS[adapterType] ?? { icon: Server, color: '#6B7280' };
   }
 
+  // Auth instructions and subscription info per provider
+  const AUTH_INFO: Record<string, { label: string; command?: string; description: string; subscription?: string; defaultModel?: string; billing?: string }> = {
+    claude_local:      { label: 'CLI Login',    command: 'claude login',           description: 'Authenticate via Anthropic CLI. Subscription or API key.', subscription: 'Claude Pro / Team / Enterprise', defaultModel: 'Claude Sonnet 4.6', billing: 'Metered API or Subscription' },
+    copilot_local:     { label: 'GitHub Auth',  command: 'gh auth login',          description: 'Authenticate via GitHub CLI. Requires Copilot subscription.', subscription: 'GitHub Copilot Individual / Business / Enterprise', defaultModel: 'GPT-4.1', billing: 'Subscription included' },
+    codex_local:       { label: 'Codex Auth',   command: 'codex auth',             description: 'Authenticate via Codex CLI. Uses OpenAI credits.', subscription: 'OpenAI Pro / Plus / API Credits', defaultModel: 'Codex (o3)', billing: 'Credits or Subscription' },
+    cursor:            { label: 'Local Auth',   command: 'cursor login',           description: 'Authenticate via Cursor app. Requires Cursor subscription.', subscription: 'Cursor Pro / Business', defaultModel: 'Cursor default', billing: 'Subscription included' },
+    gemini_local:      { label: 'API Key',                                         description: 'Set GEMINI_API_KEY or use: gcloud auth login', subscription: 'Google AI Studio Free / Pay-as-you-go', defaultModel: 'Gemini 2.5 Pro', billing: 'Metered API' },
+    opencode_local:    { label: 'Free',                                            description: 'No authentication required. Uses free models.', subscription: 'Free tier', defaultModel: 'OpenCode big-pickle', billing: 'Free' },
+    pi_local:          { label: 'Free',                                            description: 'No authentication required.', subscription: 'Free tier', billing: 'Free' },
+    openclaw_gateway:  { label: 'API Key',                                         description: 'Set OPENCLAW_API_KEY in secrets.', billing: 'Metered API' },
+    hermes_local:      { label: 'API Key',                                         description: 'Configure via adapter settings.', billing: 'Varies' },
+  };
+
+  function getAuthInfo(adapterType: string) {
+    return AUTH_INFO[adapterType] ?? { label: 'Unknown', description: 'No auth info available.' };
+  }
+
   // Show/hide api key in config form
   let showApiKey = $state(false);
 </script>
@@ -471,7 +489,7 @@
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {#each providers as provider (provider.adapterType)}
         {@const meta = getStatusMeta(provider.connectionStatus)}
-        {@const isExpanded = expandedProviderId === provider.id}
+        {@const isExpanded = expandedProviderId === provider.adapterType}
         {@const brand = getProviderBrand(provider.adapterType)}
         {@const ProviderIcon = brand.icon}
         <div
@@ -479,7 +497,7 @@
         >
           <!-- Card header (always visible) -->
           <button
-            onclick={() => expandProvider(provider.id)}
+            onclick={() => expandProvider(provider.adapterType)}
             class="w-full text-left p-5"
           >
             <div class="flex items-start justify-between gap-3">
@@ -489,7 +507,7 @@
                 </div>
                 <div class="min-w-0">
                   <h3 class="text-sm font-semibold text-foreground truncate">{provider.displayName}</h3>
-                  <p class="text-xs text-muted-foreground mt-0.5">{provider.name}</p>
+                  <p class="text-xs text-muted-foreground mt-0.5">{provider.adapterType}</p>
                 </div>
               </div>
               <div class="flex items-center gap-2 shrink-0">
@@ -515,21 +533,51 @@
                 <DollarSign class="h-3.5 w-3.5" />
                 {formatCurrency((provider.monthlySpendCents ?? 0) / 100)} this month
               </span>
-              <span class="inline-flex items-center gap-1">
+              <span class="inline-flex items-center gap-1" title={getAuthInfo(provider.adapterType).description}>
                 <Shield class="h-3.5 w-3.5" />
-                {provider.authMethod}
+                {getAuthInfo(provider.adapterType).label}
               </span>
+              {#if provider.quotaWindows && provider.quotaWindows.length > 0 && provider.quotaWindows[0].usedPercent != null}
+                <span class="inline-flex items-center gap-1 {(provider.quotaWindows[0].usedPercent ?? 0) >= 90 ? 'text-red-500' : (provider.quotaWindows[0].usedPercent ?? 0) >= 70 ? 'text-yellow-500' : 'text-emerald-500'}">
+                  <Gauge class="h-3.5 w-3.5" />
+                  {provider.quotaWindows[0].usedPercent}% used
+                </span>
+              {/if}
             </div>
+
+            <!-- Subscription & billing info -->
+            {#if getAuthInfo(provider.adapterType).subscription || getAuthInfo(provider.adapterType).defaultModel}
+              <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                {#if getAuthInfo(provider.adapterType).subscription}
+                  <span title="Subscription plan">📋 {getAuthInfo(provider.adapterType).subscription}</span>
+                {/if}
+                {#if getAuthInfo(provider.adapterType).billing}
+                  <span title="Billing model">💰 {getAuthInfo(provider.adapterType).billing}</span>
+                {/if}
+                {#if getAuthInfo(provider.adapterType).defaultModel}
+                  <span title="Default model">🤖 {getAuthInfo(provider.adapterType).defaultModel}</span>
+                {/if}
+              </div>
+            {/if}
+
+            <!-- Auth instruction (if CLI-based and not connected) -->
+            {#if getAuthInfo(provider.adapterType).command && provider.connectionStatus !== 'connected'}
+              <div class="mt-3 rounded-lg bg-amber-500/5 border border-amber-500/20 px-3 py-2">
+                <p class="text-[11px] text-amber-700 dark:text-amber-400">
+                  Run <code class="bg-amber-500/10 px-1 rounded font-mono">{getAuthInfo(provider.adapterType).command}</code> in terminal to authenticate
+                </p>
+              </div>
+            {/if}
           </button>
 
           <!-- Quick actions -->
           <div class="flex items-center gap-2 border-t border-border px-5 py-3">
             <button
-              onclick={(e) => { e.stopPropagation(); testProvider(provider.id); }}
-              disabled={testingProviderId === provider.id}
+              onclick={(e) => { e.stopPropagation(); testProvider(provider.adapterType); }}
+              disabled={testingProviderId === provider.adapterType}
               class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors disabled:opacity-50"
             >
-              {#if testingProviderId === provider.id}
+              {#if testingProviderId === provider.adapterType}
                 <Loader2 class="h-3.5 w-3.5 animate-spin" />
                 Testing...
               {:else}
@@ -538,7 +586,7 @@
               {/if}
             </button>
             <button
-              onclick={(e) => { e.stopPropagation(); expandProvider(provider.id); }}
+              onclick={(e) => { e.stopPropagation(); expandProvider(provider.adapterType); }}
               class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-foreground hover:bg-muted transition-colors"
             >
               <Settings class="h-3.5 w-3.5" />
@@ -558,7 +606,7 @@
             </button>
 
             <!-- Test result toast (inline) -->
-            {#if testResult && testResult.providerId === provider.id}
+            {#if testResult && testResult.providerId === provider.adapterType}
               <span class="ml-auto inline-flex items-center gap-1.5 text-xs font-medium {testResult.success ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}">
                 {#if testResult.success}
                   <CheckCircle class="h-3.5 w-3.5" />
@@ -652,7 +700,7 @@
                 <!-- Save/Cancel -->
                 <div class="flex items-center gap-2 mt-4">
                   <button
-                    onclick={() => saveProviderConfig(provider.id)}
+                    onclick={() => saveProviderConfig(provider.adapterType)}
                     disabled={savingConfig}
                     class="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors disabled:opacity-50"
                   >
