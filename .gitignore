@@ -50,3 +50,9 @@ tests/release-smoke/test-results/
 tests/release-smoke/playwright-report/
 .superset/
 .claude/worktrees/
+
+# SvelteKit build artifacts
+svelte-ui/.svelte-kit/
+svelte-ui/build/
+server/ui-dist/
+docs-astro/.astro/

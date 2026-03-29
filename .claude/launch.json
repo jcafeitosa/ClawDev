@@ -1,0 +1,14 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "ClawDev Server",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "server/src/index.ts"],
+      "port": 3101,
+      "env": {
+        "PORT": "3101"
+      }
+    }
+  ]
+}
