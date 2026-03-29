@@ -49,6 +49,7 @@
     "@bull-board/api": "^6.20.6",
     "@clawdev/adapter-claude-local": "workspace:*",
     "@clawdev/adapter-codex-local": "workspace:*",
+    "@clawdev/adapter-copilot-local": "workspace:*",
     "@clawdev/adapter-cursor-local": "workspace:*",
     "@clawdev/adapter-gemini-local": "workspace:*",
     "@clawdev/adapter-openclaw-gateway": "workspace:*",

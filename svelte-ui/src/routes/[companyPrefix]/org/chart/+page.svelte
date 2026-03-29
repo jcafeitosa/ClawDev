@@ -71,7 +71,7 @@
     paused: '#F59E0B', error: '#EF4444', terminated: '#71717A',
   };
   const ADAPTER: Record<string, string> = {
-    claude_local: 'Claude', codex_local: 'Codex', cursor: 'Cursor',
+    claude_local: 'Claude', copilot_local: 'Copilot', codex_local: 'Codex', cursor: 'Cursor',
     gemini_local: 'Gemini', pi_local: 'Pi', opencode_local: 'OpenCode',
     openclaw_gateway: 'OpenClaw', process: 'Process', http: 'HTTP',
   };
