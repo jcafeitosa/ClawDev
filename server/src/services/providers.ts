@@ -364,13 +364,36 @@ export function providerService(db: Db) {
           };
         }
         case "gemini_local": {
+          const version = await probeCli("gemini", ["--version"]);
           return {
-            cliVersion: null,
+            cliVersion: version || null,
             authenticatedUser: null,
             defaultModel: "gemini-2.5-pro",
+            availableModels: ["gemini-2.5-pro", "gemini-2.5-flash"],
+            billingType: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY ? "api" : "subscription",
+            authCommand: "gemini auth login",
+          };
+        }
+        case "cursor": {
+          const version = await probeCli("cursor", ["--version"]).catch(() => "");
+          return {
+            cliVersion: version || null,
+            authenticatedUser: null,
+            defaultModel: null,
             availableModels: [],
-            billingType: process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY ? "api" : null,
-            authCommand: "gcloud auth login",
+            billingType: "subscription",
+            authCommand: version ? null : "cursor (install from cursor.com)",
+          };
+        }
+        case "pi_local": {
+          const version = await probeCli("pi", ["--version"]).catch(() => "");
+          return {
+            cliVersion: version || null,
+            authenticatedUser: null,
+            defaultModel: null,
+            availableModels: [],
+            billingType: "free",
+            authCommand: null,
           };
         }
         default:
@@ -398,7 +421,7 @@ export function providerService(db: Db) {
 
   async function getConsolidatedStatus(companyId: string): Promise<ProviderStatus[]> {
     // Kick off all data-fetching in parallel
-    const adaptersToProbe = ["claude_local", "copilot_local", "codex_local", "opencode_local", "gemini_local"];
+    const adaptersToProbe = ["claude_local", "copilot_local", "codex_local", "opencode_local", "gemini_local", "cursor", "pi_local"];
     const [configs, quotaResults, monthlySpend, ...probeResults] = await Promise.all([
       listConfigs(companyId),
       fetchAllQuotaWindows().catch((err: unknown) => {
@@ -442,6 +465,51 @@ export function providerService(db: Db) {
       };
     }
 
+    // Build synthetic quota info from live details for providers without native quota
+    function buildSyntheticQuota(
+      adapterType: string,
+      liveDetails: ProviderLiveDetails | null,
+      spendCents: number,
+      config: ProviderConfig | undefined,
+    ): QuotaWindow[] | null {
+      const windows: QuotaWindow[] = [];
+      // If provider has subscription limit configured, show usage
+      if (config?.subscriptionLimitMonthly && config.subscriptionLimitMonthly > 0) {
+        const pct = Math.min(100, Math.round((spendCents / config.subscriptionLimitMonthly) * 100));
+        windows.push({
+          label: "Monthly budget",
+          usedPercent: pct,
+          resetsAt: config.subscriptionResetsAt?.toISOString() ?? null,
+          valueLabel: `$${(spendCents / 100).toFixed(2)} / $${(config.subscriptionLimitMonthly / 100).toFixed(2)}`,
+          detail: null,
+        });
+      }
+      // Show billing type info
+      if (liveDetails?.billingType) {
+        const billingLabel = liveDetails.billingType === "subscription" ? "Subscription" :
+          liveDetails.billingType === "free" ? "Free tier" :
+          liveDetails.billingType === "api" ? "Pay-per-use API" : liveDetails.billingType;
+        windows.push({
+          label: "Billing",
+          usedPercent: null,
+          resetsAt: null,
+          valueLabel: billingLabel,
+          detail: liveDetails.authenticatedUser ? `Account: ${liveDetails.authenticatedUser}` : null,
+        });
+      }
+      // Show model count
+      if (liveDetails?.availableModels && liveDetails.availableModels.length > 0) {
+        windows.push({
+          label: "Available models",
+          usedPercent: null,
+          resetsAt: null,
+          valueLabel: `${liveDetails.availableModels.length} model(s)`,
+          detail: liveDetails.availableModels.slice(0, 5).join(", ") + (liveDetails.availableModels.length > 5 ? ` (+${liveDetails.availableModels.length - 5} more)` : ""),
+        });
+      }
+      return windows.length > 0 ? windows : null;
+    }
+
     // Build the list for ALL known adapter types
     const statuses: ProviderStatus[] = [];
 
@@ -449,9 +517,13 @@ export function providerService(db: Db) {
       const config = configByAdapter.get(adapterType);
       const meta = adapterMetaMap.get(adapterType) ?? null;
 
-      // Resolve quota windows — map adapter type to provider slug
+      // Resolve quota windows — native API first, then synthetic from live details
       const providerSlug = adapterTypeToProviderSlug(adapterType);
-      const quotaWindows = quotaByProvider.get(providerSlug) ?? null;
+      const nativeQuota = quotaByProvider.get(providerSlug) ?? null;
+      const liveDetails = probeMap.get(adapterType) ?? null;
+      const spendCents = monthlySpend.get(adapterType) ?? 0;
+      const syntheticQuota = !nativeQuota ? buildSyntheticQuota(adapterType, liveDetails, spendCents, config) : null;
+      const quotaWindows = nativeQuota ?? syntheticQuota;
 
       // Models from registry
       const registryModels = modelRegistry
