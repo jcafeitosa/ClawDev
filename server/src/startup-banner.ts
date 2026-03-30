@@ -3,6 +3,7 @@ import { resolvePaperclipConfigPath, resolvePaperclipEnvPath } from "./paths.js"
 import type { DeploymentExposure, DeploymentMode } from "@clawdev/shared";
 
 import { parse as parseEnvFileContents } from "dotenv";
+import { serverVersion } from "./version.js";
 
 type UiMode = "none" | "static" | "vite-dev";
 
@@ -51,7 +52,7 @@ function color(text: string, c: keyof typeof ansi): string {
 }
 
 function row(label: string, value: string): string {
-  return `${color(label.padEnd(16), "dim")} ${value}`;
+  return `${color(label.padEnd(20), "dim")} ${value}`;
 }
 
 function redactConnectionString(raw: string): string {
