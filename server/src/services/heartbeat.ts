@@ -2517,11 +2517,10 @@ export function heartbeatService(db: Db) {
 
       // --- Model routing: resolve model via routing system ---
       const requestedModel = typeof (runtimeConfig as Record<string, unknown>).model === "string" ? (runtimeConfig as Record<string, unknown>).model as string : undefined;
-      let resolvedAdapterType = agent.adapterType;
       let modelResolution: import("./model-router.js").ModelResolution | null = null;
+      const providerStatusSvc = createProviderStatusService(db);
 
       try {
-        const providerStatusSvc = createProviderStatusService(db);
         const routerSvc = createModelRouterService(db, providerStatusSvc);
         const resolution = await routerSvc.resolveModel(
           agent.companyId,
@@ -2536,10 +2535,8 @@ export function heartbeatService(db: Db) {
           (runtimeConfig as Record<string, unknown>).model = resolution.modelId;
           await onLog("stdout", `[clawdev] Model routed: ${requestedModel ?? "auto"} → ${resolution.modelId} (${resolution.resolution}, depth=${resolution.fallbackDepth})\n`);
         }
-        // If router resolved a different adapter type, switch adapter
+        // If router resolved a different adapter type, log it but keep original for now
         if (resolution.adapterType !== agent.adapterType) {
-          resolvedAdapterType = resolution.adapterType;
-          // Note: switching adapter type mid-execution is complex; log it but keep original for now
           await onLog("stdout", `[clawdev] Router suggests adapter ${resolution.adapterType} but keeping ${agent.adapterType}\n`);
         }
       } catch (routerErr) {
@@ -2547,10 +2544,9 @@ export function heartbeatService(db: Db) {
         logger.warn({ err: routerErr, runId: run.id, agentId: agent.id }, "model routing failed, using original model");
       }
 
-      // --- Execution with retry on rate limit ---
-      const MAX_RETRIES = 1;
+      // --- Execution with fallback on rate limit ---
       let adapterResult: Awaited<ReturnType<typeof adapter.execute>>;
-      let retryCount = 0;
+      let triedFallback = false;
 
       const executeWithConfig = async (config: Record<string, unknown>) => {
         return adapter.execute({
@@ -2570,18 +2566,18 @@ export function heartbeatService(db: Db) {
 
       adapterResult = await executeWithConfig(runtimeConfig);
 
-      // If rate limited, try fallback
+      // If rate limited, try fallback once
       if (
-        retryCount < MAX_RETRIES &&
+        !triedFallback &&
         adapterResult.errorCode &&
         ["rate_limited", "quota_exceeded"].includes(adapterResult.errorCode)
       ) {
         try {
-          const providerStatusSvc = createProviderStatusService(db);
+          const currentModel = readNonEmptyString(adapterResult.model) ?? (runtimeConfig as any).model ?? "unknown";
           // Mark the failed model in cooldown
           await providerStatusSvc.handleExecutionError(
             agent.adapterType,
-            readNonEmptyString(adapterResult.model) ?? (runtimeConfig as any).model ?? "unknown",
+            currentModel,
             adapterResult.errorCode,
             adapterResult.errorMessage,
           );
@@ -2595,18 +2591,18 @@ export function heartbeatService(db: Db) {
             undefined, // let router pick best available
           );
 
-          if (fallback.modelId && fallback.modelId !== (runtimeConfig as any).model) {
-            await onLog("stdout", `[clawdev] Rate limited on ${(runtimeConfig as any).model}; retrying with fallback: ${fallback.modelId}\n`);
+          if (fallback.modelId && fallback.modelId !== currentModel) {
+            await onLog("stdout", `[clawdev] Rate limited on ${currentModel}; retrying with fallback: ${fallback.modelId}\n`);
             const fallbackConfig = { ...runtimeConfig, model: fallback.modelId };
             adapterResult = await executeWithConfig(fallbackConfig as Record<string, unknown>);
             modelResolution = fallback;
-            retryCount++;
+            triedFallback = true;
           }
         } catch (retryErr) {
           logger.warn({ err: retryErr, runId: run.id }, "fallback retry failed");
         }
       }
-      // --- End execution with retry ---
+      // --- End execution with fallback ---
 
       const adapterManagedRuntimeServices = adapterResult.runtimeServices
         ? await persistAdapterManagedRuntimeServices({
@@ -2686,7 +2682,6 @@ export function heartbeatService(db: Db) {
 
       // --- Post-execution: update provider status and log routing ---
       try {
-        const providerStatusSvc = createProviderStatusService(db);
         const executedModel = readNonEmptyString(adapterResult.model) ?? requestedModel ?? "unknown";
 
         if (outcome === "succeeded") {

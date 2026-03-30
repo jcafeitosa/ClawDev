@@ -6,8 +6,6 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { activityLog } from "@clawdev/db";
-import { eq, desc } from "drizzle-orm";
 import { companyIdParam, paginationQuery } from "../middleware/index.js";
 import { assertBoard, assertCompanyAccess, type Actor } from "../middleware/authz.js";
 import { activityService } from "../services/activity.js";
@@ -28,16 +26,12 @@ export function activityRoutes(db: Db) {
         const actor = ctx.actor as Actor;
         assertCompanyAccess(actor, params.companyId);
 
-        const limit = Number(query.limit) || 50;
-        const offset = ((Number(query.page) || 1) - 1) * limit;
-
-        const rows = await db
-          .select()
-          .from(activityLog)
-          .where(eq(activityLog.companyId, params.companyId))
-          .orderBy(desc(activityLog.createdAt))
-          .limit(limit)
-          .offset(offset);
+        const rows = await activity.list({
+          companyId: params.companyId,
+          agentId: query.agentId,
+          entityType: query.entityType,
+          entityId: query.entityId,
+        });
 
         return rows;
       },

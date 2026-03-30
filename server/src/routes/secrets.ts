@@ -9,6 +9,7 @@ import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { SECRET_PROVIDERS, type SecretProvider } from "@clawdev/shared";
 import { companyIdParam } from "../middleware/index.js";
+import { assertBoard, assertCompanyAccess, type Actor } from "../middleware/authz.js";
 import { secretService } from "../services/secrets.js";
 import { logActivity } from "../services/activity-log.js";
 
@@ -26,7 +27,10 @@ export function secretRoutes(db: Db) {
     // List available secret providers
     .get(
       "/companies/:companyId/secret-providers",
-      async () => {
+      async ({ params, ...ctx }: any) => {
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
+        assertCompanyAccess(actor, params.companyId);
         return svc.listProviders();
       },
       { params: companyIdParam },
@@ -35,7 +39,10 @@ export function secretRoutes(db: Db) {
     // List secrets for a company
     .get(
       "/companies/:companyId/secrets",
-      async ({ params }) => {
+      async ({ params, ...ctx }: any) => {
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
+        assertCompanyAccess(actor, params.companyId);
         const secrets = await svc.list(params.companyId);
         return secrets;
       },
@@ -47,7 +54,9 @@ export function secretRoutes(db: Db) {
       "/companies/:companyId/secrets",
       async (ctx: any) => {
         const { params, body, set } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
+        assertCompanyAccess(actor, params.companyId);
 
         const created = await svc.create(
           params.companyId,
@@ -91,13 +100,16 @@ export function secretRoutes(db: Db) {
       "/secrets/:id/rotate",
       async (ctx: any) => {
         const { params, body, set } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
 
         const existing = await svc.getById(params.id);
         if (!existing) {
           set.status = 404;
           return { error: "Secret not found" };
         }
+
+        assertCompanyAccess(actor, existing.companyId);
 
         const rotated = await svc.rotate(
           params.id,
@@ -134,13 +146,16 @@ export function secretRoutes(db: Db) {
       "/secrets/:id",
       async (ctx: any) => {
         const { params, body, set } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
 
         const existing = await svc.getById(params.id);
         if (!existing) {
           set.status = 404;
           return { error: "Secret not found" };
         }
+
+        assertCompanyAccess(actor, existing.companyId);
 
         const updated = await svc.update(params.id, {
           name: body.name,
@@ -180,13 +195,16 @@ export function secretRoutes(db: Db) {
       "/secrets/:id",
       async (ctx: any) => {
         const { params, set } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
 
         const existing = await svc.getById(params.id);
         if (!existing) {
           set.status = 404;
           return { error: "Secret not found" };
         }
+
+        assertCompanyAccess(actor, existing.companyId);
 
         const removed = await svc.remove(params.id);
         if (!removed) {

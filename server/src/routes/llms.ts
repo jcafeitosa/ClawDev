@@ -10,17 +10,33 @@ import type { Db } from "@clawdev/db";
 import { AGENT_ICON_NAMES } from "@clawdev/shared";
 import { listServerAdapters } from "../adapters/index.js";
 import { agentService } from "../services/agents.js";
+import { assertBoard, type Actor } from "../middleware/authz.js";
+import { forbidden } from "../errors.js";
 
 function hasCreatePermission(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
   if (!agent.permissions || typeof agent.permissions !== "object") return false;
   return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
 }
 
+/**
+ * Assert that the caller is either a board user or an agent with canCreateAgents.
+ * LLM reflection endpoints are consumed by agents that need to discover configuration.
+ */
+async function assertLlmAccess(actor: Actor, agentsSvc: ReturnType<typeof agentService>) {
+  if (actor.type === "board") return;
+  if (actor.type === "agent" && actor.agentId) {
+    const agent = await agentsSvc.getById(actor.agentId);
+    if (agent && hasCreatePermission(agent)) return;
+  }
+  throw forbidden("Board access or agent with canCreateAgents permission required");
+}
+
 export function llmRoutes(db: Db) {
   const agentsSvc = agentService(db);
 
   return new Elysia({ prefix: "/llms" })
-    .get("/agent-configuration.txt", async ({ set }) => {
+    .get("/agent-configuration.txt", async ({ set, ...ctx }: any) => {
+      await assertLlmAccess(ctx.actor, agentsSvc);
       const adapters = listServerAdapters().sort((a, b) => a.type.localeCompare(b.type));
       const lines = [
         "# ClawDev Agent Configuration Index",
@@ -45,7 +61,8 @@ export function llmRoutes(db: Db) {
       return lines.join("\n");
     })
 
-    .get("/agent-icons.txt", async ({ set }) => {
+    .get("/agent-icons.txt", async ({ set, ...ctx }: any) => {
+      await assertLlmAccess(ctx.actor, agentsSvc);
       const lines = [
         "# ClawDev Agent Icon Names",
         "",
@@ -62,7 +79,8 @@ export function llmRoutes(db: Db) {
 
     .get(
       "/agent-configuration/:adapterType.txt",
-      async ({ params, set }) => {
+      async ({ params, set, ...ctx }: any) => {
+        await assertLlmAccess(ctx.actor, agentsSvc);
         const adapter = listServerAdapters().find((entry) => entry.type === params.adapterType);
         if (!adapter) {
           set.status = 404;

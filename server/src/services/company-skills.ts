@@ -2205,7 +2205,7 @@ export function companySkillService(db: Db) {
         && existingMeta.sourceKind === "clawdev_bundled"
         && incomingKind === "github"
         && incomingOwner === "clawdev"
-        && incomingRepo === "clawdev"
+        && incomingRepo?.toLowerCase() === "clawdev"
       ) {
         out.push(existing);
         continue;

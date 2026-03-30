@@ -275,5 +275,38 @@ export function routineRoutes(db: Db) {
         return "";
       },
       { params: t.Object({ id: t.String() }) },
+    )
+
+    // Rotate trigger secret
+    .post(
+      "/routine-triggers/:id/rotate-secret",
+      async (ctx: any) => {
+        const { params, actor, set } = ctx;
+        const trigger = await svc.getTrigger(params.id);
+        if (!trigger) { set.status = 404; return { error: "Routine trigger not found" }; }
+        const routine = await svc.get(trigger.routineId);
+        if (!routine) { set.status = 404; return { error: "Routine not found" }; }
+        assertCompanyAccess(actor, routine.companyId);
+        const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
+        if (denied) return { error: "Missing permission: tasks:assign" };
+        const result = await svc.rotateTriggerSecret(trigger.id, {
+          agentId: actor.type === "agent" ? actor.agentId : null,
+          userId: actor.type === "board" ? actor.userId ?? "board" : null,
+        });
+        const actorInfoRotate = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: routine.companyId,
+          actorType: actorInfoRotate.actorType,
+          actorId: actorInfoRotate.actorId,
+          agentId: actorInfoRotate.agentId,
+          runId: actorInfoRotate.runId,
+          action: "routine.trigger_secret_rotated",
+          entityType: "routine_trigger",
+          entityId: trigger.id,
+          details: { routineId: routine.id },
+        }).catch(() => {});
+        return result;
+      },
+      { params: t.Object({ id: t.String() }) },
     );
 }

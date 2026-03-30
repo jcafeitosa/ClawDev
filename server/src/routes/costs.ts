@@ -17,6 +17,7 @@ import {
   logActivity,
 } from "../services/index.js";
 import { fetchAllQuotaWindows } from "../services/quota-windows.js";
+import { costAggregateService, type DailyCostTrend } from "../services/cost-aggregates.js";
 // Note: we use inline t.Object({ companyId: t.String() }) instead of companyIdParam
 // because companyIdParam enforces UUID format which some callers don't use.
 import { assertBoard, assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
@@ -32,6 +33,7 @@ export function costRoutes(db: Db) {
   const companies = companyService(db);
   const agents = agentService(db);
   const budgets = budgetService(db, budgetHooks);
+  const costAggregates = costAggregateService(db);
 
   function parseDateParam(value: unknown, label: string): Date | undefined {
     if (!value || typeof value !== "string") return undefined;
@@ -227,8 +229,8 @@ export function costRoutes(db: Db) {
         const { params, query } = ctx;
         const actor = ctx.actor as Actor;
         assertCompanyAccess(actor, params.companyId);
-        const _days = Number(query.days) || 30;
-        return costs.byProvider(params.companyId);
+        const days = Number(query.days) || 30;
+        return costAggregates.dailyTrend(params.companyId, days);
       },
       { params: t.Object({ companyId: t.String() }) },
     )

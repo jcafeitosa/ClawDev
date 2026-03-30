@@ -7,18 +7,11 @@
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { instanceSettingsService, logActivity } from "../services/index.js";
-import type { Actor } from "../middleware/authz.js";
+import { assertInstanceAdmin, type Actor } from "../middleware/authz.js";
 
-function checkCanManageInstanceSettings(actor: Actor, ctx: any): string | null {
-  if (actor.type !== "board") {
-    ctx.set.status = 403;
-    return "Board access required";
-  }
-  if (actor.source === "local_implicit" || actor.isInstanceAdmin) {
-    return null;
-  }
-  ctx.set.status = 403;
-  return "Instance admin access required";
+/** Throws 403 if the actor is not a board user with instance admin access. */
+function assertCanManageInstanceSettings(actor: Actor) {
+  assertInstanceAdmin(actor);
 }
 
 export function instanceSettingsRoutes(db: Db) {
@@ -27,14 +20,14 @@ export function instanceSettingsRoutes(db: Db) {
   return new Elysia({ prefix: "/instance/settings" })
     // General settings
     .get("/general", async (ctx: any) => {
-      { const denied = checkCanManageInstanceSettings(ctx.actor, ctx); if (denied) return { error: denied }; }
+      assertCanManageInstanceSettings(ctx.actor);
       return await svc.getGeneral();
     })
 
     .patch(
       "/general",
       async (ctx: any) => {
-        { const denied = checkCanManageInstanceSettings(ctx.actor, ctx); if (denied) return { error: denied }; }
+        assertCanManageInstanceSettings(ctx.actor);
         const updated = await svc.updateGeneral(ctx.body);
         const companyIds = await svc.listCompanyIds();
         await Promise.all(
@@ -66,14 +59,14 @@ export function instanceSettingsRoutes(db: Db) {
 
     // Experimental settings
     .get("/experimental", async (ctx: any) => {
-      { const denied = checkCanManageInstanceSettings(ctx.actor, ctx); if (denied) return { error: denied }; }
+      assertCanManageInstanceSettings(ctx.actor);
       return await svc.getExperimental();
     })
 
     .patch(
       "/experimental",
       async (ctx: any) => {
-        { const denied = checkCanManageInstanceSettings(ctx.actor, ctx); if (denied) return { error: denied }; }
+        assertCanManageInstanceSettings(ctx.actor);
         const updated = await svc.updateExperimental(ctx.body);
         const companyIds = await svc.listCompanyIds();
         await Promise.all(

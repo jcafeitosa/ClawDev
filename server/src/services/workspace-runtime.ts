@@ -97,7 +97,7 @@ function stableStringify(value: unknown): string {
 export function sanitizeRuntimeServiceBaseEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   for (const key of Object.keys(env)) {
-    if (key.startsWith("CLAWDEV_") || key.startsWith("CLAWDEV_")) {
+    if (key.startsWith("CLAWDEV_")) {
       delete env[key];
     }
   }

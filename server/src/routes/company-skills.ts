@@ -8,7 +8,7 @@ import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { companySkillService, agentService, logActivity } from "../services/index.js";
 import { companyIdParam } from "../middleware/index.js";
-import { getActorInfo, type Actor } from "../middleware/authz.js";
+import { assertBoard, assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 
 export function companySkillRoutes(db: Db) {
   const svc = companySkillService(db);
@@ -49,7 +49,9 @@ export function companySkillRoutes(db: Db) {
     // List skills for a company
     .get(
       "/companies/:companyId/skills",
-      async ({ params }: any) => {
+      async ({ params, ...ctx }: any) => {
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const skills = await svc.list(params.companyId);
         return skills;
       },
@@ -60,8 +62,11 @@ export function companySkillRoutes(db: Db) {
     .get(
       "/skills/:id",
       async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
         const skill = await svc.getById(ctx.params.id);
         if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
+        assertCompanyAccess(actor, skill.companyId);
         return skill;
       },
       { params: t.Object({ id: t.String() }) },
@@ -70,12 +75,29 @@ export function companySkillRoutes(db: Db) {
     // Create skill
     .post(
       "/companies/:companyId/skills",
-      async ({ params, body }: any) => {
+      async ({ params, body, ...ctx }: any) => {
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+        const deniedMsg = await checkCanMutateCompanySkills(actor, params.companyId, ctx);
+        if (deniedMsg) return { error: deniedMsg };
         const skill = await svc.createLocalSkill(params.companyId, {
           name: body.name,
           description: body.description,
           markdown: body.content,
         });
+
+        const actorInfo = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: params.companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          action: "company.skill_created",
+          entityType: "company_skill",
+          entityId: skill.id,
+          details: { name: body.name },
+        });
+
         return skill;
       },
       {
@@ -92,11 +114,26 @@ export function companySkillRoutes(db: Db) {
     .post(
       "/companies/:companyId/skills/import",
       async (ctx: any) => {
-        const { params, body, actor, set } = ctx;
+        const { params, body, set } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const deniedMsg = await checkCanMutateCompanySkills(actor, params.companyId, ctx);
         if (deniedMsg) return { error: deniedMsg };
         const source = String(body.source ?? "");
         const result = await svc.importFromSource(params.companyId, source);
+
+        const actorInfo = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: params.companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          action: "company.skill_imported",
+          entityType: "company_skill",
+          entityId: params.companyId,
+          details: { source },
+        });
+
         set.status = 201;
         return result;
       },
@@ -113,10 +150,28 @@ export function companySkillRoutes(db: Db) {
       "/skills/:id",
       async (ctx: any) => {
         const { params, body } = ctx;
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
         const skill = await svc.getById(params.id);
         if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
+        assertCompanyAccess(actor, skill.companyId);
+        const deniedMsg = await checkCanMutateCompanySkills(actor, skill.companyId, ctx);
+        if (deniedMsg) return { error: deniedMsg };
         if (body.content) {
           const updated = await svc.updateFile(skill.companyId, params.id, "SKILL.md", body.content);
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: skill.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "company.skill_updated",
+            entityType: "company_skill",
+            entityId: params.id,
+            details: { name: skill.name },
+          });
+
           return updated;
         }
         return skill;
@@ -135,9 +190,27 @@ export function companySkillRoutes(db: Db) {
     .delete(
       "/skills/:id",
       async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
         const skill = await svc.getById(ctx.params.id);
         if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
+        assertCompanyAccess(actor, skill.companyId);
+        const deniedMsg = await checkCanMutateCompanySkills(actor, skill.companyId, ctx);
+        if (deniedMsg) return { error: deniedMsg };
         await svc.deleteSkill(skill.companyId, ctx.params.id);
+
+        const actorInfo = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: skill.companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          action: "company.skill_deleted",
+          entityType: "company_skill",
+          entityId: ctx.params.id,
+          details: { name: skill.name },
+        });
+
         return { success: true };
       },
       { params: t.Object({ id: t.String() }) },
@@ -147,7 +220,9 @@ export function companySkillRoutes(db: Db) {
     .get(
       "/companies/:companyId/skills/:skillId/files",
       async (ctx: any) => {
+        const actor = ctx.actor as Actor;
         const { companyId, skillId } = ctx.params;
+        assertCompanyAccess(actor, companyId);
         const relativePath = String(ctx.query?.path ?? "SKILL.md");
         const result = await svc.readFile(companyId, skillId, relativePath);
         if (!result) { ctx.set.status = 404; return { error: "File not found" }; }
@@ -160,8 +235,10 @@ export function companySkillRoutes(db: Db) {
     .patch(
       "/companies/:companyId/skills/:skillId/files",
       async (ctx: any) => {
+        const actor = ctx.actor as Actor;
         const { companyId, skillId } = ctx.params;
-        const deniedMsg = await checkCanMutateCompanySkills(ctx.actor, companyId, ctx);
+        assertCompanyAccess(actor, companyId);
+        const deniedMsg = await checkCanMutateCompanySkills(actor, companyId, ctx);
         if (deniedMsg) return { error: deniedMsg };
         const result = await svc.updateFile(
           companyId,
@@ -180,6 +257,7 @@ export function companySkillRoutes(db: Db) {
       async (ctx: any) => {
         const { params, body } = ctx;
         const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const deniedMsg = await checkCanMutateCompanySkills(actor, params.companyId, ctx);
         if (deniedMsg) return { error: deniedMsg };
         const result = await svc.scanProjectWorkspaces(params.companyId, body);
@@ -215,6 +293,7 @@ export function companySkillRoutes(db: Db) {
       async (ctx: any) => {
         const { params, set } = ctx;
         const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const deniedMsg = await checkCanMutateCompanySkills(actor, params.companyId, ctx);
         if (deniedMsg) return { error: deniedMsg };
         const result = await svc.installUpdate(params.companyId, params.skillId);

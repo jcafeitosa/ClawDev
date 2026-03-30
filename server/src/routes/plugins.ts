@@ -28,6 +28,7 @@ import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { PluginStreamBus } from "../services/plugin-stream-bus.js";
 import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
 import { companyIdParam } from "../middleware/index.js";
+import { assertBoard, type Actor } from "../middleware/authz.js";
 
 /** UUID v4 regex for plugin ID route resolution. */
 const UUID_REGEX =
@@ -90,7 +91,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // ------------------------------------------------------------------
 
     // List all plugins
-    .get("/", async ({ query, set }) => {
+    .get("/", async ({ query, set, ...ctx }: any) => {
+      assertBoard(ctx.actor);
       const rawStatus = query.status as string | undefined;
       if (rawStatus !== undefined) {
         if (typeof rawStatus !== "string" || !(PLUGIN_STATUSES as readonly string[]).includes(rawStatus)) {
@@ -104,7 +106,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     })
 
     // UI slot contributions for all ready plugins
-    .get("/ui/slots", async () => {
+    .get("/ui/slots", async ({ ...ctx }: any) => {
+      assertBoard(ctx.actor);
       const plugins = await registry.listByStatus("ready");
 
       const contributions = plugins
@@ -132,7 +135,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     })
 
     // List all available plugin-contributed tools
-    .get("/tools", async ({ query, set }) => {
+    .get("/tools", async ({ query, set, ...ctx }: any) => {
+      assertBoard(ctx.actor);
       if (!toolDispatcher) {
         set.status = 501;
         return { error: "Plugin tool dispatch is not enabled" };
@@ -146,7 +150,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Execute a plugin-contributed tool
     .post(
       "/tools/execute",
-      async ({ body, set }: any) => {
+      async ({ body, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!toolDispatcher) {
           set.status = 501;
           return { error: "Plugin tool dispatch is not enabled" };
@@ -193,7 +198,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Install plugin
     .post(
       "/install",
-      async ({ body }) => {
+      async ({ body, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const loader = pluginLoader(db);
         const discovered = await loader.installPlugin({
           packageName: body.source === "npm" ? body.specifier : undefined,
@@ -219,7 +225,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Get plugin details
     .get(
       "/:pluginId",
-      async ({ params, set }) => {
+      async ({ params, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const plugin = await resolvePlugin(registry, params.pluginId);
         if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
 
@@ -236,7 +243,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Uninstall plugin
     .post(
       "/:pluginId/uninstall",
-      async ({ params, query }) => {
+      async ({ params, query, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const purge = query.purge === "true";
         await lifecycle.unload(params.pluginId, purge);
         publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: params.pluginId } });
@@ -248,7 +256,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Enable plugin
     .post(
       "/:pluginId/enable",
-      async ({ params }) => {
+      async ({ params, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         await lifecycle.enable(params.pluginId);
         publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: params.pluginId } });
         return { success: true };
@@ -259,7 +268,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Disable plugin
     .post(
       "/:pluginId/disable",
-      async ({ params }) => {
+      async ({ params, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         await lifecycle.disable(params.pluginId);
         publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: params.pluginId } });
         return { success: true };
@@ -270,7 +280,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Upgrade plugin
     .post(
       "/:pluginId/upgrade",
-      async ({ params, body, set }: any) => {
+      async ({ params, body, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const plugin = await resolvePlugin(registry, params.pluginId);
         if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
 
@@ -291,7 +302,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Health check
     .get(
       "/:pluginId/health",
-      async ({ params, set }) => {
+      async ({ params, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const plugin = await resolvePlugin(registry, params.pluginId);
         if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
 
@@ -328,7 +340,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Plugin logs
     .get(
       "/:pluginId/logs",
-      async ({ params, query, set }) => {
+      async ({ params, query, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const plugin = await resolvePlugin(registry, params.pluginId);
         if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
 
@@ -358,7 +371,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Plugin config — get
     .get(
       "/:pluginId/config",
-      async ({ params, set }) => {
+      async ({ params, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const plugin = await resolvePlugin(registry, params.pluginId);
         if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
 
@@ -371,7 +385,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Plugin config — save (upsert)
     .post(
       "/:pluginId/config",
-      async ({ params, body, set }: any) => {
+      async ({ params, body, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const plugin = await resolvePlugin(registry, params.pluginId);
         if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
 
@@ -425,7 +440,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Plugin config — test (validate without persisting)
     .post(
       "/:pluginId/config/test",
-      async ({ params, body, set }: any) => {
+      async ({ params, body, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!workerManager) {
           set.status = 501;
           return { error: "Plugin bridge is not enabled" };
@@ -493,7 +509,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Bridge proxy — getData
     .post(
       "/:pluginId/bridge/data",
-      async ({ params, body, set }: any) => {
+      async ({ params, body, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!workerManager) {
           set.status = 501;
           return { error: "Plugin bridge is not enabled" };
@@ -531,7 +548,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Bridge proxy — performAction
     .post(
       "/:pluginId/bridge/action",
-      async ({ params, body, set }: any) => {
+      async ({ params, body, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!workerManager) {
           set.status = 501;
           return { error: "Plugin bridge is not enabled" };
@@ -569,7 +587,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // URL-keyed bridge — getData via path param
     .post(
       "/:pluginId/data/:key",
-      async ({ params, body, set }: any) => {
+      async ({ params, body, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!workerManager) {
           set.status = 501;
           return { error: "Plugin bridge is not enabled" };
@@ -602,7 +621,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // URL-keyed bridge — performAction via path param
     .post(
       "/:pluginId/actions/:key",
-      async ({ params, body, set }: any) => {
+      async ({ params, body, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!workerManager) {
           set.status = 501;
           return { error: "Plugin bridge is not enabled" };
@@ -635,7 +655,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Plugin jobs
     .get(
       "/:pluginId/jobs",
-      async ({ params, query, set }) => {
+      async ({ params, query, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!jobStore) {
           set.status = 501;
           return { error: "Job scheduling is not enabled" };
@@ -663,7 +684,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Job runs
     .get(
       "/:pluginId/jobs/:jobId/runs",
-      async ({ params, query, set }) => {
+      async ({ params, query, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!jobStore) {
           set.status = 501;
           return { error: "Job scheduling is not enabled" };
@@ -690,7 +712,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Trigger job manually
     .post(
       "/:pluginId/jobs/:jobName/trigger",
-      async ({ params, set }) => {
+      async ({ params, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         if (!jobScheduler) {
           set.status = 501;
           return { error: "Job scheduling is not enabled" };
@@ -714,7 +737,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Webhook deliveries (list)
     .get(
       "/:pluginId/webhooks/deliveries",
-      async ({ params }) => {
+      async ({ params, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const rows = await db
           .select()
           .from(pluginWebhookDeliveries)
@@ -825,7 +849,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Aggregated health dashboard
     .get(
       "/:pluginId/dashboard",
-      async ({ params, set }) => {
+      async ({ params, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
         const plugin = await resolvePlugin(registry, params.pluginId);
         if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
 

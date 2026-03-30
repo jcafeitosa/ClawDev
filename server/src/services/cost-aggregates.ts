@@ -40,7 +40,7 @@ interface ProviderCostBreakdown extends CostSummary {
   model: string;
 }
 
-interface DailyCostTrend {
+export interface DailyCostTrend {
   date: string;
   totalCostCents: number;
   activeAgents: number;
