@@ -168,8 +168,9 @@
     return result;
   });
 
+  const HIDDEN_ADAPTERS = ['process', 'http'];
   let uniqueProviders = $derived(
-    [...new Set(models.map((m) => m.adapterType))].sort(),
+    [...new Set(models.map((m) => m.adapterType))].filter((a) => !HIDDEN_ADAPTERS.includes(a)).sort(),
   );
   let uniqueCapabilities = $derived(
     [...new Set(models.flatMap((m) => m.capabilities ?? []))].sort(),
@@ -196,33 +197,16 @@
     try {
       const data = await safeFetch<any>(`/api/providers/summary`, []);
       const raw = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
-      const HIDDEN_ADAPTERS = ['process', 'http'];
       const filtered = raw.filter((p: any) => !HIDDEN_ADAPTERS.includes(p.adapterType));
 
-      providerSummaries = filtered.map((p: any) => {
-        const models = p.models ?? [];
-        let available = 0;
-        let cooldown = 0;
-        let unavailable = 0;
-        for (const m of models) {
-          const state = m.circuitState ?? m.status ?? 'CLOSED';
-          if (state === 'CLOSED' || state === 'available') available++;
-          else if (state === 'HALF_OPEN' || state === 'cooldown') cooldown++;
-          else unavailable++;
-        }
-        // If no models but provider is connected, count provider itself
-        if (models.length === 0 && (p.connectionStatus === 'connected' || p.connectionStatus === 'degraded')) {
-          available = 1;
-        }
-        return {
-          adapterType: p.adapterType,
-          displayName: p.displayName ?? p.adapterType,
-          available,
-          cooldown,
-          unavailable,
-          totalModels: models.length,
-        };
-      });
+      providerSummaries = filtered.map((p: any) => ({
+        adapterType: p.adapterType,
+        displayName: p.label ?? p.displayName ?? p.adapterType,
+        available: p.available ?? 0,
+        cooldown: p.cooldown ?? 0,
+        unavailable: p.unavailable ?? 0,
+        totalModels: p.totalCatalog ?? p.total ?? 0,
+      }));
       lastRefreshed = new Date();
     } catch {
       providerSummaries = [];
@@ -265,12 +249,11 @@
       // Use the providers list to fetch status per provider
       const data = await safeFetch<any>(`/api/providers/summary`, []);
       const raw = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
-      const HIDDEN_ADAPTERS = ['process', 'http'];
       const filtered = raw.filter((p: any) => !HIDDEN_ADAPTERS.includes(p.adapterType));
 
       providerStatuses = filtered.map((p: any) => ({
         adapterType: p.adapterType,
-        displayName: p.displayName ?? p.adapterType,
+        displayName: p.label ?? p.displayName ?? p.adapterType,
         models: (p.models ?? []).map((m: any) => ({
           modelId: m.id ?? m.modelId ?? '',
           modelName: m.name ?? m.id ?? '',
