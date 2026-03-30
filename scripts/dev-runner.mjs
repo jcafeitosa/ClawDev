@@ -452,8 +452,35 @@ async function stopChildForRestart() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// SvelteKit dev server (vite HMR)
+// ---------------------------------------------------------------------------
+let svelteChild = null;
+
+function startSvelteDevServer() {
+  if (svelteChild) return;
+  console.log("[clawdev] starting SvelteKit dev server on port 5174...");
+  svelteChild = spawn(
+    pnpmBin,
+    ["--filter", "@clawdev/svelte-ui", "dev", "--", "--port", "5174"],
+    { stdio: "inherit", env: { ...process.env }, shell: process.platform === "win32" },
+  );
+  svelteChild.on("exit", () => { svelteChild = null; });
+  svelteChild.on("error", (err) => {
+    console.error("[clawdev] SvelteKit dev server error:", err.message);
+    svelteChild = null;
+  });
+}
+
+function stopSvelteDevServer() {
+  if (!svelteChild) return;
+  svelteChild.kill("SIGTERM");
+  svelteChild = null;
+}
+
 async function startServerChild() {
   await buildPluginSdk();
+  startSvelteDevServer();
 
   const serverScript = mode === "watch" ? "dev:watch" : "dev";
   child = spawn(
@@ -552,6 +579,7 @@ async function shutdown(signal) {
   shuttingDown = true;
   clearDevIntervals();
   clearDevServerStatus();
+  stopSvelteDevServer();
 
   if (!child) {
     if (signal) {
