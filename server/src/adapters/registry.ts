@@ -24,6 +24,7 @@ import {
   syncCopilotSkills,
   testEnvironment as copilotTestEnvironment,
   sessionCodec as copilotSessionCodec,
+  listCopilotModels,
 } from "@clawdev/adapter-copilot-local/server";
 import { agentConfigurationDoc as copilotAgentConfigurationDoc, models as copilotModels } from "@clawdev/adapter-copilot-local";
 import {
@@ -115,6 +116,7 @@ const copilotLocalAdapter: ServerAdapterModule = {
   sessionCodec: copilotSessionCodec,
   sessionManagement: getAdapterSessionManagement("copilot_local") ?? undefined,
   models: copilotModels,
+  listModels: listCopilotModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: copilotAgentConfigurationDoc,
 };

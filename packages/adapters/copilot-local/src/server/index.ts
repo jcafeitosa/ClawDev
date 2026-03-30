@@ -2,6 +2,7 @@ export { execute } from "./execute.js";
 export { listCopilotSkills, syncCopilotSkills } from "./skills.js";
 export { testEnvironment } from "./test.js";
 export { parseCopilotOutput } from "./parse.js";
+export { listCopilotModels } from "./models.js";
 import type { AdapterSessionCodec } from "@clawdev/adapter-utils";
 
 function readNonEmptyString(value: unknown): string | null {

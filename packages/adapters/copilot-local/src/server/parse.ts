@@ -4,6 +4,7 @@ export function parseCopilotOutput(stdout: string) {
   let sessionId: string | null = null;
   const messages: string[] = [];
   let errorMessage: string | null = null;
+  let model: string | null = null;
   const usage = {
     inputTokens: 0,
     cachedInputTokens: 0,
@@ -16,51 +17,49 @@ export function parseCopilotOutput(stdout: string) {
 
     const event = parseJson(line);
     if (!event) {
-      // Plain text output from copilot CLI — treat as a message
       if (line.length > 0) messages.push(line);
       continue;
     }
 
     const type = asString(event.type, "");
+    const data = parseObject(event.data ?? event);
 
-    if (type === "session.started" || type === "thread.started") {
-      sessionId =
-        asString(event.session_id, "") ||
-        asString(event.thread_id, "") ||
-        sessionId;
+    if (type === "session.tools_updated") {
+      const m = asString(data.model, "");
+      if (m) model = m;
       continue;
     }
 
-    if (type === "error") {
-      const msg = asString(event.message, "").trim();
-      if (msg) errorMessage = msg;
-      continue;
-    }
-
-    if (type === "message" || type === "item.completed") {
-      const item = parseObject(event.item ?? event);
-      const text = asString(item.text, asString(item.content, ""));
+    if (type === "assistant.message") {
+      const text = asString(data.content, "");
       if (text) messages.push(text);
+      const outputTokens = asNumber(data.outputTokens, 0);
+      if (outputTokens > 0) usage.outputTokens += outputTokens;
       continue;
     }
 
-    if (type === "turn.completed" || type === "usage") {
-      const usageObj = parseObject(event.usage ?? event);
-      usage.inputTokens = asNumber(usageObj.input_tokens, usage.inputTokens);
-      usage.cachedInputTokens = asNumber(usageObj.cached_input_tokens, usage.cachedInputTokens);
-      usage.outputTokens = asNumber(usageObj.output_tokens, usage.outputTokens);
-      continue;
-    }
-
-    if (type === "turn.failed") {
-      const err = parseObject(event.error);
-      const msg = asString(err.message, "").trim();
+    if (type === "error" || type === "turn.failed") {
+      const msg = asString(data.message, asString(event.message, "")).trim();
       if (msg) errorMessage = msg;
+      continue;
+    }
+
+    if (type === "result") {
+      sessionId = asString(event.sessionId, sessionId ?? "") || sessionId;
+      const resultUsage = parseObject(data.usage ?? event.usage);
+      const inputTokens = asNumber(resultUsage.input_tokens, asNumber(resultUsage.inputTokens, 0));
+      const cachedInputTokens = asNumber(resultUsage.cached_input_tokens, asNumber(resultUsage.cachedInputTokens, 0));
+      const outputTokens = asNumber(resultUsage.output_tokens, asNumber(resultUsage.outputTokens, 0));
+      if (inputTokens > 0) usage.inputTokens = inputTokens;
+      if (cachedInputTokens > 0) usage.cachedInputTokens = cachedInputTokens;
+      if (outputTokens > 0) usage.outputTokens = outputTokens;
+      continue;
     }
   }
 
   return {
     sessionId,
+    model,
     summary: messages.join("\n\n").trim(),
     usage,
     errorMessage,

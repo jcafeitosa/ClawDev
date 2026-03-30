@@ -159,12 +159,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     renderedPrompt,
   ]);
 
+  const effort = asString(config.effort, "");
+
   const buildArgs = (resumeSessionId: string | null) => {
-    const args: string[] = [];
+    const args: string[] = ["-p", prompt, "--yolo", "--output-format", "json"];
     if (model) args.push("--model", model);
+    if (effort) args.push("--effort", effort);
     if (extraArgs.length > 0) args.push(...extraArgs);
-    if (resumeSessionId) args.push("--session", resumeSessionId);
-    args.push("-");
+    if (resumeSessionId) args.push("--resume", resumeSessionId);
     return args;
   };
 
@@ -176,7 +178,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         command,
         cwd,
         commandArgs: args.map((value, idx) => {
-          if (idx === args.length - 1 && value !== "-") return `<prompt ${prompt.length} chars>`;
+          if (idx === 1 && value === prompt) return `<prompt ${prompt.length} chars>`;
           return value;
         }),
         env: redactEnvForLogs(env),
@@ -188,7 +190,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const proc = await runChildProcess(runId, command, args, {
       cwd,
       env,
-      stdin: prompt,
+      stdin: "",
       timeoutSec,
       graceSec,
       onSpawn,
@@ -246,7 +248,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       sessionDisplayId: resolvedSessionId,
       provider: "github",
       biller: "github",
-      model: model || "copilot",
+      model: attempt.parsed.model || model || null,
       billingType: "subscription",
       costUsd: null,
       resultJson: {
