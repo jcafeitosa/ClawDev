@@ -9,6 +9,7 @@ import {
   asNumber,
   asStringArray,
   parseObject,
+  parseJson,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
   ensurePathInEnv,
@@ -211,6 +212,151 @@ export async function testEnvironment(
           hint: "Run `claude --print - --output-format stream-json --verbose` manually in this directory and prompt `Respond with hello` to debug.",
         });
       }
+    }
+  }
+
+  // --- Auth status via `claude auth status --json` ---
+  if (canRunProbe && commandLooksLike(command, "claude")) {
+    try {
+      const authProbe = await runChildProcess(
+        `claude-auth-status-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command,
+        ["auth", "status", "--json"],
+        {
+          cwd,
+          env,
+          timeoutSec: 10,
+          graceSec: 3,
+          onLog: async () => {},
+        },
+      );
+
+      const authJson = parseJson(authProbe.stdout.trim());
+      if (authJson) {
+        const loggedIn = authJson.loggedIn === true;
+        const authMethod = asString(authJson.authMethod, "unknown");
+        const email = asString(authJson.email, "");
+        const orgName = asString(authJson.orgName, "");
+        const subscriptionType = asString(authJson.subscriptionType, "");
+
+        if (loggedIn) {
+          const detailParts: string[] = [];
+          if (email) detailParts.push(`email: ${email}`);
+          if (orgName) detailParts.push(`org: ${orgName}`);
+          if (subscriptionType) detailParts.push(`subscription: ${subscriptionType}`);
+
+          checks.push({
+            code: "claude_auth_status",
+            level: "info",
+            message: `Authenticated via ${authMethod}`,
+            ...(detailParts.length > 0 ? { detail: detailParts.join(", ") } : {}),
+          });
+        } else {
+          checks.push({
+            code: "claude_auth_status",
+            level: "warn",
+            message: "Not authenticated",
+            hint: "Run `claude login` to authenticate.",
+          });
+        }
+
+        // --- Subscription type detection ---
+        const apiKeySet = isNonEmpty(env.ANTHROPIC_API_KEY) || isNonEmpty(process.env.ANTHROPIC_API_KEY);
+        if (apiKeySet) {
+          checks.push({
+            code: "claude_subscription_type",
+            level: "info",
+            message: "Using API key (ANTHROPIC_API_KEY)",
+          });
+        } else if (subscriptionType) {
+          const subscriptionLabels: Record<string, string> = {
+            max: "Claude Max subscription (unlimited)",
+            pro: "Claude Pro subscription",
+            free: "Claude Free tier",
+            api: "API key authentication",
+          };
+          const label = subscriptionLabels[subscriptionType] ?? `Subscription: ${subscriptionType}`;
+          checks.push({
+            code: "claude_subscription_type",
+            level: "info",
+            message: label,
+          });
+        }
+      }
+    } catch {
+      // Auth status probe failed — skip silently
+    }
+  }
+
+  // --- Claude Code version (enhanced detail) ---
+  if (canRunProbe && commandLooksLike(command, "claude")) {
+    try {
+      const versionProbe = await runChildProcess(
+        `claude-version-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command,
+        ["--version"],
+        {
+          cwd,
+          env,
+          timeoutSec: 10,
+          graceSec: 3,
+          onLog: async () => {},
+        },
+      );
+
+      const versionString = firstNonEmptyLine(versionProbe.stdout) || firstNonEmptyLine(versionProbe.stderr);
+      if (versionString) {
+        checks.push({
+          code: "claude_version",
+          level: "info",
+          message: "Claude Code version detected",
+          detail: versionString,
+        });
+      }
+    } catch {
+      // Version probe failed — skip silently
+    }
+  }
+
+  // --- Available agents check ---
+  if (canRunProbe && commandLooksLike(command, "claude")) {
+    try {
+      const agentsProbe = await runChildProcess(
+        `claude-agents-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command,
+        ["agents"],
+        {
+          cwd,
+          env,
+          timeoutSec: 10,
+          graceSec: 3,
+          onLog: async () => {},
+        },
+      );
+
+      const combined = (agentsProbe.stdout + "\n" + agentsProbe.stderr).trim();
+      const agentLines = combined
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      const agentCount = agentLines.length;
+
+      if (agentCount > 0) {
+        checks.push({
+          code: "claude_agents_available",
+          level: "info",
+          message: `${agentCount} agent${agentCount === 1 ? "" : "s"} available`,
+          detail: agentLines.slice(0, 10).join(", ") + (agentCount > 10 ? `, ... (+${agentCount - 10} more)` : ""),
+        });
+      } else {
+        checks.push({
+          code: "claude_agents_available",
+          level: "info",
+          message: "No agents detected",
+        });
+      }
+    } catch {
+      // Agents probe failed — skip silently
     }
   }
 

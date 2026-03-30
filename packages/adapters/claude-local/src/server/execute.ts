@@ -308,6 +308,45 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const maxTurns = asNumber(config.maxTurnsPerRun, 0);
   const dangerouslySkipPermissions = asBoolean(config.dangerouslySkipPermissions, false);
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
+
+  // Session fields
+  const noSessionPersistence = config.noSessionPersistence === true;
+  const forkSession = config.forkSession === true;
+  const sessionName = asString(config.sessionName, "");
+
+  // Permission fields
+  const allowDangerouslySkipPermissions = config.allowDangerouslySkipPermissions === true;
+  const permissionMode = asString(config.permissionMode, "");
+  const allowedTools = asStringArray(config.allowedTools);
+  const disallowedTools = asStringArray(config.disallowedTools);
+  const tools = asStringArray(config.tools);
+
+  // Budget fields
+  const maxBudgetUsd = asNumber(config.maxBudgetUsd, 0);
+  const fallbackModel = asString(config.fallbackModel, "");
+
+  // System prompt fields
+  const systemPrompt = asString(config.systemPrompt, "");
+  const appendSystemPrompt = asString(config.appendSystemPrompt, "");
+
+  // MCP fields
+  const mcpConfigs = asStringArray(config.mcpConfig);
+  const strictMcpConfig = config.strictMcpConfig === true;
+  const pluginDirs = asStringArray(config.pluginDirs);
+
+  // Directory fields
+  const addDirs = asStringArray(config.addDirs);
+
+  // Agent fields
+  const agentName = asString(config.agent, "");
+
+  // Advanced fields
+  const bare = config.bare === true;
+  const brief = config.brief === true;
+  const verbose = config.verbose !== false; // default true to preserve existing behavior
+  const betas = asStringArray(config.betas);
+  const disableSlashCommands = config.disableSlashCommands === true;
+  const jsonSchema = asString(config.jsonSchema, "");
   const instructionsFileDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
   const commandNotes = instructionsFilePath
     ? [
@@ -404,7 +443,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   };
 
   const buildClaudeArgs = (resumeSessionId: string | null) => {
-    const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
+    const args = ["--print", "-", "--output-format", "stream-json"];
+    if (verbose) args.push("--verbose");
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
     if (chrome) args.push("--chrome");
@@ -414,7 +454,46 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (effectiveInstructionsFilePath) {
       args.push("--append-system-prompt-file", effectiveInstructionsFilePath);
     }
+
+    // Session
+    if (noSessionPersistence) args.push("--no-session-persistence");
+    if (forkSession) args.push("--fork-session");
+    if (sessionName) args.push("--name", sessionName);
+
+    // Permissions
+    if (allowDangerouslySkipPermissions) args.push("--allow-dangerously-skip-permissions");
+    if (permissionMode) args.push("--permission-mode", permissionMode);
+    for (const t of allowedTools) args.push("--allowedTools", t);
+    for (const t of disallowedTools) args.push("--disallowedTools", t);
+    if (tools.length > 0) args.push("--tools", ...tools);
+
+    // Budget
+    if (maxBudgetUsd > 0) args.push("--max-budget-usd", String(maxBudgetUsd));
+    if (fallbackModel) args.push("--fallback-model", fallbackModel);
+
+    // System prompts
+    if (systemPrompt) args.push("--system-prompt", systemPrompt);
+    if (appendSystemPrompt) args.push("--append-system-prompt", appendSystemPrompt);
+
+    // MCP
+    for (const cfg of mcpConfigs) args.push("--mcp-config", cfg);
+    if (strictMcpConfig) args.push("--strict-mcp-config");
+    for (const dir of pluginDirs) args.push("--plugin-dir", dir);
+
+    // Directories (internal skills dir always included)
     args.push("--add-dir", skillsDir);
+    for (const dir of addDirs) args.push("--add-dir", dir);
+
+    // Agent
+    if (agentName) args.push("--agent", agentName);
+
+    // Advanced
+    if (bare) args.push("--bare");
+    if (brief) args.push("--brief");
+    for (const beta of betas) args.push("--betas", beta);
+    if (disableSlashCommands) args.push("--disable-slash-commands");
+    if (jsonSchema) args.push("--json-schema", jsonSchema);
+
     if (extraArgs.length > 0) args.push(...extraArgs);
     return args;
   };
