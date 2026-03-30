@@ -4,7 +4,7 @@
   import { companyStore } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
-  import { Plus, ListTodo, Search, ChevronDown, LayoutGrid, List } from 'lucide-svelte';
+  import { Plus, ListTodo, Search, ChevronDown, LayoutGrid, List, ArrowUpDown, Layers } from 'lucide-svelte';
   import KanbanBoard from '$lib/components/board/kanban-board.svelte';
   import { cn } from '$utils/index.js';
 
@@ -48,6 +48,10 @@
   let searchQuery = $state('');
   let statusDropdownOpen = $state(false);
   let priorityDropdownOpen = $state(false);
+  let sortDropdownOpen = $state(false);
+  let groupDropdownOpen = $state(false);
+  let sortBy = $state<string>('newest');
+  let groupBy = $state<string>('none');
   let viewMode = $state<'list' | 'board'>('list');
 
   let companyId = $derived(companyStore.selectedCompany?.id ?? companyStore.selectedCompanyId);
@@ -75,6 +79,27 @@
     { value: 'low', label: 'Low' },
   ];
 
+  const SORT_OPTIONS = [
+    { value: 'newest', label: 'Newest first' },
+    { value: 'oldest', label: 'Oldest first' },
+    { value: 'priority', label: 'Priority' },
+    { value: 'updated', label: 'Recently updated' },
+  ];
+
+  const GROUP_OPTIONS = [
+    { value: 'none', label: 'None' },
+    { value: 'status', label: 'Status' },
+    { value: 'priority', label: 'Priority' },
+    { value: 'assignee', label: 'Assignee' },
+  ];
+
+  const PRIORITY_ORDER: Record<string, number> = {
+    critical: 0,
+    high: 1,
+    medium: 2,
+    low: 3,
+  };
+
   // ---------------------------------------------------------------------------
   // Filtered issues (client-side filtering for priority + search)
   // ---------------------------------------------------------------------------
@@ -90,7 +115,67 @@
         (i.identifier ?? '').toLowerCase().includes(q)
       );
     }
+    // Sort
+    list = [...list];
+    if (sortBy === 'newest') {
+      list.sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+    } else if (sortBy === 'oldest') {
+      list.sort((a, b) => new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime());
+    } else if (sortBy === 'priority') {
+      list.sort((a, b) => (PRIORITY_ORDER[a.priority ?? ''] ?? 99) - (PRIORITY_ORDER[b.priority ?? ''] ?? 99));
+    } else if (sortBy === 'updated') {
+      list.sort((a, b) => new Date(b.updatedAt ?? b.createdAt ?? 0).getTime() - new Date(a.updatedAt ?? a.createdAt ?? 0).getTime());
+    }
     return list;
+  });
+
+  // Grouped issues for grouped view
+  interface IssueGroup {
+    key: string;
+    label: string;
+    issues: Issue[];
+  }
+
+  let groupedIssues = $derived.by((): IssueGroup[] => {
+    if (groupBy === 'none') return [];
+    const groups = new Map<string, Issue[]>();
+    for (const issue of filteredIssues) {
+      let key: string;
+      if (groupBy === 'status') {
+        key = issue.status ?? 'unknown';
+      } else if (groupBy === 'priority') {
+        key = issue.priority ?? 'none';
+      } else if (groupBy === 'assignee') {
+        key = assigneeLabel(issue) || 'Unassigned';
+      } else {
+        key = 'other';
+      }
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(issue);
+    }
+    // Sort group keys
+    const entries = [...groups.entries()];
+    if (groupBy === 'status') {
+      const order = ALL_STATUSES.map(s => s.value).filter(Boolean);
+      entries.sort((a, b) => {
+        const ai = order.indexOf(a[0]);
+        const bi = order.indexOf(b[0]);
+        return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+      });
+    } else if (groupBy === 'priority') {
+      entries.sort((a, b) => (PRIORITY_ORDER[a[0]] ?? 99) - (PRIORITY_ORDER[b[0]] ?? 99));
+    } else {
+      entries.sort((a, b) => a[0].localeCompare(b[0]));
+    }
+    return entries.map(([key, issues]) => {
+      let label = key;
+      if (groupBy === 'status') {
+        label = ALL_STATUSES.find(s => s.value === key)?.label ?? key.replace(/_/g, ' ');
+      } else if (groupBy === 'priority') {
+        label = ALL_PRIORITIES.find(p => p.value === key)?.label ?? (key === 'none' ? 'No Priority' : key);
+      }
+      return { key, label, issues };
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -212,6 +297,16 @@
     return ALL_PRIORITIES.find(p => p.value === priorityFilter)?.label ?? 'All Priorities';
   }
 
+  function selectedSortLabel(): string {
+    return SORT_OPTIONS.find(s => s.value === sortBy)?.label ?? 'Sort';
+  }
+
+  function selectedGroupLabel(): string {
+    const opt = GROUP_OPTIONS.find(g => g.value === groupBy);
+    if (!opt || opt.value === 'none') return 'Group';
+    return `Group: ${opt.label}`;
+  }
+
   async function handleStatusChange(issueId: string, newStatus: string): Promise<void> {
     try {
       const res = await api(`/api/issues/${issueId}`, {
@@ -237,9 +332,88 @@
     if (!target.closest('[data-dropdown]')) {
       statusDropdownOpen = false;
       priorityDropdownOpen = false;
+      sortDropdownOpen = false;
+      groupDropdownOpen = false;
     }
   }
+
+  function closeAllDropdownsExcept(...keep: string[]) {
+    if (!keep.includes('status')) statusDropdownOpen = false;
+    if (!keep.includes('priority')) priorityDropdownOpen = false;
+    if (!keep.includes('sort')) sortDropdownOpen = false;
+    if (!keep.includes('group')) groupDropdownOpen = false;
+  }
 </script>
+
+{#snippet issueRow(issue: Issue, i: number, total: number)}
+  <a
+    href="/{$page.params.companyPrefix}/issues/{issue.id}"
+    class="flex items-center gap-3 px-5 py-3 transition hover:bg-accent/40
+      {i < total - 1 ? 'border-b border-border/50' : ''}"
+  >
+    <!-- Status dot -->
+    <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(issue.status)}"></span>
+
+    <!-- Identifier -->
+    {#if issue.identifier}
+      <span class="text-xs font-mono text-muted-foreground shrink-0 w-20 truncate">
+        {issue.identifier}
+      </span>
+    {/if}
+
+    <!-- Live badge -->
+    {#if hasActiveRun(issue)}
+      <span class="live-badge">
+        <span class="live-dot"></span>
+        Live
+      </span>
+    {/if}
+
+    <!-- Title -->
+    <span class="text-sm text-foreground truncate flex-1 min-w-0">
+      {issue.title}
+    </span>
+
+    <!-- Priority badge -->
+    {#if issue.priority && PRIORITY_LABELS[issue.priority]}
+      <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none shrink-0 {PRIORITY_COLORS[issue.priority] ?? 'text-muted-foreground bg-zinc-500/15 border-zinc-500/30'}">
+        {PRIORITY_LABELS[issue.priority]}
+      </span>
+    {/if}
+
+    <!-- Labels -->
+    {#if issue.labels?.length}
+      <div class="hidden md:flex items-center gap-1 shrink-0">
+        {#each issue.labels.slice(0, 2) as label}
+          <span
+            class="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
+            style="background-color: {label.color ?? '#3b82f6'}20; color: {label.color ?? '#3b82f6'}; border: 1px solid {label.color ?? '#3b82f6'}40;"
+          >
+            {label.name}
+          </span>
+        {/each}
+        {#if issue.labels.length > 2}
+          <span class="text-[10px] text-muted-foreground">+{issue.labels.length - 2}</span>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Assignee initials badge -->
+    {#if assigneeInitials(issue)}
+      <span
+        class="assignee-badge"
+        title={assigneeLabel(issue)}
+      >
+        {assigneeInitials(issue)}
+      </span>
+    {/if}
+
+    <!-- Formatted date -->
+    <span class="text-xs text-muted-foreground shrink-0 tabular-nums text-right hidden sm:block" style="min-width: 6.5rem;">
+      {formatDate(issue.updatedAt || issue.createdAt)}
+    </span>
+  </a>
+{/snippet}
 
 <svelte:window on:click={closeDropdowns} />
 
@@ -261,7 +435,7 @@
     <!-- Status dropdown -->
     <div class="relative" data-dropdown>
       <button
-        onclick={() => { statusDropdownOpen = !statusDropdownOpen; priorityDropdownOpen = false; }}
+        onclick={() => { closeAllDropdownsExcept('status'); statusDropdownOpen = !statusDropdownOpen; }}
         class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition hover:bg-accent/60"
       >
         {selectedStatusLabel()}
@@ -288,7 +462,7 @@
     <!-- Priority dropdown -->
     <div class="relative" data-dropdown>
       <button
-        onclick={() => { priorityDropdownOpen = !priorityDropdownOpen; statusDropdownOpen = false; }}
+        onclick={() => { closeAllDropdownsExcept('priority'); priorityDropdownOpen = !priorityDropdownOpen; }}
         class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition hover:bg-accent/60"
       >
         {selectedPriorityLabel()}
@@ -323,6 +497,56 @@
         bind:value={searchQuery}
         class="w-full rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
       />
+    </div>
+
+    <!-- Sort dropdown -->
+    <div class="relative" data-dropdown>
+      <button
+        onclick={() => { closeAllDropdownsExcept('sort'); sortDropdownOpen = !sortDropdownOpen; }}
+        class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition hover:bg-accent/60"
+      >
+        <ArrowUpDown class="w-3.5 h-3.5 text-muted-foreground" />
+        {selectedSortLabel()}
+        <ChevronDown class="w-3.5 h-3.5 text-muted-foreground" />
+      </button>
+      {#if sortDropdownOpen}
+        <div class="absolute top-full left-0 z-20 mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-xl">
+          {#each SORT_OPTIONS as s}
+            <button
+              onclick={() => { sortBy = s.value; sortDropdownOpen = false; }}
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-sm transition
+                {sortBy === s.value ? 'text-white bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-accent/40'}"
+            >
+              {s.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+    <!-- Group dropdown -->
+    <div class="relative" data-dropdown>
+      <button
+        onclick={() => { closeAllDropdownsExcept('group'); groupDropdownOpen = !groupDropdownOpen; }}
+        class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground transition hover:bg-accent/60"
+      >
+        <Layers class="w-3.5 h-3.5 text-muted-foreground" />
+        {selectedGroupLabel()}
+        <ChevronDown class="w-3.5 h-3.5 text-muted-foreground" />
+      </button>
+      {#if groupDropdownOpen}
+        <div class="absolute top-full left-0 z-20 mt-1 w-44 rounded-lg border border-border bg-card py-1 shadow-xl">
+          {#each GROUP_OPTIONS as g}
+            <button
+              onclick={() => { groupBy = g.value; groupDropdownOpen = false; }}
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-sm transition
+                {groupBy === g.value ? 'text-white bg-accent' : 'text-muted-foreground hover:text-foreground hover:bg-accent/40'}"
+            >
+              {g.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     <!-- View toggle -->
@@ -409,77 +633,39 @@
 
   <!-- List view -->
   {:else}
-    <div class="rounded-xl border border-border bg-card overflow-hidden">
-      {#each filteredIssues as issue, i (issue.id)}
-        <a
-          href="/{$page.params.companyPrefix}/issues/{issue.id}"
-          class="flex items-center gap-3 px-5 py-3 transition hover:bg-accent/40
-            {i < filteredIssues.length - 1 ? 'border-b border-border/50' : ''}"
-        >
-          <!-- Status dot -->
-          <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(issue.status)}"></span>
-
-          <!-- Identifier -->
-          {#if issue.identifier}
-            <span class="text-xs font-mono text-muted-foreground shrink-0 w-20 truncate">
-              {issue.identifier}
-            </span>
-          {/if}
-
-          <!-- Live badge -->
-          {#if hasActiveRun(issue)}
-            <span class="live-badge">
-              <span class="live-dot"></span>
-              Live
-            </span>
-          {/if}
-
-          <!-- Title -->
-          <span class="text-sm text-foreground truncate flex-1 min-w-0">
-            {issue.title}
-          </span>
-
-          <!-- Priority badge -->
-          {#if issue.priority && PRIORITY_LABELS[issue.priority]}
-            <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none shrink-0 {PRIORITY_COLORS[issue.priority] ?? 'text-muted-foreground bg-zinc-500/15 border-zinc-500/30'}">
-              {PRIORITY_LABELS[issue.priority]}
-            </span>
-          {/if}
-
-          <!-- Labels -->
-          {#if issue.labels?.length}
-            <div class="hidden md:flex items-center gap-1 shrink-0">
-              {#each issue.labels.slice(0, 2) as label}
-                <span
-                  class="inline-block rounded-full px-2 py-0.5 text-[10px] font-medium"
-                  style="background-color: {label.color ?? '#3b82f6'}20; color: {label.color ?? '#3b82f6'}; border: 1px solid {label.color ?? '#3b82f6'}40;"
-                >
-                  {label.name}
-                </span>
-              {/each}
-              {#if issue.labels.length > 2}
-                <span class="text-[10px] text-muted-foreground">+{issue.labels.length - 2}</span>
+    {#if groupBy !== 'none' && groupedIssues.length > 0}
+      <!-- Grouped list view -->
+      <div class="space-y-4">
+        {#each groupedIssues as group (group.key)}
+          <div>
+            <div class="flex items-center gap-2 mb-2 px-1">
+              {#if groupBy === 'status' && group.key}
+                <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(group.key)}"></span>
               {/if}
+              {#if groupBy === 'priority' && PRIORITY_LABELS[group.key]}
+                <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none shrink-0 {PRIORITY_COLORS[group.key] ?? 'text-muted-foreground bg-zinc-500/15 border-zinc-500/30'}">
+                  {PRIORITY_LABELS[group.key]}
+                </span>
+              {/if}
+              <span class="text-sm font-medium text-foreground">{group.label}</span>
+              <span class="text-xs text-muted-foreground">({group.issues.length})</span>
             </div>
-          {/if}
-
-          <!-- Assignee initials badge -->
-          {#if assigneeInitials(issue)}
-            <span
-              class="assignee-badge"
-              title={assigneeLabel(issue)}
-            >
-              {assigneeInitials(issue)}
-            </span>
-          {/if}
-
-          <!-- Formatted date -->
-          <span class="text-xs text-muted-foreground shrink-0 tabular-nums text-right hidden sm:block" style="min-width: 6.5rem;">
-            {formatDate(issue.updatedAt || issue.createdAt)}
-          </span>
-        </a>
-      {/each}
-    </div>
+            <div class="rounded-xl border border-border bg-card overflow-hidden">
+              {#each group.issues as issue, i (issue.id)}
+                {@render issueRow(issue, i, group.issues.length)}
+              {/each}
+            </div>
+          </div>
+        {/each}
+      </div>
+    {:else}
+      <!-- Flat list view -->
+      <div class="rounded-xl border border-border bg-card overflow-hidden">
+        {#each filteredIssues as issue, i (issue.id)}
+          {@render issueRow(issue, i, filteredIssues.length)}
+        {/each}
+      </div>
+    {/if}
 
     <!-- Count -->
     <p class="text-xs text-muted-foreground text-right">

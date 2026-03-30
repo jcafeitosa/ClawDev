@@ -16,6 +16,7 @@
     ShieldCheck,
     Box,
     Building2,
+    Puzzle,
     DollarSign,
     Activity,
     Settings,
@@ -261,6 +262,7 @@
       { label: "Approvals", href: "approvals", icon: ShieldCheck },
       { label: "Workspaces", href: "workspaces", icon: Box },
       { label: "Org", href: "org", icon: Building2 },
+      { label: "Skills", href: "skills", icon: Puzzle },
       { label: "Costs", href: "costs", icon: DollarSign },
       { label: "Activity", href: "activity", icon: Activity },
       { label: "Settings", href: "settings", icon: Settings },
@@ -614,10 +616,10 @@
           {:else}
             {#each visibleProjects as proj (proj.id)}
               <a
-                href={`/${prefix}/projects/${proj.slug ?? proj.id}/issues`}
+                href={`/${prefix}/projects/${proj.urlKey ?? proj.slug ?? proj.id}`}
                 class={cn(
                   "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                  $page.url.pathname.includes(`/projects/${proj.slug ?? proj.id}`)
+                  $page.url.pathname.includes(`/projects/${proj.urlKey ?? proj.slug ?? proj.id}`)
                     ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
                     : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
                 )}
@@ -792,7 +794,16 @@
         <Cog class="size-3.5" />
         Instance Settings
       </a>
-      <button
+      <div class="flex items-center gap-1">
+        <a
+          href="/companies"
+          class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+          aria-label="Create or manage companies"
+          title="Create or manage companies"
+        >
+          <Plus class="size-3.5" />
+        </a>
+        <button
         onclick={toggleTheme}
         class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
         aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
@@ -804,6 +815,7 @@
           <Moon class="size-3.5" />
         {/if}
       </button>
+      </div>
     </div>
     <div class="text-[10px] text-[var(--clawdev-text-muted)]/50 select-none">ClawDev v0.3.1</div>
   </div>

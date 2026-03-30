@@ -2,11 +2,12 @@
   /**
    * NewIssueDialog — global modal for quickly creating new issues.
    * Import and call `openNewIssueDialog()` from anywhere to open.
+   * Optionally pass `{ assigneeAgentId }` to pre-fill the assignee.
    */
-  let _openFn: (() => void) | null = null;
+  let _openFn: ((opts?: { assigneeAgentId?: string }) => void) | null = null;
 
-  export function openNewIssueDialog() {
-    _openFn?.();
+  export function openNewIssueDialog(opts?: { assigneeAgentId?: string }) {
+    _openFn?.(opts);
   }
 </script>
 
@@ -58,8 +59,11 @@
   // Expose the open function to the module-level export
   _openFn = open;
 
-  function open() {
+  function open(opts?: { assigneeAgentId?: string }) {
     resetForm();
+    if (opts?.assigneeAgentId) {
+      assigneeAgentId = opts.assigneeAgentId;
+    }
     visible = true;
     fetchDropdownData();
     requestAnimationFrame(() => titleInputEl?.focus());

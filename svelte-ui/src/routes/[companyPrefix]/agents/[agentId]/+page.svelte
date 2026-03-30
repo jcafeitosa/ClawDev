@@ -6,9 +6,10 @@
   import { companyStore } from "$stores/company.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
-  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
+  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "$components/ui/index.js";
   import { onMount } from "svelte";
-  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check, FolderOpen, Loader2, ExternalLink, BookOpen } from "lucide-svelte";
+  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check, FolderOpen, Loader2, ExternalLink, BookOpen, MoreHorizontal, AlertCircle, Activity, ClipboardList, StopCircle } from "lucide-svelte";
+  import { openNewIssueDialog } from '$lib/components/new-issue-dialog.svelte';
   import AgentIconPicker from '$lib/components/agent-icon-picker.svelte';
   import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
   import MarkdownBody from '$lib/components/markdown-body.svelte';
@@ -74,6 +75,7 @@
   let bundleDraftEntryFile = $state<string | null>(null);
   let newFilePath = $state("");
   let showNewFileInput = $state(false);
+  let instructionsViewMode = $state<'view' | 'code'>('view');
 
   // Skills tab state
   type SkillSnapshot = {
@@ -95,6 +97,11 @@
   // Budget tab state
   let budgetTabDollars = $state('');
   let budgetTabSaving = $state(false);
+
+  // Overview dashboard state
+  let costsSummary = $state<{ inputTokens?: number; outputTokens?: number; cachedTokens?: number; totalCostCents?: number } | null>(null);
+  let costsSummaryLoading = $state(false);
+  let moreMenuOpen = $state(false);
 
   const ROLES = ["general", "ceo", "cto", "engineer", "designer", "marketer", "custom"];
   const STATUSES = ["idle", "waiting", "running", "paused", "error"];
@@ -196,6 +203,30 @@
   let skillsHaveUnsaved = $derived(
     JSON.stringify(skillDraft.slice().sort()) !== JSON.stringify(skillLastSaved.slice().sort())
   );
+
+  // Overview derived
+  let latestRun = $derived(heartbeats.length > 0 ? heartbeats[0] : null);
+  let recentIssues = $derived(issues.slice(0, 5));
+  let runSuccessCount = $derived(heartbeats.filter(r => r.status === 'completed' || r.status === 'success').length);
+  let runFailCount = $derived(heartbeats.filter(r => r.status === 'error' || r.status === 'failed').length);
+  let runSuccessRate = $derived(heartbeats.length > 0 ? Math.round((runSuccessCount / heartbeats.length) * 100) : 0);
+  let issuesByStatus = $derived.by(() => {
+    const counts: Record<string, number> = {};
+    for (const issue of issues) {
+      const s = issue.status ?? 'unknown';
+      counts[s] = (counts[s] ?? 0) + 1;
+    }
+    return counts;
+  });
+  let issuesByPriority = $derived.by(() => {
+    const counts: Record<string, number> = {};
+    for (const issue of issues) {
+      const p = issue.priority ?? 'none';
+      counts[p] = (counts[p] ?? 0) + 1;
+    }
+    return counts;
+  });
+  let hasError = $derived(agent?.status === 'error');
 
   // Budget tab derived
   let budgetTabPct = $derived(
@@ -444,15 +475,29 @@
     }
   }
 
+  async function loadCostsSummary() {
+    if (!companyId || !agentId) return;
+    costsSummaryLoading = true;
+    try {
+      const res = await api(`/api/companies/${companyId}/costs/summary?agentId=${agentId}`);
+      if (!res.ok) { costsSummary = null; return; }
+      costsSummary = await res.json();
+    } catch { costsSummary = null; }
+    finally { costsSummaryLoading = false; }
+  }
+
   onMount(() => {
     loadAgent();
     loadHeartbeats();
     loadSkills();
   });
 
-  // Load issues after agent is loaded (need agent.id for UUID-based lookup)
+  // Load issues and costs after agent is loaded
   $effect(() => {
-    if (agent?.id && companyId) loadAgentIssues();
+    if (agent?.id && companyId) {
+      loadAgentIssues();
+      loadCostsSummary();
+    }
   });
 
   // Load tab-specific data when switching tabs
@@ -534,6 +579,21 @@
     } finally {
       actionLoading = null;
       confirmingDelete = false;
+    }
+  }
+
+  async function terminateAgent() {
+    if (!agentId) return;
+    actionLoading = "terminate";
+    try {
+      const res = await api(`/api/agents/${agentId}/terminate`, { method: "POST" });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      toastStore.push({ title: "Agent terminated", body: "Active session has been terminated.", tone: "success" });
+      await loadAgent();
+    } catch (err: any) {
+      toastStore.push({ title: "Terminate failed", body: err?.message, tone: "error" });
+    } finally {
+      actionLoading = null;
     }
   }
 
@@ -749,6 +809,7 @@
                 placeholder="Agent name"
               />
               <StatusBadge status={agent.status} />
+              {#if hasError}<Badge variant="destructive" class="gap-1"><AlertCircle size={12} /> error</Badge>{/if}
               {#if agent.role}<Badge variant="outline" class="capitalize">{agent.role}</Badge>{/if}
             </div>
             {#if agent.title}
@@ -765,6 +826,9 @@
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <Button variant="outline" size="sm" href="/{prefix}/agents">Back</Button>
+        <Button size="sm" onclick={() => openNewIssueDialog({ assigneeAgentId: agent?.id })}>
+          <Plus size={14} class="mr-1" /> Assign Task
+        </Button>
         <Button variant="outline" size="sm" onclick={openEditForm} disabled={editMode}>
           <Pencil size={14} class="mr-1" /> Edit
         </Button>
@@ -783,6 +847,23 @@
             <Pause size={14} class="mr-1" /> {actionLoading === "pause" ? "Pausing..." : "Pause"}
           {/if}
         </Button>
+        <!-- More actions dropdown -->
+        <DropdownMenu bind:open={moreMenuOpen}>
+          <DropdownMenuTrigger class="inline-flex items-center justify-center rounded-md border border-white/[0.08] bg-white/[0.03] px-2.5 py-1.5 text-sm hover:bg-white/[0.06] transition-colors focus:outline-none focus:ring-1 focus:ring-[#2563EB]">
+            <MoreHorizontal size={16} />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onclick={terminateAgent} disabled={actionLoading === "terminate"}>
+              <StopCircle size={14} class="mr-2" />
+              {actionLoading === "terminate" ? "Terminating..." : "Terminate Session"}
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onclick={() => { moreMenuOpen = false; confirmingDelete = true; }} class="text-red-400 focus:text-red-400">
+              <Trash2 size={14} class="mr-2" />
+              Delete Agent
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         {#if confirmingDelete}
           <div class="flex items-center gap-1 border border-red-500/30 rounded-lg px-2 py-1 bg-red-500/10">
             <span class="text-xs text-red-400">Confirm?</span>
@@ -791,10 +872,6 @@
             </Button>
             <Button variant="outline" size="sm" onclick={() => confirmingDelete = false}>Cancel</Button>
           </div>
-        {:else}
-          <Button variant="destructive" size="sm" onclick={() => confirmingDelete = true}>
-            <Trash2 size={14} class="mr-1" /> Delete
-          </Button>
         {/if}
       </div>
     </div>
@@ -898,7 +975,7 @@
       <div class="flex-1 min-w-0">
         <Tabs bind:value={activeTab}>
           <TabsList>
-            <TabsTrigger value="overview">Overview</TabsTrigger>
+            <TabsTrigger value="overview">Dashboard</TabsTrigger>
             <TabsTrigger value="instructions">Instructions</TabsTrigger>
             <TabsTrigger value="agent-skills">Skills</TabsTrigger>
             <TabsTrigger value="issues">Issues ({issues.length})</TabsTrigger>
@@ -921,6 +998,185 @@
                   </CardContent>
                 </Card>
               {/if}
+
+              <!-- Latest Run -->
+              <Card>
+                <CardHeader><CardTitle>Latest Run</CardTitle></CardHeader>
+                <CardContent>
+                  {#if !latestRun}
+                    <p class="text-sm text-[#94A3B8]">No runs recorded yet.</p>
+                  {:else}
+                    <div class="space-y-3">
+                      <div class="flex items-center gap-3">
+                        <StatusBadge status={latestRun.status} />
+                        <span class="font-mono text-xs text-[#94A3B8]">{latestRun.id.slice(0, 8)}</span>
+                        {#if latestRun.source}<Badge variant="outline" class="text-xs">{latestRun.source}</Badge>{/if}
+                        <span class="ml-auto text-xs text-[#94A3B8]"><TimeAgo date={latestRun.startedAt} /></span>
+                      </div>
+                      {#if latestRun.reason}
+                        <p class="text-sm text-[#94A3B8]">{latestRun.reason}</p>
+                      {/if}
+                      {#if latestRun.issueTitle}
+                        <div class="flex items-center gap-2 text-sm">
+                          <ClipboardList size={14} class="text-[#94A3B8]" />
+                          <span>{latestRun.issueTitle}</span>
+                        </div>
+                      {/if}
+                      {#if latestRun.stdout}
+                        <div>
+                          <p class="text-xs font-medium text-[#94A3B8] mb-1">stdout</p>
+                          <pre class="text-xs font-mono bg-white/[0.03] rounded-lg p-3 overflow-auto max-h-32 text-[#94A3B8]">{latestRun.stdout}</pre>
+                        </div>
+                      {/if}
+                      {#if latestRun.stderr}
+                        <div>
+                          <p class="text-xs font-medium text-red-400 mb-1">stderr</p>
+                          <pre class="text-xs font-mono bg-red-500/5 border border-red-500/20 rounded-lg p-3 overflow-auto max-h-32 text-red-300">{latestRun.stderr}</pre>
+                        </div>
+                      {/if}
+                      {#if latestRun.errorResult || latestRun.error}
+                        <div>
+                          <p class="text-xs font-medium text-red-400 mb-1">Error</p>
+                          <pre class="text-xs font-mono bg-red-500/5 border border-red-500/20 rounded-lg p-3 overflow-auto max-h-32 text-red-300">{latestRun.errorResult ?? latestRun.error}</pre>
+                        </div>
+                      {/if}
+                      {#if latestRun.durationMs}
+                        <p class="text-xs text-[#94A3B8]">Duration: {(latestRun.durationMs / 1000).toFixed(1)}s</p>
+                      {/if}
+                    </div>
+                  {/if}
+                </CardContent>
+              </Card>
+
+              <!-- Stats row: Run Activity, Issues by Priority, Issues by Status, Success Rate -->
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <Card>
+                  <CardContent class="pt-4">
+                    <div class="flex items-center gap-2 mb-2">
+                      <Activity size={16} class="text-[#60a5fa]" />
+                      <span class="text-xs font-medium text-[#94A3B8]">Run Activity</span>
+                    </div>
+                    <p class="text-2xl font-semibold">{heartbeats.length}</p>
+                    <p class="text-xs text-[#94A3B8] mt-1">recent runs</p>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent class="pt-4">
+                    <div class="flex items-center gap-2 mb-2">
+                      <ClipboardList size={16} class="text-[#f59e0b]" />
+                      <span class="text-xs font-medium text-[#94A3B8]">Issues by Priority</span>
+                    </div>
+                    <div class="space-y-1">
+                      {#each Object.entries(issuesByPriority) as [priority, count]}
+                        <div class="flex items-center justify-between text-xs">
+                          <span class="capitalize text-[#94A3B8]">{priority}</span>
+                          <span class="font-medium">{count}</span>
+                        </div>
+                      {/each}
+                      {#if Object.keys(issuesByPriority).length === 0}
+                        <p class="text-xs text-[#475569]">No issues</p>
+                      {/if}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent class="pt-4">
+                    <div class="flex items-center gap-2 mb-2">
+                      <ClipboardList size={16} class="text-[#10b981]" />
+                      <span class="text-xs font-medium text-[#94A3B8]">Issues by Status</span>
+                    </div>
+                    <div class="space-y-1">
+                      {#each Object.entries(issuesByStatus) as [status, count]}
+                        <div class="flex items-center justify-between text-xs">
+                          <span class="capitalize text-[#94A3B8]">{status}</span>
+                          <span class="font-medium">{count}</span>
+                        </div>
+                      {/each}
+                      {#if Object.keys(issuesByStatus).length === 0}
+                        <p class="text-xs text-[#475569]">No issues</p>
+                      {/if}
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent class="pt-4">
+                    <div class="flex items-center gap-2 mb-2">
+                      <Activity size={16} class="text-[#10b981]" />
+                      <span class="text-xs font-medium text-[#94A3B8]">Success Rate</span>
+                    </div>
+                    <p class="text-2xl font-semibold">{runSuccessRate}%</p>
+                    <div class="h-1.5 rounded-full bg-white/[0.06] overflow-hidden mt-2">
+                      <div
+                        class="h-full rounded-full transition-all"
+                        style="width: {runSuccessRate}%; background: {runSuccessRate > 80 ? '#10b981' : runSuccessRate > 50 ? '#f59e0b' : '#ef4444'};"
+                      ></div>
+                    </div>
+                    <p class="text-xs text-[#94A3B8] mt-1">{runSuccessCount} passed, {runFailCount} failed</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <!-- Recent Issues -->
+              <Card>
+                <CardHeader>
+                  <div class="flex items-center justify-between">
+                    <CardTitle>Recent Issues</CardTitle>
+                    {#if issues.length > 5}
+                      <button class="text-xs text-[#2563EB] hover:underline" onclick={() => activeTab = "issues"}>View all ({issues.length})</button>
+                    {/if}
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {#if recentIssues.length === 0}
+                    <p class="text-sm text-[#94A3B8]">No issues assigned to this agent.</p>
+                  {:else}
+                    <div class="border border-white/[0.08] rounded-lg divide-y divide-white/[0.06]">
+                      {#each recentIssues as issue}
+                        <a href="/{prefix}/issues/{issue.id}" class="flex items-center justify-between p-2.5 text-sm hover:bg-white/[0.03] transition">
+                          <div class="flex items-center gap-2.5 min-w-0">
+                            <StatusBadge status={issue.status} />
+                            <span class="truncate">{issue.title}</span>
+                          </div>
+                          <div class="flex items-center gap-2 shrink-0">
+                            {#if issue.priority}<Badge variant="outline" class="text-[10px] capitalize">{issue.priority}</Badge>{/if}
+                          </div>
+                        </a>
+                      {/each}
+                    </div>
+                  {/if}
+                </CardContent>
+              </Card>
+
+              <!-- Costs Summary -->
+              <Card>
+                <CardHeader><CardTitle>Costs Summary</CardTitle></CardHeader>
+                <CardContent>
+                  {#if costsSummaryLoading}
+                    <PageSkeleton lines={3} />
+                  {:else if costsSummary}
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                      <div class="border border-white/[0.08] rounded-lg p-3">
+                        <p class="text-xs text-[#94A3B8] mb-1">Input Tokens</p>
+                        <p class="text-lg font-semibold">{(costsSummary.inputTokens ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div class="border border-white/[0.08] rounded-lg p-3">
+                        <p class="text-xs text-[#94A3B8] mb-1">Output Tokens</p>
+                        <p class="text-lg font-semibold">{(costsSummary.outputTokens ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div class="border border-white/[0.08] rounded-lg p-3">
+                        <p class="text-xs text-[#94A3B8] mb-1">Cached Tokens</p>
+                        <p class="text-lg font-semibold">{(costsSummary.cachedTokens ?? 0).toLocaleString()}</p>
+                      </div>
+                      <div class="border border-white/[0.08] rounded-lg p-3">
+                        <p class="text-xs text-[#94A3B8] mb-1">Total Cost</p>
+                        <p class="text-lg font-semibold">{costsSummary.totalCostCents != null ? formatCents(costsSummary.totalCostCents) : '$0.00'}</p>
+                      </div>
+                    </div>
+                  {:else}
+                    <p class="text-sm text-[#94A3B8]">No cost data available.</p>
+                  {/if}
+                </CardContent>
+              </Card>
 
               <!-- Budget Card -->
               {#if agent.budgetMonthlyCents > 0}
@@ -1161,20 +1417,45 @@
                             : "New file in this bundle"}
                         </p>
                       </div>
-                      {#if selectedFileExists && selectedFile !== currentEntryFile}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onclick={() => { if (confirm(`Delete ${selectedFile}?`)) deleteInstructionsFileAction(selectedFile); }}
-                          disabled={instructionsSaving}
-                        >
-                          <Trash2 size={14} class="mr-1" /> Delete
-                        </Button>
-                      {/if}
+                      <div class="flex items-center gap-2">
+                        <!-- View / Code toggle -->
+                        <div class="flex items-center rounded-md border border-white/[0.08] overflow-hidden">
+                          <button
+                            class="px-2.5 py-1 text-xs font-medium transition-colors {instructionsViewMode === 'view' ? 'bg-[#2563EB]/20 text-white' : 'text-[#94A3B8] hover:text-white hover:bg-white/[0.04]'}"
+                            onclick={() => instructionsViewMode = 'view'}
+                          >
+                            View
+                          </button>
+                          <button
+                            class="px-2.5 py-1 text-xs font-medium transition-colors {instructionsViewMode === 'code' ? 'bg-[#2563EB]/20 text-white' : 'text-[#94A3B8] hover:text-white hover:bg-white/[0.04]'}"
+                            onclick={() => instructionsViewMode = 'code'}
+                          >
+                            Code
+                          </button>
+                        </div>
+                        {#if selectedFileExists && selectedFile !== currentEntryFile}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onclick={() => { if (confirm(`Delete ${selectedFile}?`)) deleteInstructionsFileAction(selectedFile); }}
+                            disabled={instructionsSaving}
+                          >
+                            <Trash2 size={14} class="mr-1" /> Delete
+                          </Button>
+                        {/if}
+                      </div>
                     </div>
 
                     {#if selectedFileLoading}
                       <PageSkeleton lines={10} />
+                    {:else if instructionsViewMode === 'view'}
+                      <div class="min-h-[420px] w-full rounded-md border border-white/[0.08] bg-white/[0.03] px-4 py-3 overflow-auto">
+                        {#if displayContent.trim()}
+                          <MarkdownBody content={displayContent} />
+                        {:else}
+                          <p class="text-sm text-[#94A3B8] italic">No content</p>
+                        {/if}
+                      </div>
                     {:else}
                       <textarea
                         value={displayContent}

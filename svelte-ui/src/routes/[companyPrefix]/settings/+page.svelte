@@ -4,9 +4,11 @@
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
+  import { page } from '$app/stores';
   import {
     Settings, Save, AlertTriangle, Trash2, Palette, Building2,
     Upload, X, Users, Archive, Image as ImageIcon, Link, Copy,
+    Download, Package, Sparkles,
   } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Settings' }]));
@@ -184,6 +186,30 @@
     inviteCopied = true;
     setTimeout(() => (inviteCopied = false), 2000);
   }
+
+  // --- Invite Prompt ---
+  let generatingInvitePrompt = $state(false);
+
+  async function generateInvitePrompt() {
+    if (!companyId) return;
+    generatingInvitePrompt = true;
+    try {
+      const res = await api(`/api/companies/${companyId}/openclaw/invite-prompt`, { method: 'POST' });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const data = await res.json();
+      const prompt = data.prompt ?? data.data?.prompt ?? JSON.stringify(data);
+      await navigator.clipboard.writeText(prompt);
+      toastStore.push({ title: 'Invite prompt copied to clipboard', tone: 'success' });
+    } catch (e) {
+      console.error(e);
+      toastStore.push({ title: 'Failed to generate invite prompt', tone: 'error' });
+    } finally {
+      generatingInvitePrompt = false;
+    }
+  }
+
+  // --- Company prefix for links ---
+  let companyPrefix = $derived($page.params.companyPrefix);
 
   // --- Danger: Archive ---
   async function archiveCompany() {
@@ -493,6 +519,65 @@
           </div>
         </div>
       {/if}
+
+      <!-- Generate OpenClaw Invite Prompt -->
+      <div class="pt-2 border-t border-border/50">
+        <p class="text-sm font-medium text-foreground mb-1">OpenClaw Invite Prompt</p>
+        <p class="text-xs text-muted-foreground mb-2">Generate a prompt that can be used to invite agents via OpenClaw</p>
+        <button
+          onclick={generateInvitePrompt}
+          disabled={generatingInvitePrompt}
+          class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
+        >
+          <Sparkles class="h-4 w-4" />
+          {generatingInvitePrompt ? 'Generating...' : 'Generate OpenClaw Invite Prompt'}
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Company Packages section -->
+  <section class="rounded-xl border border-border bg-card overflow-hidden">
+    <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50">
+      <div class="rounded-lg bg-orange-500/10 p-2">
+        <Package class="h-4 w-4 text-orange-400" />
+      </div>
+      <div>
+        <h2 class="text-sm font-semibold text-foreground">Company Packages</h2>
+        <p class="text-xs text-muted-foreground">Export or import your company configuration</p>
+      </div>
+    </div>
+
+    <div class="p-5 space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-foreground">Export Company</p>
+          <p class="text-xs text-muted-foreground">Download your company configuration as a portable package</p>
+        </div>
+        <a
+          href="/{companyPrefix}/export"
+          class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
+        >
+          <Download class="h-4 w-4" />
+          Export
+        </a>
+      </div>
+
+      <div class="border-t border-border/50"></div>
+
+      <div class="flex items-center justify-between">
+        <div>
+          <p class="text-sm font-medium text-foreground">Import Company</p>
+          <p class="text-xs text-muted-foreground">Import agents, configs, and data from a company package</p>
+        </div>
+        <a
+          href="/{companyPrefix}/import"
+          class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
+        >
+          <Upload class="h-4 w-4" />
+          Import
+        </a>
+      </div>
     </div>
   </section>
 

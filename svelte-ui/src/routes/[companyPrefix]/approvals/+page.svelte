@@ -10,6 +10,19 @@
 
   onMount(() => breadcrumbStore.set([{ label: 'Approvals' }]));
 
+  // ── Approval label helpers (mirrors original ApprovalPayload.tsx) ──────────
+  const TYPE_LABEL: Record<string, string> = {
+    hire_agent: 'Hire Agent',
+    approve_ceo_strategy: 'CEO Strategy',
+    budget_override_required: 'Budget Override',
+  };
+
+  function approvalLabel(kind: string, payload?: Record<string, unknown> | null): string {
+    const base = TYPE_LABEL[kind] ?? kind ?? 'Approval Request';
+    if (kind === 'hire_agent' && payload?.name) return `${base}: ${String(payload.name)}`;
+    return base;
+  }
+
   let loading = $state(true);
   let approvals = $state<any[]>([]);
   let activeTab = $state<'pending' | 'all'>('pending');
@@ -134,7 +147,7 @@
             <div class="min-w-0 flex-1">
               <div class="flex items-center gap-3 mb-2">
                 <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-blue-400 transition-colors">
-                  {approval.description ?? approval.title ?? approval.name ?? 'Approval Request'}
+                  {approvalLabel(approval.type ?? approval.kind, approval.payload)}
                 </h3>
                 <span class="inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium {statusBadge(approval.status)}">
                   {approval.status}

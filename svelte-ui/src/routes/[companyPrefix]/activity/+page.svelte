@@ -23,12 +23,12 @@
   let prefix = $derived($page.params.companyPrefix);
 
   const entityTypes = [
-    { value: 'all', label: 'All Activity' },
-    { value: 'agent', label: 'Agents' },
+    { value: 'all', label: 'All types' },
     { value: 'issue', label: 'Issues' },
-    { value: 'project', label: 'Projects' },
+    { value: 'agent', label: 'Agents' },
+    { value: 'company', label: 'Company' },
+    { value: 'approval', label: 'Approvals' },
     { value: 'run', label: 'Runs' },
-    { value: 'comment', label: 'Comments' },
   ];
 
   $effect(() => {

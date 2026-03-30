@@ -50,7 +50,7 @@
 
   // ── Computed metrics ───────────────────────────────────────────────
   let enabledAgents = $derived(
-    agents.filter((a) => a.status === 'active' || a.status === 'enabled').length,
+    agents.filter((a) => a.status !== 'terminated' && a.status !== 'pending_approval').length,
   );
   let tasksInProgress = $derived(
     issues.filter((i) => i.status === 'in_progress').length,
@@ -165,42 +165,29 @@
     if (!companyId) return;
     loading = true;
 
-    // Try dedicated dashboard endpoint first, fallback to individual calls
-    api(`/api/companies/${companyId}/dashboard`)
-      .then((res) => {
-        if (!res.ok) throw new Error('dashboard endpoint unavailable');
-        return res.json();
-      })
-      .then((dashData) => {
-        applyNormalized({
-          agents: dashData.agents ?? [],
-          issues: dashData.issues ?? [],
-          activity: dashData.activity ?? dashData.activities ?? [],
-          heartbeatRuns: dashData.heartbeatRuns ?? dashData.runs ?? [],
-          costs: dashData.costs ?? dashData.costSummary ?? null,
-        });
-        // Extract pending approvals count from dashboard summary
-        dashboardApprovals = dashData.pendingApprovals ?? 0;
-      })
-      .catch(() => {
-        // Fallback: fetch individual endpoints
-        return Promise.all([
-          safeFetch(`/api/companies/${companyId}/agents`, []),
-          safeFetch(`/api/companies/${companyId}/issues?limit=10`, []),
-          safeFetch(`/api/companies/${companyId}/activity?limit=15`, []),
-          safeFetch(`/api/companies/${companyId}/heartbeat-runs?status=running`, []),
-          safeFetch(`/api/companies/${companyId}/costs/summary`, null),
-        ]).then(([agentData, issueData, activityData, heartbeatData, costData]) => {
-          applyNormalized({
-            agents: agentData,
-            issues: issueData,
-            activity: activityData,
-            heartbeatRuns: heartbeatData,
-            costs: costData,
-          });
-        });
-      })
-      .finally(() => (loading = false));
+    // Always fetch agents directly (dashboard endpoint doesn't return them)
+    const agentsPromise = safeFetch(`/api/companies/${companyId}/agents`, []);
+
+    // Fetch dashboard summary + individual endpoints in parallel
+    Promise.all([
+      api(`/api/companies/${companyId}/dashboard`)
+        .then((res) => (res.ok ? res.json() : null))
+        .catch(() => null),
+      safeFetch(`/api/companies/${companyId}/issues?limit=10`, []),
+      safeFetch(`/api/companies/${companyId}/activity?limit=15`, []),
+      safeFetch(`/api/companies/${companyId}/heartbeat-runs?limit=50`, []),
+      safeFetch(`/api/companies/${companyId}/costs/summary`, null),
+      agentsPromise,
+    ]).then(([dashData, issueData, activityData, heartbeatData, costData, agentData]) => {
+      applyNormalized({
+        agents: agentData,
+        issues: (dashData?.issues?.length ? dashData.issues : issueData),
+        activity: activityData,
+        heartbeatRuns: heartbeatData,
+        costs: dashData?.costs ?? dashData?.costSummary ?? costData,
+      });
+      dashboardApprovals = dashData?.pendingApprovals ?? 0;
+    }).finally(() => (loading = false));
 
     // Sidebar badges (non-blocking)
     safeFetch<Record<string, number>>(`/api/companies/${companyId}/sidebar-badges`, {}).then(
@@ -247,12 +234,31 @@
     return map[type] ?? Activity;
   }
 
-  /** Parse "issue.created" → "created", "agent.updated" → "updated" */
+  /** Parse "issue.created" → human-readable verb */
   function parseActionVerb(action: string): string {
     if (!action) return 'performed an action';
+    const verbMap: Record<string, string> = {
+      'issue.created': 'created',
+      'issue.updated': 'updated',
+      'issue.comment_added': 'commented on',
+      'issue.status_changed': 'changed status on',
+      'issue.checked_out': 'checked out',
+      'issue.document_created': 'created document',
+      'issue.document_updated': 'updated document',
+      'issue.approval_linked': 'linked approval to',
+      'agent.created': 'created agent',
+      'agent.hire_created': 'requested hire for',
+      'agent.key_created': 'created API key for',
+      'approval.created': 'requested approval',
+      'company.created': 'created company',
+    };
+    if (verbMap[action]) return verbMap[action];
+    // Fallback: split on dot and humanize
     const parts = action.split('.');
-    if (parts.length >= 2) return parts.slice(1).join(' ');
-    return action;
+    if (parts.length >= 2) {
+      return parts.slice(1).join(' ').replace(/_/g, ' ');
+    }
+    return action.replace(/_/g, ' ');
   }
 
   /** Determine a human-readable actor name from an activity item */
@@ -576,11 +582,6 @@
     </div>
   {/if}
 
-
-  <!-- ── Active Agents ─────────────────────────────────────────────── -->
-  {#if companyId}
-    <ActiveAgentsPanel {companyId} {prefix} />
-  {/if}
 
   <!-- ── Quick Actions ─────────────────────────────────────────────── -->
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">

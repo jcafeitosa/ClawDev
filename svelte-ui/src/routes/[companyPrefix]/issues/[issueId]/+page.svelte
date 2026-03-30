@@ -187,6 +187,12 @@
   let newSubIssueTitle = $state("");
   let submittingSubIssue = $state(false);
 
+  // -- New document form state
+  let showDocForm = $state(false);
+  let newDocKey = $state("");
+  let newDocContent = $state("");
+  let submittingDoc = $state(false);
+
   // -- Properties panel state
   let showPropertiesPanel = $state(true);
   let agentMap = $state<Record<string, string>>({});
@@ -611,6 +617,27 @@
       await loadAttachments();
     } catch (err: any) {
       toastStore.push({ title: "Failed to delete attachment", body: err?.message, tone: "error" });
+    }
+  }
+
+  async function createDocument() {
+    if (!issueId || !newDocKey.trim()) return;
+    submittingDoc = true;
+    try {
+      const res = await api(`/api/issues/${issueId}/documents`, {
+        method: "POST",
+        body: JSON.stringify({ key: newDocKey.trim(), content: newDocContent.trim() || null }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Document created", tone: "success" });
+      newDocKey = "";
+      newDocContent = "";
+      showDocForm = false;
+      await loadDocuments();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to create document", body: err?.message, tone: "error" });
+    } finally {
+      submittingDoc = false;
     }
   }
 
@@ -1323,10 +1350,47 @@
           <!-- Documents Tab                                                  -->
           <!-- ============================================================= -->
           <TabsContent value="documents">
-            <div class="mt-4">
-              {#if documents.length === 0}
+            <div class="mt-4 space-y-4">
+              <div class="flex justify-end">
+                <Button variant="outline" size="sm" onclick={() => showDocForm = !showDocForm}>
+                  {#if showDocForm}
+                    <X class="size-3.5 mr-1" />
+                    Cancel
+                  {:else}
+                    <FileText class="size-3.5 mr-1" />
+                    New Document
+                  {/if}
+                </Button>
+              </div>
+
+              {#if showDocForm}
+                <Card>
+                  <CardContent class="pt-4">
+                    <div class="space-y-3">
+                      <div>
+                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Document Key</Label>
+                        <Input bind:value={newDocKey} placeholder="e.g. notes, spec, requirements..." />
+                      </div>
+                      <div>
+                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Content (optional)</Label>
+                        <Textarea bind:value={newDocContent} placeholder="Document content (Markdown supported)..." rows={4} />
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <Button size="sm" onclick={createDocument} disabled={submittingDoc || !newDocKey.trim()}>
+                          {submittingDoc ? "Creating..." : "Create"}
+                        </Button>
+                        <Button variant="outline" size="sm" onclick={() => { showDocForm = false; newDocKey = ''; newDocContent = ''; }}>
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              {/if}
+
+              {#if documents.length === 0 && !showDocForm}
                 <EmptyState title="No documents" description="No documents have been attached to this issue yet." icon="📄" />
-              {:else}
+              {:else if documents.length > 0}
                 <div class="space-y-4">
                   {#each documents as doc}
                     <Card>

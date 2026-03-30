@@ -1,5 +1,6 @@
 <script lang="ts">
   import { page } from '$app/stores';
+  import { companyStore } from '$stores/company.svelte.js';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
@@ -87,6 +88,7 @@
   // ---------------------------------------------------------------------------
   let runId = $derived($page.params.runId);
   let prefix = $derived($page.params.companyPrefix);
+  let companyId = $derived(companyStore.selectedCompany?.id ?? '');
   let isLive = $derived(run?.status === 'started' || run?.status === 'running');
 
   let duration = $derived.by(() => {
@@ -120,17 +122,20 @@
   // Data fetching
   // ---------------------------------------------------------------------------
   async function loadRun() {
-    if (!runId) return;
+    if (!runId || !companyId) return;
     try {
-      const res = await api(`/api/heartbeat-runs/${runId}`);
-      if (res.ok) run = await res.json();
+      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}`);
+      if (res.ok) {
+        const data = await res.json();
+        run = data.run ?? data;
+      }
     } catch { /* ignore */ }
   }
 
   async function loadTranscript() {
-    if (!runId) return;
+    if (!runId || !companyId) return;
     try {
-      const res = await api(`/api/heartbeat-runs/${runId}/transcript`);
+      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}/transcript`);
       if (res.ok) {
         const data = await res.json();
         transcript = Array.isArray(data) ? data : data.messages ?? [];
@@ -139,10 +144,10 @@
   }
 
   async function loadEvents() {
-    if (!runId) return;
+    if (!runId || !companyId) return;
     eventsLoading = true;
     try {
-      const res = await api(`/api/heartbeat-runs/${runId}/events`);
+      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}/events`);
       if (res.ok) {
         const data = await res.json();
         events = Array.isArray(data) ? data : data.events ?? [];
@@ -235,13 +240,26 @@
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
+  let dataLoaded = false;
   onMount(() => {
     breadcrumbStore.set([
       { label: 'Runs', href: `/${$page.params.companyPrefix}/runs` },
       { label: runId ?? '' },
     ]);
-    loadAll();
-    loadEvents();
+    if (companyId) {
+      dataLoaded = true;
+      loadAll();
+      loadEvents();
+    }
+  });
+
+  // Retry loading when companyId becomes available
+  $effect(() => {
+    if (companyId && !dataLoaded && runId) {
+      dataLoaded = true;
+      loadAll();
+      loadEvents();
+    }
   });
 
   // Polling for live runs
