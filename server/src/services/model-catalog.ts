@@ -25,6 +25,8 @@ interface ModelMetadataEntry {
 }
 
 let _modelMetadataCache: Record<string, ModelMetadataEntry> | null = null;
+/** Reverse index: bare model id -> metadata entry (for cross-provider lookup) */
+let _bareModelIndex: Record<string, ModelMetadataEntry> | null = null;
 
 function loadModelMetadata(): Record<string, ModelMetadataEntry> {
   if (_modelMetadataCache) return _modelMetadataCache;
@@ -39,6 +41,14 @@ function loadModelMetadata(): Record<string, ModelMetadataEntry> {
       models: Record<string, ModelMetadataEntry>;
     };
     _modelMetadataCache = parsed.models ?? {};
+    // Build reverse index: bare model id -> entry (first match wins)
+    _bareModelIndex = {};
+    for (const [key, entry] of Object.entries(_modelMetadataCache)) {
+      const bareId = key.split("/")[1];
+      if (bareId && !_bareModelIndex[bareId]) {
+        _bareModelIndex[bareId] = entry;
+      }
+    }
   } catch (err) {
     console.warn(
       "[model-catalog] Failed to load model-metadata.json, metadata enrichment disabled:",
@@ -112,8 +122,18 @@ export function createModelCatalogService(db: Db) {
 
         const rows = batch.map((m) => {
           const provider = m.provider ?? "unknown";
-          const lookupKey = `${provider}/${m.modelId}`;
-          const meta = metadata[lookupKey];
+          // Strip effort suffix for metadata lookup (e.g. "claude-sonnet-4.6:low" -> "claude-sonnet-4.6")
+          const baseModelId = m.modelId.includes(":") ? m.modelId.split(":")[0] : m.modelId;
+
+          // Try multiple key formats to find metadata:
+          // 1. Exact match: provider/modelId (handles full id with effort suffix too)
+          // 2. Without effort suffix: provider/baseModelId
+          // 3. Cross-provider: bare baseModelId in any provider (e.g. cursor "gpt-5.4" -> openai/gpt-5.4)
+          const bareIndex = _bareModelIndex ?? {};
+          const meta =
+            metadata[`${provider}/${m.modelId}`] ??
+            metadata[`${provider}/${baseModelId}`] ??
+            bareIndex[baseModelId];
 
           const row: Record<string, unknown> = {
             adapterType: m.adapterType,

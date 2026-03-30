@@ -112,6 +112,18 @@
       "outputPriceMicro": 12000000,
       "cachedInputPriceMicro": 750000
     },
+    "openai/gpt-5.3-codex-spark": {
+      "provider": "openai",
+      "family": "gpt",
+      "label": "GPT-5.3 Codex Spark",
+      "tier": "standard",
+      "capabilities": ["code", "thinking"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 3000000,
+      "outputPriceMicro": 12000000,
+      "cachedInputPriceMicro": 750000
+    },
     "openai/gpt-5.2-codex": {
       "provider": "openai",
       "family": "gpt",
@@ -160,6 +172,91 @@
       "outputPriceMicro": 1200000,
       "cachedInputPriceMicro": 75000
     },
+    "openai/gpt-5-codex": {
+      "provider": "openai",
+      "family": "gpt",
+      "label": "GPT-5 Codex",
+      "tier": "standard",
+      "capabilities": ["code", "thinking"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 2000000,
+      "outputPriceMicro": 8000000,
+      "cachedInputPriceMicro": 500000
+    },
+    "openai/gpt-5-codex-mini": {
+      "provider": "openai",
+      "family": "gpt",
+      "label": "GPT-5 Codex Mini",
+      "tier": "budget",
+      "capabilities": ["code"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 16000,
+      "inputPriceMicro": 150000,
+      "outputPriceMicro": 600000,
+      "cachedInputPriceMicro": 37500
+    },
+    "openai/gpt-5": {
+      "provider": "openai",
+      "family": "gpt",
+      "label": "GPT-5",
+      "tier": "standard",
+      "capabilities": ["code", "chat"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 2000000,
+      "outputPriceMicro": 8000000,
+      "cachedInputPriceMicro": 500000
+    },
+    "openai/o3": {
+      "provider": "openai",
+      "family": "o-series",
+      "label": "o3",
+      "tier": "premium",
+      "capabilities": ["code", "chat", "thinking"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 10000000,
+      "outputPriceMicro": 30000000,
+      "cachedInputPriceMicro": 2500000
+    },
+    "openai/o4-mini": {
+      "provider": "openai",
+      "family": "o-series",
+      "label": "o4-mini",
+      "tier": "budget",
+      "capabilities": ["code", "chat", "thinking"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 1000000,
+      "outputPriceMicro": 4000000,
+      "cachedInputPriceMicro": 250000
+    },
+    "openai/o3-mini": {
+      "provider": "openai",
+      "family": "o-series",
+      "label": "o3-mini",
+      "tier": "budget",
+      "capabilities": ["code", "chat", "thinking"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 1000000,
+      "outputPriceMicro": 4000000,
+      "cachedInputPriceMicro": 250000
+    },
+    "openai/codex-mini-latest": {
+      "provider": "openai",
+      "family": "gpt",
+      "label": "Codex Mini (Latest)",
+      "tier": "budget",
+      "capabilities": ["code"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 16000,
+      "inputPriceMicro": 150000,
+      "outputPriceMicro": 600000,
+      "cachedInputPriceMicro": 37500
+    },
+
     "openai/gpt-oss-120b": {
       "provider": "openai",
       "family": "gpt-oss",
@@ -297,6 +394,54 @@
       "outputPriceMicro": 500000,
       "cachedInputPriceMicro": 75000
     },
+    "xai/grok-4-1-fast": {
+      "provider": "xai",
+      "family": "grok",
+      "label": "Grok 4.1 Fast",
+      "tier": "standard",
+      "capabilities": ["code", "chat", "thinking", "vision"],
+      "contextWindow": 2000000,
+      "maxOutputTokens": 30000,
+      "inputPriceMicro": 5000000,
+      "outputPriceMicro": 15000000,
+      "cachedInputPriceMicro": 1250000
+    },
+    "xai/grok-3-fast": {
+      "provider": "xai",
+      "family": "grok",
+      "label": "Grok 3 Fast",
+      "tier": "standard",
+      "capabilities": ["code", "chat"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 8000,
+      "inputPriceMicro": 3000000,
+      "outputPriceMicro": 15000000,
+      "cachedInputPriceMicro": 750000
+    },
+    "xai/grok-3-mini-fast": {
+      "provider": "xai",
+      "family": "grok",
+      "label": "Grok 3 Mini Fast",
+      "tier": "budget",
+      "capabilities": ["code", "chat", "thinking"],
+      "contextWindow": 128000,
+      "maxOutputTokens": 8000,
+      "inputPriceMicro": 300000,
+      "outputPriceMicro": 500000,
+      "cachedInputPriceMicro": 75000
+    },
+    "xai/grok-code-fast-1": {
+      "provider": "xai",
+      "family": "grok",
+      "label": "Grok Code Fast 1",
+      "tier": "standard",
+      "capabilities": ["code", "thinking"],
+      "contextWindow": 256000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 3000000,
+      "outputPriceMicro": 9000000,
+      "cachedInputPriceMicro": 750000
+    },
 
     "mistral/devstral-medium-latest": {
       "provider": "mistral",
@@ -372,6 +517,43 @@
       "cachedInputPriceMicro": 0
     },
 
+    "cursor/auto": {
+      "provider": "cursor",
+      "family": "cursor",
+      "label": "Cursor Auto",
+      "tier": "standard",
+      "capabilities": ["code", "chat"],
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 0,
+      "outputPriceMicro": 0,
+      "cachedInputPriceMicro": 0
+    },
+    "cursor/composer-1.5": {
+      "provider": "cursor",
+      "family": "cursor",
+      "label": "Cursor Composer 1.5",
+      "tier": "standard",
+      "capabilities": ["code", "chat"],
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 0,
+      "outputPriceMicro": 0,
+      "cachedInputPriceMicro": 0
+    },
+    "cursor/composer-1": {
+      "provider": "cursor",
+      "family": "cursor",
+      "label": "Cursor Composer 1",
+      "tier": "standard",
+      "capabilities": ["code", "chat"],
+      "contextWindow": 200000,
+      "maxOutputTokens": 32000,
+      "inputPriceMicro": 0,
+      "outputPriceMicro": 0,
+      "cachedInputPriceMicro": 0
+    },
+
     "opencode/big-pickle": {
       "provider": "opencode",
       "family": "opencode",
@@ -391,7 +573,7 @@
       "label": "GPT-5 Nano",
       "tier": "free",
       "isFree": true,
-      "capabilities": ["code", "chat"],
+      "capabilities": ["code"],
       "contextWindow": 128000,
       "maxOutputTokens": 16000,
       "inputPriceMicro": 0,
@@ -404,7 +586,7 @@
       "label": "Mimo v2 Omni (Free)",
       "tier": "free",
       "isFree": true,
-      "capabilities": ["code", "chat"],
+      "capabilities": ["code", "chat", "vision"],
       "contextWindow": 128000,
       "maxOutputTokens": 16000,
       "inputPriceMicro": 0,
@@ -431,7 +613,7 @@
       "tier": "free",
       "isFree": true,
       "capabilities": ["code", "chat"],
-      "contextWindow": 128000,
+      "contextWindow": 200000,
       "maxOutputTokens": 16000,
       "inputPriceMicro": 0,
       "outputPriceMicro": 0,
