@@ -142,6 +142,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const command = asString(config.command, "gemini");
   const model = asString(config.model, DEFAULT_GEMINI_LOCAL_MODEL).trim();
   const sandbox = asBoolean(config.sandbox, false);
+  const approvalMode = asString(config.approvalMode, "yolo");
+  const allowedTools = asStringArray(config.allowedTools);
+  const policy = asStringArray(config.policy);
+  const adminPolicy = asStringArray(config.adminPolicy);
+  const allowedMcpServerNames = asStringArray(config.allowedMcpServerNames);
+  const extensions = asStringArray(config.extensions);
+  const includeDirectories = asStringArray(config.includeDirectories);
+  const debug = config.debug === true;
 
   const workspaceContext = parseObject(context.clawdevWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
@@ -317,12 +325,30 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     const args = ["--output-format", "stream-json"];
     if (resumeSessionId) args.push("--resume", resumeSessionId);
     if (model && model !== DEFAULT_GEMINI_LOCAL_MODEL) args.push("--model", model);
-    args.push("--approval-mode", "yolo");
+    args.push("--approval-mode", approvalMode);
     if (sandbox) {
       args.push("--sandbox");
     } else {
       args.push("--sandbox=none");
     }
+
+    // Policy
+    for (const p of policy) args.push("--policy", p);
+    for (const p of adminPolicy) args.push("--admin-policy", p);
+
+    // Tool/MCP control
+    for (const t of allowedTools) args.push("--allowed-tools", t);
+    for (const s of allowedMcpServerNames) args.push("--allowed-mcp-server-names", s);
+
+    // Extensions
+    if (extensions.length > 0) args.push("--extensions", ...extensions);
+
+    // Directories
+    for (const d of includeDirectories) args.push("--include-directories", d);
+
+    // Debug
+    if (debug) args.push("--debug");
+
     if (extraArgs.length > 0) args.push(...extraArgs);
     args.push("--prompt", prompt);
     return args;

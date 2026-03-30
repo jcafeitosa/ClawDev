@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 import type {
   AdapterEnvironmentCheck,
@@ -12,6 +14,7 @@ import {
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
   ensurePathInEnv,
+  parseJson,
   parseObject,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
@@ -228,6 +231,50 @@ export async function testEnvironment(
         });
       }
     }
+  }
+
+  try {
+    const settingsPath = path.join(os.homedir(), ".gemini", "settings.json");
+    const settingsRaw = await readFile(settingsPath, "utf8");
+    const settings = parseJson(settingsRaw);
+    if (settings) {
+      const authType = asString(
+        (settings as any)?.security?.auth?.selectedType, ""
+      );
+      if (authType) {
+        checks.push({
+          code: "gemini_auth_type",
+          level: "info",
+          message: `Authentication: ${authType}`,
+        });
+      }
+    }
+  } catch { /* skip */ }
+
+  try {
+    const accountsPath = path.join(os.homedir(), ".gemini", "google_accounts.json");
+    const accountsRaw = await readFile(accountsPath, "utf8");
+    const accounts = parseJson(accountsRaw) as unknown;
+    if (Array.isArray(accounts) && accounts.length > 0) {
+      const active = asString((accounts[0] as any)?.active, "");
+      if (active) {
+        checks.push({
+          code: "gemini_auth_account",
+          level: "info",
+          message: `Authenticated as ${active}`,
+        });
+      }
+    }
+  } catch { /* skip */ }
+
+  const geminiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY || "";
+  if (geminiKey) {
+    checks.push({
+      code: "gemini_api_key_set",
+      level: "info",
+      message: "API key configured via environment variable.",
+      detail: process.env.GEMINI_API_KEY ? "GEMINI_API_KEY" : "GOOGLE_API_KEY",
+    });
   }
 
   return {
