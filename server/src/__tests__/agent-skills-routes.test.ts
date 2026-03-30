@@ -70,11 +70,30 @@ vi.mock("../services/index.js", () => ({
   secretService: () => mockSecretService,
   syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
   workspaceOperationService: () => mockWorkspaceOperationService,
+  instanceSettingsService: () => ({ getGeneral: vi.fn(async () => ({ censorUsernameInLogs: false })) }),
 }));
 
 vi.mock("../adapters/index.js", () => ({
   findServerAdapter: vi.fn(() => mockAdapter),
   listAdapterModels: vi.fn(),
+}));
+
+vi.mock("../redaction.js", () => ({
+  redactEventPayload: vi.fn((v: unknown) => v),
+}));
+
+vi.mock("../log-redaction.js", () => ({
+  redactCurrentUserValue: vi.fn((v: unknown) => v),
+}));
+
+vi.mock("../routes/org-chart-svg.js", () => ({
+  renderOrgChartSvg: vi.fn(() => "<svg/>"),
+  renderOrgChartPng: vi.fn(async () => Buffer.from("")),
+  ORG_CHART_STYLES: ["warmth"],
+}));
+
+vi.mock("@clawdev/adapter-claude-local/server", () => ({
+  runClaudeLogin: vi.fn(async () => ({ success: true })),
 }));
 
 function createDb(requireBoardApprovalForNewAgents = false) {

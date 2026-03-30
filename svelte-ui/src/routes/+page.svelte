@@ -22,16 +22,22 @@
         return;
       }
 
-      // 3. Existing logic: fetch companies and redirect
+      // 3. First-time setup: no companies → onboarding wizard
+      if (!health.hasCompanies) {
+        goto("/setup", { replaceState: true });
+        return;
+      }
+
+      // 4. Has companies: redirect to first company dashboard
       const res = await fetch("/api/companies");
       const companies = await res.json();
       if (Array.isArray(companies) && companies.length > 0) {
         goto(`/${companies[0].slug ?? companies[0].id}/dashboard`, { replaceState: true });
       } else {
-        goto("/companies", { replaceState: true });
+        goto("/setup", { replaceState: true });
       }
     } catch {
-      goto("/companies", { replaceState: true });
+      goto("/setup", { replaceState: true });
     }
   });
 </script>

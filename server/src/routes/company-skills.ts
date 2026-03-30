@@ -8,7 +8,7 @@ import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { companySkillService, agentService, logActivity } from "../services/index.js";
 import { companyIdParam } from "../middleware/index.js";
-import type { Actor } from "../middleware/authz.js";
+import { getActorInfo, type Actor } from "../middleware/authz.js";
 
 export function companySkillRoutes(db: Db) {
   const svc = companySkillService(db);
@@ -169,6 +169,75 @@ export function companySkillRoutes(db: Db) {
           String(ctx.body?.path ?? ""),
           String(ctx.body?.content ?? ""),
         );
+        return result;
+      },
+      { params: t.Object({ companyId: t.String(), skillId: t.String() }) },
+    )
+
+    // Scan project workspaces for skills
+    .post(
+      "/companies/:companyId/skills/scan-projects",
+      async (ctx: any) => {
+        const { params, body } = ctx;
+        const actor = ctx.actor as Actor;
+        const deniedMsg = await checkCanMutateCompanySkills(actor, params.companyId, ctx);
+        if (deniedMsg) return { error: deniedMsg };
+        const result = await svc.scanProjectWorkspaces(params.companyId, body);
+
+        const actorInfo = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: params.companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          action: "company.skills_scanned",
+          entityType: "company",
+          entityId: params.companyId,
+          details: {
+            scannedProjects: result.scannedProjects,
+            scannedWorkspaces: result.scannedWorkspaces,
+            discovered: result.discovered,
+            importedCount: result.imported.length,
+            updatedCount: result.updated.length,
+            conflictCount: result.conflicts.length,
+            warningCount: result.warnings.length,
+          },
+        });
+
+        return result;
+      },
+      { params: t.Object({ companyId: t.String() }) },
+    )
+
+    // Install skill update
+    .post(
+      "/companies/:companyId/skills/:skillId/install-update",
+      async (ctx: any) => {
+        const { params, set } = ctx;
+        const actor = ctx.actor as Actor;
+        const deniedMsg = await checkCanMutateCompanySkills(actor, params.companyId, ctx);
+        if (deniedMsg) return { error: deniedMsg };
+        const result = await svc.installUpdate(params.companyId, params.skillId);
+        if (!result) {
+          set.status = 404;
+          return { error: "Skill not found" };
+        }
+
+        const actorInfo = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: params.companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          action: "company.skill_update_installed",
+          entityType: "company_skill",
+          entityId: result.id,
+          details: {
+            slug: result.slug,
+            sourceRef: result.sourceRef,
+          },
+        });
+
         return result;
       },
       { params: t.Object({ companyId: t.String(), skillId: t.String() }) },

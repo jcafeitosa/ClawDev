@@ -9,9 +9,10 @@ import type { Db } from "@clawdev/db";
 import { activityLog } from "@clawdev/db";
 import { eq, desc } from "drizzle-orm";
 import { companyIdParam, paginationQuery } from "../middleware/index.js";
-import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
+import { assertBoard, assertCompanyAccess, type Actor } from "../middleware/authz.js";
 import { activityService } from "../services/activity.js";
 import { issueService } from "../services/index.js";
+import { sanitizeRecord } from "../redaction.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -39,6 +40,31 @@ export function activityRoutes(db: Db) {
           .offset(offset);
 
         return rows;
+      },
+      { params: companyIdParam },
+    )
+
+    // ── Create activity event (board only) ─────────────────────────
+    .post(
+      "/companies/:companyId/activity",
+      async (ctx: any) => {
+        const { params, body, set } = ctx;
+        const actor = ctx.actor as Actor;
+        assertBoard(actor);
+        assertCompanyAccess(actor, params.companyId);
+
+        const event = await activity.create({
+          companyId: params.companyId,
+          actorType: body.actorType ?? "system",
+          actorId: body.actorId,
+          action: body.action,
+          entityType: body.entityType,
+          entityId: body.entityId,
+          agentId: body.agentId ?? null,
+          details: body.details ? sanitizeRecord(body.details) : null,
+        });
+        set.status = 201;
+        return event;
       },
       { params: companyIdParam },
     )
