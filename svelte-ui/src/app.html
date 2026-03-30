@@ -8,7 +8,7 @@
     <script>
       // Restore theme before first paint to prevent flash
       (function () {
-        var stored = localStorage.getItem('paperclip.theme');
+        var stored = localStorage.getItem('clawdev.theme');
         // Also check legacy key
         if (!stored) stored = localStorage.getItem('clawdev.theme');
         var theme = stored === 'light' ? 'light' : stored === 'dark' ? 'dark' : 'light';

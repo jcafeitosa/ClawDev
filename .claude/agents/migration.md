@@ -87,14 +87,14 @@ Evolving API contracts without breaking clients.
 Updating application config, environment variables, or file formats.
 
 **Scope:**
-- `~/.paperclip/instances/` — Instance-level config and data
+- `~/.clawdev/instances/` — Instance-level config and data
 - Environment variable changes across versions
 - Docker Compose changes (volumes, ports, services)
 
 ## Migration Safety Checklist
 
 ### Pre-Migration
-- [ ] Backup exists (embedded PG: `~/.paperclip/instances/{id}/db/backups/`)
+- [ ] Backup exists (embedded PG: `~/.clawdev/instances/{id}/db/backups/`)
 - [ ] Migration tested on a copy of production data
 - [ ] Rollback plan documented
 - [ ] Affected services identified

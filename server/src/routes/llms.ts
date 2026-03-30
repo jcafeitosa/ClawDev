@@ -23,7 +23,7 @@ export function llmRoutes(db: Db) {
     .get("/agent-configuration.txt", async ({ set }) => {
       const adapters = listServerAdapters().sort((a, b) => a.type.localeCompare(b.type));
       const lines = [
-        "# Paperclip Agent Configuration Index",
+        "# ClawDev Agent Configuration Index",
         "",
         "Installed adapters:",
         ...adapters.map((adapter) => `- ${adapter.type}: /llms/agent-configuration/${adapter.type}.txt`),
@@ -47,7 +47,7 @@ export function llmRoutes(db: Db) {
 
     .get("/agent-icons.txt", async ({ set }) => {
       const lines = [
-        "# Paperclip Agent Icon Names",
+        "# ClawDev Agent Icon Names",
         "",
         "Set the `icon` field on hire/create payloads to one of:",
         ...AGENT_ICON_NAMES.map((name) => `- ${name}`),

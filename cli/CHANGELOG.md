@@ -1,4 +1,4 @@
-# paperclipai
+# clawdev
 
 ## 0.3.1
 

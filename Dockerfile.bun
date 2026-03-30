@@ -78,11 +78,11 @@ ENV NODE_ENV=production \
   HOST=0.0.0.0 \
   PORT=3100 \
   SERVE_UI=true \
-  PAPERCLIP_HOME=/clawdev \
-  PAPERCLIP_INSTANCE_ID=default \
-  PAPERCLIP_CONFIG=/clawdev/instances/default/config.json \
-  PAPERCLIP_DEPLOYMENT_MODE=authenticated \
-  PAPERCLIP_DEPLOYMENT_EXPOSURE=private
+  CLAWDEV_HOME=/clawdev \
+  CLAWDEV_INSTANCE_ID=default \
+  CLAWDEV_CONFIG=/clawdev/instances/default/config.json \
+  CLAWDEV_DEPLOYMENT_MODE=authenticated \
+  CLAWDEV_DEPLOYMENT_EXPOSURE=private
 
 VOLUME ["/clawdev"]
 EXPOSE 3100

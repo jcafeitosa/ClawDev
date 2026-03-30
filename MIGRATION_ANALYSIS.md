@@ -1,8 +1,8 @@
-# Paperclip Backend Migration Analysis: Node.js → Bun + Elysia + Redis/BullMQ + TimescaleDB
+# ClawDev Backend Migration Analysis: Node.js → Bun + Elysia + Redis/BullMQ + TimescaleDB
 
 ## Executive Summary
 
-Paperclip is a sophisticated multi-agent orchestration platform with complex scheduling, real-time events, plugin management, and workspace execution capabilities. The migration requires addressing Node.js-specific APIs, Express-specific patterns, in-memory state management, and database optimization opportunities.
+ClawDev is a sophisticated multi-agent orchestration platform with complex scheduling, real-time events, plugin management, and workspace execution capabilities. The migration requires addressing Node.js-specific APIs, Express-specific patterns, in-memory state management, and database optimization opportunities.
 
 ---
 

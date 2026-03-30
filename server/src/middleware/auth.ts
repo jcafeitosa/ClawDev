@@ -50,7 +50,7 @@ export function createActorResolver(db: Db, opts: ActorMiddlewareOptions) {
           ? { type: "board", userId: "local-board", isInstanceAdmin: true, source: "local_implicit" }
           : { type: "none", source: "none" };
 
-      const runIdHeader = headers.get("x-paperclip-run-id") ?? undefined;
+      const runIdHeader = headers.get("x-clawdev-run-id") ?? undefined;
 
       const authHeader = headers.get("authorization");
       if (!authHeader?.toLowerCase().startsWith("bearer ")) {

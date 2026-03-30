@@ -92,7 +92,7 @@
     document.documentElement.classList.toggle("light", !isDark);
     document.documentElement.style.colorScheme = isDark ? "dark" : "light";
     try {
-      localStorage.setItem("paperclip.theme", isDark ? "dark" : "light");
+      localStorage.setItem("clawdev.theme", isDark ? "dark" : "light");
       localStorage.setItem("clawdev.theme", isDark ? "dark" : "light");
     } catch { /* ignore */ }
   }

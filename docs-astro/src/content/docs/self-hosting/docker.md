@@ -38,7 +38,7 @@ docker compose logs -f server
 |--------|---------|
 | `pgdata` | PostgreSQL data |
 | `redisdata` | Redis persistence |
-| `paperclip-data` | ClawDev config and plugin data |
+| `clawdev-data` | ClawDev config and plugin data |
 
 ## Updating
 

@@ -45,7 +45,7 @@ You own the design system, visual experience, and interaction design:
 ```
 
 - Light/dark mode via OKLch color space tokens
-- Theme toggle with localStorage persistence (`paperclip.theme`)
+- Theme toggle with localStorage persistence (`clawdev.theme`)
 - `dark` / `light` class on root element
 
 ## Component Libraries to Use

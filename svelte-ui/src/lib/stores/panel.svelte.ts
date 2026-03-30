@@ -1,6 +1,6 @@
 /** Panel store — manages side panel visibility */
 
-const STORAGE_KEY = "paperclip:panel-visible";
+const STORAGE_KEY = "clawdev:panel-visible";
 
 function getInitialVisibility(): boolean {
   if (typeof window === "undefined") return true;

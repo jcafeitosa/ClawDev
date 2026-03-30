@@ -2,13 +2,13 @@
   "name": "@clawdev/server",
   "version": "0.3.1",
   "license": "MIT",
-  "homepage": "https://github.com/paperclipai/paperclip",
+  "homepage": "https://github.com/jcafeitosa/ClawDev",
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/jcafeitosa/ClawDev/issues"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/jcafeitosa/ClawDev",
     "directory": "server"
   },
   "type": "module",
@@ -34,7 +34,7 @@
   "scripts": {
     "dev": "bun run src/index.ts",
     "dev:node": "tsx src/index.ts",
-    "dev:watch": "cross-env PAPERCLIP_MIGRATION_PROMPT=never PAPERCLIP_MIGRATION_AUTO_APPLY=true bun run ./scripts/dev-watch.ts",
+    "dev:watch": "cross-env CLAWDEV_MIGRATION_PROMPT=never CLAWDEV_MIGRATION_AUTO_APPLY=true bun run ./scripts/dev-watch.ts",
     "prepare:ui-dist": "bash ../scripts/prepare-server-ui-dist.sh",
     "build": "tsc && mkdir -p dist/onboarding-assets && cp -R src/onboarding-assets/. dist/onboarding-assets/",
     "prepack": "pnpm run prepare:ui-dist",
@@ -70,7 +70,7 @@
     "drizzle-orm": "^0.38.4",
     "elysia": "^1.4.28",
     "embedded-postgres": "18.1.0-beta.16",
-    "hermes-paperclip-adapter": "0.1.1",
+    "hermes-clawdev-adapter": "0.1.1",
     "ioredis": "^5.10.1",
     "jsdom": "^28.1.0",
     "open": "^11.0.0",

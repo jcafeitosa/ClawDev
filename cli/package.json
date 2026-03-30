@@ -1,13 +1,13 @@
 {
-  "name": "paperclipai",
+  "name": "clawdev",
   "version": "0.3.1",
-  "description": "Paperclip CLI — orchestrate AI agent teams to run a business",
+  "description": "ClawDev CLI — orchestrate AI agent teams to run a business",
   "type": "module",
   "bin": {
-    "paperclipai": "./dist/index.js"
+    "clawdev": "./dist/index.js"
   },
   "keywords": [
-    "paperclip",
+    "clawdev",
     "ai",
     "agents",
     "orchestration",
@@ -16,12 +16,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/paperclipai/paperclip",
+    "url": "https://github.com/jcafeitosa/ClawDev",
     "directory": "cli"
   },
-  "homepage": "https://github.com/paperclipai/paperclip",
+  "homepage": "https://github.com/jcafeitosa/ClawDev",
   "bugs": {
-    "url": "https://github.com/paperclipai/paperclip/issues"
+    "url": "https://github.com/jcafeitosa/ClawDev/issues"
   },
   "files": [
     "dist"

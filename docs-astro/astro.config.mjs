@@ -7,7 +7,7 @@ export default defineConfig({
       title: "ClawDev",
       description: "Open-source orchestration for AI agent companies.",
       social: {
-        github: "https://github.com/paperclipai/paperclip",
+        github: "https://github.com/jcafeitosa/ClawDev",
       },
       sidebar: [
         {

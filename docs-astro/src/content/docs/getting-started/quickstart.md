@@ -7,8 +7,8 @@ description: Get ClawDev running in under 5 minutes.
 
 ```bash
 # Clone the repository
-git clone https://github.com/paperclipai/paperclip.git
-cd paperclip
+git clone https://github.com/jcafeitosa/ClawDev.git
+cd clawdev
 
 # Set required env vars
 export BETTER_AUTH_SECRET=$(openssl rand -base64 32)

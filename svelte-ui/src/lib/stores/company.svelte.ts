@@ -9,7 +9,7 @@ export interface Company {
   [key: string]: unknown;
 }
 
-const STORAGE_KEY = "paperclip.selectedCompanyId";
+const STORAGE_KEY = "clawdev.selectedCompanyId";
 
 let companies = $state<Company[]>([]);
 let selectedCompanyId = $state<string | null>(

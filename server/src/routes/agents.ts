@@ -259,7 +259,7 @@ export function agentRoutes(db: Db) {
           adapterType: agent.adapterType,
           config: {
             ...runtimeConfig,
-            paperclipRuntimeSkills: initialSkillEntries,
+            clawdevRuntimeSkills: initialSkillEntries,
           },
         });
 
@@ -432,7 +432,7 @@ export function agentRoutes(db: Db) {
 
         // Attach skill sync config
         if (desiredSkills && desiredSkills.length > 0) {
-          adapterConfig.paperclipSkillSync = {
+          adapterConfig.clawdevSkillSync = {
             desiredSkills,
             syncedAt: new Date().toISOString(),
           };
@@ -528,7 +528,7 @@ export function agentRoutes(db: Db) {
 
         // Attach skill sync config
         if (desiredSkills && desiredSkills.length > 0) {
-          adapterConfig.paperclipSkillSync = {
+          adapterConfig.clawdevSkillSync = {
             desiredSkills,
             syncedAt: new Date().toISOString(),
           };
@@ -799,7 +799,7 @@ export function agentRoutes(db: Db) {
             adapterType: agent.adapterType,
             config: {
               ...runtimeConfig,
-              paperclipRuntimeSkills: runtimeSkillEntries,
+              clawdevRuntimeSkills: runtimeSkillEntries,
             },
           },
           desiredSkills,
@@ -809,7 +809,7 @@ export function agentRoutes(db: Db) {
         const existingConfig = isPlain(agent.adapterConfig) ? { ...agent.adapterConfig } : {};
         const updatedConfig = {
           ...existingConfig,
-          paperclipSkillSync: {
+          clawdevSkillSync: {
             desiredSkills,
             syncedAt: new Date().toISOString(),
           },

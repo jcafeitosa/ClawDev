@@ -283,7 +283,7 @@
     return '#10b981';
   }
 
-  // Tab definition — matching original Paperclip UI
+  // Tab definition — matching original ClawDev UI
   const TABS = [
     { value: 'overview', label: 'Overview', icon: LayoutDashboard },
     { value: 'budgets', label: 'Budgets', icon: Shield },

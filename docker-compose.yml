@@ -2,11 +2,11 @@ services:
   db:
     image: timescale/timescaledb:latest-pg17
     environment:
-      POSTGRES_USER: paperclip
-      POSTGRES_PASSWORD: paperclip
-      POSTGRES_DB: paperclip
+      POSTGRES_USER: clawdev
+      POSTGRES_PASSWORD: clawdev
+      POSTGRES_DB: clawdev
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U paperclip -d paperclip"]
+      test: ["CMD-SHELL", "pg_isready -U clawdev -d clawdev"]
       interval: 2s
       timeout: 5s
       retries: 30
@@ -32,16 +32,16 @@ services:
     ports:
       - "3100:3100"
     environment:
-      DATABASE_URL: postgres://paperclip:paperclip@db:5432/paperclip
+      DATABASE_URL: postgres://clawdev:clawdev@db:5432/clawdev
       REDIS_URL: redis://redis:6379
       PORT: "3100"
       SERVE_UI: "true"
-      PAPERCLIP_DEPLOYMENT_MODE: "authenticated"
-      PAPERCLIP_DEPLOYMENT_EXPOSURE: "private"
-      PAPERCLIP_PUBLIC_URL: "${PAPERCLIP_PUBLIC_URL:-http://localhost:3100}"
+      CLAWDEV_DEPLOYMENT_MODE: "authenticated"
+      CLAWDEV_DEPLOYMENT_EXPOSURE: "private"
+      CLAWDEV_PUBLIC_URL: "${CLAWDEV_PUBLIC_URL:-http://localhost:3100}"
       BETTER_AUTH_SECRET: "${BETTER_AUTH_SECRET:?BETTER_AUTH_SECRET must be set}"
     volumes:
-      - paperclip-data:/paperclip
+      - clawdev-data:/clawdev
     depends_on:
       db:
         condition: service_healthy
@@ -51,4 +51,4 @@ services:
 volumes:
   pgdata:
   redisdata:
-  paperclip-data:
+  clawdev-data:

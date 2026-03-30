@@ -9,7 +9,7 @@ ClawDev is configured via environment variables. All settings have sensible defa
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `DATABASE_URL` | PostgreSQL connection string | `postgres://localhost:5432/paperclip` |
+| `DATABASE_URL` | PostgreSQL connection string | `postgres://localhost:5432/clawdev` |
 | `BETTER_AUTH_SECRET` | Auth session encryption key | (required in production) |
 
 ## Optional Variables
@@ -21,9 +21,9 @@ ClawDev is configured via environment variables. All settings have sensible defa
 | `REDIS_URL` | Redis connection string | (optional, enables BullMQ) |
 | `OPENAI_API_KEY` | For semantic search embeddings | (optional) |
 | `SERVE_UI` | Serve SvelteKit UI from server | `true` |
-| `PAPERCLIP_DEPLOYMENT_MODE` | `local_trusted` or `authenticated` | `local_trusted` |
-| `PAPERCLIP_DEPLOYMENT_EXPOSURE` | `private` or `public` | `private` |
-| `PAPERCLIP_HOME` | Data directory | `~/.paperclip` |
+| `CLAWDEV_DEPLOYMENT_MODE` | `local_trusted` or `authenticated` | `local_trusted` |
+| `CLAWDEV_DEPLOYMENT_EXPOSURE` | `private` or `public` | `private` |
+| `CLAWDEV_HOME` | Data directory | `~/.clawdev` |
 
 ## Deployment Modes
 

@@ -19,9 +19,9 @@
   const RECENT_ISSUES_LIMIT = 100;
   const FAILED_RUN_STATUSES = new Set(['failed', 'timed_out']);
   const ACTIONABLE_APPROVAL_STATUSES = new Set(['pending', 'revision_requested']);
-  const DISMISSED_KEY = 'paperclip:inbox:dismissed';
-  const READ_ITEMS_KEY = 'paperclip:inbox:read-items';
-  const INBOX_LAST_TAB_KEY = 'paperclip:inbox:last-tab';
+  const DISMISSED_KEY = 'clawdev:inbox:dismissed';
+  const READ_ITEMS_KEY = 'clawdev:inbox:read-items';
+  const INBOX_LAST_TAB_KEY = 'clawdev:inbox:last-tab';
   const INBOX_ISSUE_STATUSES = 'backlog,todo,in_progress,in_review,blocked,done';
 
   type InboxTab = 'mine' | 'recent' | 'unread' | 'all';

@@ -91,7 +91,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
   let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
 
   beforeAll(async () => {
-    tempDb = await startEmbeddedPostgresTestDatabase("paperclip-routines-e2e-");
+    tempDb = await startEmbeddedPostgresTestDatabase("clawdev-routines-e2e-");
     db = createDb(tempDb.connectionString);
   }, 20_000);
 
@@ -138,7 +138,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
 
     await db.insert(companies).values({
       id: companyId,
-      name: "Paperclip",
+      name: "ClawDev",
       issuePrefix,
       requireBoardApprovalForNewAgents: false,
     });

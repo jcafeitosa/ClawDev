@@ -1,6 +1,6 @@
 /** Theme store — manages light/dark theme preference */
 
-const STORAGE_KEY = "paperclip.theme";
+const STORAGE_KEY = "clawdev.theme";
 
 function resolveInitialTheme(): "light" | "dark" {
   if (typeof window === "undefined") return "dark";

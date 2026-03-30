@@ -152,9 +152,9 @@ describe("agent skill routes", () => {
     mockSecretService.resolveAdapterConfigForRuntime.mockResolvedValue({ config: { env: {} } });
     mockCompanySkillService.listRuntimeSkillEntries.mockResolvedValue([
       {
-        key: "paperclipai/paperclip/paperclip",
-        runtimeName: "paperclip",
-        source: "/tmp/paperclip",
+        key: "jcafeitosa/ClawDev/clawdev",
+        runtimeName: "clawdev",
+        source: "/tmp/clawdev",
         required: true,
         requiredReason: "required",
       },
@@ -162,8 +162,8 @@ describe("agent skill routes", () => {
     mockCompanySkillService.resolveRequestedSkillKeys.mockImplementation(
       async (_companyId: string, requested: string[]) =>
         requested.map((value) =>
-          value === "paperclip"
-            ? "paperclipai/paperclip/paperclip"
+          value === "clawdev"
+            ? "jcafeitosa/ClawDev/clawdev"
             : value,
         ),
     );
@@ -171,7 +171,7 @@ describe("agent skill routes", () => {
       adapterType: "claude_local",
       supported: true,
       mode: "ephemeral",
-      desiredSkills: ["paperclipai/paperclip/paperclip"],
+      desiredSkills: ["jcafeitosa/ClawDev/clawdev"],
       entries: [],
       warnings: [],
     });
@@ -179,7 +179,7 @@ describe("agent skill routes", () => {
       adapterType: "claude_local",
       supported: true,
       mode: "ephemeral",
-      desiredSkills: ["paperclipai/paperclip/paperclip"],
+      desiredSkills: ["jcafeitosa/ClawDev/clawdev"],
       entries: [],
       warnings: [],
     });
@@ -238,7 +238,7 @@ describe("agent skill routes", () => {
       expect.objectContaining({
         adapterType: "claude_local",
         config: expect.objectContaining({
-          paperclipRuntimeSkills: expect.any(Array),
+          clawdevRuntimeSkills: expect.any(Array),
         }),
       }),
     );
@@ -250,7 +250,7 @@ describe("agent skill routes", () => {
       adapterType: "codex_local",
       supported: true,
       mode: "persistent",
-      desiredSkills: ["paperclipai/paperclip/paperclip"],
+      desiredSkills: ["jcafeitosa/ClawDev/clawdev"],
       entries: [],
       warnings: [],
     });
@@ -269,7 +269,7 @@ describe("agent skill routes", () => {
 
     const res = await req(createApp(),
       "POST", "/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1",
-      { desiredSkills: ["paperclipai/paperclip/paperclip"] });
+      { desiredSkills: ["jcafeitosa/ClawDev/clawdev"] });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockCompanySkillService.listRuntimeSkillEntries).toHaveBeenCalledWith("company-1", {
@@ -283,16 +283,16 @@ describe("agent skill routes", () => {
 
     const res = await req(createApp(),
       "POST", "/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1",
-      { desiredSkills: ["paperclip"] });
+      { desiredSkills: ["clawdev"] });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
-    expect(mockCompanySkillService.resolveRequestedSkillKeys).toHaveBeenCalledWith("company-1", ["paperclip"]);
+    expect(mockCompanySkillService.resolveRequestedSkillKeys).toHaveBeenCalledWith("company-1", ["clawdev"]);
     expect(mockAgentService.update).toHaveBeenCalledWith(
       expect.any(String),
       expect.objectContaining({
         adapterConfig: expect.objectContaining({
-          paperclipSkillSync: expect.objectContaining({
-            desiredSkills: ["paperclipai/paperclip/paperclip"],
+          clawdevSkillSync: expect.objectContaining({
+            desiredSkills: ["jcafeitosa/ClawDev/clawdev"],
           }),
         }),
       }),
@@ -307,18 +307,18 @@ describe("agent skill routes", () => {
         name: "QA Agent",
         role: "engineer",
         adapterType: "claude_local",
-        desiredSkills: ["paperclip"],
+        desiredSkills: ["clawdev"],
         adapterConfig: {},
       });
 
     expect(res.status, JSON.stringify(res.body)).toBe(201);
-    expect(mockCompanySkillService.resolveRequestedSkillKeys).toHaveBeenCalledWith("company-1", ["paperclip"]);
+    expect(mockCompanySkillService.resolveRequestedSkillKeys).toHaveBeenCalledWith("company-1", ["clawdev"]);
     expect(mockAgentService.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
         adapterConfig: expect.objectContaining({
-          paperclipSkillSync: expect.objectContaining({
-            desiredSkills: ["paperclipai/paperclip/paperclip"],
+          clawdevSkillSync: expect.objectContaining({
+            desiredSkills: ["jcafeitosa/ClawDev/clawdev"],
           }),
         }),
       }),
@@ -423,19 +423,19 @@ describe("agent skill routes", () => {
         name: "QA Agent",
         role: "engineer",
         adapterType: "claude_local",
-        desiredSkills: ["paperclip"],
+        desiredSkills: ["clawdev"],
         adapterConfig: {},
       });
 
     expect(res.status, JSON.stringify(res.body)).toBe(201);
-    expect(mockCompanySkillService.resolveRequestedSkillKeys).toHaveBeenCalledWith("company-1", ["paperclip"]);
+    expect(mockCompanySkillService.resolveRequestedSkillKeys).toHaveBeenCalledWith("company-1", ["clawdev"]);
     expect(mockApprovalService.create).toHaveBeenCalledWith(
       "company-1",
       expect.objectContaining({
         payload: expect.objectContaining({
-          desiredSkills: ["paperclipai/paperclip/paperclip"],
+          desiredSkills: ["jcafeitosa/ClawDev/clawdev"],
           requestedConfigurationSnapshot: expect.objectContaining({
-            desiredSkills: ["paperclipai/paperclip/paperclip"],
+            desiredSkills: ["jcafeitosa/ClawDev/clawdev"],
           }),
         }),
       }),

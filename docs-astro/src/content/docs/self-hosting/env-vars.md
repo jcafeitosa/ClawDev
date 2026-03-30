@@ -20,12 +20,12 @@ description: Complete reference for all ClawDev environment variables.
 
 | Variable | Type | Default | Description |
 |----------|------|---------|-------------|
-| `PAPERCLIP_DEPLOYMENT_MODE` | string | `local_trusted` | Auth mode |
-| `PAPERCLIP_DEPLOYMENT_EXPOSURE` | string | `private` | Network exposure |
-| `PAPERCLIP_PUBLIC_URL` | string | `http://localhost:3100` | Public-facing URL |
-| `PAPERCLIP_HOME` | string | `/paperclip` | Data directory |
-| `PAPERCLIP_INSTANCE_ID` | string | `default` | Multi-instance ID |
-| `PAPERCLIP_CONFIG` | string | — | Config file path |
+| `CLAWDEV_DEPLOYMENT_MODE` | string | `local_trusted` | Auth mode |
+| `CLAWDEV_DEPLOYMENT_EXPOSURE` | string | `private` | Network exposure |
+| `CLAWDEV_PUBLIC_URL` | string | `http://localhost:3100` | Public-facing URL |
+| `CLAWDEV_HOME` | string | `/clawdev` | Data directory |
+| `CLAWDEV_INSTANCE_ID` | string | `default` | Multi-instance ID |
+| `CLAWDEV_CONFIG` | string | — | Config file path |
 
 ## LLM Adapters
 

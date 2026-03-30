@@ -1,5 +1,5 @@
 /**
- * `@clawdev/plugin-sdk` — Paperclip plugin worker-side SDK.
+ * `@clawdev/plugin-sdk` — ClawDev plugin worker-side SDK.
  *
  * This is the main entrypoint for plugin worker code.  For plugin UI bundles,
  * import from `@clawdev/plugin-sdk/ui` instead.
@@ -91,7 +91,7 @@ export {
 // Plugin definition and lifecycle types
 export type {
   PluginDefinition,
-  PaperclipPlugin,
+  ClawDevPlugin,
   PluginHealthDiagnostics,
   PluginConfigValidationResult,
   PluginWebhookInput,
@@ -210,7 +210,7 @@ export type {
 // Plugin authors import manifest types from here so they have a single
 // dependency (@clawdev/plugin-sdk) for all plugin authoring needs.
 export type {
-  PaperclipPluginManifestV1,
+  ClawDevPluginManifestV1,
   PluginJobDeclaration,
   PluginWebhookDeclaration,
   PluginToolDeclaration,
