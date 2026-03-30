@@ -242,7 +242,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       errorMessage:
         (attempt.proc.exitCode ?? 0) === 0
           ? null
-          : fallbackErrorMessage,
+          : attempt.parsed.quotaError
+            ? `Copilot quota exceeded: ${attempt.parsed.quotaError.message}`
+            : fallbackErrorMessage,
+      errorCode: attempt.parsed.quotaError ? "quota_exceeded" : undefined,
       usage: attempt.parsed.usage,
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,
@@ -255,6 +258,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       resultJson: {
         stdout: attempt.proc.stdout,
         stderr: attempt.proc.stderr,
+        premiumRequests: attempt.parsed.premiumRequests,
+        totalApiDurationMs: attempt.parsed.totalApiDurationMs,
+        sessionDurationMs: attempt.parsed.sessionDurationMs,
+        codeChanges: attempt.parsed.codeChanges,
+        quotaError: attempt.parsed.quotaError,
       },
       summary: attempt.parsed.summary,
     };

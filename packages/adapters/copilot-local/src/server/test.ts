@@ -6,11 +6,14 @@ import type {
 import {
   asString,
   parseObject,
+  parseJson,
   ensureAbsoluteDirectory,
   ensureCommandResolvable,
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
+import { readFile } from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
@@ -129,6 +132,72 @@ export async function testEnvironment(
           hint: "Run `copilot --version` manually to debug. Ensure GitHub Copilot CLI is installed and authenticated.",
         });
       }
+    }
+  }
+
+  // Check authentication status from ~/.copilot/config.json
+  try {
+    const configPath = path.join(os.homedir(), ".copilot", "config.json");
+    const raw = await readFile(configPath, "utf8");
+    const cfg = parseJson(raw);
+    if (cfg) {
+      const lastUser = parseObject(cfg.last_logged_in_user ?? cfg.lastLoggedInUser);
+      const login = asString(lastUser.login, "");
+      const host = asString(lastUser.host, "");
+      if (login) {
+        checks.push({
+          code: "copilot_auth_user",
+          level: "info",
+          message: `Authenticated as ${login}`,
+          ...(host ? { detail: `Host: ${host}` } : {}),
+        });
+      } else {
+        checks.push({
+          code: "copilot_auth_missing",
+          level: "warn",
+          message: "No authenticated user found in Copilot config.",
+          hint: "Run `copilot login` to authenticate.",
+        });
+      }
+    }
+  } catch {
+    checks.push({
+      code: "copilot_auth_config_missing",
+      level: "warn",
+      message: "Copilot config not found (~/.copilot/config.json).",
+      hint: "Run `copilot login` to authenticate and create config.",
+    });
+  }
+
+  // Probe a quick request to check quota/subscription status
+  if (canRunProbe && commandLooksLike(command, "copilot")) {
+    const quotaProbe = await runChildProcess(
+      `copilot-quota-probe-${Date.now()}`,
+      command,
+      ["-p", "hi", "--model", "gpt-4.1", "--output-format", "json", "-s", "--disable-builtin-mcps"],
+      {
+        cwd,
+        env,
+        timeoutSec: 15,
+        graceSec: 5,
+        stdin: "",
+        onLog: async () => {},
+      },
+    );
+    const combined = quotaProbe.stdout + quotaProbe.stderr;
+    if (combined.includes('"errorType":"quota"') || combined.includes("no quota")) {
+      checks.push({
+        code: "copilot_quota_exhausted",
+        level: "warn",
+        message: "Copilot quota exhausted — requests may fail until quota resets.",
+        hint: "Check your GitHub Copilot subscription at https://github.com/settings/copilot",
+      });
+    } else if ((quotaProbe.exitCode ?? 1) === 0) {
+      checks.push({
+        code: "copilot_subscription_active",
+        level: "info",
+        message: "Copilot subscription is active and quota is available.",
+      });
     }
   }
 
