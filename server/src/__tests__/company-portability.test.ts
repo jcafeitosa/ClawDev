@@ -415,9 +415,9 @@ describe("company portability", () => {
     expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain("skills:");
     expect(asTextFile(exported.files["agents/claudecoder/AGENTS.md"])).toContain(`- "${clawdevKey}"`);
     expect(asTextFile(exported.files["agents/cmo/AGENTS.md"])).not.toContain("skills:");
-    expect(asTextFile(exported.files["skills/jcafeitosa/ClawDev/clawdev/SKILL.md"])).toContain("metadata:");
-    expect(asTextFile(exported.files["skills/jcafeitosa/ClawDev/clawdev/SKILL.md"])).toContain('kind: "github-dir"');
-    expect(exported.files["skills/jcafeitosa/ClawDev/clawdev/references/api.md"]).toBeUndefined();
+    expect(asTextFile(exported.files["skills/jcafeitosa/clawdev/clawdev/SKILL.md"])).toContain("metadata:");
+    expect(asTextFile(exported.files["skills/jcafeitosa/clawdev/clawdev/SKILL.md"])).toContain('kind: "github-dir"');
+    expect(exported.files["skills/jcafeitosa/clawdev/clawdev/references/api.md"]).toBeUndefined();
     expect(asTextFile(exported.files["skills/company/PAP/company-playbook/SKILL.md"])).toContain("# Company Playbook");
     expect(asTextFile(exported.files["skills/company/PAP/company-playbook/references/checklist.md"])).toContain("# Checklist");
 
@@ -511,9 +511,9 @@ describe("company portability", () => {
       expandReferencedSkills: true,
     });
 
-    expect(asTextFile(exported.files["skills/jcafeitosa/ClawDev/clawdev/SKILL.md"])).toContain("# ClawDev");
-    expect(asTextFile(exported.files["skills/jcafeitosa/ClawDev/clawdev/SKILL.md"])).toContain("metadata:");
-    expect(asTextFile(exported.files["skills/jcafeitosa/ClawDev/clawdev/references/api.md"])).toContain("# API");
+    expect(asTextFile(exported.files["skills/jcafeitosa/clawdev/clawdev/SKILL.md"])).toContain("# ClawDev");
+    expect(asTextFile(exported.files["skills/jcafeitosa/clawdev/clawdev/SKILL.md"])).toContain("metadata:");
+    expect(asTextFile(exported.files["skills/jcafeitosa/clawdev/clawdev/references/api.md"])).toContain("# API");
   });
 
   it("exports only selected skills when skills filter is provided", async () => {
@@ -531,7 +531,7 @@ describe("company portability", () => {
 
     expect(exported.files["skills/company/PAP/company-playbook/SKILL.md"]).toBeDefined();
     expect(asTextFile(exported.files["skills/company/PAP/company-playbook/SKILL.md"])).toContain("# Company Playbook");
-    expect(exported.files["skills/jcafeitosa/ClawDev/clawdev/SKILL.md"]).toBeUndefined();
+    expect(exported.files["skills/jcafeitosa/clawdev/clawdev/SKILL.md"]).toBeUndefined();
   });
 
   it("warns and exports all skills when skills filter matches nothing", async () => {
@@ -549,7 +549,7 @@ describe("company portability", () => {
 
     expect(exported.warnings).toContainEqual(expect.stringContaining("nonexistent-skill"));
     expect(exported.files["skills/company/PAP/company-playbook/SKILL.md"]).toBeDefined();
-    expect(exported.files["skills/jcafeitosa/ClawDev/clawdev/SKILL.md"]).toBeDefined();
+    expect(exported.files["skills/jcafeitosa/clawdev/clawdev/SKILL.md"]).toBeDefined();
   });
 
   it("exports the company logo into images/ and references it from .clawdev.yaml", async () => {
@@ -677,8 +677,8 @@ describe("company portability", () => {
     });
 
     expect(asTextFile(exported.files["skills/local/release-changelog/SKILL.md"])).toContain("# Local Release Changelog");
-    expect(asTextFile(exported.files["skills/jcafeitosa/ClawDev/release-changelog/SKILL.md"])).toContain("metadata:");
-    expect(asTextFile(exported.files["skills/jcafeitosa/ClawDev/release-changelog/SKILL.md"])).toContain("jcafeitosa/ClawDev/release-changelog");
+    expect(asTextFile(exported.files["skills/jcafeitosa/clawdev/release-changelog/SKILL.md"])).toContain("metadata:");
+    expect(asTextFile(exported.files["skills/jcafeitosa/clawdev/release-changelog/SKILL.md"])).toContain("jcafeitosa/ClawDev/release-changelog");
   });
 
   it("builds export previews without tasks by default", async () => {
@@ -1744,7 +1744,7 @@ describe("company portability", () => {
     expect(agentSvc.create).toHaveBeenCalledWith("company-imported", expect.objectContaining({
       adapterConfig: expect.objectContaining({
         clawdevSkillSync: {
-          desiredSkills: [clawdevKey],
+          desiredSkills: ["jcafeitosa/clawdev/clawdev"],
         },
       }),
     }));

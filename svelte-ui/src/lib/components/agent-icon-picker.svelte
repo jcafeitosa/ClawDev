@@ -46,7 +46,7 @@
     Music,
     Gamepad,
     Compass,
-    Map,
+    Map as MapIcon,
     Navigation,
     Anchor,
     Truck,
@@ -55,7 +55,6 @@
     Search,
     X,
   } from "lucide-svelte";
-  import type { Component } from "svelte";
 
   // ---------------------------------------------------------------------------
   // Props
@@ -72,7 +71,8 @@
   // ---------------------------------------------------------------------------
   interface IconEntry {
     name: string;
-    component: Component;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    component: any;
   }
 
   const ICONS: IconEntry[] = [
@@ -116,7 +116,7 @@
     { name: "Music", component: Music },
     { name: "Gamepad", component: Gamepad },
     { name: "Compass", component: Compass },
-    { name: "Map", component: Map },
+    { name: "Map", component: MapIcon },
     { name: "Navigation", component: Navigation },
     { name: "Anchor", component: Anchor },
     { name: "Truck", component: Truck },

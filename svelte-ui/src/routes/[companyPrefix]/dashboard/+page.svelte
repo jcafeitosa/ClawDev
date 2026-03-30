@@ -324,31 +324,31 @@
   const prefix = $derived($page.params.companyPrefix);
 </script>
 
-<div class="dashboard-root min-h-screen space-y-6 p-6">
+<div class="dashboard-root min-h-screen space-y-8 p-6">
   <!-- Header -->
   <div class="flex items-end justify-between">
     <div>
-      <h1 class="text-xs font-semibold uppercase tracking-widest text-[--dash-muted]">Dashboard</h1>
+      <h1 class="dash-section-header">Dashboard</h1>
       <p class="mt-1 text-lg font-bold text-[--dash-text]">{companyName}</p>
     </div>
   </div>
 
   <!-- ── Active Agents Panel (top) ─────────────────────────────────── -->
   {#if companyId}
-    <ActiveAgentsPanel companyId={companyId ?? ''} {prefix} />
+    <ActiveAgentsPanel companyId={companyId ?? ''} prefix={prefix ?? ''} />
   {/if}
 
   <!-- ── Top Widget Cards (4-column) ────────────────────────────────── -->
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+  <div class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
 
     <!-- Widget 1: Agents Enabled -->
-    <div class="dash-card group">
+    <div class="dash-card dash-card--emerald group">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10">
             <Bot size={14} color="#10b981" />
           </div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Agents Enabled</h3>
+          <h3 class="dash-section-header !mb-0">Agents Enabled</h3>
         </div>
         <a href="/{prefix}/agents" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
           View all
@@ -367,8 +367,11 @@
         </div>
       {:else}
         <div class="mt-3 flex items-baseline gap-2">
-          <p class="text-3xl font-bold text-[--dash-text]">{enabledAgents}</p>
+          <p class="text-3xl font-bold tabular-nums text-[--dash-text]">{enabledAgents}</p>
           <span class="text-sm text-[--dash-muted]">/ {agents.length}</span>
+          <span class="ml-auto dash-trend dash-trend--up">
+            <svg width="24" height="12" viewBox="0 0 24 12"><polyline points="0,8 6,6 12,4 18,5 24,2" fill="none" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
         </div>
         <p class="text-xs text-[--dash-muted]">{runningAgents.length} running, {pausedAgents} paused, {errorAgents} errors</p>
 
@@ -402,13 +405,13 @@
     </div>
 
     <!-- Widget 2: Tasks In Progress -->
-    <div class="dash-card group">
+    <div class="dash-card dash-card--blue group">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-[--dash-primary]/10">
             <ListTodo size={14} color="var(--dash-primary)" />
           </div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Tasks In Progress</h3>
+          <h3 class="dash-section-header !mb-0">Tasks In Progress</h3>
         </div>
         <a href="/{prefix}/issues" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
           View all
@@ -425,10 +428,13 @@
           </div>
         </div>
       {:else}
-        <div class="mt-3">
-          <p class="text-3xl font-bold text-[--dash-text]">{tasksInProgress}</p>
-          <p class="text-xs text-[--dash-muted]">{openIssues} open, {blockedIssues} blocked</p>
+        <div class="mt-3 flex items-baseline gap-2">
+          <p class="text-3xl font-bold tabular-nums text-[--dash-text]">{tasksInProgress}</p>
+          <span class="ml-auto dash-trend">
+            <svg width="24" height="12" viewBox="0 0 24 12"><polyline points="0,6 6,7 12,5 18,4 24,3" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
         </div>
+        <p class="text-xs text-[--dash-muted]">{openIssues} open, {blockedIssues} blocked</p>
 
         <!-- Stacked bar chart -->
         <div class="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
@@ -455,13 +461,13 @@
     </div>
 
     <!-- Widget 3: Month Spend -->
-    <div class="dash-card group">
+    <div class="dash-card dash-card--amber group">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10">
             <Wallet size={14} color="#f59e0b" />
           </div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Month Spend</h3>
+          <h3 class="dash-section-header !mb-0">Month Spend</h3>
         </div>
         <a href="/{prefix}/costs" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
           View all
@@ -475,10 +481,13 @@
           <Skeleton class="h-3 w-32 bg-white/5" />
         </div>
       {:else}
-        <div class="mt-3">
-          <p class="text-3xl font-bold text-[--dash-text]">{formatCurrency(monthSpend)}</p>
-          <p class="text-xs text-[--dash-muted]">{budgetStatusText}</p>
+        <div class="mt-3 flex items-baseline gap-2">
+          <p class="text-3xl font-bold tabular-nums text-[--dash-text]">{formatCurrency(monthSpend)}</p>
+          <span class="ml-auto dash-trend">
+            <svg width="24" height="12" viewBox="0 0 24 12"><polyline points="0,9 6,7 12,6 18,5 24,4" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </span>
         </div>
+        <p class="text-xs text-[--dash-muted]">{budgetStatusText}</p>
 
         <!-- Budget utilization bar -->
         <div class="mt-4">
@@ -500,13 +509,13 @@
     </div>
 
     <!-- Widget 4: Pending Approvals -->
-    <div class="dash-card group">
+    <div class="dash-card dash-card--purple group">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10">
             <ShieldCheck size={14} color="#8b5cf6" />
           </div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Pending Approvals</h3>
+          <h3 class="dash-section-header !mb-0">Pending Approvals</h3>
         </div>
         <a href="/{prefix}/approvals" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
           View all
@@ -520,7 +529,7 @@
         </div>
       {:else}
         <div class="mt-3">
-          <p class="text-3xl font-bold text-[--dash-text]">{pendingApprovals}</p>
+          <p class="text-3xl font-bold tabular-nums text-[--dash-text]">{pendingApprovals}</p>
           <p class="text-xs text-[--dash-muted]">Awaiting board review</p>
         </div>
 
@@ -584,10 +593,10 @@
 
 
   <!-- ── Quick Actions ─────────────────────────────────────────────── -->
-  <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+  <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
     <a
       href="/{prefix}/issues?new=true"
-      class="dash-card group/qa flex items-center gap-3 !py-3.5 transition-all hover:border-blue-500/30"
+      class="dash-card dash-qa dash-qa--blue group/qa flex items-center gap-3 !py-3.5"
     >
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[--dash-primary]/10">
         <Plus size={16} color="var(--dash-primary)" />
@@ -596,12 +605,12 @@
         <p class="text-sm font-medium text-[--dash-text]">New Issue</p>
         <p class="text-xs text-[--dash-muted]">Create a task or bug report</p>
       </div>
-      <ArrowRight size={14} class="text-[--dash-muted] opacity-0 transition-opacity group-hover/qa:opacity-100" />
+      <ArrowRight size={14} class="dash-qa-arrow text-[--dash-muted]" />
     </a>
 
     <a
       href="/{prefix}/agents/new"
-      class="dash-card group/qa flex items-center gap-3 !py-3.5 transition-all hover:border-emerald-500/30"
+      class="dash-card dash-qa dash-qa--emerald group/qa flex items-center gap-3 !py-3.5"
     >
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
         <Bot size={16} color="#10b981" />
@@ -610,12 +619,12 @@
         <p class="text-sm font-medium text-[--dash-text]">New Agent</p>
         <p class="text-xs text-[--dash-muted]">Register an AI agent</p>
       </div>
-      <ArrowRight size={14} class="text-[--dash-muted] opacity-0 transition-opacity group-hover/qa:opacity-100" />
+      <ArrowRight size={14} class="dash-qa-arrow text-[--dash-muted]" />
     </a>
 
     <a
       href="/{prefix}/activity"
-      class="dash-card group/qa flex items-center gap-3 !py-3.5 transition-all hover:border-amber-500/30"
+      class="dash-card dash-qa dash-qa--amber group/qa flex items-center gap-3 !py-3.5"
     >
       <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
         <Activity size={16} color="#f59e0b" />
@@ -630,7 +639,7 @@
           {/if}
         </p>
       </div>
-      <ArrowRight size={14} class="text-[--dash-muted] opacity-0 transition-opacity group-hover/qa:opacity-100" />
+      <ArrowRight size={14} class="dash-qa-arrow text-[--dash-muted]" />
     </a>
   </div>
 
@@ -640,17 +649,17 @@
   {/if}
 
   <!-- ── Recent Activity & Recent Tasks (2-column) ────────────────── -->
-  <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+  <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
 
     <!-- Recent Activity -->
     <div class="dash-card !p-0">
-      <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: rgba(255,255,255,0.08);">
+      <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--dash-border);">
         <div class="flex items-center gap-2">
           <Activity size={14} color="var(--dash-primary)" />
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Recent Activity</h3>
+          <h3 class="dash-section-header !mb-0">Recent Activity</h3>
         </div>
-        <a href="/{prefix}/activity" class="text-[11px] font-medium text-[--dash-primary] hover:underline">
-          View all
+        <a href="/{prefix}/activity" class="dash-view-all group/va">
+          View all <span class="dash-view-all-arrow">&rarr;</span>
         </a>
       </div>
       <div class="px-5 py-3">
@@ -678,7 +687,9 @@
               {@const actorDisplay = getActorDisplay(item)}
               {@const verb = parseActionVerb(item.action ?? item.description ?? item.message ?? '')}
               {@const entity = getEntityDisplay(item)}
-              <div class="flex items-start gap-3 py-2.5">
+              {@const actionType = item.action ?? ''}
+              {@const activityBorderColor = actionType.includes('created') ? '#10b981' : actionType.includes('updated') || actionType.includes('changed') ? '#2563eb' : actionType.includes('deleted') ? '#ef4444' : 'transparent'}
+              <div class="dash-activity-item flex items-start gap-3 py-2.5" style="--activity-border-color: {activityBorderColor};">
                 <div
                   class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
                   style="background-color: rgba(255,255,255,0.06);"
@@ -712,13 +723,13 @@
 
     <!-- Recent Tasks -->
     <div class="dash-card !p-0">
-      <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: rgba(255,255,255,0.08);">
+      <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--dash-border);">
         <div class="flex items-center gap-2">
           <ListTodo size={14} color="var(--dash-primary)" />
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Recent Tasks</h3>
+          <h3 class="dash-section-header !mb-0">Recent Tasks</h3>
         </div>
-        <a href="/{prefix}/issues" class="text-[11px] font-medium text-[--dash-primary] hover:underline">
-          View all
+        <a href="/{prefix}/issues" class="dash-view-all group/va">
+          View all <span class="dash-view-all-arrow">&rarr;</span>
         </a>
       </div>
       <div class="px-5 py-3">
@@ -770,13 +781,13 @@
                 <!-- Agent initials badge + name -->
                 {#if agentName}
                   <div
-                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white"
+                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white ring-1 ring-white/10"
                     style="background-color: {agentColor(agentName)};"
                     title={agentName}
                   >
                     {getInitials(agentName)}
                   </div>
-                  <span class="shrink-0 text-[10px] font-medium text-[--dash-muted] max-w-[60px] truncate">
+                  <span class="shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-[--dash-muted] max-w-[70px] truncate">
                     {agentName}
                   </span>
                 {:else if issue.assigneeAvatar ?? issue.agentAvatar}
@@ -811,7 +822,8 @@
 <style>
   .dashboard-root {
     --dash-bg: #0B0B10;
-    --dash-card: #121218;
+    --dash-card: rgba(18, 18, 24, 0.8);
+    --dash-card-solid: #121218;
     --dash-border: rgba(255, 255, 255, 0.08);
     --dash-primary: #2563EB;
     --dash-text: #F8FAFC;
@@ -822,24 +834,178 @@
 
   :global(:root:not(.dark)) .dashboard-root {
     --dash-bg: #F9FAFB;
-    --dash-card: #FFFFFF;
-    --dash-border: #E5E7EB;
+    --dash-card: rgba(255, 255, 255, 0.85);
+    --dash-card-solid: #FFFFFF;
+    --dash-border: rgba(0, 0, 0, 0.08);
     --dash-primary: #2563EB;
     --dash-text: #111827;
     --dash-muted: #6B7280;
   }
 
+  /* ── Glassmorphism Card Base ─────────────────────────────────────── */
   .dash-card {
     background-color: var(--dash-card);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
     border: 1px solid var(--dash-border);
-    border-radius: 0.75rem;
+    border-radius: 0.85rem;
     padding: 1.25rem;
-    transition: border-color 0.15s ease;
+    transition: all 0.2s ease;
+    position: relative;
+    overflow: hidden;
   }
   .dash-card:hover {
+    transform: scale(1.02);
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
+    border-color: rgba(255, 255, 255, 0.14);
+  }
+  :global(:root:not(.dark)) .dash-card:hover {
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
     border-color: rgba(0, 0, 0, 0.12);
   }
-  :global(.dark) .dash-card:hover {
-    border-color: rgba(255, 255, 255, 0.14);
+
+  /* ── Accent gradient top lines per card variant ──────────────────── */
+  .dash-card--blue::before,
+  .dash-card--emerald::before,
+  .dash-card--amber::before,
+  .dash-card--purple::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 3px;
+    border-radius: 0.85rem 0.85rem 0 0;
+  }
+  .dash-card--blue::before {
+    background: linear-gradient(90deg, #2563eb, #3b82f6, transparent);
+  }
+  .dash-card--emerald::before {
+    background: linear-gradient(90deg, #10b981, #34d399, transparent);
+  }
+  .dash-card--amber::before {
+    background: linear-gradient(90deg, #f59e0b, #fbbf24, transparent);
+  }
+  .dash-card--purple::before {
+    background: linear-gradient(90deg, #8b5cf6, #a78bfa, transparent);
+  }
+
+  /* Hover border glow per variant */
+  .dash-card--blue:hover {
+    border-color: rgba(37, 99, 235, 0.3);
+    box-shadow: 0 4px 24px rgba(37, 99, 235, 0.08);
+  }
+  .dash-card--emerald:hover {
+    border-color: rgba(16, 185, 129, 0.3);
+    box-shadow: 0 4px 24px rgba(16, 185, 129, 0.08);
+  }
+  .dash-card--amber:hover {
+    border-color: rgba(245, 158, 11, 0.3);
+    box-shadow: 0 4px 24px rgba(245, 158, 11, 0.08);
+  }
+  .dash-card--purple:hover {
+    border-color: rgba(139, 92, 246, 0.3);
+    box-shadow: 0 4px 24px rgba(139, 92, 246, 0.08);
+  }
+
+  /* ── Section Headers ─────────────────────────────────────────────── */
+  .dash-section-header {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--dash-muted);
+    margin-bottom: 0;
+  }
+
+  /* ── Sparkline trend indicators ──────────────────────────────────── */
+  .dash-trend {
+    display: inline-flex;
+    align-items: center;
+    opacity: 0.7;
+  }
+
+  /* ── Quick Action Cards ──────────────────────────────────────────── */
+  .dash-qa {
+    transition: all 0.2s ease;
+    border-left: 3px solid transparent;
+  }
+  .dash-qa:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+  }
+  .dash-qa--blue {
+    border-left-color: #2563eb;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), transparent 60%);
+  }
+  .dash-qa--blue:hover {
+    border-color: rgba(37, 99, 235, 0.25);
+    border-left-color: #2563eb;
+    background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), transparent 60%);
+  }
+  .dash-qa--emerald {
+    border-left-color: #10b981;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.04), transparent 60%);
+  }
+  .dash-qa--emerald:hover {
+    border-color: rgba(16, 185, 129, 0.25);
+    border-left-color: #10b981;
+    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), transparent 60%);
+  }
+  .dash-qa--amber {
+    border-left-color: #f59e0b;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.04), transparent 60%);
+  }
+  .dash-qa--amber:hover {
+    border-color: rgba(245, 158, 11, 0.25);
+    border-left-color: #f59e0b;
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), transparent 60%);
+  }
+
+  .dash-qa-arrow {
+    opacity: 0;
+    transition: all 0.2s ease;
+    transform: translateX(-4px);
+  }
+  .dash-qa:hover .dash-qa-arrow {
+    opacity: 1;
+    transform: translateX(0);
+  }
+
+  /* ── View All link with arrow animation ──────────────────────────── */
+  .dash-view-all {
+    font-size: 0.69rem;
+    font-weight: 500;
+    color: var(--dash-primary);
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    transition: color 0.15s ease;
+  }
+  .dash-view-all:hover {
+    text-decoration: underline;
+  }
+  .dash-view-all-arrow {
+    display: inline-block;
+    transition: transform 0.2s ease;
+  }
+  .dash-view-all:hover .dash-view-all-arrow {
+    transform: translateX(3px);
+  }
+
+  /* ── Activity items left border ──────────────────────────────────── */
+  .dash-activity-item {
+    border-left: 2px solid var(--activity-border-color, transparent);
+    padding-left: 0.5rem;
+    margin-left: -0.5rem;
+    border-radius: 0 0.25rem 0.25rem 0;
+    transition: background-color 0.15s ease;
+  }
+  .dash-activity-item:hover {
+    background-color: rgba(255, 255, 255, 0.02);
+  }
+  :global(:root:not(.dark)) .dash-activity-item:hover {
+    background-color: rgba(0, 0, 0, 0.02);
   }
 </style>

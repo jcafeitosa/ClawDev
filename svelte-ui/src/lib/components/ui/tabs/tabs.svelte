@@ -7,15 +7,17 @@
     class?: string;
     orientation?: "horizontal" | "vertical";
     children?: Snippet;
+    value?: string;
   };
 
-  let { class: className, orientation = "horizontal", children, ...rest }: Props = $props();
+  let { class: className, orientation = "horizontal", children, value = $bindable(), ...rest }: Props = $props();
 </script>
 
 <TabsPrimitive.Root
   data-slot="tabs"
   data-orientation={orientation}
   {orientation}
+  bind:value
   class={cn("group/tabs flex gap-2 data-[orientation=horizontal]:flex-col", className)}
   {...rest}
 >

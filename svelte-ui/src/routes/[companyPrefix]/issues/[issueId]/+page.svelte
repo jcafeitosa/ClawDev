@@ -1037,7 +1037,7 @@
               {#if (issue as any)?.executionWorkspace ?? (issue as any)?.workspace ?? ((issue as any)?.workspaces?.[0])}
                 <IssueWorkspaceCard
                   workspace={(issue as any).executionWorkspace ?? (issue as any).workspace ?? (issue as any).workspaces[0]}
-                  {prefix}
+                  prefix={prefix ?? ''}
                 />
               {/if}
             </div>

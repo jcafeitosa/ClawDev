@@ -5,6 +5,7 @@
   import { LineChart } from 'echarts/charts';
   import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
   import * as echarts from 'echarts/core';
+  import type { EChartsOption } from 'echarts';
   import BaseChart from './base-chart.svelte';
 
   echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent]);
@@ -17,7 +18,7 @@
 
   let { data, height = '300px', class: className = '' }: Props = $props();
 
-  let option = $derived({
+  let option = $derived<EChartsOption>({
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',

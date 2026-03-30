@@ -1,8 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
-// Express/supertest kept as import for E2E test — skipped in CI
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   activityLog,
@@ -25,7 +23,6 @@ import {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
 } from "./helpers/embedded-postgres.js";
-import { errorHandler } from "../middleware/index.js";
 import { accessService } from "../services/access.js";
 
 vi.mock("../services/index.js", async () => {
@@ -118,15 +115,32 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
 
   async function createApp(actor: Record<string, unknown>) {
     const { routineRoutes } = await import("../routes/routines.js");
-    const app = express();
-    app.use(express.json());
-    app.use((req, _res, next) => {
-      (req as any).actor = actor;
-      next();
-    });
-    app.use("/api", routineRoutes(db));
-    app.use(errorHandler);
-    return app;
+    return new Elysia({ prefix: "/api" })
+      .derive(() => ({ actor }))
+      .use(routineRoutes(db));
+  }
+
+  async function appFetch(
+    app: Awaited<ReturnType<typeof createApp>>,
+    method: string,
+    path: string,
+    body?: unknown,
+  ) {
+    const res = await app.handle(
+      new Request(`http://localhost${path}`, {
+        method,
+        headers: body ? { "Content-Type": "application/json" } : {},
+        body: body ? JSON.stringify(body) : undefined,
+      }),
+    );
+    const text = await res.text();
+    let json: unknown = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = text || null;
+    }
+    return { status: res.status, body: json as any };
   }
 
   async function seedFixture() {
@@ -184,17 +198,15 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
       companyIds: [companyId],
     });
 
-    const createRes = await request(app)
-      .post(`/api/companies/${companyId}/routines`)
-      .send({
-        projectId,
-        title: "Daily standup prep",
-        description: "Summarize blockers and open PRs",
-        assigneeAgentId: agentId,
-        priority: "high",
-        concurrencyPolicy: "coalesce_if_active",
-        catchUpPolicy: "skip_missed",
-      });
+    const createRes = await appFetch(app, "POST", `/api/companies/${companyId}/routines`, {
+      projectId,
+      title: "Daily standup prep",
+      description: "Summarize blockers and open PRs",
+      assigneeAgentId: agentId,
+      priority: "high",
+      concurrencyPolicy: "coalesce_if_active",
+      catchUpPolicy: "skip_missed",
+    });
 
     expect(createRes.status).toBe(201);
     expect(createRes.body.title).toBe("Daily standup prep");
@@ -202,33 +214,30 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
 
     const routineId = createRes.body.id as string;
 
-    const triggerRes = await request(app)
-      .post(`/api/routines/${routineId}/triggers`)
-      .send({
-        kind: "schedule",
-        label: "Weekday morning",
-        cronExpression: "0 10 * * 1-5",
-        timezone: "UTC",
-      });
+    const triggerRes = await appFetch(app, "POST", `/api/routines/${routineId}/triggers`, {
+      kind: "schedule",
+      label: "Weekday morning",
+      cronExpression: "0 10 * * 1-5",
+      timezone: "UTC",
+    });
 
     expect(triggerRes.status).toBe(201);
     expect(triggerRes.body.trigger.kind).toBe("schedule");
     expect(triggerRes.body.trigger.enabled).toBe(true);
     expect(triggerRes.body.secretMaterial).toBeNull();
 
-    const runRes = await request(app)
-      .post(`/api/routines/${routineId}/run`)
-      .send({
-        source: "manual",
-        payload: { origin: "e2e-test" },
-      });
+    const runRes = await appFetch(app, "POST", `/api/routines/${routineId}/run`, {
+      source: "manual",
+      payload: { origin: "e2e-test" },
+    });
 
+    if (runRes.status !== 202) console.error("run 500 body:", JSON.stringify(runRes.body, null, 2));
     expect(runRes.status).toBe(202);
     expect(runRes.body.status).toBe("issue_created");
     expect(runRes.body.source).toBe("manual");
     expect(runRes.body.linkedIssueId).toBeTruthy();
 
-    const detailRes = await request(app).get(`/api/routines/${routineId}`);
+    const detailRes = await appFetch(app, "GET", `/api/routines/${routineId}`);
     expect(detailRes.status).toBe(200);
     expect(detailRes.body.triggers).toHaveLength(1);
     expect(detailRes.body.triggers[0]?.id).toBe(triggerRes.body.trigger.id);
@@ -236,7 +245,7 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
     expect(detailRes.body.recentRuns[0]?.id).toBe(runRes.body.id);
     expect(detailRes.body.activeIssue?.id).toBe(runRes.body.linkedIssueId);
 
-    const runsRes = await request(app).get(`/api/routines/${routineId}/runs?limit=10`);
+    const runsRes = await appFetch(app, "GET", `/api/routines/${routineId}/runs?limit=10`);
     expect(runsRes.status).toBe(200);
     expect(runsRes.body).toHaveLength(1);
     expect(runsRes.body[0]?.id).toBe(runRes.body.id);

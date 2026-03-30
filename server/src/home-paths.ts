@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -13,13 +14,16 @@ function expandHomePrefix(value: string): string {
 }
 
 export function resolveClawDevHomeDir(): string {
-  const envHome = (process.env.CLAWDEV_HOME ?? process.env.CLAWDEV_HOME)?.trim();
+  const envHome = (process.env.CLAWDEV_HOME ?? process.env.PAPERCLIP_HOME)?.trim();
   if (envHome) return path.resolve(expandHomePrefix(envHome));
+  // Check .paperclip first for backward compat, then .clawdev
+  const legacy = path.resolve(os.homedir(), ".paperclip");
+  if (existsSync(legacy)) return legacy;
   return path.resolve(os.homedir(), ".clawdev");
 }
 
 export function resolveClawDevInstanceId(): string {
-  const raw = (process.env.CLAWDEV_INSTANCE_ID ?? process.env.CLAWDEV_INSTANCE_ID)?.trim() || DEFAULT_INSTANCE_ID;
+  const raw = (process.env.CLAWDEV_INSTANCE_ID ?? process.env.PAPERCLIP_INSTANCE_ID)?.trim() || DEFAULT_INSTANCE_ID;
   if (!INSTANCE_ID_RE.test(raw)) {
     throw new Error(`Invalid instance ID '${raw}'.`);
   }

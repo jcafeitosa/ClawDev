@@ -83,6 +83,6 @@
   </div>
 </div>
 
-<MobileBottomNav companyPrefix={$page.params.companyPrefix} />
+<MobileBottomNav companyPrefix={$page.params.companyPrefix ?? ''} />
 <NewIssueDialog />
 <ToastViewport />

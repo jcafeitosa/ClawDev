@@ -67,7 +67,7 @@
     data-variant={variant}
     data-size={size}
     class={classes}
-    {...rest}
+    {...(rest as import("svelte/elements").HTMLAnchorAttributes)}
   >
     {#if children}{@render children()}{/if}
   </a>
@@ -77,7 +77,7 @@
     data-variant={variant}
     data-size={size}
     class={classes}
-    {...rest}
+    {...(rest as import("svelte/elements").HTMLButtonAttributes)}
   >
     {#if children}{@render children()}{/if}
   </button>

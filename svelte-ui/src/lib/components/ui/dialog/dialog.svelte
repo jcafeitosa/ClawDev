@@ -3,9 +3,9 @@
 
   type Props = DialogPrimitive.RootProps;
 
-  let { children, ...rest }: Props = $props();
+  let { children, open = $bindable(false), ...rest }: Props = $props();
 </script>
 
-<DialogPrimitive.Root {...rest}>
+<DialogPrimitive.Root {open} {...rest}>
   {#if children}{@render children()}{/if}
 </DialogPrimitive.Root>

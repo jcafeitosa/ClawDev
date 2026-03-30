@@ -5,6 +5,7 @@
   import { BarChart, LineChart } from 'echarts/charts';
   import { GridComponent, TooltipComponent, LegendComponent } from 'echarts/components';
   import * as echarts from 'echarts/core';
+  import type { EChartsOption } from 'echarts';
   import BaseChart from './base-chart.svelte';
 
   echarts.use([BarChart, LineChart, GridComponent, TooltipComponent, LegendComponent]);
@@ -17,14 +18,15 @@
 
   let { data, height = '300px', class: className = '' }: Props = $props();
 
-  let option = $derived({
+  let option = $derived<EChartsOption>({
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'axis',
       backgroundColor: 'rgba(0,0,0,0.8)',
       borderColor: 'rgba(255,255,255,0.1)',
       textStyle: { color: '#fff', fontSize: 12 },
-      valueFormatter: (v: number) => `$${v.toFixed(4)}`,
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      valueFormatter: (v: any) => `$${Number(v).toFixed(4)}`,
     },
     legend: {
       data: ['Input tokens', 'Output tokens', 'Total'],

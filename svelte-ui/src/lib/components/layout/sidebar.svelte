@@ -62,6 +62,7 @@
     id: string;
     name: string;
     slug?: string;
+    urlKey?: string;
     color?: string | null;
     status?: string;
   }
@@ -502,7 +503,7 @@
   <!-- New Issue button -->
   <div class="px-3 pt-3 pb-1">
     <button
-      onclick={openNewIssueDialog}
+      onclick={() => openNewIssueDialog()}
       class="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-[var(--clawdev-primary)] px-3 text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors"
     >
       <Plus class="size-3.5" />

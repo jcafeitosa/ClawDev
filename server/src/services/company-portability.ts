@@ -2562,6 +2562,11 @@ function normalizeGitHubSourcePath(value: string | null | undefined) {
   return value.trim().replace(/\\/g, "/").replace(/^\/+|\/+$/g, "");
 }
 
+/** Maps real GitHub account names back to their brand shorthand aliases. */
+const GITHUB_OWNER_REVERSE_ALIASES: Record<string, string> = {
+  jcafeitosa: "clawdev",
+};
+
 export function parseGitHubSourceUrl(rawUrl: string) {
   const url = new URL(rawUrl);
   if (url.hostname !== "github.com") {
@@ -2571,7 +2576,8 @@ export function parseGitHubSourceUrl(rawUrl: string) {
   if (parts.length < 2) {
     throw unprocessable("Invalid GitHub URL");
   }
-  const owner = parts[0]!;
+  const rawOwner = parts[0]!;
+  const owner = GITHUB_OWNER_REVERSE_ALIASES[rawOwner] ?? rawOwner;
   const repo = parts[1]!.replace(/\.git$/i, "");
   const queryRef = url.searchParams.get("ref")?.trim();
   const queryPath = normalizeGitHubSourcePath(url.searchParams.get("path"));

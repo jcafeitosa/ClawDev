@@ -820,14 +820,20 @@ function buildGithubImportUrl(input: {
   return url.toString();
 }
 
+/** Maps brand shorthand owners to their real GitHub account names. */
+const GITHUB_OWNER_ALIASES: Record<string, string> = {
+  clawdev: "jcafeitosa",
+};
+
 export function normalizeGithubImportSource(input: string, refOverride?: string): string {
   const trimmed = input.trim();
   const ref = refOverride?.trim();
 
   if (isGithubShorthand(trimmed)) {
     const [owner, repo, ...repoPath] = trimmed.split("/").filter(Boolean);
+    const resolvedOwner = GITHUB_OWNER_ALIASES[owner!] ?? owner!;
     return buildGithubImportUrl({
-      owner: owner!,
+      owner: resolvedOwner,
       repo: repo!,
       ref: ref || "main",
       path: repoPath.join("/"),

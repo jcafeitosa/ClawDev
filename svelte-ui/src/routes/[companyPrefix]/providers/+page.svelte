@@ -75,6 +75,8 @@
   }
 
   interface Provider {
+    /** Unique identifier — same as adapterType */
+    id: string;
     adapterType: string;
     displayName: string;
     configured: boolean;
@@ -92,7 +94,16 @@
     quotaWindows: Array<{ label: string; usedPercent: number | null; resetsAt: string | null; valueLabel: string | null }> | null;
     circuitBreakers: Record<string, { state: string; tripCount: number; failureCount: number }>;
     monthlySpendCents: number;
-    models: Array<{ id: string; displayName: string; tier: number }>;
+    models: ProviderModel[];
+    /** Live details from CLI probe (optional) */
+    liveDetails?: {
+      cliVersion?: string;
+      authenticatedUser?: string;
+      billingType?: string;
+      defaultModel?: string;
+      availableModels?: string[];
+      authCommand?: string;
+    } | null;
     // Computed helpers
     icon?: string;
     status?: ConnectionStatus;

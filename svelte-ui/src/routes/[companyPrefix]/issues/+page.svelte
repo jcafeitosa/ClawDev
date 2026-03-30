@@ -629,7 +629,7 @@
 
   <!-- Board view -->
   {:else if viewMode === 'board'}
-    <KanbanBoard issues={filteredIssues} prefix={currentPrefix} onStatusChange={handleStatusChange} />
+    <KanbanBoard issues={filteredIssues} prefix={currentPrefix ?? ''} onStatusChange={handleStatusChange} />
 
   <!-- List view -->
   {:else}

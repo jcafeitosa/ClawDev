@@ -311,7 +311,7 @@
             },
           ],
         },
-      ],
+      ] as any,
       series: [
         {
           type: 'pie',

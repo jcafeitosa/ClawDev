@@ -219,7 +219,7 @@
 
           <!-- Actions -->
           <div class="claim-actions">
-            {#if claimState === 'ready'}
+            {#if claimState === 'ready' || claimState === 'claiming'}
               <button type="button" class="claim-btn claim-btn--ghost" onclick={reset}>
                 Back
               </button>
