@@ -634,6 +634,7 @@ export async function startServer(): Promise<StartedServer> {
   }
 
   const storageService = createStorageServiceFromConfig(config);
+  const uiMode = config.uiDevMiddleware ? "vite-dev" as const : config.serveUi ? "static" as const : "none" as const;
   const app = createElysiaApp({
     db: db as any,
     deploymentMode: config.deploymentMode,
@@ -643,6 +644,7 @@ export async function startServer(): Promise<StartedServer> {
     companyDeletionEnabled: config.companyDeletionEnabled,
     storage: storageService,
     serveUi: config.serveUi,
+    uiMode,
     resolveSessionFromHeaders,
     embeddingConfig,
     pluginDeps: { jobScheduler, jobStore, workerManager, streamBus, toolDispatcher },
@@ -787,7 +789,6 @@ export async function startServer(): Promise<StartedServer> {
       });
   }
 
-  const uiMode = config.serveUi ? "static" : "none";
   printStartupBanner({
     host: config.host,
     deploymentMode: config.deploymentMode,

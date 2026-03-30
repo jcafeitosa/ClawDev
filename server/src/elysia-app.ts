@@ -28,6 +28,7 @@ import {
   sql,
 } from "drizzle-orm";
 import {
+  companies,
   heartbeatRuns,
   instanceUserRoles,
   invites,
@@ -77,7 +78,7 @@ import type { BetterAuthSessionResult } from "./auth/better-auth.js";
 // Storage
 import type { StorageService } from "./storage/types.js";
 
-// Static UI serving
+// Static UI serving & vite-dev proxy
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -98,6 +99,8 @@ import type { EmbeddingProviderConfig } from "./services/embedding-service.js";
 // Types
 // ---------------------------------------------------------------------------
 
+export type UiMode = "static" | "vite-dev" | "none";
+
 export interface ElysiaAppOptions {
   db: Db;
   deploymentMode: DeploymentMode;
@@ -107,6 +110,8 @@ export interface ElysiaAppOptions {
   companyDeletionEnabled: boolean;
   storage: StorageService;
   serveUi?: boolean;
+  /** UI serving mode: "static" serves from ui-dist, "vite-dev" proxies to SvelteKit dev server, "none" disables UI. */
+  uiMode?: UiMode;
   localPluginDir?: string;
   resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
   /** Embedding provider config (openai | local | null). When null, search returns empty results. */
@@ -194,6 +199,12 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
         }
       }
 
+      const companyCount = await db
+        .select({ count: count() })
+        .from(companies)
+        .then((rows) => Number(rows[0]?.count ?? 0));
+      const hasCompanies = companyCount > 0;
+
       const persistedDevServerStatus = readPersistedDevServerStatus();
       let devServer: ReturnType<typeof toDevServerHealthStatus> | undefined;
       if (persistedDevServerStatus) {
@@ -218,6 +229,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
         authReady,
         bootstrapStatus,
         bootstrapInviteActive,
+        hasCompanies,
         features: { companyDeletionEnabled },
         ...(devServer ? { devServer } : {}),
       };
@@ -290,8 +302,70 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
       }),
     );
 
-  // -- Static UI serving (SPA fallback) --
-  if (opts.serveUi !== false) {
+  // -- UI serving --
+  // Resolve effective UI mode: explicit uiMode takes precedence, then fall back to serveUi flag
+  const effectiveUiMode: UiMode = opts.uiMode ?? (opts.serveUi !== false ? "static" : "none");
+
+  if (effectiveUiMode === "vite-dev") {
+    // Reverse-proxy non-API requests to the SvelteKit dev server (vite dev on port 5174).
+    // The SvelteKit vite.config.ts already proxies /api back to this server,
+    // so the dev loop is: browser -> Elysia(:3100) -> Vite(:5174) for UI requests.
+    const VITE_DEV_ORIGIN = "http://localhost:5174";
+
+    const isUiRequest = (pathname: string) =>
+      !pathname.startsWith("/api/") &&
+      !pathname.startsWith("/api") &&
+      !pathname.startsWith("/llms/") &&
+      !pathname.startsWith("/_plugins/");
+
+    const proxyToVite = async ({ request, set }: any) => {
+      const url = new URL(request.url);
+      if (!isUiRequest(url.pathname)) {
+        set.status = 404;
+        return { error: "Not found" };
+      }
+
+      const target = `${VITE_DEV_ORIGIN}${url.pathname}${url.search}`;
+      try {
+        // Forward the request to the Vite dev server
+        const proxyHeaders = new Headers(request.headers);
+        // Remove host so Vite sees its own origin
+        proxyHeaders.delete("host");
+
+        const proxyResp = await fetch(target, {
+          method: request.method,
+          headers: proxyHeaders,
+          body: request.method !== "GET" && request.method !== "HEAD" ? request.body : undefined,
+          // @ts-expect-error -- duplex needed for streaming bodies in Node 20+
+          duplex: request.method !== "GET" && request.method !== "HEAD" ? "half" : undefined,
+          redirect: "manual",
+        });
+
+        // Return the proxied response directly
+        return new Response(proxyResp.body, {
+          status: proxyResp.status,
+          statusText: proxyResp.statusText,
+          headers: proxyResp.headers,
+        });
+      } catch {
+        // Vite dev server not running yet — return a helpful message
+        set.status = 502;
+        set.headers["content-type"] = "text/html; charset=utf-8";
+        return `<html><body style="font-family:system-ui;padding:2rem">
+          <h1>Vite dev server not reachable</h1>
+          <p>The SvelteKit dev server at <code>${VITE_DEV_ORIGIN}</code> is not running.</p>
+          <p>Start it with: <code>pnpm --filter svelte-ui dev</code></p>
+          <p>The API is still available at <code>/api/*</code>.</p>
+        </body></html>`;
+      }
+    };
+
+    rootApp
+      .get("/", proxyToVite)
+      .get("/*", proxyToVite);
+
+  } else if (effectiveUiMode === "static") {
+    // Static UI serving (SPA fallback) — production mode
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const candidates = [
       path.resolve(__dirname, "../ui-dist"),
