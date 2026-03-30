@@ -12,7 +12,8 @@
  *   const { data } = await api.api.health.get();
  */
 
-import { treaty } from "@elysiajs/eden";
+import { treaty, type Treaty } from "@elysiajs/eden";
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 import type { App } from "@clawdev/server/eden-treaty";
 
 export interface CliApiClientOptions {
@@ -25,7 +26,10 @@ export interface CliApiClientOptions {
  *
  * Returns an Eden Treaty client with all routes typed from the server.
  */
-export function createCliApiClient(opts: CliApiClientOptions) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type CliApiClient = Treaty.Create<App>;
+
+export function createCliApiClient(opts: CliApiClientOptions): CliApiClient {
   const headers: Record<string, string> = {};
   if (opts.apiKey) {
     headers["authorization"] = `Bearer ${opts.apiKey}`;
@@ -36,7 +40,7 @@ export function createCliApiClient(opts: CliApiClientOptions) {
     fetch: {
       credentials: "omit", // CLI doesn't use cookies
     },
-  });
+  }) as CliApiClient;
 }
 
 /**

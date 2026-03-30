@@ -5,7 +5,7 @@
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { companyIdParam } from "../middleware/index.js";
-import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
+import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { accessService, logActivity, routineService } from "../services/index.js";
 
 export function routineRoutes(db: Db) {
@@ -48,6 +48,18 @@ export function routineRoutes(db: Db) {
           agentId: actor.type === "agent" ? actor.agentId : null,
           userId: actor.type === "board" ? actor.userId ?? "board" : null,
         });
+        const actorInfoCreate = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: params.companyId,
+          actorType: actorInfoCreate.actorType,
+          actorId: actorInfoCreate.actorId,
+          agentId: actorInfoCreate.agentId,
+          runId: actorInfoCreate.runId,
+          action: "routine.created",
+          entityType: "routine",
+          entityId: created.id,
+          details: { title: created.title, assigneeAgentId: created.assigneeAgentId },
+        }).catch(() => {});
         set.status = 201;
         return created;
       },
@@ -155,6 +167,18 @@ export function routineRoutes(db: Db) {
           agentId: actor.type === "agent" ? actor.agentId : null,
           userId: actor.type === "board" ? actor.userId ?? "board" : null,
         });
+        const actorInfoTrigger = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: routine.companyId,
+          actorType: actorInfoTrigger.actorType,
+          actorId: actorInfoTrigger.actorId,
+          agentId: actorInfoTrigger.agentId,
+          runId: actorInfoTrigger.runId,
+          action: "routine.trigger_created",
+          entityType: "routine_trigger",
+          entityId: created.trigger.id,
+          details: { routineId: routine.id, kind: created.trigger.kind },
+        }).catch(() => {});
         set.status = 201;
         return created;
       },
@@ -181,12 +205,29 @@ export function routineRoutes(db: Db) {
         const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
         if (denied) return { error: "Missing permission: tasks:assign" };
         const run = await svc.runRoutine(routine.id, body ?? {});
+        const actorInfoRun = getActorInfo(actor);
+        await logActivity(db, {
+          companyId: routine.companyId,
+          actorType: actorInfoRun.actorType,
+          actorId: actorInfoRun.actorId,
+          agentId: actorInfoRun.agentId,
+          runId: actorInfoRun.runId,
+          action: "routine.run_triggered",
+          entityType: "routine_run",
+          entityId: run.id,
+          details: { routineId: routine.id, source: run.source, status: run.status },
+        }).catch(() => {});
         set.status = 202;
         return run;
       },
       {
         params: t.Object({ id: t.String() }),
-        body: t.Optional(t.Object({})),
+        body: t.Optional(t.Object({
+          source: t.Optional(t.Union([t.Literal("manual"), t.Literal("api")])),
+          triggerId: t.Optional(t.Union([t.String(), t.Null()])),
+          payload: t.Optional(t.Any()),
+          idempotencyKey: t.Optional(t.Union([t.String(), t.Null()])),
+        })),
       },
     )
 

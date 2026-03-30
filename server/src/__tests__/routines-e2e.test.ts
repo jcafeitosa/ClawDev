@@ -231,7 +231,6 @@ describeEmbeddedPostgres("routine routes end-to-end", () => {
       payload: { origin: "e2e-test" },
     });
 
-    if (runRes.status !== 202) console.error("run 500 body:", JSON.stringify(runRes.body, null, 2));
     expect(runRes.status).toBe(202);
     expect(runRes.body.status).toBe("issue_created");
     expect(runRes.body.source).toBe("manual");

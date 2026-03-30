@@ -72,6 +72,9 @@ importers:
       '@clawdev/shared':
         specifier: workspace:*
         version: link:../packages/shared
+      '@elysiajs/eden':
+        specifier: ^1.4.8
+        version: 1.4.8(elysia@1.4.28(@sinclair/typebox@0.34.48)(exact-mirror@0.2.7(@sinclair/typebox@0.34.48))(file-type@22.0.0)(openapi-types@12.1.3)(typescript@5.9.3))
       commander:
         specifier: ^13.1.0
         version: 13.1.0
