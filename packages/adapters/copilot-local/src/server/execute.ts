@@ -1,4 +1,5 @@
 import path from "node:path";
+import { readFile } from "node:fs/promises";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@clawdev/adapter-utils";
 import {
   asString,
@@ -42,6 +43,33 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (fromExtraArgs.length > 0) return fromExtraArgs;
     return asStringArray(config.args);
   })();
+
+  const instructionsFilePath = asString(config.instructionsFilePath, "");
+  const configDir = asString(config.configDir, "");
+  const agent_name = asString(config.agent, "");
+  const autopilot = config.autopilot === true;
+  const maxAutopilotContinues = asNumber(config.maxAutopilotContinues, 0);
+  const noAskUser = config.noAskUser === true;
+  const noCustomInstructions = config.noCustomInstructions === true;
+  const experimental = config.experimental === true;
+  const yolo = config.yolo !== false; // default true
+  const allowAllTools = config.allowAllTools === true;
+  const allowAllPaths = config.allowAllPaths === true;
+  const allowAllUrls = config.allowAllUrls === true;
+  const allowTools = asStringArray(config.allowTools);
+  const denyTools = asStringArray(config.denyTools);
+  const allowUrls = asStringArray(config.allowUrls);
+  const denyUrls = asStringArray(config.denyUrls);
+  const availableTools = asStringArray(config.availableTools);
+  const excludedTools = asStringArray(config.excludedTools);
+  const addDirs = asStringArray(config.addDirs);
+  const disableBuiltinMcps = config.disableBuiltinMcps === true;
+  const disableMcpServers = asStringArray(config.disableMcpServers);
+  const addGithubMcpTools = asStringArray(config.addGithubMcpTools);
+  const addGithubMcpToolsets = asStringArray(config.addGithubMcpToolsets);
+  const enableAllGithubMcpTools = config.enableAllGithubMcpTools === true;
+  const additionalMcpConfig = asString(config.additionalMcpConfig, "");
+  const secretEnvVars = asStringArray(config.secretEnvVars);
 
   const workspaceContext = parseObject(context.clawdevWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
@@ -119,6 +147,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (!hasExplicitApiKey && authToken) {
     env.CLAWDEV_API_KEY = authToken;
   }
+  const providerBaseUrl = asString(config.providerBaseUrl, "");
+  const providerType = asString(config.providerType, "");
+  const providerApiKey = asString(config.providerApiKey, "");
+  const providerModel = asString(config.providerModel, "");
+  if (providerBaseUrl) env.COPILOT_PROVIDER_BASE_URL = providerBaseUrl;
+  if (providerType) env.COPILOT_PROVIDER_TYPE = providerType;
+  if (providerApiKey) env.COPILOT_PROVIDER_API_KEY = providerApiKey;
+  if (providerModel) env.COPILOT_MODEL = providerModel;
+
   const effectiveEnv = Object.fromEntries(
     Object.entries({ ...process.env, ...env }).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
@@ -155,7 +192,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   };
   const renderedPrompt = renderTemplate(promptTemplate, templateData);
   const sessionHandoffNote = asString(context.clawdevSessionHandoffMarkdown, "").trim();
+
+  let instructionsPrefix = "";
+  if (instructionsFilePath) {
+    try {
+      instructionsPrefix = await readFile(instructionsFilePath, "utf8");
+    } catch { /* ignore missing file */ }
+  }
+
   const prompt = joinPromptSections([
+    instructionsPrefix,
     sessionHandoffNote,
     renderedPrompt,
   ]);
@@ -163,11 +209,56 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const effort = modelEffort || asString(config.effort, "");
 
   const buildArgs = (resumeSessionId: string | null) => {
-    const args: string[] = ["-p", prompt, "--yolo", "--output-format", "json"];
+    const args: string[] = ["-p", prompt, "--output-format", "json"];
+
+    // Permissions
+    if (yolo) {
+      args.push("--yolo");
+    } else {
+      if (allowAllTools) args.push("--allow-all-tools");
+      if (allowAllPaths) args.push("--allow-all-paths");
+      if (allowAllUrls) args.push("--allow-all-urls");
+    }
+    for (const t of allowTools) args.push("--allow-tool", t);
+    for (const t of denyTools) args.push("--deny-tool", t);
+    for (const u of allowUrls) args.push("--allow-url", u);
+    for (const u of denyUrls) args.push("--deny-url", u);
+    if (availableTools.length > 0) args.push("--available-tools", ...availableTools);
+    if (excludedTools.length > 0) args.push("--excluded-tools", ...excludedTools);
+
+    // Model and effort
     if (model) args.push("--model", model);
     if (effort) args.push("--effort", effort);
+
+    // Agent behavior
+    if (agent_name) args.push("--agent", agent_name);
+    if (autopilot) args.push("--autopilot");
+    if (maxAutopilotContinues > 0) args.push("--max-autopilot-continues", String(maxAutopilotContinues));
+    if (noAskUser) args.push("--no-ask-user");
+    if (noCustomInstructions) args.push("--no-custom-instructions");
+    if (experimental) args.push("--experimental");
+
+    // Config
+    if (configDir) args.push("--config-dir", configDir);
+
+    // Directories
+    for (const d of addDirs) args.push("--add-dir", d);
+
+    // MCP
+    if (disableBuiltinMcps) args.push("--disable-builtin-mcps");
+    for (const s of disableMcpServers) args.push("--disable-mcp-server", s);
+    for (const t of addGithubMcpTools) args.push("--add-github-mcp-tool", t);
+    for (const ts of addGithubMcpToolsets) args.push("--add-github-mcp-toolset", ts);
+    if (enableAllGithubMcpTools) args.push("--enable-all-github-mcp-tools");
+    if (additionalMcpConfig) args.push("--additional-mcp-config", additionalMcpConfig);
+
+    // Security
+    if (secretEnvVars.length > 0) args.push("--secret-env-vars", secretEnvVars.join(","));
+
+    // Extra args and session
     if (extraArgs.length > 0) args.push(...extraArgs);
     if (resumeSessionId) args.push("--resume", resumeSessionId);
+
     return args;
   };
 
@@ -250,10 +341,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,
       sessionDisplayId: resolvedSessionId,
-      provider: "github",
-      biller: "github",
+      provider: providerBaseUrl ? (providerType || "custom") : "github",
+      biller: providerBaseUrl ? (providerType || "custom") : "github",
       model: attempt.parsed.model || model || null,
-      billingType: "subscription",
+      billingType: providerBaseUrl ? "api" : "subscription",
       costUsd: null,
       resultJson: {
         stdout: attempt.proc.stdout,

@@ -169,6 +169,40 @@ export async function testEnvironment(
     });
   }
 
+  // Check configured model and first-launch info from config
+  try {
+    const configPath = path.join(os.homedir(), ".copilot", "config.json");
+    const raw = await readFile(configPath, "utf8");
+    const cfg = parseJson(raw);
+    if (cfg) {
+      const model = asString(cfg.model, "");
+      const firstLaunch = asString(cfg.firstLaunchAt, "");
+      const details: string[] = [];
+      if (model) details.push(`Model: ${model}`);
+      if (firstLaunch) details.push(`First launch: ${firstLaunch}`);
+      if (details.length > 0) {
+        checks.push({
+          code: "copilot_config_info",
+          level: "info",
+          message: "Copilot configuration loaded.",
+          detail: details.join(", "),
+        });
+      }
+    }
+  } catch { /* config already checked above */ }
+
+  // Detect BYOK (Bring Your Own Key) provider configuration
+  const byokUrl = asString(envConfig.COPILOT_PROVIDER_BASE_URL, "") || process.env.COPILOT_PROVIDER_BASE_URL || "";
+  if (byokUrl) {
+    const byokType = asString(envConfig.COPILOT_PROVIDER_TYPE, "") || process.env.COPILOT_PROVIDER_TYPE || "openai";
+    checks.push({
+      code: "copilot_byok_configured",
+      level: "info",
+      message: `BYOK provider configured: ${byokType}`,
+      detail: `Endpoint: ${byokUrl}`,
+    });
+  }
+
   // Probe a quick request to check quota/subscription status
   if (canRunProbe && commandLooksLike(command, "copilot")) {
     const quotaProbe = await runChildProcess(
@@ -197,6 +231,16 @@ export async function testEnvironment(
         code: "copilot_subscription_active",
         level: "info",
         message: "Copilot subscription is active and quota is available.",
+      });
+    }
+
+    // Check if GitHub MCP server is connected in the quota probe output
+    if (combined.includes("mcp") || combined.includes("MCP")) {
+      checks.push({
+        code: "copilot_mcp_server_detected",
+        level: "info",
+        message: "GitHub MCP server connection detected in Copilot output.",
+        detail: "MCP server appears to be connected.",
       });
     }
   }

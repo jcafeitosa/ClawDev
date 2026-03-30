@@ -46,25 +46,64 @@ export const agentConfigurationDoc = `# copilot_local agent configuration
 Adapter: copilot_local
 
 Core fields:
-- cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
-- model (string, optional): Copilot model id with optional effort suffix.
-  Plain model: "claude-sonnet-4.6", "gpt-5.3-codex"
-  With effort: "gpt-5.4-mini:low", "claude-opus-4.6:high"
-  Effort levels: low, medium, high, xhigh
-- effort (string, optional): reasoning effort override — "low", "medium", "high", or "xhigh". Overridden by model suffix if present.
-- promptTemplate (string, optional): run prompt template
+- cwd (string, optional): default absolute working directory
+- model (string, optional): model id with optional effort suffix "model:effort" (e.g. "gpt-5.4-mini:low", "claude-opus-4.6:high")
+- effort (string, optional): reasoning effort level — "low", "medium", "high", or "xhigh". Overridden by model suffix.
+- promptTemplate (string, optional): run prompt template with {{agent.id}}, {{agent.name}} etc.
+- instructionsFilePath (string, optional): absolute path to markdown instructions file prepended to prompt
 - command (string, optional): defaults to "copilot"
 - extraArgs (string[], optional): additional CLI args
 - env (object, optional): KEY=VALUE environment variables
+- configDir (string, optional): override Copilot config directory (--config-dir)
+
+Permissions fields:
+- yolo (boolean, optional): enable all permissions — tools, paths, URLs. Default: true for ClawDev agents
+- allowAllTools (boolean, optional): auto-approve all tools without confirmation
+- allowAllPaths (boolean, optional): disable file path verification
+- allowAllUrls (boolean, optional): allow all URL access
+- allowTools (string[], optional): specific tools to auto-approve (e.g. ["shell(git:*)", "write"])
+- denyTools (string[], optional): tools to deny (takes precedence over allow)
+- allowUrls (string[], optional): specific URLs/domains to allow
+- denyUrls (string[], optional): URLs/domains to deny
+- availableTools (string[], optional): only these tools available to the model
+- excludedTools (string[], optional): these tools excluded from the model
+
+Directory/Path fields:
+- addDirs (string[], optional): additional directories to allow for file access (--add-dir)
+
+Agent/Behavior fields:
+- agent (string, optional): custom agent name to use (--agent)
+- autopilot (boolean, optional): enable autopilot continuation in prompt mode
+- maxAutopilotContinues (number, optional): max continuation messages in autopilot
+- noAskUser (boolean, optional): disable ask_user tool — agent works autonomously
+- noCustomInstructions (boolean, optional): disable loading AGENTS.md and related files
+- experimental (boolean, optional): enable experimental features
+
+MCP fields:
+- additionalMcpConfig (string, optional): JSON string or @filepath for additional MCP servers
+- disableBuiltinMcps (boolean, optional): disable all built-in MCP servers
+- disableMcpServers (string[], optional): specific MCP servers to disable
+- addGithubMcpTools (string[], optional): additional GitHub MCP tools to enable
+- addGithubMcpToolsets (string[], optional): additional GitHub MCP toolsets
+- enableAllGithubMcpTools (boolean, optional): enable all GitHub MCP tools
+
+BYOK fields:
+- providerBaseUrl (string, optional): custom provider URL via COPILOT_PROVIDER_BASE_URL
+- providerType (string, optional): "openai" | "azure" | "anthropic" via COPILOT_PROVIDER_TYPE
+- providerApiKey (string, optional): API key for custom provider
+- providerModel (string, optional): model name for BYOK via COPILOT_MODEL
+
+Output fields:
+- secretEnvVars (string[], optional): env var names to redact from output
 
 Operational fields:
 - timeoutSec (number, optional): run timeout in seconds
 - graceSec (number, optional): SIGTERM grace period in seconds
 
 Notes:
-- Prompts are passed via -p flag with --yolo for auto-approval.
-- Output is captured via --output-format json (JSONL stream).
-- Sessions are resumed via --resume=<sessionId>.
-- The copilot CLI must be authenticated via \`copilot login\` before use.
-- BYOK mode is supported via COPILOT_PROVIDER_BASE_URL and COPILOT_MODEL env vars.
+- Prompts are passed via -p flag with --yolo for auto-approval by default
+- Output captured via --output-format json (JSONL stream)
+- Sessions resumed via --resume=<sessionId>
+- Authenticate via \`copilot login\`
+- BYOK via COPILOT_PROVIDER_BASE_URL + COPILOT_MODEL env vars
 `;
