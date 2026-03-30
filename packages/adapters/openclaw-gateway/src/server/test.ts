@@ -90,6 +90,11 @@ function rawDataToString(data: unknown): string {
   return String(data ?? "");
 }
 
+interface ProbeResult {
+  status: "ok" | "challenge_only" | "failed";
+  payload?: Record<string, unknown>;
+}
+
 async function probeGateway(input: {
   url: string;
   headers: Record<string, string>;
@@ -97,7 +102,7 @@ async function probeGateway(input: {
   role: string;
   scopes: string[];
   timeoutMs: number;
-}): Promise<"ok" | "challenge_only" | "failed"> {
+}): Promise<ProbeResult> {
   return await new Promise((resolve) => {
     const ws = new WebSocket(input.url, { headers: input.headers, maxPayload: 2 * 1024 * 1024 });
     const timeout = setTimeout(() => {
@@ -106,12 +111,12 @@ async function probeGateway(input: {
       } catch {
         // ignore
       }
-      resolve("failed");
+      resolve({ status: "failed" });
     }, input.timeoutMs);
 
     let completed = false;
 
-    const finish = (status: "ok" | "challenge_only" | "failed") => {
+    const finish = (result: ProbeResult) => {
       if (completed) return;
       completed = true;
       clearTimeout(timeout);
@@ -120,7 +125,7 @@ async function probeGateway(input: {
       } catch {
         // ignore
       }
-      resolve(status);
+      resolve(result);
     };
 
     ws.on("message", (raw) => {
@@ -134,7 +139,7 @@ async function probeGateway(input: {
       if (event?.type === "event" && event.event === "connect.challenge") {
         const nonce = nonEmpty(asRecord(event.payload)?.nonce);
         if (!nonce) {
-          finish("failed");
+          finish({ status: "failed" });
           return;
         }
 
@@ -170,19 +175,20 @@ async function probeGateway(input: {
 
       if (event?.type === "res") {
         if (event.ok === true) {
-          finish("ok");
+          const resPayload = asRecord(event.payload) ?? undefined;
+          finish({ status: "ok", payload: resPayload });
         } else {
-          finish("challenge_only");
+          finish({ status: "challenge_only" });
         }
       }
     });
 
     ws.on("error", () => {
-      finish("failed");
+      finish({ status: "failed" });
     });
 
     ws.on("close", () => {
-      if (!completed) finish("failed");
+      if (!completed) finish({ status: "failed" });
     });
   });
 }
@@ -278,13 +284,25 @@ export async function testEnvironment(
         timeoutMs: 3_000,
       });
 
-      if (probeResult === "ok") {
+      if (probeResult.status === "ok") {
         checks.push({
           code: "openclaw_gateway_probe_ok",
           level: "info",
           message: "Gateway connect probe succeeded.",
         });
-      } else if (probeResult === "challenge_only") {
+
+        const versionValue =
+          nonEmpty(probeResult.payload?.version) ??
+          nonEmpty(probeResult.payload?.serverVersion) ??
+          nonEmpty(probeResult.payload?.gatewayVersion);
+        if (versionValue) {
+          checks.push({
+            code: "openclaw_gateway_version",
+            level: "info",
+            message: `Gateway version: ${versionValue}`,
+          });
+        }
+      } else if (probeResult.status === "challenge_only") {
         checks.push({
           code: "openclaw_gateway_probe_challenge_only",
           level: "warn",
@@ -306,6 +324,56 @@ export async function testEnvironment(
         message: err instanceof Error ? err.message : "Gateway probe failed",
       });
     }
+  }
+
+  // Device auth status
+  const disableDeviceAuth = config.disableDeviceAuth === true;
+  const devicePrivateKeyPem = nonEmpty(config.devicePrivateKeyPem);
+
+  if (disableDeviceAuth) {
+    checks.push({
+      code: "openclaw_gateway_device_auth_disabled",
+      level: "info",
+      message: "Device authentication disabled",
+    });
+  } else if (devicePrivateKeyPem) {
+    checks.push({
+      code: "openclaw_gateway_device_auth_configured",
+      level: "info",
+      message: "Device authentication: configured key",
+    });
+  } else {
+    checks.push({
+      code: "openclaw_gateway_device_auth_ephemeral",
+      level: "info",
+      message: "Device authentication: ephemeral key (auto-generated)",
+    });
+  }
+
+  // Session key strategy
+  const sessionKeyStrategy = nonEmpty(config.sessionKeyStrategy) ?? "issue";
+  checks.push({
+    code: "openclaw_gateway_session_strategy",
+    level: "info",
+    message: `Session strategy: ${sessionKeyStrategy}`,
+  });
+
+  // Auto-pair status
+  const autoPairOnFirstConnect =
+    config.autoPairOnFirstConnect !== undefined ? config.autoPairOnFirstConnect === true : true;
+
+  if (autoPairOnFirstConnect && (authToken || password)) {
+    checks.push({
+      code: "openclaw_gateway_auto_pair_enabled",
+      level: "info",
+      message: "Auto-pair on first connect: enabled",
+    });
+  } else if (!autoPairOnFirstConnect) {
+    checks.push({
+      code: "openclaw_gateway_auto_pair_disabled",
+      level: "info",
+      message: "Auto-pair: disabled",
+    });
   }
 
   return {

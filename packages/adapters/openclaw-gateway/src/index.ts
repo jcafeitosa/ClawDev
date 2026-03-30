@@ -28,8 +28,11 @@ Gateway connect identity fields:
 - role (string, optional): gateway role (default operator)
 - scopes (string[] | comma string, optional): gateway scopes (default ["operator.admin"])
 - disableDeviceAuth (boolean, optional): disable signed device payload in connect params (default false)
+- deviceFamily (string, optional): device family identifier for gateway device registry
+- devicePrivateKeyPem (string, optional): ED25519 private key PEM for device authentication. If not provided, an ephemeral key pair is auto-generated.
 
 Request behavior fields:
+- agentId (string, optional): configured OpenClaw agent ID to invoke
 - payloadTemplate (object, optional): additional fields merged into gateway agent params
 - workspaceRuntime (object, optional): desired runtime service intents; ClawDev forwards these in a standardized clawdev.workspaceRuntime block for remote execution environments
 - timeoutSec (number, optional): adapter timeout in seconds (default 120)
@@ -51,4 +54,10 @@ Standard result metadata supported:
 - meta.runtimeServices (array, optional): normalized adapter-managed runtime service reports
 - meta.previewUrl (string, optional): shorthand single preview URL
 - meta.previewUrls (string[], optional): shorthand multiple preview URLs
+
+Security:
+- Device authentication uses ED25519 signing with v3 payload format
+- Keys auto-generated if not configured (ephemeral mode)
+- Sensitive headers/tokens are automatically redacted in logs
+- Gateway supports challenge/response handshake for secure connect
 `;
