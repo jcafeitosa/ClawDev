@@ -1,6 +1,8 @@
 import type { Db } from "@clawdev/db";
+import type { AdapterModel, AdapterModelStatus } from "@clawdev/adapter-utils";
 import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
 import { createModelCatalogService, type SyncInput } from "./model-catalog.js";
+import { createProviderStatusService } from "./provider-status.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -26,9 +28,32 @@ export interface ProbeAdapterResult {
 
 const PROBE_TIMEOUT_MS = 30_000;
 
+// ---------------------------------------------------------------------------
+// Helpers – map adapter model status to provider_model_status values
+// ---------------------------------------------------------------------------
+
+function adapterStatusToProviderStatus(
+  adapterStatus: AdapterModelStatus | undefined,
+): "available" | "unavailable" | "cooldown" {
+  switch (adapterStatus) {
+    case "unavailable":
+    case "auth_required":
+    case "degraded":
+      return "unavailable";
+    case "quota_exceeded":
+      return "cooldown";
+    case "available":
+    case "unknown":
+    default:
+      // If discovered at all, treat as available unless explicitly marked otherwise
+      return "available";
+  }
+}
+
 export function createModelDiscoveryService(
   db: Db,
   catalogService: ReturnType<typeof createModelCatalogService>,
+  providerStatusService?: ReturnType<typeof createProviderStatusService>,
 ) {
   return {
     /**
@@ -47,6 +72,8 @@ export function createModelDiscoveryService(
       const allModels: SyncInput[] = [];
       const errors: Array<{ adapterType: string; error: string }> = [];
       const freshModelsByAdapter = new Map<string, string[]>();
+      // Track raw adapter models so we can update provider status with their status fields
+      const rawModelsByAdapter = new Map<string, AdapterModel[]>();
       let adaptersProbed = 0;
 
       const probeResults = await Promise.allSettled(
@@ -91,10 +118,52 @@ export function createModelDiscoveryService(
         }
 
         freshModelsByAdapter.set(adapterType, modelIds);
+        rawModelsByAdapter.set(adapterType, models);
       }
 
       // Sync all discovered models into the catalog
       const syncResult = await catalogService.syncFromAdapters(allModels);
+
+      // Update provider_model_status for each discovered model
+      if (providerStatusService) {
+        for (const [adapterType, models] of rawModelsByAdapter) {
+          for (const model of models) {
+            try {
+              const mappedStatus = adapterStatusToProviderStatus(model.status);
+
+              if (mappedStatus === "cooldown") {
+                // Use a 5-minute cooldown window for quota_exceeded models
+                const cooldownUntil = new Date(Date.now() + 5 * 60 * 1000);
+                await providerStatusService.markCooldown(
+                  adapterType,
+                  model.id,
+                  cooldownUntil,
+                  model.statusDetail ?? "quota_exceeded during discovery",
+                );
+              } else {
+                await providerStatusService.updateStatus(
+                  adapterType,
+                  model.id,
+                  mappedStatus,
+                  model.statusDetail,
+                );
+              }
+
+              // Record a successful probe result for each discovered model
+              await providerStatusService.recordProbeResult(
+                adapterType,
+                model.id,
+                mappedStatus === "available",
+              );
+            } catch (err) {
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              console.log(
+                `[model-discovery] failed to update provider status for ${adapterType}/${model.id}: ${errorMsg}`,
+              );
+            }
+          }
+        }
+      }
 
       // Mark stale models for each adapter that was successfully probed
       for (const [adapterType, freshIds] of freshModelsByAdapter) {
@@ -138,6 +207,43 @@ export function createModelDiscoveryService(
         }));
 
         await catalogService.syncFromAdapters(syncInputs);
+
+        // Update provider_model_status for each discovered model
+        if (providerStatusService) {
+          for (const model of models) {
+            try {
+              const mappedStatus = adapterStatusToProviderStatus(model.status);
+
+              if (mappedStatus === "cooldown") {
+                const cooldownUntil = new Date(Date.now() + 5 * 60 * 1000);
+                await providerStatusService.markCooldown(
+                  adapterType,
+                  model.id,
+                  cooldownUntil,
+                  model.statusDetail ?? "quota_exceeded during discovery",
+                );
+              } else {
+                await providerStatusService.updateStatus(
+                  adapterType,
+                  model.id,
+                  mappedStatus,
+                  model.statusDetail,
+                );
+              }
+
+              await providerStatusService.recordProbeResult(
+                adapterType,
+                model.id,
+                mappedStatus === "available",
+              );
+            } catch (err) {
+              const errorMsg = err instanceof Error ? err.message : String(err);
+              console.log(
+                `[model-discovery] failed to update provider status for ${adapterType}/${model.id}: ${errorMsg}`,
+              );
+            }
+          }
+        }
 
         // Mark models not in this probe as stale
         const freshIds = models.map((m) => m.id);

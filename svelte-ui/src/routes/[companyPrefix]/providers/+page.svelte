@@ -61,6 +61,7 @@
     status: string;
     inputPriceMicro: number;
     outputPriceMicro: number;
+    isFree: boolean;
     lastProbed: string | null;
   }
 
@@ -165,7 +166,11 @@
     if (filterCapability !== 'all') {
       result = result.filter((m) => m.capabilities?.includes(filterCapability));
     }
-    return result;
+    return [...result].sort((a, b) => {
+      const scoreDiff = getModelSortScore(b) - getModelSortScore(a);
+      if (scoreDiff !== 0) return scoreDiff;
+      return a.label.localeCompare(b.label);
+    });
   });
 
   const HIDDEN_ADAPTERS = ['process', 'http'];
@@ -226,14 +231,15 @@
         modelId: m.modelId ?? m.id ?? '',
         label: m.label ?? m.name ?? m.modelId ?? '',
         adapterType: m.adapterType ?? m.adapter ?? m.provider ?? '',
-        providerName: m.providerName ?? m.adapterType ?? m.adapter ?? '',
+        providerName: m.providerName ?? m.provider ?? m.adapterType ?? m.adapter ?? '',
         tier: m.tier ?? 'paid',
         capabilities: m.capabilities ?? [],
         contextWindow: m.contextWindow ?? m.maxTokens ?? 0,
-        status: m.status ?? m.circuitState ?? 'unknown',
+        status: (m.circuitState && m.circuitState !== 'unknown') ? m.circuitState : (m.status && m.status !== 'unknown') ? m.status : 'available',
         inputPriceMicro: m.inputPriceMicro ?? m.inputCostMicro ?? 0,
         outputPriceMicro: m.outputPriceMicro ?? m.outputCostMicro ?? 0,
-        lastProbed: m.lastProbed ?? m.lastHealthCheck ?? null,
+        isFree: m.isFree === true,
+        lastProbed: m.lastProbeAt ?? m.lastHealthCheck ?? m.lastProbedAt ?? m.lastProbed ?? null,
       }));
     } catch {
       models = [];
@@ -255,14 +261,14 @@
         adapterType: p.adapterType,
         displayName: p.label ?? p.displayName ?? p.adapterType,
         models: (p.models ?? []).map((m: any) => ({
-          modelId: m.id ?? m.modelId ?? '',
-          modelName: m.name ?? m.id ?? '',
-          status: m.circuitState === 'CLOSED' ? 'available' : m.circuitState === 'HALF_OPEN' ? 'cooldown' : m.circuitState === 'OPEN' ? 'unavailable' : (m.status ?? 'unknown'),
+          modelId: m.modelId ?? m.id ?? '',
+          modelName: m.name ?? m.modelId ?? m.id ?? '',
+          status: (m.status && m.status !== 'unknown') ? m.status : (m.circuitState && m.circuitState !== 'unknown') ? m.circuitState : 'available',
           cooldownEndsAt: m.cooldownEndsAt ?? null,
           avgLatencyMs: m.avgLatencyMs ?? null,
-          errorRate: m.errorRate ?? null,
+          errorRate: m.errorRate ?? m.errorRatePercent ?? null,
           consecutiveFailures: m.failureCount ?? m.consecutiveFailures ?? 0,
-          lastProbed: m.lastProbed ?? m.lastHealthCheck ?? null,
+          lastProbed: m.lastProbed ?? m.lastHealthCheck ?? m.lastProbeAt ?? null,
         })),
       }));
     } catch {
@@ -406,13 +412,14 @@
   }
 
   function formatPrice(micro: number): string {
-    if (!micro || micro <= 0) return 'Free';
+    if (!micro || micro <= 0) return '$0.00';
     return `$${(micro / 1_000_000).toFixed(2)}`;
   }
 
-  function formatPricing(inputMicro: number, outputMicro: number): string {
-    if ((!inputMicro || inputMicro <= 0) && (!outputMicro || outputMicro <= 0)) return 'Free';
-    return `${formatPrice(inputMicro)}/M in / ${formatPrice(outputMicro)}/M out`;
+  function formatPricing(model: Model): string {
+    if (model.isFree) return 'Free';
+    if ((!model.inputPriceMicro || model.inputPriceMicro <= 0) && (!model.outputPriceMicro || model.outputPriceMicro <= 0)) return '\u2014';
+    return `${formatPrice(model.inputPriceMicro)}/M in / ${formatPrice(model.outputPriceMicro)}/M out`;
   }
 
   // ── Status styling ────────────────────────────────────────────────
@@ -423,7 +430,7 @@
     HALF_OPEN: { dot: 'bg-yellow-500', bg: 'bg-yellow-500/10', text: 'text-yellow-600 dark:text-yellow-400', label: 'Cooldown' },
     unavailable: { dot: 'bg-red-500', bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Unavailable' },
     OPEN: { dot: 'bg-red-500', bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Unavailable' },
-    unknown: { dot: 'bg-gray-400', bg: 'bg-gray-500/10', text: 'text-gray-500 dark:text-gray-400', label: 'Unknown' },
+    unknown: { dot: 'bg-sky-400', bg: 'bg-sky-500/10', text: 'text-sky-600 dark:text-sky-400', label: 'Discovered' },
   };
 
   function getStatusStyle(status: string) {
@@ -432,6 +439,7 @@
 
   const TIER_STYLES: Record<string, { bg: string; text: string }> = {
     free: { bg: 'bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400' },
+    budget: { bg: 'bg-teal-500/10', text: 'text-teal-600 dark:text-teal-400' },
     paid: { bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400' },
     premium: { bg: 'bg-violet-500/10', text: 'text-violet-600 dark:text-violet-400' },
     standard: { bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400' },
@@ -465,6 +473,48 @@
     { value: 'availability_optimized', label: 'Availability', description: 'Prefer the most reliable model' },
     { value: 'local_preferred', label: 'Local Preferred', description: 'Prefer locally-run models when available' },
   ];
+
+  // ── Billing type inference ─────────────────────────────────────
+  type BillingType = 'subscription' | 'api' | 'unknown';
+
+  const BILLING_STYLES: Record<BillingType, { bg: string; text: string; label: string }> = {
+    subscription: { bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400', label: 'Subscription' },
+    api: { bg: 'bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400', label: 'API' },
+    unknown: { bg: '', text: '', label: '\u2014' },
+  };
+
+  function inferBillingType(adapterType: string, tier: string): BillingType {
+    switch (adapterType) {
+      case 'copilot_local':
+        return 'subscription';
+      case 'opencode_local':
+        return tier === 'free' ? 'api' : 'subscription';
+      case 'pi_local':
+        return 'api';
+      case 'claude_local':
+      case 'codex_local':
+      case 'gemini_local':
+        return tier === 'free' || tier === 'premium' ? 'subscription' : 'api';
+      default:
+        if (adapterType.endsWith('_local')) return 'subscription';
+        return 'api';
+    }
+  }
+
+  // ── Tier sort priority (higher = first) ──────────────────────────
+  const TIER_PRIORITY: Record<string, number> = {
+    premium: 5,
+    standard: 4,
+    budget: 3,
+    paid: 2,
+    free: 1,
+  };
+
+  function getModelSortScore(model: Model): number {
+    const hasEnrichment = (model.capabilities?.length > 0 || model.inputPriceMicro > 0 || model.outputPriceMicro > 0 || model.contextWindow > 0) ? 1000 : 0;
+    const tierScore = (TIER_PRIORITY[model.tier] ?? 0) * 100;
+    return hasEnrichment + tierScore;
+  }
 
   // New fallback model to add
   let newFallbackModel = $state('');
@@ -642,9 +692,11 @@
             class="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
           >
             <option value="all">All Tiers</option>
-            <option value="free">Free</option>
-            <option value="paid">Paid</option>
             <option value="premium">Premium</option>
+            <option value="standard">Standard</option>
+            <option value="budget">Budget</option>
+            <option value="paid">Paid</option>
+            <option value="free">Free</option>
           </select>
           <select
             bind:value={filterCapability}
@@ -657,6 +709,17 @@
           </select>
         </div>
       </div>
+
+      <!-- Model count -->
+      {#if !modelsLoading && models.length > 0}
+        <p class="text-xs text-muted-foreground">
+          {#if filteredModels.length !== models.length}
+            Showing {filteredModels.length} of {models.length} models
+          {:else}
+            {models.length} models
+          {/if}
+        </p>
+      {/if}
 
       <!-- Models Table -->
       {#if modelsLoading}
@@ -679,6 +742,7 @@
               <tr class="border-b border-border bg-muted/50">
                 <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Model</th>
                 <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Provider</th>
+                <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Billing</th>
                 <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tier</th>
                 <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Capabilities</th>
                 <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Context</th>
@@ -691,6 +755,8 @@
               {#each filteredModels as model (model.id)}
                 {@const statusStyle = getStatusStyle(model.status)}
                 {@const tierStyle = getTierStyle(model.tier)}
+                {@const billing = inferBillingType(model.adapterType, model.tier)}
+                {@const billingStyle = BILLING_STYLES[billing]}
                 <tr class="border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
                   <td class="px-4 py-3">
                     <div>
@@ -703,6 +769,15 @@
                       <ProviderIcon adapterType={model.adapterType} size={16} />
                       <span class="text-sm text-foreground">{model.providerName}</span>
                     </div>
+                  </td>
+                  <td class="px-4 py-3">
+                    {#if billing !== 'unknown'}
+                      <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {billingStyle.bg} {billingStyle.text}">
+                        {billingStyle.label}
+                      </span>
+                    {:else}
+                      <span class="text-xs text-muted-foreground">{billingStyle.label}</span>
+                    {/if}
                   </td>
                   <td class="px-4 py-3">
                     <span class="inline-flex rounded-full px-2 py-0.5 text-xs font-medium {tierStyle.bg} {tierStyle.text}">
@@ -731,7 +806,7 @@
                     </span>
                   </td>
                   <td class="px-4 py-3 text-right text-xs text-muted-foreground whitespace-nowrap">
-                    {formatPricing(model.inputPriceMicro, model.outputPriceMicro)}
+                    {formatPricing(model)}
                   </td>
                   <td class="px-4 py-3 text-right">
                     <TimeAgo date={model.lastProbed} class="text-xs" />

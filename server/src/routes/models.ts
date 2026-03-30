@@ -28,7 +28,7 @@ function parseDateParam(value: unknown, label: string): Date | undefined {
 export function modelRoutes(db: Db) {
   const catalog = createModelCatalogService(db);
   const providerStatus = createProviderStatusService(db);
-  const discovery = createModelDiscoveryService(db, catalog);
+  const discovery = createModelDiscoveryService(db, catalog, providerStatus);
   const router = createModelRouterService(db, providerStatus);
 
   return new Elysia()
@@ -46,7 +46,7 @@ export function modelRoutes(db: Db) {
         const isLocal =
           query.isLocal === "true" ? true : query.isLocal === "false" ? false : undefined;
 
-        const models = await catalog.listModels({
+        const catalogModels = await catalog.listModels({
           adapterType: query.adapterType as string | undefined,
           provider: query.provider as string | undefined,
           tier: query.tier as string | undefined,
@@ -54,6 +54,31 @@ export function modelRoutes(db: Db) {
           isFree,
           isLocal,
           search: query.search as string | undefined,
+        });
+
+        // Fetch all live status rows and build a lookup map
+        const statusRows = await db.select().from(providerModelStatus);
+        const statusMap = new Map(
+          statusRows.map((s) => [`${s.adapterType}::${s.modelId}`, s]),
+        );
+
+        // Enrich catalog models with live status data
+        const models = catalogModels.map((m) => {
+          const status = statusMap.get(`${m.adapterType}::${m.modelId}`);
+          return {
+            ...m,
+            // Live status fields
+            circuitState: status?.status ?? "unknown",
+            avgLatencyMs: status?.avgLatencyMs ?? null,
+            p95LatencyMs: status?.p95LatencyMs ?? null,
+            errorRatePercent: status?.errorRatePercent ?? null,
+            consecutiveFailures: status?.consecutiveFailures ?? 0,
+            cooldownUntil: status?.cooldownUntil ?? null,
+            cooldownReason: status?.cooldownReason ?? null,
+            lastProbeStatus: status?.lastProbeStatus ?? null,
+            lastProbeAt: status?.lastProbeAt ?? m.lastProbedAt ?? null,
+            lastHealthCheck: status?.lastProbeAt ?? m.lastProbedAt ?? null,
+          };
         });
 
         return { models };
@@ -153,19 +178,56 @@ export function modelRoutes(db: Db) {
           statusSummary.map((s) => [s.provider, s]),
         );
 
-        // Also gather catalog counts per adapter to include total catalog models
+        // Gather catalog models per adapter (for total count and model labels)
         const catalogModels = await catalog.listModels();
-        const catalogCountByAdapter = new Map<string, number>();
+        const catalogByAdapter = new Map<string, typeof catalogModels>();
         for (const m of catalogModels) {
-          catalogCountByAdapter.set(
-            m.adapterType,
-            (catalogCountByAdapter.get(m.adapterType) ?? 0) + 1,
-          );
+          const list = catalogByAdapter.get(m.adapterType) ?? [];
+          list.push(m);
+          catalogByAdapter.set(m.adapterType, list);
+        }
+
+        // Fetch all live status rows for per-model detail
+        const allStatusRows = await db.select().from(providerModelStatus);
+        const statusRowsByAdapter = new Map<string, typeof allStatusRows>();
+        for (const row of allStatusRows) {
+          const list = statusRowsByAdapter.get(row.adapterType) ?? [];
+          list.push(row);
+          statusRowsByAdapter.set(row.adapterType, list);
         }
 
         const summary = adapters.map((adapter) => {
           const status = statusByAdapter.get(adapter.type);
-          const catalogTotal = catalogCountByAdapter.get(adapter.type) ?? 0;
+          const adapterCatalog = catalogByAdapter.get(adapter.type) ?? [];
+          const adapterStatuses = statusRowsByAdapter.get(adapter.type) ?? [];
+          const catalogTotal = adapterCatalog.length;
+
+          // Build a status lookup by modelId for this adapter
+          const statusByModelId = new Map(
+            adapterStatuses.map((s) => [s.modelId, s]),
+          );
+
+          // Per-model details: merge catalog info with live status
+          const models = adapterCatalog.map((cm) => {
+            const ms = statusByModelId.get(cm.modelId);
+            return {
+              id: cm.modelId,
+              modelId: cm.modelId,
+              name: cm.label ?? cm.modelId,
+              circuitState: ms?.status ?? "unknown",
+              status: ms?.status ?? "unknown",
+              avgLatencyMs: ms?.avgLatencyMs ?? null,
+              errorRate: ms?.errorRatePercent ?? null,
+              failureCount: ms?.consecutiveFailures ?? 0,
+              cooldownEndsAt: ms?.cooldownUntil ?? null,
+              lastProbed: ms?.lastProbeAt ?? cm.lastProbedAt ?? null,
+              lastHealthCheck: ms?.lastProbeAt ?? cm.lastProbedAt ?? null,
+            };
+          });
+
+          // When provider_model_status has no rows for this adapter,
+          // fall back to catalog counts so the dashboard shows meaningful totals
+          const hasStatusRows = status && status.total > 0;
 
           return {
             adapterType: adapter.type,
@@ -174,10 +236,11 @@ export function modelRoutes(db: Db) {
               : adapter.type,
             provider: adapter.type,
             totalCatalog: catalogTotal,
-            total: status?.total ?? 0,
-            available: status?.available ?? 0,
+            total: hasStatusRows ? status.total : catalogTotal,
+            available: hasStatusRows ? status.available : catalogTotal,
             cooldown: status?.cooldown ?? 0,
             unavailable: status?.unavailable ?? 0,
+            models,
           };
         });
 
