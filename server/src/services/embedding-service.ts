@@ -46,11 +46,8 @@ interface EmbeddingProvider {
   readonly dimensions: number;
 }
 
-/** Configuration for the embedding provider — built once at server startup. */
-export type EmbeddingProviderConfig =
-  | { type: "openai"; apiKey: string; model?: string; dimensions?: number }
-  | { type: "local"; baseUrl: string; model: string; dimensions?: number }
-  | null;
+import type { EmbeddingProviderConfig } from "@clawdev/shared";
+export type { EmbeddingProviderConfig } from "@clawdev/shared";
 
 // ---------------------------------------------------------------------------
 // OpenAI provider

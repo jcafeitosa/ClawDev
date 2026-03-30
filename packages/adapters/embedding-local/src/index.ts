@@ -18,7 +18,7 @@
  * ```
  */
 
-import type { EmbeddingProviderConfig } from "@clawdev/server/services/embedding-service.js";
+import type { EmbeddingProviderConfig } from "@clawdev/shared";
 
 // Re-export constants for consumers
 export const LOCAL_EMBEDDING_DEFAULTS = {

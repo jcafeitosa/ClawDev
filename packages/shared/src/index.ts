@@ -580,3 +580,9 @@ export {
   type SecretsLocalEncryptedConfig,
   type ConfigMeta,
 } from "./config-schema.js";
+
+/** Configuration for the embedding provider — built once at server startup. */
+export type EmbeddingProviderConfig =
+  | { type: "openai"; apiKey: string; model?: string; dimensions?: number }
+  | { type: "local"; baseUrl: string; model: string; dimensions?: number }
+  | null;

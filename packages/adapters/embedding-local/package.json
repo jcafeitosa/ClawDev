@@ -41,6 +41,9 @@
     "build": "tsc",
     "clean": "rm -rf dist"
   },
+  "dependencies": {
+    "@clawdev/shared": "workspace:*"
+  },
   "devDependencies": {
     "@types/node": "^24.12.0",
     "tsx": "^4.21.0",
