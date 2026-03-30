@@ -37,6 +37,10 @@ import { createPluginToolDispatcher } from "./services/plugin-tool-dispatcher.js
 import { createBullMQJobScheduler } from "./services/bullmq-job-scheduler.js";
 import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
 import { isRedisAvailable, disconnectRedis } from "./services/redis.js";
+import {
+  type EmbeddingProviderConfig,
+  ensureEmbeddingDimensions,
+} from "./services/embedding-service.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -555,13 +559,78 @@ export async function startServer(): Promise<StartedServer> {
   }
   jobScheduler.start();
 
-  // ── OpenAI key for pgvector semantic search ───────────────────────────────
+  // ── Embedding provider (pgvector semantic search) ─────────────────────────
+  //
+  // Resolution order:
+  //   1. EMBEDDING_PROVIDER=local  → local llama.cpp / Ollama endpoint
+  //   2. EMBEDDING_PROVIDER=openai → OpenAI API (needs OPENAI_API_KEY)
+  //   3. EMBEDDING_BASE_URL set    → auto-select local
+  //   4. OPENAI_API_KEY set        → auto-select openai
+  //   5. Neither set               → disabled (returns empty search results)
+  //
+  // Env vars:
+  //   EMBEDDING_PROVIDER    = "openai" | "local"   (optional, auto-detected)
+  //   OPENAI_API_KEY        = sk-...               (required for openai)
+  //   EMBEDDING_BASE_URL    = http://localhost:8080 (required for local)
+  //   EMBEDDING_MODEL       = model name            (optional, provider default)
+  //   EMBEDDING_DIMENSIONS  = 1536                  (optional, default 1536)
+  //
+  // Recommended local models (via llama.cpp or Ollama):
+  //   Qwen/Qwen3-Embedding   — best quality, supports Matryoshka dims
+  //   nomic-embed-text       — fast, solid quality
+  //   mxbai-embed-large      — high quality
+  //
+  const embeddingDimensions = parseInt(process.env.EMBEDDING_DIMENSIONS ?? "1536", 10) || 1536;
+  const embeddingProviderEnv = process.env.EMBEDDING_PROVIDER?.trim().toLowerCase();
   const openaiApiKey = process.env.OPENAI_API_KEY?.trim() || undefined;
-  if (!openaiApiKey) {
-    logger.warn(
-      "OPENAI_API_KEY not set — semantic search (pgvector embeddings) disabled. " +
-        "Set OPENAI_API_KEY to enable semantic search and duplicate issue detection.",
+  const embeddingBaseUrl = process.env.EMBEDDING_BASE_URL?.trim() || undefined;
+  const embeddingModel = process.env.EMBEDDING_MODEL?.trim() || undefined;
+
+  let embeddingConfig: EmbeddingProviderConfig = null;
+
+  const useLocal =
+    embeddingProviderEnv === "local" ||
+    (embeddingProviderEnv !== "openai" && !!embeddingBaseUrl);
+  const useOpenAI =
+    embeddingProviderEnv === "openai" ||
+    (embeddingProviderEnv !== "local" && !!openaiApiKey && !embeddingBaseUrl);
+
+  if (useLocal && embeddingBaseUrl) {
+    const model = embeddingModel ?? "qwen3-embedding";
+    embeddingConfig = { type: "local", baseUrl: embeddingBaseUrl, model, dimensions: embeddingDimensions };
+    logger.info(
+      { provider: "local", baseUrl: embeddingBaseUrl, model, dimensions: embeddingDimensions },
+      "Embedding provider: local (llama.cpp / Ollama compatible)",
     );
+  } else if (useOpenAI && openaiApiKey) {
+    const model = embeddingModel ?? "text-embedding-3-small";
+    embeddingConfig = { type: "openai", apiKey: openaiApiKey, model, dimensions: embeddingDimensions };
+    logger.info(
+      { provider: "openai", model, dimensions: embeddingDimensions },
+      "Embedding provider: OpenAI",
+    );
+  } else {
+    logger.warn(
+      "Semantic search (pgvector) disabled. To enable, set one of:\n" +
+        "  • OPENAI_API_KEY=sk-...          (uses OpenAI text-embedding-3-small)\n" +
+        "  • EMBEDDING_BASE_URL=http://...  (uses local llama.cpp / Ollama)\n" +
+        "Optionally set EMBEDDING_MODEL and EMBEDDING_DIMENSIONS.",
+    );
+  }
+
+  // Auto-migrate embedding column dimensions if they changed
+  if (embeddingConfig) {
+    try {
+      const dimResult = await ensureEmbeddingDimensions(db as any, embeddingDimensions);
+      if (dimResult.migrated) {
+        logger.info(
+          { from: dimResult.previousDimensions, to: embeddingDimensions },
+          "Embedding column migrated to new dimensions — all embeddings cleared, will regenerate on next access",
+        );
+      }
+    } catch (err) {
+      logger.warn({ err }, "Could not check embedding dimensions — pgvector may not be installed yet");
+    }
   }
 
   const storageService = createStorageServiceFromConfig(config);
@@ -575,7 +644,7 @@ export async function startServer(): Promise<StartedServer> {
     storage: storageService,
     serveUi: config.serveUi,
     resolveSessionFromHeaders,
-    openaiApiKey,
+    embeddingConfig,
     pluginDeps: { jobScheduler, jobStore, workerManager, streamBus, toolDispatcher },
   });
 

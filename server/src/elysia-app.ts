@@ -91,6 +91,7 @@ import type { PluginToolDispatcher } from "./services/plugin-tool-dispatcher.js"
 import { pluginRoutes } from "./routes/plugins.js";
 import { assetRoutes } from "./routes/assets.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR } from "./services/plugin-loader.js";
+import type { EmbeddingProviderConfig } from "./services/embedding-service.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -107,8 +108,8 @@ export interface ElysiaAppOptions {
   serveUi?: boolean;
   localPluginDir?: string;
   resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
-  /** OpenAI API key for pgvector semantic search. When absent, search routes return empty results. */
-  openaiApiKey?: string;
+  /** Embedding provider config (openai | local | null). When null, search returns empty results. */
+  embeddingConfig?: EmbeddingProviderConfig;
   pluginDeps?: {
     jobScheduler: PluginJobScheduler;
     jobStore: PluginJobStore;
@@ -243,7 +244,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     .use(inboxRoutes(db))
     .use(budgetRoutes(db))
     .use(assetRoutes(db, storage))
-    .use(searchRoutes(db, opts.openaiApiKey));
+    .use(searchRoutes(db, opts.embeddingConfig ?? null));
 
   // -- Plugins (conditional — requires plugin deps) --
   if (pluginDeps) {

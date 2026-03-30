@@ -3,15 +3,18 @@
  *
  * Provides pgvector-backed semantic search across issues, goals, and activities.
  * Used by the command palette and duplicate detection.
+ *
+ * Provider is configured via EmbeddingProviderConfig (openai | local).
+ * When config is null the routes return empty results gracefully.
  */
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { embeddingService } from "../services/embedding-service.js";
+import { embeddingService, type EmbeddingProviderConfig } from "../services/embedding-service.js";
 import { companyIdParam } from "../middleware/index.js";
 
-export function searchRoutes(db: Db, openaiApiKey?: string) {
-  const embeddings = embeddingService(db, openaiApiKey);
+export function searchRoutes(db: Db, embeddingConfig: EmbeddingProviderConfig = null) {
+  const embeddings = embeddingService(db, embeddingConfig);
 
   return new Elysia({ prefix: "/search" })
     // Command palette semantic search
@@ -19,10 +22,7 @@ export function searchRoutes(db: Db, openaiApiKey?: string) {
       "/companies/:companyId/semantic",
       async ({ params, query }) => {
         const q = query.q as string;
-        if (!q || q.trim().length === 0) {
-          return { results: [] };
-        }
-
+        if (!q || q.trim().length === 0) return { results: [] };
         const results = await embeddings.commandPaletteSearch(params.companyId, q);
         return { results };
       },
@@ -36,10 +36,7 @@ export function searchRoutes(db: Db, openaiApiKey?: string) {
         const results = await embeddings.findSimilarIssues(
           params.companyId,
           body.content,
-          {
-            limit: body.limit,
-            excludeIssueId: body.excludeIssueId,
-          },
+          { limit: body.limit, excludeIssueId: body.excludeIssueId },
         );
         return { results };
       },
