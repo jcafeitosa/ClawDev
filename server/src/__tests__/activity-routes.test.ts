@@ -1,7 +1,6 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { errorHandler } from "../middleware/index.js";
+import { HttpError } from "../errors.js";
 import { activityRoutes } from "../routes/activity.js";
 
 const mockActivityService = vi.hoisted(() => ({
@@ -26,21 +25,35 @@ vi.mock("../services/index.js", () => ({
 }));
 
 function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "user-1",
-      companyIds: ["company-1"],
-      source: "session",
-      isInstanceAdmin: false,
-    };
-    next();
-  });
-  app.use("/api", activityRoutes({} as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .onError(({ error, set }) => {
+      if (error instanceof HttpError) {
+        set.status = error.status;
+        return error.details ? { error: error.message, details: error.details } : { error: error.message };
+      }
+      set.status = 500;
+      return { error: "Internal server error" };
+    })
+    .derive(() => ({
+      actor: {
+        type: "board",
+        userId: "user-1",
+        companyIds: ["company-1"],
+        source: "session",
+        isInstanceAdmin: false,
+      },
+    }))
+    .use(activityRoutes({} as any));
+}
+
+async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) { init.body = JSON.stringify(body); (init.headers as any)["content-type"] = "application/json"; }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 describe("activity routes", () => {
@@ -59,7 +72,7 @@ describe("activity routes", () => {
       },
     ]);
 
-    const res = await request(createApp()).get("/api/issues/PAP-475/runs");
+    const res = await req(createApp(), "GET", "/api/issues/PAP-475/runs");
 
     expect(res.status).toBe(200);
     expect(mockIssueService.getByIdentifier).toHaveBeenCalledWith("PAP-475");

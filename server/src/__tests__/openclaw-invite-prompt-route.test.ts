@@ -1,8 +1,6 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { accessRoutes } from "../routes/access.js";
-import { errorHandler } from "../middleware/index.js";
 
 const mockAccessService = vi.hoisted(() => ({
   hasPermission: vi.fn(),
@@ -68,23 +66,32 @@ function createDbStub() {
 }
 
 function createApp(actor: Record<string, unknown>, db: Record<string, unknown>) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = actor;
-    next();
-  });
-  app.use(
-    "/api",
-    accessRoutes(db as any, {
-      deploymentMode: "local_trusted",
-      deploymentExposure: "private",
-      bindHost: "127.0.0.1",
-      allowedHostnames: [],
-    }),
-  );
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .derive(() => ({ actor }))
+    .use(accessRoutes(db as any));
+}
+
+async function req(
+  app: any,
+  method: string,
+  path: string,
+  body?: any,
+  headers?: Record<string, string>,
+) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) {
+    init.body = JSON.stringify(body);
+    (init.headers as any)["content-type"] = "application/json";
+  }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = text;
+  }
+  return { status: res.status, body: json, text };
 }
 
 describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
@@ -111,9 +118,7 @@ describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
       db,
     );
 
-    const res = await request(app)
-      .post("/api/companies/company-1/openclaw/invite-prompt")
-      .send({});
+    const res = await req(app, "POST", "/api/companies/company-1/openclaw/invite-prompt", {});
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("Only CEO agents");
@@ -136,9 +141,9 @@ describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
       db,
     );
 
-    const res = await request(app)
-      .post("/api/companies/company-1/openclaw/invite-prompt")
-      .send({ agentMessage: "Join and configure OpenClaw gateway." });
+    const res = await req(app, "POST", "/api/companies/company-1/openclaw/invite-prompt", {
+      agentMessage: "Join and configure OpenClaw gateway.",
+    });
 
     expect(res.status).toBe(201);
     expect(res.body.allowedJoinTypes).toBe("agent");
@@ -160,9 +165,7 @@ describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
       db,
     );
 
-    const res = await request(app)
-      .post("/api/companies/company-1/openclaw/invite-prompt")
-      .send({});
+    const res = await req(app, "POST", "/api/companies/company-1/openclaw/invite-prompt", {});
 
     expect(res.status).toBe(201);
     expect(res.body.allowedJoinTypes).toBe("agent");
@@ -182,9 +185,7 @@ describe("POST /companies/:companyId/openclaw/invite-prompt", () => {
       db,
     );
 
-    const res = await request(app)
-      .post("/api/companies/company-1/openclaw/invite-prompt")
-      .send({});
+    const res = await req(app, "POST", "/api/companies/company-1/openclaw/invite-prompt", {});
 
     expect(res.status).toBe(403);
     expect(res.body.error).toBe("Permission denied");

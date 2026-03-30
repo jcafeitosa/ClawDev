@@ -133,41 +133,47 @@ export function printStartupBanner(opts: StartupBannerOptions): void {
     ? `enabled ${color(`(every ${opts.databaseBackupIntervalMinutes}m, keep ${opts.databaseBackupRetentionDays}d)`, "dim")}`
     : color("disabled", "yellow");
 
+  const v = serverVersion;
   const art = [
-    color("██████╗  █████╗ ██████╗ ███████╗██████╗  ██████╗██╗     ██╗██████╗ ", "cyan"),
-    color("██╔══██╗██╔══██╗██╔══██╗██╔════╝██╔══██╗██╔════╝██║     ██║██╔══██╗", "cyan"),
-    color("██████╔╝███████║██████╔╝█████╗  ██████╔╝██║     ██║     ██║██████╔╝", "cyan"),
-    color("██╔═══╝ ██╔══██║██╔═══╝ ██╔══╝  ██╔══██╗██║     ██║     ██║██╔═══╝ ", "cyan"),
-    color("██║     ██║  ██║██║     ███████╗██║  ██║╚██████╗███████╗██║██║     ", "cyan"),
-    color("╚═╝     ╚═╝  ╚═╝╚═╝     ╚══════╝╚═╝  ╚═╝ ╚═════╝╚══════╝╚═╝╚═╝     ", "cyan"),
+    "",
+    color("   ▄████▄   ██▓    ▄▄▄       █     █░▓█████▄ ▓█████ ██▒   █▓", "cyan"),
+    color("  ▒██▀ ▀█  ▓██▒   ▒████▄    ▓█░ █ ░█░▒██▀ ██▌▓█   ▀▓██░   █▒", "cyan"),
+    color("  ▒▓█    ▄ ▒██░   ▒██  ▀█▄  ▒█░ █ ░█ ░██   █▌▒███   ▓██  █▒░", "blue"),
+    color("  ▒▓▓▄ ▄██▒▒██░   ░██▄▄▄▄██ ░█░ █ ░█ ░▓█▄   ▌▒▓█  ▄  ▒██ █░░", "blue"),
+    color("  ▒ ▓███▀ ░░██████▒▓█   ▓██▒░░██▒██▓ ░▒████▓ ░▒████▒  ▒▀█░  ", "magenta"),
+    color("  ░ ░▒ ▒  ░░ ▒░▓  ░▒▒   ▓▒█░░ ▓░▒ ▒   ▒▒▓  ▒░░ ▒░ ░   ░ ▐░ ", "magenta"),
+    "",
+    color(`     ⚡ ClawDev ${v}`, "cyan") + color(" — AI Agent Orchestration Platform", "dim"),
+    color("     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "blue"),
   ];
 
   const lines = [
-    "",
     ...art,
-    color("  ───────────────────────────────────────────────────────", "blue"),
-    row("Mode", `${dbMode}  |  ${uiMode}`),
-    row("Deploy", `${opts.deploymentMode} (${opts.deploymentExposure})`),
-    row("Auth", opts.authReady ? color("ready", "green") : color("not-ready", "yellow")),
-    row("Server", portValue),
-    row("API", `${apiUrl} ${color(`(health: ${apiUrl}/health)`, "dim")}`),
-    row("UI", uiUrl),
-    row("Database", dbDetails),
-    row("Migrations", opts.migrationSummary),
+    "",
+    row("  🖥  Mode", `${dbMode}  │  ${uiMode}`),
+    row("  🔒 Deploy", `${opts.deploymentMode} (${opts.deploymentExposure})`),
+    row("  🔑 Auth", opts.authReady ? color("ready ✓", "green") : color("not-ready ✗", "yellow")),
+    row("  🌐 Server", portValue),
+    row("  📡 API", `${apiUrl} ${color(`(health: ${apiUrl}/health)`, "dim")}`),
+    row("  🖼  UI", uiUrl),
+    "",
+    color("     ── Data ──────────────────────────────────────────────", "dim"),
+    row("  💾 Database", dbDetails),
+    row("  📋 Migrations", opts.migrationSummary),
     row(
-      "Agent JWT",
+      "  🗝  Agent JWT",
       agentJwtSecret.status === "pass"
         ? color(agentJwtSecret.message, "green")
         : color(agentJwtSecret.message, "yellow"),
     ),
-    row("Heartbeat", heartbeat),
-    row("DB Backup", dbBackup),
-    row("Backup Dir", opts.databaseBackupDir),
-    row("Config", configPath),
-    agentJwtSecret.status === "warn"
-      ? color("  ───────────────────────────────────────────────────────", "yellow")
-      : null,
-    color("  ───────────────────────────────────────────────────────", "blue"),
+    "",
+    color("     ── Services ─────────────────────────────────────────", "dim"),
+    row("  💓 Heartbeat", heartbeat),
+    row("  📦 DB Backup", dbBackup),
+    row("  📂 Backup Dir", opts.databaseBackupDir),
+    row("  ⚙️  Config", configPath),
+    "",
+    color("     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━", "blue"),
     "",
   ];
 

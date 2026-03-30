@@ -1,8 +1,7 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpError } from "../errors.js";
 import { agentRoutes } from "../routes/agents.js";
-import { errorHandler } from "../middleware/index.js";
 
 const agentId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -119,15 +118,27 @@ function createDbStub() {
 }
 
 function createApp(actor: Record<string, unknown>) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = actor;
-    next();
-  });
-  app.use("/api", agentRoutes(createDbStub() as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .onError(({ error, set }) => {
+      if (error instanceof HttpError) {
+        set.status = error.status;
+        return error.details ? { error: error.message, details: error.details } : { error: error.message };
+      }
+      set.status = 500;
+      return { error: "Internal server error" };
+    })
+    .derive(() => ({ actor }))
+    .use(agentRoutes(createDbStub() as any));
+}
+
+async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) { init.body = JSON.stringify(body); (init.headers as any)["content-type"] = "application/json"; }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 describe("agent permission routes", () => {
@@ -185,9 +196,9 @@ describe("agent permission routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .post(`/api/companies/${companyId}/agents`)
-      .send({
+    const res = await req(app,
+      "POST", `/api/companies/${companyId}/agents`,
+      {
         name: "Builder",
         role: "engineer",
         adapterType: "process",
@@ -235,7 +246,7 @@ describe("agent permission routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app).get(`/api/agents/${agentId}`);
+    const res = await req(app, "GET", `/api/agents/${agentId}`);
 
     expect(res.status).toBe(200);
     expect(res.body.access.canAssignTasks).toBe(true);
@@ -256,9 +267,9 @@ describe("agent permission routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .patch(`/api/agents/${agentId}/permissions`)
-      .send({ canCreateAgents: true, canAssignTasks: false });
+    const res = await req(app,
+      "PATCH", `/api/agents/${agentId}/permissions`,
+      { canCreateAgents: true, canAssignTasks: false });
 
     expect(res.status).toBe(200);
     expect(mockAccessService.setPrincipalPermission).toHaveBeenCalledWith(

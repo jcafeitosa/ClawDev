@@ -8,6 +8,7 @@ import { Elysia } from "elysia";
 import type { Db } from "@clawdev/db";
 import { budgetService } from "../services/budgets.js";
 import { companyIdParam } from "../middleware/index.js";
+import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
 
 export function budgetRoutes(db: Db) {
   const svc = budgetService(db);
@@ -17,7 +18,10 @@ export function budgetRoutes(db: Db) {
     // ── GET /companies/:id/budgets/overview ─────────────────────────
     .get(
       "/companies/:companyId/budgets/overview",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const overview = await svc.overview(params.companyId);
         return overview;
       },
@@ -27,7 +31,10 @@ export function budgetRoutes(db: Db) {
     // ── GET /companies/:id/budgets/policies ─────────────────────────
     .get(
       "/companies/:companyId/budgets/policies",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const policies = await svc.listPolicies(params.companyId);
         return { policies };
       },
@@ -38,7 +45,10 @@ export function budgetRoutes(db: Db) {
     // Alias: redirect to overview
     .get(
       "/companies/:companyId/budgets",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const overview = await svc.overview(params.companyId);
         return overview;
       },

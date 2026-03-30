@@ -97,7 +97,7 @@ function stableStringify(value: unknown): string {
 export function sanitizeRuntimeServiceBaseEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   for (const key of Object.keys(env)) {
-    if (key.startsWith("PAPERCLIP_")) {
+    if (key.startsWith("CLAWDEV_") || key.startsWith("PAPERCLIP_")) {
       delete env[key];
     }
   }
@@ -300,24 +300,24 @@ function buildWorkspaceCommandEnv(input: {
   created: boolean;
 }) {
   const env: NodeJS.ProcessEnv = { ...process.env };
-  env.PAPERCLIP_WORKSPACE_CWD = input.worktreePath;
-  env.PAPERCLIP_WORKSPACE_PATH = input.worktreePath;
-  env.PAPERCLIP_WORKSPACE_WORKTREE_PATH = input.worktreePath;
-  env.PAPERCLIP_WORKSPACE_BRANCH = input.branchName;
-  env.PAPERCLIP_WORKSPACE_BASE_CWD = input.base.baseCwd;
-  env.PAPERCLIP_WORKSPACE_REPO_ROOT = input.repoRoot;
-  env.PAPERCLIP_WORKSPACE_SOURCE = input.base.source;
-  env.PAPERCLIP_WORKSPACE_REPO_REF = input.base.repoRef ?? "";
-  env.PAPERCLIP_WORKSPACE_REPO_URL = input.base.repoUrl ?? "";
-  env.PAPERCLIP_WORKSPACE_CREATED = input.created ? "true" : "false";
-  env.PAPERCLIP_PROJECT_ID = input.base.projectId ?? "";
-  env.PAPERCLIP_PROJECT_WORKSPACE_ID = input.base.workspaceId ?? "";
-  env.PAPERCLIP_AGENT_ID = input.agent.id;
-  env.PAPERCLIP_AGENT_NAME = input.agent.name;
-  env.PAPERCLIP_COMPANY_ID = input.agent.companyId;
-  env.PAPERCLIP_ISSUE_ID = input.issue?.id ?? "";
-  env.PAPERCLIP_ISSUE_IDENTIFIER = input.issue?.identifier ?? "";
-  env.PAPERCLIP_ISSUE_TITLE = input.issue?.title ?? "";
+  env.CLAWDEV_WORKSPACE_CWD = input.worktreePath;
+  env.CLAWDEV_WORKSPACE_PATH = input.worktreePath;
+  env.CLAWDEV_WORKSPACE_WORKTREE_PATH = input.worktreePath;
+  env.CLAWDEV_WORKSPACE_BRANCH = input.branchName;
+  env.CLAWDEV_WORKSPACE_BASE_CWD = input.base.baseCwd;
+  env.CLAWDEV_WORKSPACE_REPO_ROOT = input.repoRoot;
+  env.CLAWDEV_WORKSPACE_SOURCE = input.base.source;
+  env.CLAWDEV_WORKSPACE_REPO_REF = input.base.repoRef ?? "";
+  env.CLAWDEV_WORKSPACE_REPO_URL = input.base.repoUrl ?? "";
+  env.CLAWDEV_WORKSPACE_CREATED = input.created ? "true" : "false";
+  env.CLAWDEV_PROJECT_ID = input.base.projectId ?? "";
+  env.CLAWDEV_PROJECT_WORKSPACE_ID = input.base.workspaceId ?? "";
+  env.CLAWDEV_AGENT_ID = input.agent.id;
+  env.CLAWDEV_AGENT_NAME = input.agent.name;
+  env.CLAWDEV_COMPANY_ID = input.agent.companyId;
+  env.CLAWDEV_ISSUE_ID = input.issue?.id ?? "";
+  env.CLAWDEV_ISSUE_IDENTIFIER = input.issue?.identifier ?? "";
+  env.CLAWDEV_ISSUE_TITLE = input.issue?.title ?? "";
   return env;
 }
 
@@ -505,18 +505,18 @@ function buildExecutionWorkspaceCleanupEnv(input: {
   projectWorkspaceCwd?: string | null;
 }) {
   const env: NodeJS.ProcessEnv = sanitizeRuntimeServiceBaseEnv(process.env);
-  env.PAPERCLIP_WORKSPACE_CWD = input.workspace.cwd ?? "";
-  env.PAPERCLIP_WORKSPACE_PATH = input.workspace.cwd ?? "";
-  env.PAPERCLIP_WORKSPACE_WORKTREE_PATH =
+  env.CLAWDEV_WORKSPACE_CWD = input.workspace.cwd ?? "";
+  env.CLAWDEV_WORKSPACE_PATH = input.workspace.cwd ?? "";
+  env.CLAWDEV_WORKSPACE_WORKTREE_PATH =
     input.workspace.providerRef ?? input.workspace.cwd ?? "";
-  env.PAPERCLIP_WORKSPACE_BRANCH = input.workspace.branchName ?? "";
-  env.PAPERCLIP_WORKSPACE_BASE_CWD = input.projectWorkspaceCwd ?? "";
-  env.PAPERCLIP_WORKSPACE_REPO_ROOT = input.projectWorkspaceCwd ?? "";
-  env.PAPERCLIP_WORKSPACE_REPO_URL = input.workspace.repoUrl ?? "";
-  env.PAPERCLIP_WORKSPACE_REPO_REF = input.workspace.baseRef ?? "";
-  env.PAPERCLIP_PROJECT_ID = input.workspace.projectId ?? "";
-  env.PAPERCLIP_PROJECT_WORKSPACE_ID = input.workspace.projectWorkspaceId ?? "";
-  env.PAPERCLIP_ISSUE_ID = input.workspace.sourceIssueId ?? "";
+  env.CLAWDEV_WORKSPACE_BRANCH = input.workspace.branchName ?? "";
+  env.CLAWDEV_WORKSPACE_BASE_CWD = input.projectWorkspaceCwd ?? "";
+  env.CLAWDEV_WORKSPACE_REPO_ROOT = input.projectWorkspaceCwd ?? "";
+  env.CLAWDEV_WORKSPACE_REPO_URL = input.workspace.repoUrl ?? "";
+  env.CLAWDEV_WORKSPACE_REPO_REF = input.workspace.baseRef ?? "";
+  env.CLAWDEV_PROJECT_ID = input.workspace.projectId ?? "";
+  env.CLAWDEV_PROJECT_WORKSPACE_ID = input.workspace.projectWorkspaceId ?? "";
+  env.CLAWDEV_ISSUE_ID = input.workspace.sourceIssueId ?? "";
   return env;
 }
 

@@ -20,3 +20,5 @@ export { pluginUiStaticRoutes, type PluginUiStaticRouteOptions } from "./plugin-
 export { runRoutes } from "./runs.js";
 export { inboxRoutes } from "./inbox.js";
 export { budgetRoutes } from "./budgets.js";
+export { companyRoutes } from "./companies.js";
+export { searchRoutes } from "./search.js";

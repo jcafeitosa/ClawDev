@@ -1,8 +1,7 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpError } from "../errors.js";
 import { approvalRoutes } from "../routes/approvals.js";
-import { errorHandler } from "../middleware/index.js";
 
 const mockApprovalService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -40,21 +39,35 @@ vi.mock("../services/index.js", () => ({
 }));
 
 function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "user-1",
-      companyIds: ["company-1"],
-      source: "session",
-      isInstanceAdmin: false,
-    };
-    next();
-  });
-  app.use("/api", approvalRoutes({} as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .onError(({ error, set }) => {
+      if (error instanceof HttpError) {
+        set.status = error.status;
+        return error.details ? { error: error.message, details: error.details } : { error: error.message };
+      }
+      set.status = 500;
+      return { error: "Internal server error" };
+    })
+    .derive(() => ({
+      actor: {
+        type: "board",
+        userId: "user-1",
+        companyIds: ["company-1"],
+        source: "session",
+        isInstanceAdmin: false,
+      },
+    }))
+    .use(approvalRoutes({} as any));
+}
+
+async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) { init.body = JSON.stringify(body); (init.headers as any)["content-type"] = "application/json"; }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 describe("approval routes idempotent retries", () => {
@@ -78,9 +91,9 @@ describe("approval routes idempotent retries", () => {
       applied: false,
     });
 
-    const res = await request(createApp())
-      .post("/api/approvals/approval-1/approve")
-      .send({});
+    const res = await req(createApp(),
+      "POST", "/api/approvals/approval-1/approve",
+      {});
 
     expect(res.status).toBe(200);
     expect(mockIssueApprovalService.listIssuesForApproval).not.toHaveBeenCalled();
@@ -100,9 +113,9 @@ describe("approval routes idempotent retries", () => {
       applied: false,
     });
 
-    const res = await request(createApp())
-      .post("/api/approvals/approval-1/reject")
-      .send({});
+    const res = await req(createApp(),
+      "POST", "/api/approvals/approval-1/reject",
+      {});
 
     expect(res.status).toBe(200);
     expect(mockLogActivity).not.toHaveBeenCalled();

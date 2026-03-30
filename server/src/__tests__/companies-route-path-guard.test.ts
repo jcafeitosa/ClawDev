@@ -1,7 +1,7 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { describe, expect, it, vi } from "vitest";
 import { companyRoutes } from "../routes/companies.js";
+import { HttpError } from "../errors.js";
 
 vi.mock("../services/index.js", () => ({
   companyService: () => ({
@@ -34,22 +34,32 @@ vi.mock("../services/index.js", () => ({
 
 describe("company routes malformed issue path guard", () => {
   it("returns a clear error when companyId is missing for issues list path", async () => {
-    const app = express();
-    app.use((req, _res, next) => {
-      (req as any).actor = {
-        type: "agent",
-        agentId: "agent-1",
-        companyId: "company-1",
-        source: "agent_key",
-      };
-      next();
-    });
-    app.use("/api/companies", companyRoutes({} as any));
+    const app = new Elysia()
+      .onError(({ error, set }) => {
+        if (error instanceof HttpError) {
+          set.status = error.status;
+          return error.details
+            ? { error: error.message, details: error.details }
+            : { error: error.message };
+        }
+        set.status = 500;
+        return { error: "Internal server error" };
+      })
+      .derive(() => ({
+        actor: {
+          type: "agent",
+          agentId: "agent-1",
+          companyId: "company-1",
+          source: "agent_key",
+        },
+      }))
+      .use(companyRoutes({} as any));
 
-    const res = await request(app).get("/api/companies/issues");
+    const res = await app.handle(new Request("http://localhost/companies/issues"));
 
     expect(res.status).toBe(400);
-    expect(res.body).toEqual({
+    const body = await res.json();
+    expect(body).toEqual({
       error: "Missing companyId in path. Use /api/companies/{companyId}/issues.",
     });
   });

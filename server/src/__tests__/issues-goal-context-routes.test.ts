@@ -1,8 +1,6 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { issueRoutes } from "../routes/issues.js";
-import { errorHandler } from "../middleware/index.js";
 
 const mockIssueService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -54,21 +52,27 @@ vi.mock("../services/index.js", () => ({
 }));
 
 function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "local-board",
-      companyIds: ["company-1"],
-      source: "local_implicit",
-      isInstanceAdmin: false,
-    };
-    next();
-  });
-  app.use("/api", issueRoutes({} as any, {} as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .derive(() => ({
+      actor: {
+        type: "board",
+        userId: "local-board",
+        companyIds: ["company-1"],
+        source: "local_implicit",
+        isInstanceAdmin: false,
+      },
+    }))
+    .use(issueRoutes({} as any, {} as any));
+}
+
+async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) { init.body = JSON.stringify(body); (init.headers as any)["content-type"] = "application/json"; }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 const legacyProjectLinkedIssue = {
@@ -156,7 +160,7 @@ describe("issue goal context routes", () => {
   });
 
   it("surfaces the project goal from GET /issues/:id when the issue has no direct goal", async () => {
-    const res = await request(createApp()).get("/api/issues/11111111-1111-4111-8111-111111111111");
+    const res = await req(createApp(), "GET", "/api/issues/11111111-1111-4111-8111-111111111111");
 
     expect(res.status).toBe(200);
     expect(res.body.goalId).toBe(projectGoal.id);
@@ -170,9 +174,7 @@ describe("issue goal context routes", () => {
   });
 
   it("surfaces the project goal from GET /issues/:id/heartbeat-context", async () => {
-    const res = await request(createApp()).get(
-      "/api/issues/11111111-1111-4111-8111-111111111111/heartbeat-context",
-    );
+    const res = await req(createApp(), "GET", "/api/issues/11111111-1111-4111-8111-111111111111/heartbeat-context");
 
     expect(res.status).toBe(200);
     expect(res.body.issue.goalId).toBe(projectGoal.id);

@@ -16,6 +16,7 @@ export interface Actor {
   runId?: string;
   isInstanceAdmin?: boolean;
   companyIds?: string[];
+  keyId?: string;
 }
 
 export function assertBoard(actor: Actor) {

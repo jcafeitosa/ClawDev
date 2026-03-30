@@ -18,12 +18,13 @@ export const goals = pgTable(
     description: text("description"),
     level: text("level").notNull().default("task"),
     status: text("status").notNull().default("planned"),
-    parentId: uuid("parent_id").references((): AnyPgColumn => goals.id),
+    parentId: uuid("parent_id").references((): AnyPgColumn => goals.id, { onDelete: "set null" }),
     ownerAgentId: uuid("owner_agent_id").references(() => agents.id),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => ({
     companyIdx: index("goals_company_idx").on(table.companyId),
+    companyStatusIdx: index("goals_company_status_idx").on(table.companyId, table.status),
   }),
 );

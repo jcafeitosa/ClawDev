@@ -1,15 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { Request } from "express";
 import { buildInviteOnboardingTextDocument } from "../routes/access.js";
 
-function buildReq(host: string): Request {
+function buildReq(host: string) {
   return {
     protocol: "http",
     header(name: string) {
       if (name.toLowerCase() === "host") return host;
       return undefined;
     },
-  } as unknown as Request;
+  };
 }
 
 describe("buildInviteOnboardingTextDocument", () => {

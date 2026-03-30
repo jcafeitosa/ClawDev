@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { assetRoutes } from "../routes/assets.js";
 import type { StorageService } from "../storage/types.js";
@@ -65,17 +64,23 @@ function createStorageService(contentType = "image/png"): StorageService {
 }
 
 function createApp(storage: ReturnType<typeof createStorageService>) {
-  const app = express();
-  app.use((req, _res, next) => {
-    req.actor = {
-      type: "board",
-      source: "local_implicit",
-      userId: "user-1",
-    };
-    next();
-  });
-  app.use("/api", assetRoutes({} as any, storage));
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .derive(() => ({
+      actor: {
+        type: "board",
+        source: "local_implicit",
+        userId: "user-1",
+      },
+    }))
+    .use(assetRoutes({} as any, storage));
+}
+
+async function reqFormData(app: any, method: string, path: string, formData: FormData) {
+  const res = await app.handle(new Request("http://localhost" + path, { method, body: formData }));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 describe("POST /api/companies/:companyId/assets/images", () => {
@@ -91,10 +96,11 @@ describe("POST /api/companies/:companyId/assets/images", () => {
 
     createAssetMock.mockResolvedValue(createAsset());
 
-    const res = await request(app)
-      .post("/api/companies/company-1/assets/images")
-      .field("namespace", "goals")
-      .attach("file", Buffer.from("png"), "logo.png");
+    const form = new FormData();
+    form.append("namespace", "goals");
+    form.append("file", new Blob([Buffer.from("png")], { type: "image/png" }), "logo.png");
+
+    const res = await reqFormData(app, "POST", "/api/companies/company-1/assets/images", form);
 
     expect(res.status).toBe(201);
     expect(res.body.contentPath).toBe("/api/assets/asset-1/content");
@@ -118,10 +124,11 @@ describe("POST /api/companies/:companyId/assets/images", () => {
       originalFilename: "note.txt",
     });
 
-    const res = await request(app)
-      .post("/api/companies/company-1/assets/images")
-      .field("namespace", "issues/drafts")
-      .attach("file", Buffer.from("hello"), { filename: "note.txt", contentType: "text/plain" });
+    const form = new FormData();
+    form.append("namespace", "issues/drafts");
+    form.append("file", new Blob([Buffer.from("hello")], { type: "text/plain" }), "note.txt");
+
+    const res = await reqFormData(app, "POST", "/api/companies/company-1/assets/images", form);
 
     expect(res.status).toBe(201);
     expect(text.putFile).toHaveBeenCalledWith({
@@ -147,9 +154,10 @@ describe("POST /api/companies/:companyId/logo", () => {
 
     createAssetMock.mockResolvedValue(createAsset());
 
-    const res = await request(app)
-      .post("/api/companies/company-1/logo")
-      .attach("file", Buffer.from("png"), "logo.png");
+    const form = new FormData();
+    form.append("file", new Blob([Buffer.from("png")], { type: "image/png" }), "logo.png");
+
+    const res = await reqFormData(app, "POST", "/api/companies/company-1/logo", form);
 
     expect(res.status).toBe(201);
     expect(res.body.contentPath).toBe("/api/assets/asset-1/content");
@@ -173,15 +181,17 @@ describe("POST /api/companies/:companyId/logo", () => {
       originalFilename: "logo.svg",
     });
 
-    const res = await request(app)
-      .post("/api/companies/company-1/logo")
-      .attach(
-        "file",
-        Buffer.from(
-          "<svg xmlns='http://www.w3.org/2000/svg' onload='alert(1)'><script>alert(1)</script><a href='https://evil.example/'><circle cx='12' cy='12' r='10'/></a></svg>",
-        ),
-        "logo.svg",
-      );
+    const form = new FormData();
+    form.append(
+      "file",
+      new Blob(
+        [Buffer.from("<svg xmlns='http://www.w3.org/2000/svg' onload='alert(1)'><script>alert(1)</script><a href='https://evil.example/'><circle cx='12' cy='12' r='10'/></a></svg>")],
+        { type: "image/svg+xml" },
+      ),
+      "logo.svg",
+    );
+
+    const res = await reqFormData(app, "POST", "/api/companies/company-1/logo", form);
 
     expect(res.status).toBe(201);
     expect(svg.putFile).toHaveBeenCalledTimes(1);
@@ -202,9 +212,10 @@ describe("POST /api/companies/:companyId/logo", () => {
     createAssetMock.mockResolvedValue(createAsset());
 
     const file = Buffer.alloc(150 * 1024, "a");
-    const res = await request(app)
-      .post("/api/companies/company-1/logo")
-      .attach("file", file, "within-limit.png");
+    const form = new FormData();
+    form.append("file", new Blob([file], { type: "image/png" }), "within-limit.png");
+
+    const res = await reqFormData(app, "POST", "/api/companies/company-1/logo", form);
 
     expect(res.status).toBe(201);
   });
@@ -214,9 +225,10 @@ describe("POST /api/companies/:companyId/logo", () => {
     createAssetMock.mockResolvedValue(createAsset());
 
     const file = Buffer.alloc(MAX_ATTACHMENT_BYTES + 1, "a");
-    const res = await request(app)
-      .post("/api/companies/company-1/logo")
-      .attach("file", file, "too-large.png");
+    const form = new FormData();
+    form.append("file", new Blob([file], { type: "image/png" }), "too-large.png");
+
+    const res = await reqFormData(app, "POST", "/api/companies/company-1/logo", form);
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe(`Image exceeds ${MAX_ATTACHMENT_BYTES} bytes`);
@@ -226,9 +238,10 @@ describe("POST /api/companies/:companyId/logo", () => {
     const app = createApp(createStorageService("text/plain"));
     createAssetMock.mockResolvedValue(createAsset());
 
-    const res = await request(app)
-      .post("/api/companies/company-1/logo")
-      .attach("file", Buffer.from("not an image"), "note.txt");
+    const form = new FormData();
+    form.append("file", new Blob([Buffer.from("not an image")], { type: "text/plain" }), "note.txt");
+
+    const res = await reqFormData(app, "POST", "/api/companies/company-1/logo", form);
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("Unsupported image type: text/plain");
@@ -239,9 +252,10 @@ describe("POST /api/companies/:companyId/logo", () => {
     const app = createApp(createStorageService("image/svg+xml"));
     createAssetMock.mockResolvedValue(createAsset());
 
-    const res = await request(app)
-      .post("/api/companies/company-1/logo")
-      .attach("file", Buffer.from("not actually svg"), "logo.svg");
+    const form = new FormData();
+    form.append("file", new Blob([Buffer.from("not actually svg")], { type: "image/svg+xml" }), "logo.svg");
+
+    const res = await reqFormData(app, "POST", "/api/companies/company-1/logo", form);
 
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("SVG could not be sanitized");

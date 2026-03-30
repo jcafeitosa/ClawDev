@@ -10,9 +10,12 @@ function findConfigFileFromAncestors(startDir: string): string | null {
   let currentDir = absoluteStartDir;
 
   while (true) {
-    const candidate = path.resolve(currentDir, ".paperclip", PAPERCLIP_CONFIG_BASENAME);
-    if (fs.existsSync(candidate)) {
-      return candidate;
+    // Check .clawdev first (new convention), then .paperclip (legacy)
+    for (const dirName of [".clawdev", ".paperclip"]) {
+      const candidate = path.resolve(currentDir, dirName, PAPERCLIP_CONFIG_BASENAME);
+      if (fs.existsSync(candidate)) {
+        return candidate;
+      }
     }
 
     const nextDir = path.resolve(currentDir, "..");
@@ -25,6 +28,7 @@ function findConfigFileFromAncestors(startDir: string): string | null {
 
 export function resolvePaperclipConfigPath(overridePath?: string): string {
   if (overridePath) return path.resolve(overridePath);
+  if (process.env.CLAWDEV_CONFIG) return path.resolve(process.env.CLAWDEV_CONFIG);
   if (process.env.PAPERCLIP_CONFIG) return path.resolve(process.env.PAPERCLIP_CONFIG);
   return findConfigFileFromAncestors(process.cwd()) ?? resolveDefaultConfigPath();
 }

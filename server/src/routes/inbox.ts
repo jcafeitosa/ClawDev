@@ -12,6 +12,7 @@ import type { Db } from "@clawdev/db";
 import { agents, approvals, heartbeatRuns, issues, joinRequests } from "@clawdev/db";
 import { and, desc, eq, inArray, ne } from "drizzle-orm";
 import { companyIdParam } from "../middleware/index.js";
+import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
 
 export function inboxRoutes(db: Db) {
   return new Elysia()
@@ -21,7 +22,11 @@ export function inboxRoutes(db: Db) {
     // pending approvals and failed runs, aggregated into one list.
     .get(
       "/companies/:companyId/inbox",
-      async ({ params, query }) => {
+      async (ctx: any) => {
+        const { params, query } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+
         const limit = Math.min(Number(query.limit) || 50, 200);
         const status = query.status as string | undefined; // e.g. "unread"
 
@@ -85,7 +90,11 @@ export function inboxRoutes(db: Db) {
     // ── GET /companies/:id/join-requests ────────────────────────────
     .get(
       "/companies/:companyId/join-requests",
-      async ({ params, query }) => {
+      async (ctx: any) => {
+        const { params, query } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+
         const status = (query.status as string) ?? "pending_approval";
         const limit = Math.min(Number(query.limit) || 50, 200);
 

@@ -25,8 +25,10 @@ export function executionWorkspaceRoutes(db: Db) {
   return new Elysia()
     .get(
       "/companies/:companyId/execution-workspaces",
-      async ({ params, query }) => {
-        // TODO: wire actor from auth middleware
+      async (ctx: any) => {
+        const { params, query } = ctx;
+        const actor: Actor = ctx.actor;
+        assertCompanyAccess(actor, params.companyId);
         const companyId = params.companyId;
         const workspaces = await svc.list(companyId, {
           projectId: query.projectId,
@@ -51,12 +53,15 @@ export function executionWorkspaceRoutes(db: Db) {
 
     .get(
       "/execution-workspaces/:id",
-      async ({ params, set }) => {
+      async (ctx: any) => {
+        const { params, set } = ctx;
+        const actor = ctx.actor as Actor;
         const workspace = await svc.getById(params.id);
         if (!workspace) {
           set.status = 404;
           return { error: "Execution workspace not found" };
         }
+        assertCompanyAccess(actor, workspace.companyId);
         return workspace;
       },
       { params: t.Object({ id: t.String() }) },
@@ -64,12 +69,15 @@ export function executionWorkspaceRoutes(db: Db) {
 
     .patch(
       "/execution-workspaces/:id",
-      async ({ params, body, set }) => {
+      async (ctx: any) => {
+        const { params, body, set } = ctx;
+        const actor = ctx.actor as Actor;
         const existing = await svc.getById(params.id);
         if (!existing) {
           set.status = 404;
           return { error: "Execution workspace not found" };
         }
+        assertCompanyAccess(actor, existing.companyId);
 
         const typedBody = body as Record<string, unknown>;
         const patch: Record<string, unknown> = {

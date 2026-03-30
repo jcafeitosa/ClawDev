@@ -1,8 +1,6 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { routineRoutes } from "../routes/routines.js";
-import { errorHandler } from "../middleware/index.js";
 
 const companyId = "22222222-2222-4222-8222-222222222222";
 const agentId = "11111111-1111-4111-8111-111111111111";
@@ -90,15 +88,19 @@ vi.mock("../services/index.js", () => ({
 }));
 
 function createApp(actor: Record<string, unknown>) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = actor;
-    next();
-  });
-  app.use("/api", routineRoutes({} as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .derive(() => ({ actor }))
+    .use(routineRoutes({} as any));
+}
+
+async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) { init.body = JSON.stringify(body); (init.headers as any)["content-type"] = "application/json"; }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 describe("routine routes", () => {
@@ -126,13 +128,11 @@ describe("routine routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .post(`/api/companies/${companyId}/routines`)
-      .send({
-        projectId,
-        title: "Daily routine",
-        assigneeAgentId: agentId,
-      });
+    const res = await req(app, "POST", `/api/companies/${companyId}/routines`, {
+      projectId,
+      title: "Daily routine",
+      assigneeAgentId: agentId,
+    });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("tasks:assign");
@@ -148,11 +148,9 @@ describe("routine routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .patch(`/api/routines/${routineId}`)
-      .send({
-        assigneeAgentId: otherAgentId,
-      });
+    const res = await req(app, "PATCH", `/api/routines/${routineId}`, {
+      assigneeAgentId: otherAgentId,
+    });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("tasks:assign");
@@ -169,11 +167,9 @@ describe("routine routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .patch(`/api/routines/${routineId}`)
-      .send({
-        status: "active",
-      });
+    const res = await req(app, "PATCH", `/api/routines/${routineId}`, {
+      status: "active",
+    });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("tasks:assign");
@@ -189,13 +185,11 @@ describe("routine routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .post(`/api/routines/${routineId}/triggers`)
-      .send({
-        kind: "schedule",
-        cronExpression: "0 10 * * *",
-        timezone: "UTC",
-      });
+    const res = await req(app, "POST", `/api/routines/${routineId}/triggers`, {
+      kind: "schedule",
+      cronExpression: "0 10 * * *",
+      timezone: "UTC",
+    });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("tasks:assign");
@@ -211,11 +205,9 @@ describe("routine routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .patch(`/api/routine-triggers/${trigger.id}`)
-      .send({
-        enabled: true,
-      });
+    const res = await req(app, "PATCH", `/api/routine-triggers/${trigger.id}`, {
+      enabled: true,
+    });
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("tasks:assign");
@@ -231,9 +223,7 @@ describe("routine routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .post(`/api/routines/${routineId}/run`)
-      .send({});
+    const res = await req(app, "POST", `/api/routines/${routineId}/run`, {});
 
     expect(res.status).toBe(403);
     expect(res.body.error).toContain("tasks:assign");
@@ -250,13 +240,11 @@ describe("routine routes", () => {
       companyIds: [companyId],
     });
 
-    const res = await request(app)
-      .post(`/api/companies/${companyId}/routines`)
-      .send({
-        projectId,
-        title: "Daily routine",
-        assigneeAgentId: agentId,
-      });
+    const res = await req(app, "POST", `/api/companies/${companyId}/routines`, {
+      projectId,
+      title: "Daily routine",
+      assigneeAgentId: agentId,
+    });
 
     expect(res.status).toBe(201);
     expect(mockRoutineService.create).toHaveBeenCalledWith(companyId, expect.objectContaining({

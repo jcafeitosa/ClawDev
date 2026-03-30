@@ -4,31 +4,234 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { routines } from "@clawdev/db";
-import { eq, desc } from "drizzle-orm";
 import { companyIdParam } from "../middleware/index.js";
+import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
+import { accessService, logActivity, routineService } from "../services/index.js";
 
 export function routineRoutes(db: Db) {
+  const svc = routineService(db);
+  const access = accessService(db);
+
+  async function checkBoardCanAssignTasks(actor: Actor, companyId: string, ctx: any): Promise<boolean> {
+    if (actor.type !== "board") return false;
+    if (actor.source === "local_implicit" || actor.isInstanceAdmin) return false;
+    const allowed = await access.canUser(companyId, actor.userId!, "tasks:assign");
+    if (!allowed) {
+      ctx.set.status = 403;
+      return true;
+    }
+    return false;
+  }
+
   return new Elysia()
+    // List routines for a company
     .get(
       "/companies/:companyId/routines",
-      async ({ params }) => {
-        const rows = await db
-          .select()
-          .from(routines)
-          .where(eq(routines.companyId, params.companyId))
-          .orderBy(desc(routines.createdAt));
-        return rows;
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, ctx.params.companyId);
+        const result = await svc.list(ctx.params.companyId);
+        return result;
       },
       { params: companyIdParam },
     )
 
+    // Create routine
+    .post(
+      "/companies/:companyId/routines",
+      async (ctx: any) => {
+        const { params, body, actor, set } = ctx;
+        assertCompanyAccess(actor, params.companyId);
+        const denied = await checkBoardCanAssignTasks(actor, params.companyId, ctx);
+        if (denied) return { error: "Missing permission: tasks:assign" };
+        const created = await svc.create(params.companyId, body, {
+          agentId: actor.type === "agent" ? actor.agentId : null,
+          userId: actor.type === "board" ? actor.userId ?? "board" : null,
+        });
+        set.status = 201;
+        return created;
+      },
+      {
+        params: companyIdParam,
+        body: t.Object({
+          projectId: t.Optional(t.Nullable(t.String())),
+          goalId: t.Optional(t.Nullable(t.String())),
+          parentIssueId: t.Optional(t.Nullable(t.String())),
+          title: t.String(),
+          description: t.Optional(t.Nullable(t.String())),
+          assigneeAgentId: t.String(),
+          priority: t.Optional(t.String()),
+          concurrencyPolicy: t.Optional(t.String()),
+          catchUpPolicy: t.Optional(t.String()),
+        }),
+      },
+    )
+
+    // Get routine detail
     .get(
       "/routines/:id",
-      async ({ params }) => {
-        const rows = await db.select().from(routines).where(eq(routines.id, params.id));
-        if (rows.length === 0) return new Response("Not found", { status: 404 });
-        return rows[0];
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        const detail = await svc.getDetail(ctx.params.id);
+        if (!detail) { ctx.set.status = 404; return { error: "Routine not found" }; }
+        assertCompanyAccess(actor, detail.companyId);
+        return detail;
+      },
+      { params: t.Object({ id: t.String() }) },
+    )
+
+    // Update routine
+    .patch(
+      "/routines/:id",
+      async (ctx: any) => {
+        const { params, body, actor } = ctx;
+        const routine = await svc.get(params.id);
+        if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
+        assertCompanyAccess(actor, routine.companyId);
+
+        const assigneeWillChange =
+          body.assigneeAgentId !== undefined &&
+          body.assigneeAgentId !== routine.assigneeAgentId;
+        if (assigneeWillChange) {
+          const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
+          if (denied) return { error: "Missing permission: tasks:assign" };
+        }
+
+        const statusWillActivate =
+          body.status !== undefined &&
+          body.status === "active" &&
+          routine.status !== "active";
+        if (statusWillActivate) {
+          const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
+          if (denied) return { error: "Missing permission: tasks:assign" };
+        }
+
+        const updated = await svc.update(routine.id, body, {
+          agentId: actor.type === "agent" ? actor.agentId : null,
+          userId: actor.type === "board" ? actor.userId ?? "board" : null,
+        });
+        return updated;
+      },
+      {
+        params: t.Object({ id: t.String() }),
+        body: t.Object({
+          title: t.Optional(t.String()),
+          description: t.Optional(t.Nullable(t.String())),
+          assigneeAgentId: t.Optional(t.String()),
+          priority: t.Optional(t.String()),
+          status: t.Optional(t.String()),
+          concurrencyPolicy: t.Optional(t.String()),
+          catchUpPolicy: t.Optional(t.String()),
+        }),
+      },
+    )
+
+    // List routine runs
+    .get(
+      "/routines/:id/runs",
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        const routine = await svc.get(ctx.params.id);
+        if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
+        assertCompanyAccess(actor, routine.companyId);
+        const limit = Number(ctx.query?.limit ?? 50);
+        const result = await svc.listRuns(routine.id, Number.isFinite(limit) ? limit : 50);
+        return result;
+      },
+      { params: t.Object({ id: t.String() }) },
+    )
+
+    // Create trigger
+    .post(
+      "/routines/:id/triggers",
+      async (ctx: any) => {
+        const { params, body, actor, set } = ctx;
+        const routine = await svc.get(params.id);
+        if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
+        assertCompanyAccess(actor, routine.companyId);
+        const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
+        if (denied) return { error: "Missing permission: tasks:assign" };
+        const created = await svc.createTrigger(routine.id, body, {
+          agentId: actor.type === "agent" ? actor.agentId : null,
+          userId: actor.type === "board" ? actor.userId ?? "board" : null,
+        });
+        set.status = 201;
+        return created;
+      },
+      {
+        params: t.Object({ id: t.String() }),
+        body: t.Object({
+          kind: t.String(),
+          label: t.Optional(t.String()),
+          cronExpression: t.Optional(t.String()),
+          timezone: t.Optional(t.String()),
+          enabled: t.Optional(t.Boolean()),
+        }),
+      },
+    )
+
+    // Manually run a routine
+    .post(
+      "/routines/:id/run",
+      async (ctx: any) => {
+        const { params, body, actor, set } = ctx;
+        const routine = await svc.get(params.id);
+        if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
+        assertCompanyAccess(actor, routine.companyId);
+        const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
+        if (denied) return { error: "Missing permission: tasks:assign" };
+        const run = await svc.runRoutine(routine.id, body ?? {});
+        set.status = 202;
+        return run;
+      },
+      {
+        params: t.Object({ id: t.String() }),
+        body: t.Optional(t.Object({})),
+      },
+    )
+
+    // Update trigger
+    .patch(
+      "/routine-triggers/:id",
+      async (ctx: any) => {
+        const { params, body, actor } = ctx;
+        const trigger = await svc.getTrigger(params.id);
+        if (!trigger) { ctx.set.status = 404; return { error: "Routine trigger not found" }; }
+        const routine = await svc.get(trigger.routineId);
+        if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
+        assertCompanyAccess(actor, routine.companyId);
+        const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
+        if (denied) return { error: "Missing permission: tasks:assign" };
+        const updated = await svc.updateTrigger(trigger.id, body, {
+          agentId: actor.type === "agent" ? actor.agentId : null,
+          userId: actor.type === "board" ? actor.userId ?? "board" : null,
+        });
+        return updated;
+      },
+      {
+        params: t.Object({ id: t.String() }),
+        body: t.Object({
+          enabled: t.Optional(t.Boolean()),
+          cronExpression: t.Optional(t.String()),
+          timezone: t.Optional(t.String()),
+          label: t.Optional(t.String()),
+        }),
+      },
+    )
+
+    // Delete trigger
+    .delete(
+      "/routine-triggers/:id",
+      async (ctx: any) => {
+        const { params, actor, set } = ctx;
+        const trigger = await svc.getTrigger(params.id);
+        if (!trigger) { ctx.set.status = 404; return { error: "Routine trigger not found" }; }
+        const routine = await svc.get(trigger.routineId);
+        if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
+        assertCompanyAccess(actor, routine.companyId);
+        await svc.deleteTrigger(trigger.id);
+        set.status = 204;
+        return "";
       },
       { params: t.Object({ id: t.String() }) },
     );

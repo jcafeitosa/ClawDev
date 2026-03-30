@@ -1,8 +1,7 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpError } from "../errors.js";
 import { agentRoutes } from "../routes/agents.js";
-import { errorHandler } from "../middleware/index.js";
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
@@ -94,21 +93,35 @@ function createDb(requireBoardApprovalForNewAgents = false) {
 }
 
 function createApp(db: Record<string, unknown> = createDb()) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = {
-      type: "board",
-      userId: "local-board",
-      companyIds: ["company-1"],
-      source: "local_implicit",
-      isInstanceAdmin: false,
-    };
-    next();
-  });
-  app.use("/api", agentRoutes(db as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .onError(({ error, set }) => {
+      if (error instanceof HttpError) {
+        set.status = error.status;
+        return error.details ? { error: error.message, details: error.details } : { error: error.message };
+      }
+      set.status = 500;
+      return { error: "Internal server error" };
+    })
+    .derive(() => ({
+      actor: {
+        type: "board",
+        userId: "local-board",
+        companyIds: ["company-1"],
+        source: "local_implicit",
+        isInstanceAdmin: false,
+      },
+    }))
+    .use(agentRoutes(db as any));
+}
+
+async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) { init.body = JSON.stringify(body); (init.headers as any)["content-type"] = "application/json"; }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 function makeAgent(adapterType: string) {
@@ -214,8 +227,8 @@ describe("agent skill routes", () => {
   it("skips runtime materialization when listing Claude skills", async () => {
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
 
-    const res = await request(createApp())
-      .get("/api/agents/11111111-1111-4111-8111-111111111111/skills?companyId=company-1");
+    const res = await req(createApp(),
+      "GET", "/api/agents/11111111-1111-4111-8111-111111111111/skills?companyId=company-1");
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockCompanySkillService.listRuntimeSkillEntries).toHaveBeenCalledWith("company-1", {
@@ -242,8 +255,8 @@ describe("agent skill routes", () => {
       warnings: [],
     });
 
-    const res = await request(createApp())
-      .get("/api/agents/11111111-1111-4111-8111-111111111111/skills?companyId=company-1");
+    const res = await req(createApp(),
+      "GET", "/api/agents/11111111-1111-4111-8111-111111111111/skills?companyId=company-1");
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockCompanySkillService.listRuntimeSkillEntries).toHaveBeenCalledWith("company-1", {
@@ -254,9 +267,9 @@ describe("agent skill routes", () => {
   it("skips runtime materialization when syncing Claude skills", async () => {
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
 
-    const res = await request(createApp())
-      .post("/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1")
-      .send({ desiredSkills: ["paperclipai/paperclip/paperclip"] });
+    const res = await req(createApp(),
+      "POST", "/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1",
+      { desiredSkills: ["paperclipai/paperclip/paperclip"] });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockCompanySkillService.listRuntimeSkillEntries).toHaveBeenCalledWith("company-1", {
@@ -268,9 +281,9 @@ describe("agent skill routes", () => {
   it("canonicalizes desired skill references before syncing", async () => {
     mockAgentService.getById.mockResolvedValue(makeAgent("claude_local"));
 
-    const res = await request(createApp())
-      .post("/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1")
-      .send({ desiredSkills: ["paperclip"] });
+    const res = await req(createApp(),
+      "POST", "/api/agents/11111111-1111-4111-8111-111111111111/skills/sync?companyId=company-1",
+      { desiredSkills: ["paperclip"] });
 
     expect(res.status, JSON.stringify(res.body)).toBe(200);
     expect(mockCompanySkillService.resolveRequestedSkillKeys).toHaveBeenCalledWith("company-1", ["paperclip"]);
@@ -288,9 +301,9 @@ describe("agent skill routes", () => {
   });
 
   it("persists canonical desired skills when creating an agent directly", async () => {
-    const res = await request(createApp())
-      .post("/api/companies/company-1/agents")
-      .send({
+    const res = await req(createApp(),
+      "POST", "/api/companies/company-1/agents",
+      {
         name: "QA Agent",
         role: "engineer",
         adapterType: "claude_local",
@@ -313,9 +326,9 @@ describe("agent skill routes", () => {
   });
 
   it("materializes a managed AGENTS.md for directly created local agents", async () => {
-    const res = await request(createApp())
-      .post("/api/companies/company-1/agents")
-      .send({
+    const res = await req(createApp(),
+      "POST", "/api/companies/company-1/agents",
+      {
         name: "QA Agent",
         role: "engineer",
         adapterType: "claude_local",
@@ -351,9 +364,9 @@ describe("agent skill routes", () => {
   });
 
   it("materializes the bundled CEO instruction set for default CEO agents", async () => {
-    const res = await request(createApp())
-      .post("/api/companies/company-1/agents")
-      .send({
+    const res = await req(createApp(),
+      "POST", "/api/companies/company-1/agents",
+      {
         name: "CEO",
         role: "ceo",
         adapterType: "claude_local",
@@ -378,9 +391,9 @@ describe("agent skill routes", () => {
   });
 
   it("materializes the bundled default instruction set for non-CEO agents with no prompt template", async () => {
-    const res = await request(createApp())
-      .post("/api/companies/company-1/agents")
-      .send({
+    const res = await req(createApp(),
+      "POST", "/api/companies/company-1/agents",
+      {
         name: "Engineer",
         role: "engineer",
         adapterType: "claude_local",
@@ -404,9 +417,9 @@ describe("agent skill routes", () => {
   it("includes canonical desired skills in hire approvals", async () => {
     const db = createDb(true);
 
-    const res = await request(createApp(db))
-      .post("/api/companies/company-1/agent-hires")
-      .send({
+    const res = await req(createApp(db),
+      "POST", "/api/companies/company-1/agent-hires",
+      {
         name: "QA Agent",
         role: "engineer",
         adapterType: "claude_local",
@@ -430,9 +443,9 @@ describe("agent skill routes", () => {
   });
 
   it("uses managed AGENTS config in hire approval payloads", async () => {
-    const res = await request(createApp(createDb(true)))
-      .post("/api/companies/company-1/agent-hires")
-      .send({
+    const res = await req(createApp(createDb(true)),
+      "POST", "/api/companies/company-1/agent-hires",
+      {
         name: "QA Agent",
         role: "engineer",
         adapterType: "claude_local",

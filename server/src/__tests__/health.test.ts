@@ -1,16 +1,15 @@
 import { describe, it, expect } from "vitest";
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { healthRoutes } from "../routes/health.js";
 import { serverVersion } from "../version.js";
 
 describe("GET /health", () => {
-  const app = express();
-  app.use("/health", healthRoutes());
+  const app = new Elysia({ prefix: "/health" }).use(healthRoutes());
 
   it("returns 200 with status ok", async () => {
-    const res = await request(app).get("/health");
+    const res = await app.handle(new Request("http://localhost/health"));
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ status: "ok", version: serverVersion });
+    const body = await res.json();
+    expect(body).toEqual({ status: "ok", version: serverVersion });
   });
 });

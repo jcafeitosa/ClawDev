@@ -1,5 +1,4 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCompanyService = vi.hoisted(() => ({
@@ -44,16 +43,20 @@ vi.mock("../services/index.js", () => ({
 
 async function createApp(actor: Record<string, unknown>) {
   const { companyRoutes } = await import("../routes/companies.js");
-  const { errorHandler } = await import("../middleware/index.js");
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = actor;
-    next();
-  });
-  app.use("/api/companies", companyRoutes({} as any));
-  app.use(errorHandler);
-  return app;
+  const { HttpError } = await import("../errors.js");
+  return new Elysia()
+    .onError(({ error, set }) => {
+      if (error instanceof HttpError) {
+        set.status = error.status;
+        return error.details
+          ? { error: error.message, details: error.details }
+          : { error: error.message };
+      }
+      set.status = 500;
+      return { error: "Internal server error" };
+    })
+    .derive(() => ({ actor }))
+    .use(companyRoutes({} as any));
 }
 
 describe("company portability routes", () => {
@@ -81,12 +84,17 @@ describe("company portability routes", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
-      .post("/api/companies/11111111-1111-4111-8111-111111111111/exports/preview")
-      .send({ include: { company: true, agents: true, projects: true } });
+    const res = await app.handle(
+      new Request("http://localhost/companies/11111111-1111-4111-8111-111111111111/exports/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ include: { company: true, agents: true, projects: true } }),
+      }),
+    );
 
+    const body = await res.json();
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Only CEO agents");
+    expect(body.error).toContain("Only CEO agents");
     expect(mockCompanyPortabilityService.previewExport).not.toHaveBeenCalled();
   });
 
@@ -113,10 +121,15 @@ describe("company portability routes", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
-      .post("/api/companies/11111111-1111-4111-8111-111111111111/exports/preview")
-      .send({ include: { company: true, agents: true, projects: true } });
+    const res = await app.handle(
+      new Request("http://localhost/companies/11111111-1111-4111-8111-111111111111/exports/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ include: { company: true, agents: true, projects: true } }),
+      }),
+    );
 
+    const body = await res.json();
     expect(res.status).toBe(200);
     expect(mockCompanyPortabilityService.previewExport).toHaveBeenCalledWith("11111111-1111-4111-8111-111111111111", {
       include: { company: true, agents: true, projects: true },
@@ -137,17 +150,22 @@ describe("company portability routes", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
-      .post("/api/companies/11111111-1111-4111-8111-111111111111/imports/preview")
-      .send({
-        source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },
-        include: { company: true, agents: true, projects: false, issues: false },
-        target: { mode: "existing_company", companyId: "11111111-1111-4111-8111-111111111111" },
-        collisionStrategy: "replace",
-      });
+    const res = await app.handle(
+      new Request("http://localhost/companies/11111111-1111-4111-8111-111111111111/imports/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },
+          include: { company: true, agents: true, projects: false, issues: false },
+          target: { mode: "existing_company", companyId: "11111111-1111-4111-8111-111111111111" },
+          collisionStrategy: "replace",
+        }),
+      }),
+    );
 
+    const body = await res.json();
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("does not allow replace");
+    expect(body.error).toContain("does not allow replace");
     expect(mockCompanyPortabilityService.previewImport).not.toHaveBeenCalled();
   });
 
@@ -160,16 +178,21 @@ describe("company portability routes", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
-      .post("/api/companies/import/preview")
-      .send({
-        source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },
-        include: { company: true, agents: true, projects: false, issues: false },
-        target: { mode: "existing_company", companyId: "11111111-1111-4111-8111-111111111111" },
-        collisionStrategy: "rename",
-      });
+    const res = await app.handle(
+      new Request("http://localhost/companies/import/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source: { type: "inline", files: { "COMPANY.md": "---\nname: Test\n---\n" } },
+          include: { company: true, agents: true, projects: false, issues: false },
+          target: { mode: "existing_company", companyId: "11111111-1111-4111-8111-111111111111" },
+          collisionStrategy: "rename",
+        }),
+      }),
+    );
 
+    const body = await res.json();
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Board access required");
+    expect(body.error).toContain("Board access required");
   });
 });

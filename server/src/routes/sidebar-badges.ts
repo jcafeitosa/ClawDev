@@ -17,11 +17,11 @@ export function sidebarBadgeRoutes(db: Db) {
   return new Elysia()
     .get(
       "/companies/:companyId/sidebar-badges",
-      async ({ params }) => {
-        const companyId = params.companyId;
+      async (ctx: any) => {
+        const companyId = ctx.params.companyId;
 
-        // TODO: Wire actor-based canApproveJoins check from auth middleware
-        const canApproveJoins = false;
+        const actor = ctx.actor;
+        const canApproveJoins = actor?.type === "board";
 
         const joinRequestCount = canApproveJoins
           ? await db

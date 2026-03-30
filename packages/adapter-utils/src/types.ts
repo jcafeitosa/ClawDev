@@ -287,6 +287,11 @@ export interface ServerAdapterModule {
    * without knowing provider-specific credential paths or API shapes.
    */
   getQuotaWindows?: () => Promise<ProviderQuotaResult>;
+  /**
+   * Optional: auto-detect the model currently configured for this adapter.
+   * Used by the server to pre-fill model selection in the UI.
+   */
+  detectModel?: () => Promise<{ model: string; provider: string; source: string } | null>;
 }
 
 // ---------------------------------------------------------------------------

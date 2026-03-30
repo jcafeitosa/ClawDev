@@ -1,5 +1,4 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockAccessService = vi.hoisted(() => ({
@@ -35,27 +34,34 @@ vi.mock("../services/index.js", () => ({
 }));
 
 function createApp(actor: any) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    req.actor = actor;
-    next();
+  return import("../routes/access.js").then(({ accessRoutes }) => {
+    return new Elysia({ prefix: "/api" })
+      .derive(() => ({ actor }))
+      .use(accessRoutes({} as any));
   });
-  return import("../routes/access.js").then(({ accessRoutes }) =>
-    import("../middleware/index.js").then(({ errorHandler }) => {
-      app.use(
-        "/api",
-        accessRoutes({} as any, {
-          deploymentMode: "authenticated",
-          deploymentExposure: "private",
-          bindHost: "127.0.0.1",
-          allowedHostnames: [],
-        }),
-      );
-      app.use(errorHandler);
-      return app;
-    })
-  );
+}
+
+async function req(
+  app: any,
+  method: string,
+  path: string,
+  body?: any,
+  headers?: Record<string, string>,
+) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) {
+    init.body = JSON.stringify(body);
+    (init.headers as any)["content-type"] = "application/json";
+  }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    json = text;
+  }
+  return { status: res.status, body: json, text };
 }
 
 describe("cli auth routes", () => {
@@ -74,13 +80,11 @@ describe("cli auth routes", () => {
     });
 
     const app = await createApp({ type: "none", source: "none" });
-    const res = await request(app)
-      .post("/api/cli-auth/challenges")
-      .send({
-        command: "paperclipai company import",
-        clientName: "paperclipai cli",
-        requestedAccess: "board",
-      });
+    const res = await req(app, "POST", "/api/cli-auth/challenges", {
+      command: "paperclipai company import",
+      clientName: "paperclipai cli",
+      requestedAccess: "board",
+    });
 
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
@@ -110,7 +114,7 @@ describe("cli auth routes", () => {
     });
 
     const app = await createApp({ type: "none", source: "none" });
-    const res = await request(app).get("/api/cli-auth/challenges/challenge-1?token=pcp_cli_auth_secret");
+    const res = await req(app, "GET", "/api/cli-auth/challenges/challenge-1?token=pcp_cli_auth_secret");
 
     expect(res.status).toBe(200);
     expect(res.body.requiresSignIn).toBe(true);
@@ -142,9 +146,9 @@ describe("cli auth routes", () => {
       isInstanceAdmin: false,
       companyIds: ["company-1"],
     });
-    const res = await request(app)
-      .post("/api/cli-auth/challenges/challenge-1/approve")
-      .send({ token: "pcp_cli_auth_secret" });
+    const res = await req(app, "POST", "/api/cli-auth/challenges/challenge-1/approve", {
+      token: "pcp_cli_auth_secret",
+    });
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -184,9 +188,9 @@ describe("cli auth routes", () => {
       isInstanceAdmin: true,
       companyIds: [],
     });
-    const res = await request(app)
-      .post("/api/cli-auth/challenges/challenge-2/approve")
-      .send({ token: "pcp_cli_auth_secret" });
+    const res = await req(app, "POST", "/api/cli-auth/challenges/challenge-2/approve", {
+      token: "pcp_cli_auth_secret",
+    });
 
     expect(res.status).toBe(200);
     expect(mockBoardAuthService.resolveBoardActivityCompanyIds).toHaveBeenCalledWith({
@@ -212,7 +216,7 @@ describe("cli auth routes", () => {
       isInstanceAdmin: true,
       companyIds: [],
     });
-    const res = await request(app).post("/api/cli-auth/revoke-current").send({});
+    const res = await req(app, "POST", "/api/cli-auth/revoke-current", {});
 
     expect(res.status).toBe(200);
     expect(mockBoardAuthService.resolveBoardActivityCompanyIds).toHaveBeenCalledWith({

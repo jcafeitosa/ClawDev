@@ -176,6 +176,7 @@ const hermesLocalAdapter: ServerAdapterModule = {
   execute: hermesExecute,
   testEnvironment: hermesTestEnvironment,
   sessionCodec: hermesSessionCodec,
+  // TODO: Add listSkills, syncSkills, detectModel when hermes-paperclip-adapter exports them
   models: hermesModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: hermesAgentConfigurationDoc,
@@ -217,6 +218,15 @@ export async function listAdapterModels(type: string): Promise<{ id: string; lab
 
 export function listServerAdapters(): ServerAdapterModule[] {
   return Array.from(adaptersByType.values());
+}
+
+export async function detectAdapterModel(
+  type: string,
+): Promise<{ model: string; provider: string; source: string } | null> {
+  const adapter = adaptersByType.get(type);
+  if (!adapter?.detectModel) return null;
+  const detected = await adapter.detectModel();
+  return detected ? { model: detected.model, provider: detected.provider, source: detected.source } : null;
 }
 
 export function findServerAdapter(type: string): ServerAdapterModule | null {

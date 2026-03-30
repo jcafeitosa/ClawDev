@@ -1,7 +1,5 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { errorHandler } from "../middleware/index.js";
 import { instanceSettingsRoutes } from "../routes/instance-settings.js";
 
 const mockInstanceSettingsService = vi.hoisted(() => ({
@@ -19,15 +17,19 @@ vi.mock("../services/index.js", () => ({
 }));
 
 function createApp(actor: any) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    req.actor = actor;
-    next();
-  });
-  app.use("/api", instanceSettingsRoutes({} as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .derive(() => ({ actor }))
+    .use(instanceSettingsRoutes({} as any));
+}
+
+async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) { init.body = JSON.stringify(body); (init.headers as any)["content-type"] = "application/json"; }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 describe("instance settings routes", () => {
@@ -64,16 +66,14 @@ describe("instance settings routes", () => {
       isInstanceAdmin: true,
     });
 
-    const getRes = await request(app).get("/api/instance/settings/experimental");
+    const getRes = await req(app, "GET", "/api/instance/settings/experimental");
     expect(getRes.status).toBe(200);
     expect(getRes.body).toEqual({
       enableIsolatedWorkspaces: false,
       autoRestartDevServerWhenIdle: false,
     });
 
-    const patchRes = await request(app)
-      .patch("/api/instance/settings/experimental")
-      .send({ enableIsolatedWorkspaces: true });
+    const patchRes = await req(app, "PATCH", "/api/instance/settings/experimental", { enableIsolatedWorkspaces: true });
 
     expect(patchRes.status).toBe(200);
     expect(mockInstanceSettingsService.updateExperimental).toHaveBeenCalledWith({
@@ -90,10 +90,8 @@ describe("instance settings routes", () => {
       isInstanceAdmin: true,
     });
 
-    await request(app)
-      .patch("/api/instance/settings/experimental")
-      .send({ autoRestartDevServerWhenIdle: true })
-      .expect(200);
+    const res = await req(app, "PATCH", "/api/instance/settings/experimental", { autoRestartDevServerWhenIdle: true });
+    expect(res.status).toBe(200);
 
     expect(mockInstanceSettingsService.updateExperimental).toHaveBeenCalledWith({
       autoRestartDevServerWhenIdle: true,
@@ -108,13 +106,11 @@ describe("instance settings routes", () => {
       isInstanceAdmin: true,
     });
 
-    const getRes = await request(app).get("/api/instance/settings/general");
+    const getRes = await req(app, "GET", "/api/instance/settings/general");
     expect(getRes.status).toBe(200);
     expect(getRes.body).toEqual({ censorUsernameInLogs: false });
 
-    const patchRes = await request(app)
-      .patch("/api/instance/settings/general")
-      .send({ censorUsernameInLogs: true });
+    const patchRes = await req(app, "PATCH", "/api/instance/settings/general", { censorUsernameInLogs: true });
 
     expect(patchRes.status).toBe(200);
     expect(mockInstanceSettingsService.updateGeneral).toHaveBeenCalledWith({
@@ -132,7 +128,7 @@ describe("instance settings routes", () => {
       companyIds: ["company-1"],
     });
 
-    const res = await request(app).get("/api/instance/settings/general");
+    const res = await req(app, "GET", "/api/instance/settings/general");
 
     expect(res.status).toBe(403);
     expect(mockInstanceSettingsService.getGeneral).not.toHaveBeenCalled();
@@ -146,9 +142,7 @@ describe("instance settings routes", () => {
       source: "agent_key",
     });
 
-    const res = await request(app)
-      .patch("/api/instance/settings/general")
-      .send({ censorUsernameInLogs: true });
+    const res = await req(app, "PATCH", "/api/instance/settings/general", { censorUsernameInLogs: true });
 
     expect(res.status).toBe(403);
     expect(mockInstanceSettingsService.updateGeneral).not.toHaveBeenCalled();

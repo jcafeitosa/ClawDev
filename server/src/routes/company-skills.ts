@@ -6,17 +6,50 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { companySkillService, agentService } from "../services/index.js";
+import { companySkillService, agentService, logActivity } from "../services/index.js";
 import { companyIdParam } from "../middleware/index.js";
+import type { Actor } from "../middleware/authz.js";
 
 export function companySkillRoutes(db: Db) {
   const svc = companySkillService(db);
+  const agents = agentService(db);
+
+  function canCreateAgents(agent: { permissions: Record<string, unknown> | null | undefined }) {
+    if (!agent.permissions || typeof agent.permissions !== "object") return false;
+    return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
+  }
+
+  async function checkCanMutateCompanySkills(actor: Actor, companyId: string, ctx: any): Promise<string | null> {
+    if (actor.type === "board") {
+      if (actor.source === "local_implicit" || actor.isInstanceAdmin) return null;
+      ctx.set.status = 403;
+      return "Missing permission: agents:create";
+    }
+
+    if (!actor.agentId) {
+      ctx.set.status = 403;
+      return "Agent authentication required";
+    }
+
+    const actorAgent = await agents.getById(actor.agentId);
+    if (!actorAgent || actorAgent.companyId !== companyId) {
+      ctx.set.status = 403;
+      return "Agent key cannot access another company";
+    }
+
+    if (canCreateAgents(actorAgent)) {
+      return null;
+    }
+
+    ctx.set.status = 403;
+    return "Missing permission: can create agents";
+  }
 
   return new Elysia()
     // List skills for a company
     .get(
       "/companies/:companyId/skills",
-      async ({ params }) => {
+      async ({ params }: any) => {
         const skills = await svc.list(params.companyId);
         return skills;
       },
@@ -26,9 +59,9 @@ export function companySkillRoutes(db: Db) {
     // Get a skill by ID
     .get(
       "/skills/:id",
-      async ({ params }) => {
-        const skill = await svc.getById(params.id);
-        if (!skill) return new Response("Not found", { status: 404 });
+      async (ctx: any) => {
+        const skill = await svc.getById(ctx.params.id);
+        if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
         return skill;
       },
       { params: t.Object({ id: t.String() }) },
@@ -37,7 +70,7 @@ export function companySkillRoutes(db: Db) {
     // Create skill
     .post(
       "/companies/:companyId/skills",
-      async ({ params, body }) => {
+      async ({ params, body }: any) => {
         const skill = await svc.createLocalSkill(params.companyId, {
           name: body.name,
           description: body.description,
@@ -55,12 +88,33 @@ export function companySkillRoutes(db: Db) {
       },
     )
 
+    // Import skills from source
+    .post(
+      "/companies/:companyId/skills/import",
+      async (ctx: any) => {
+        const { params, body, actor, set } = ctx;
+        const deniedMsg = await checkCanMutateCompanySkills(actor, params.companyId, ctx);
+        if (deniedMsg) return { error: deniedMsg };
+        const source = String(body.source ?? "");
+        const result = await svc.importFromSource(params.companyId, source);
+        set.status = 201;
+        return result;
+      },
+      {
+        params: t.Object({ companyId: t.String() }),
+        body: t.Object({
+          source: t.String(),
+        }),
+      },
+    )
+
     // Update skill content
     .patch(
       "/skills/:id",
-      async ({ params, body }) => {
+      async (ctx: any) => {
+        const { params, body } = ctx;
         const skill = await svc.getById(params.id);
-        if (!skill) return new Response("Not found", { status: 404 });
+        if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
         if (body.content) {
           const updated = await svc.updateFile(skill.companyId, params.id, "SKILL.md", body.content);
           return updated;
@@ -80,12 +134,43 @@ export function companySkillRoutes(db: Db) {
     // Delete skill
     .delete(
       "/skills/:id",
-      async ({ params }) => {
-        const skill = await svc.getById(params.id);
-        if (!skill) return new Response("Not found", { status: 404 });
-        await svc.deleteSkill(skill.companyId, params.id);
+      async (ctx: any) => {
+        const skill = await svc.getById(ctx.params.id);
+        if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
+        await svc.deleteSkill(skill.companyId, ctx.params.id);
         return { success: true };
       },
       { params: t.Object({ id: t.String() }) },
+    )
+
+    // Read skill file
+    .get(
+      "/companies/:companyId/skills/:skillId/files",
+      async (ctx: any) => {
+        const { companyId, skillId } = ctx.params;
+        const relativePath = String(ctx.query?.path ?? "SKILL.md");
+        const result = await svc.readFile(companyId, skillId, relativePath);
+        if (!result) { ctx.set.status = 404; return { error: "File not found" }; }
+        return result;
+      },
+      { params: t.Object({ companyId: t.String(), skillId: t.String() }) },
+    )
+
+    // Update skill file
+    .patch(
+      "/companies/:companyId/skills/:skillId/files",
+      async (ctx: any) => {
+        const { companyId, skillId } = ctx.params;
+        const deniedMsg = await checkCanMutateCompanySkills(ctx.actor, companyId, ctx);
+        if (deniedMsg) return { error: deniedMsg };
+        const result = await svc.updateFile(
+          companyId,
+          skillId,
+          String(ctx.body?.path ?? ""),
+          String(ctx.body?.content ?? ""),
+        );
+        return result;
+      },
+      { params: t.Object({ companyId: t.String(), skillId: t.String() }) },
     );
 }

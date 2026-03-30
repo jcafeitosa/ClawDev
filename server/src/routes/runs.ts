@@ -10,6 +10,7 @@ import type { Db } from "@clawdev/db";
 import { agents, heartbeatRuns } from "@clawdev/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { companyIdParam } from "../middleware/index.js";
+import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
 
 const RUNNING_STATUSES = ["queued", "running"] as const;
 
@@ -39,7 +40,11 @@ export function runRoutes(db: Db) {
     // ── GET /companies/:id/heartbeat-runs ───────────────────────────
     .get(
       "/companies/:companyId/heartbeat-runs",
-      async ({ params, query }) => {
+      async (ctx: any) => {
+        const { params, query } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+
         const rawLimit = Number(query.limit);
         const limit = rawLimit === 0 ? 0 : Math.min(rawLimit || 50, 200);
         const status = query.status as string | undefined;
@@ -71,7 +76,11 @@ export function runRoutes(db: Db) {
     // ── GET /companies/:id/runs (alias) ────────────────────────────
     .get(
       "/companies/:companyId/runs",
-      async ({ params, query }) => {
+      async (ctx: any) => {
+        const { params, query } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+
         const rawLimit = Number(query.limit);
         const limit = rawLimit === 0 ? 0 : Math.min(rawLimit || 50, 200);
         const status = query.status as string | undefined;
@@ -103,7 +112,11 @@ export function runRoutes(db: Db) {
     // ── GET /companies/:id/live-runs ───────────────────────────────
     .get(
       "/companies/:companyId/live-runs",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+
         const rows = await db
           .select(runSelect)
           .from(heartbeatRuns)
@@ -125,7 +138,11 @@ export function runRoutes(db: Db) {
     // ── GET /companies/:id/heartbeat-runs/:runId ────────────────────
     .get(
       "/companies/:companyId/heartbeat-runs/:runId",
-      async ({ params, set }) => {
+      async (ctx: any) => {
+        const { params, set } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+
         const rows = await db
           .select({
             ...runSelect,

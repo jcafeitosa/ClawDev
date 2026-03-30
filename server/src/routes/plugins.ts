@@ -50,9 +50,9 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Get plugin details
     .get(
       "/:pluginId",
-      async ({ params }) => {
+      async ({ params, set }) => {
         const plugin = await registry.getById(params.pluginId);
-        if (!plugin) return new Response("Plugin not found", { status: 404 });
+        if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
         return plugin;
       },
       { params: t.Object({ pluginId: t.String() }) },
@@ -146,8 +146,31 @@ export function pluginRoutes(deps: PluginRouteDeps) {
 
     // UI slot contributions for all ready plugins
     .get("/ui/slots", async () => {
-      // TODO: iterate over loaded plugin manifests
-      return [];
+      const plugins = await registry.listByStatus("ready");
+
+      const contributions = plugins
+        .map((plugin) => {
+          // Safety check: manifestJson should always exist for ready plugins, but guard against null
+          const manifest = (plugin as any).manifestJson;
+          if (!manifest) return null;
+
+          const uiMetadata = getPluginUiContributionMetadata(manifest);
+          if (!uiMetadata) return null;
+
+          return {
+            pluginId: plugin.id,
+            pluginKey: (plugin as any).pluginKey,
+            displayName: manifest.displayName,
+            version: (plugin as any).version,
+            updatedAt: plugin.updatedAt?.toISOString?.() ?? plugin.updatedAt,
+            uiEntryFile: uiMetadata.uiEntryFile,
+            slots: uiMetadata.slots,
+            launchers: uiMetadata.launchers,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      return contributions;
     })
 
     // Plugin jobs

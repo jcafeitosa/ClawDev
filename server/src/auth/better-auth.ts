@@ -61,8 +61,16 @@ export function deriveAuthTrustedOrigins(config: Config): string[] {
 }
 
 export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?: string[]): BetterAuthInstance {
-  const baseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
-  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.PAPERCLIP_AGENT_JWT_SECRET ?? "paperclip-dev-secret";
+  const explicitBaseUrl = config.authBaseUrlMode === "explicit" ? config.authPublicBaseUrl : undefined;
+  // Auto-derive base URL from server config when not explicitly set
+  const baseUrl = explicitBaseUrl ?? `http://${config.host ?? "127.0.0.1"}:${config.port ?? 3100}`;
+  const secret = process.env.BETTER_AUTH_SECRET ?? process.env.PAPERCLIP_AGENT_JWT_SECRET;
+  if (!secret && config.deploymentMode === "authenticated") {
+    throw new Error(
+      "CRITICAL: No JWT secret provided. Set BETTER_AUTH_SECRET or PAPERCLIP_AGENT_JWT_SECRET environment variable. " +
+      "Refusing to start in authenticated mode with a default secret.",
+    );
+  }
   const effectiveTrustedOrigins = trustedOrigins ?? deriveAuthTrustedOrigins(config);
 
   const publicUrl = process.env.PAPERCLIP_PUBLIC_URL ?? baseUrl;
@@ -70,7 +78,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
 
   const authConfig = {
     baseURL: baseUrl,
-    secret,
+    secret: secret ?? "paperclip-dev-secret",
     trustedOrigins: effectiveTrustedOrigins,
     database: drizzleAdapter(db, {
       provider: "pg",

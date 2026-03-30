@@ -1,8 +1,7 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { companyRoutes } from "../routes/companies.js";
-import { errorHandler } from "../middleware/index.js";
+import { HttpError } from "../errors.js";
 
 const mockCompanyService = vi.hoisted(() => ({
   list: vi.fn(),
@@ -65,15 +64,23 @@ function createCompany() {
 }
 
 function createApp(actor: Record<string, unknown>) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    (req as any).actor = actor;
-    next();
-  });
-  app.use("/api/companies", companyRoutes({} as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia()
+    .onError(({ error, set }) => {
+      if (error instanceof HttpError) {
+        set.status = error.status;
+        return error.details
+          ? { error: error.message, details: error.details }
+          : { error: error.message };
+      }
+      if (error && typeof error === "object" && "issues" in error) {
+        set.status = 400;
+        return { error: "Validation error", details: (error as any).issues };
+      }
+      set.status = 500;
+      return { error: "Internal server error" };
+    })
+    .derive(() => ({ actor }))
+    .use(companyRoutes({} as any));
 }
 
 describe("PATCH /api/companies/:companyId/branding", () => {
@@ -97,12 +104,17 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
-      .patch("/api/companies/company-1/branding")
-      .send({ logoAssetId: "11111111-1111-4111-8111-111111111111" });
+    const res = await app.handle(
+      new Request("http://localhost/companies/company-1/branding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ logoAssetId: "11111111-1111-4111-8111-111111111111" }),
+      }),
+    );
 
+    const body = await res.json();
     expect(res.status).toBe(403);
-    expect(res.body.error).toContain("Only CEO agents");
+    expect(body.error).toContain("Only CEO agents");
     expect(mockCompanyService.update).not.toHaveBeenCalled();
   });
 
@@ -122,15 +134,20 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       runId: "run-1",
     });
 
-    const res = await request(app)
-      .patch("/api/companies/company-1/branding")
-      .send({
-        logoAssetId: "11111111-1111-4111-8111-111111111111",
-        brandColor: "#123456",
-      });
+    const res = await app.handle(
+      new Request("http://localhost/companies/company-1/branding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logoAssetId: "11111111-1111-4111-8111-111111111111",
+          brandColor: "#123456",
+        }),
+      }),
+    );
 
+    const body = await res.json();
     expect(res.status).toBe(200);
-    expect(res.body.logoAssetId).toBe(company.logoAssetId);
+    expect(body.logoAssetId).toBe(company.logoAssetId);
     expect(mockCompanyService.update).toHaveBeenCalledWith("company-1", {
       logoAssetId: "11111111-1111-4111-8111-111111111111",
       brandColor: "#123456",
@@ -166,13 +183,18 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       source: "local_implicit",
     });
 
-    const res = await request(app)
-      .patch("/api/companies/company-1/branding")
-      .send({ brandColor: null, logoAssetId: null });
+    const res = await app.handle(
+      new Request("http://localhost/companies/company-1/branding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brandColor: null, logoAssetId: null }),
+      }),
+    );
 
+    const body = await res.json();
     expect(res.status).toBe(200);
-    expect(res.body.brandColor).toBeNull();
-    expect(res.body.logoAssetId).toBeNull();
+    expect(body.brandColor).toBeNull();
+    expect(body.logoAssetId).toBeNull();
   });
 
   it("rejects non-branding fields in the request body", async () => {
@@ -182,15 +204,20 @@ describe("PATCH /api/companies/:companyId/branding", () => {
       source: "local_implicit",
     });
 
-    const res = await request(app)
-      .patch("/api/companies/company-1/branding")
-      .send({
-        logoAssetId: "11111111-1111-4111-8111-111111111111",
-        status: "archived",
-      });
+    const res = await app.handle(
+      new Request("http://localhost/companies/company-1/branding", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          logoAssetId: "11111111-1111-4111-8111-111111111111",
+          status: "archived",
+        }),
+      }),
+    );
 
+    const body = await res.json();
     expect(res.status).toBe(400);
-    expect(res.body.error).toBe("Validation error");
+    expect(body.error).toBe("Validation error");
     expect(mockCompanyService.update).not.toHaveBeenCalled();
   });
 });

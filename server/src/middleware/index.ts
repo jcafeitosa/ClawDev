@@ -1,6 +1,8 @@
 export { elysiaLogger } from "./elysia-logger.js";
-export { elysiaErrorHandler } from "./error-handler.js";
-export { elysiaAuth, requireAuth, type AuthUser } from "./auth.js";
+export { elysiaErrorHandler, errorHandler } from "./error-handler.js";
+export { actorMiddleware, createActorResolver, requireBoard } from "./auth.js";
+export { checkBoardMutation } from "./board-mutation-guard.js";
+export { checkPrivateHostname, resolvePrivateHostnameAllowSet, type PrivateHostnameGuardOptions } from "./private-hostname-guard.js";
 export { uuidParam, companyIdParam, paginationQuery, errorResponse } from "./validation.js";
 export {
   assertBoard,
@@ -9,3 +11,4 @@ export {
   getActorInfo,
   type Actor,
 } from "./authz.js";
+export { rateLimitGuard } from "./rate-limit.js";

@@ -123,10 +123,10 @@ afterEach(async () => {
       leasedRunIds.delete(runId);
     }),
   );
-  delete process.env.PAPERCLIP_CONFIG;
-  delete process.env.PAPERCLIP_HOME;
-  delete process.env.PAPERCLIP_INSTANCE_ID;
-  delete process.env.PAPERCLIP_WORKTREES_DIR;
+  delete process.env.CLAWDEV_CONFIG;
+  delete process.env.CLAWDEV_HOME;
+  delete process.env.CLAWDEV_INSTANCE_ID;
+  delete process.env.CLAWDEV_WORKTREES_DIR;
   delete process.env.DATABASE_URL;
 });
 
@@ -207,9 +207,9 @@ describe("realizeExecutionWorkspace", () => {
       [
         "#!/usr/bin/env bash",
         "set -euo pipefail",
-        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_BRANCH\" > .paperclip-provision-branch",
-        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_BASE_CWD\" > .paperclip-provision-base",
-        "printf '%s\\n' \"$PAPERCLIP_WORKSPACE_CREATED\" > .paperclip-provision-created",
+        "printf '%s\\n' \"$CLAWDEV_WORKSPACE_BRANCH\" > .paperclip-provision-branch",
+        "printf '%s\\n' \"$CLAWDEV_WORKSPACE_BASE_CWD\" > .paperclip-provision-base",
+        "printf '%s\\n' \"$CLAWDEV_WORKSPACE_CREATED\" > .paperclip-provision-created",
       ].join("\n"),
       "utf8",
     );
@@ -288,16 +288,16 @@ describe("realizeExecutionWorkspace", () => {
   it("writes an isolated repo-local Paperclip config and worktree branding when provisioning", async () => {
     const repoRoot = await createTempRepo();
     const previousCwd = process.cwd();
-    const paperclipHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-home-"));
-    const isolatedWorktreeHome = await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktrees-"));
+    const paperclipHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktree-home-")));
+    const isolatedWorktreeHome = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), "paperclip-worktrees-")));
     const instanceId = "worktree-base";
     const sharedConfigDir = path.join(paperclipHome, "instances", instanceId);
     const sharedConfigPath = path.join(sharedConfigDir, "config.json");
     const sharedEnvPath = path.join(sharedConfigDir, ".env");
 
-    process.env.PAPERCLIP_HOME = paperclipHome;
-    process.env.PAPERCLIP_INSTANCE_ID = instanceId;
-    process.env.PAPERCLIP_WORKTREES_DIR = isolatedWorktreeHome;
+    process.env.CLAWDEV_HOME = paperclipHome;
+    process.env.CLAWDEV_INSTANCE_ID = instanceId;
+    process.env.CLAWDEV_WORKTREES_DIR = isolatedWorktreeHome;
 
     await fs.mkdir(sharedConfigDir, { recursive: true });
     await fs.writeFile(
@@ -400,8 +400,9 @@ describe("realizeExecutionWorkspace", () => {
         },
       });
 
-      const configPath = path.join(workspace.cwd, ".paperclip", "config.json");
-      const envPath = path.join(workspace.cwd, ".paperclip", ".env");
+      const realCwd = await fs.realpath(workspace.cwd);
+      const configPath = path.join(realCwd, ".clawdev", "config.json");
+      const envPath = path.join(realCwd, ".clawdev", ".env");
       const envContents = await fs.readFile(envPath, "utf8");
       const configContents = JSON.parse(await fs.readFile(configPath, "utf8"));
       const configStats = await fs.lstat(configPath);
@@ -420,12 +421,12 @@ describe("realizeExecutionWorkspace", () => {
         path.join(expectedInstanceRoot, "secrets", "master.key"),
       );
       expect(envContents).not.toContain("DATABASE_URL=");
-      expect(envContents).toContain(`PAPERCLIP_HOME=${JSON.stringify(isolatedWorktreeHome)}`);
-      expect(envContents).toContain(`PAPERCLIP_INSTANCE_ID=${JSON.stringify(expectedInstanceId)}`);
-      expect(envContents).toContain(`PAPERCLIP_CONFIG=${JSON.stringify(configPath)}`);
-      expect(envContents).toContain("PAPERCLIP_IN_WORKTREE=true");
+      expect(envContents).toContain(`CLAWDEV_HOME=${JSON.stringify(isolatedWorktreeHome)}`);
+      expect(envContents).toContain(`CLAWDEV_INSTANCE_ID=${JSON.stringify(expectedInstanceId)}`);
+      expect(envContents).toContain(`CLAWDEV_CONFIG=${JSON.stringify(configPath)}`);
+      expect(envContents).toContain("CLAWDEV_IN_WORKTREE=true");
       expect(envContents).toContain(
-        `PAPERCLIP_WORKTREE_NAME=${JSON.stringify("PAP-885-show-worktree-banner")}`,
+        `CLAWDEV_WORKTREE_NAME=${JSON.stringify("PAP-885-show-worktree-banner")}`,
       );
 
       process.chdir(workspace.cwd);
@@ -844,9 +845,9 @@ describe("ensureRuntimeServicesForRun", () => {
         [
           "const fs = require('node:fs');",
           `fs.writeFileSync(${JSON.stringify(envCapturePath)}, JSON.stringify({`,
-          "paperclipConfig: process.env.PAPERCLIP_CONFIG ?? null,",
-          "paperclipHome: process.env.PAPERCLIP_HOME ?? null,",
-          "paperclipInstanceId: process.env.PAPERCLIP_INSTANCE_ID ?? null,",
+          "paperclipConfig: process.env.CLAWDEV_CONFIG ?? null,",
+          "paperclipHome: process.env.CLAWDEV_HOME ?? null,",
+          "paperclipInstanceId: process.env.CLAWDEV_INSTANCE_ID ?? null,",
           "databaseUrl: process.env.DATABASE_URL ?? null,",
           "customEnv: process.env.RUNTIME_CUSTOM_ENV ?? null,",
           "port: process.env.PORT ?? null,",
@@ -856,9 +857,9 @@ describe("ensureRuntimeServicesForRun", () => {
       ),
     ].join(" ");
 
-    process.env.PAPERCLIP_CONFIG = "/tmp/base-paperclip-config.json";
-    process.env.PAPERCLIP_HOME = "/tmp/base-paperclip-home";
-    process.env.PAPERCLIP_INSTANCE_ID = "base-instance";
+    process.env.CLAWDEV_CONFIG = "/tmp/base-paperclip-config.json";
+    process.env.CLAWDEV_HOME = "/tmp/base-paperclip-home";
+    process.env.CLAWDEV_INSTANCE_ID = "base-instance";
     process.env.DATABASE_URL = "postgres://shared-db.example.com/paperclip";
 
     const runId = "run-env";

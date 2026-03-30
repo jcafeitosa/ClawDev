@@ -1,8 +1,7 @@
-import express from "express";
-import request from "supertest";
+import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HttpError } from "../errors.js";
 import { costRoutes } from "../routes/costs.js";
-import { errorHandler } from "../middleware/index.js";
 
 function makeDb(overrides: Record<string, unknown> = {}) {
   const selectChain = {
@@ -88,27 +87,43 @@ vi.mock("../services/quota-windows.js", () => ({
 }));
 
 function createApp() {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    req.actor = { type: "board", userId: "board-user", source: "local_implicit" };
-    next();
-  });
-  app.use("/api", costRoutes(makeDb() as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .onError(({ error, set }) => {
+      if (error instanceof HttpError) {
+        set.status = error.status;
+        return error.details ? { error: error.message, details: error.details } : { error: error.message };
+      }
+      set.status = 500;
+      return { error: "Internal server error" };
+    })
+    .derive(() => ({
+      actor: { type: "board", userId: "board-user", source: "local_implicit" } as any,
+    }))
+    .use(costRoutes(makeDb() as any));
 }
 
 function createAppWithActor(actor: any) {
-  const app = express();
-  app.use(express.json());
-  app.use((req, _res, next) => {
-    req.actor = actor;
-    next();
-  });
-  app.use("/api", costRoutes(makeDb() as any));
-  app.use(errorHandler);
-  return app;
+  return new Elysia({ prefix: "/api" })
+    .onError(({ error, set }) => {
+      if (error instanceof HttpError) {
+        set.status = error.status;
+        return error.details ? { error: error.message, details: error.details } : { error: error.message };
+      }
+      set.status = 500;
+      return { error: "Internal server error" };
+    })
+    .derive(() => ({ actor }))
+    .use(costRoutes(makeDb() as any));
+}
+
+async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
+  const init: RequestInit = { method, headers: { ...headers } };
+  if (body) { init.body = JSON.stringify(body); (init.headers as any)["content-type"] = "application/json"; }
+  const res = await app.handle(new Request("http://localhost" + path, init));
+  const text = await res.text();
+  let json: any;
+  try { json = JSON.parse(text); } catch { json = text; }
+  return { status: res.status, body: json, text };
 }
 
 beforeEach(() => {
@@ -132,53 +147,47 @@ beforeEach(() => {
 describe("cost routes", () => {
   it("accepts valid ISO date strings and passes them to cost summary routes", async () => {
     const app = createApp();
-    const res = await request(app)
-      .get("/api/companies/company-1/costs/summary")
-      .query({ from: "2026-01-01T00:00:00.000Z", to: "2026-01-31T23:59:59.999Z" });
+    const res = await req(app, "GET",
+      "/api/companies/company-1/costs/summary?from=2026-01-01T00:00:00.000Z&to=2026-01-31T23:59:59.999Z");
     expect(res.status).toBe(200);
   });
 
   it("returns 400 for an invalid 'from' date string", async () => {
     const app = createApp();
-    const res = await request(app)
-      .get("/api/companies/company-1/costs/summary")
-      .query({ from: "not-a-date" });
+    const res = await req(app, "GET",
+      "/api/companies/company-1/costs/summary?from=not-a-date");
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/invalid 'from' date/i);
   });
 
   it("returns 400 for an invalid 'to' date string", async () => {
     const app = createApp();
-    const res = await request(app)
-      .get("/api/companies/company-1/costs/summary")
-      .query({ to: "banana" });
+    const res = await req(app, "GET",
+      "/api/companies/company-1/costs/summary?to=banana");
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/invalid 'to' date/i);
   });
 
   it("returns finance summary rows for valid requests", async () => {
     const app = createApp();
-    const res = await request(app)
-      .get("/api/companies/company-1/costs/finance-summary")
-      .query({ from: "2026-02-01T00:00:00.000Z", to: "2026-02-28T23:59:59.999Z" });
+    const res = await req(app, "GET",
+      "/api/companies/company-1/costs/finance-summary?from=2026-02-01T00:00:00.000Z&to=2026-02-28T23:59:59.999Z");
     expect(res.status).toBe(200);
     expect(mockFinanceService.summary).toHaveBeenCalled();
   });
 
   it("returns 400 for invalid finance event list limits", async () => {
     const app = createApp();
-    const res = await request(app)
-      .get("/api/companies/company-1/costs/finance-events")
-      .query({ limit: "0" });
+    const res = await req(app, "GET",
+      "/api/companies/company-1/costs/finance-events?limit=0");
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/invalid 'limit'/i);
   });
 
   it("accepts valid finance event list limits", async () => {
     const app = createApp();
-    const res = await request(app)
-      .get("/api/companies/company-1/costs/finance-events")
-      .query({ limit: "25" });
+    const res = await req(app, "GET",
+      "/api/companies/company-1/costs/finance-events?limit=25");
     expect(res.status).toBe(200);
     expect(mockFinanceService.list).toHaveBeenCalledWith("company-1", undefined, 25);
   });
@@ -192,9 +201,9 @@ describe("cost routes", () => {
       companyIds: ["company-2"],
     });
 
-    const res = await request(app)
-      .patch("/api/companies/company-1/budgets")
-      .send({ budgetMonthlyCents: 2500 });
+    const res = await req(app,
+      "PATCH", "/api/companies/company-1/budgets",
+      { budgetMonthlyCents: 2500 });
 
     expect(res.status).toBe(403);
     expect(mockCompanyService.update).not.toHaveBeenCalled();
@@ -216,9 +225,9 @@ describe("cost routes", () => {
       companyIds: ["company-2"],
     });
 
-    const res = await request(app)
-      .patch("/api/agents/agent-1/budgets")
-      .send({ budgetMonthlyCents: 2500 });
+    const res = await req(app,
+      "PATCH", "/api/agents/agent-1/budgets",
+      { budgetMonthlyCents: 2500 });
 
     expect(res.status).toBe(403);
     expect(mockAgentService.update).not.toHaveBeenCalled();
