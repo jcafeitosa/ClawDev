@@ -30,7 +30,11 @@ function dedupeModels(models: AdapterModel[]): AdapterModel[] {
     const id = model.id.trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    deduped.push({ id, label: model.label.trim() || id });
+    deduped.push({
+      ...model,
+      id,
+      label: model.label.trim() || id,
+    });
   }
   return deduped;
 }
@@ -52,6 +56,7 @@ function firstNonEmptyLine(text: string): string {
 
 function parseModelsOutput(stdout: string): AdapterModel[] {
   const parsed: AdapterModel[] = [];
+  const probedAt = new Date().toISOString();
   for (const raw of stdout.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
@@ -60,7 +65,13 @@ function parseModelsOutput(stdout: string): AdapterModel[] {
     const provider = firstToken.slice(0, firstToken.indexOf("/")).trim();
     const model = firstToken.slice(firstToken.indexOf("/") + 1).trim();
     if (!provider || !model) continue;
-    parsed.push({ id: `${provider}/${model}`, label: `${provider}/${model}` });
+    parsed.push({
+      id: `${provider}/${model}`,
+      label: `${provider}/${model}`,
+      status: "available",
+      provider,
+      probedAt,
+    });
   }
   return dedupeModels(parsed);
 }

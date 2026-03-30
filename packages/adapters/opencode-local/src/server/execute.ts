@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@clawdev/adapter-utils";
+import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult, type AdapterBillingType } from "@clawdev/adapter-utils";
 import {
   asString,
   asNumber,
@@ -45,6 +45,26 @@ function parseModelProvider(model: string | null): string | null {
 
 function resolveOpenCodeBiller(env: Record<string, string>, provider: string | null): string {
   return inferOpenAiCompatibleBiller(env, null) ?? provider ?? "unknown";
+}
+
+const API_BILLING_PROVIDERS = new Set([
+  "groq",
+  "xai",
+  "openai",
+  "anthropic",
+  "google",
+  "mistral",
+  "cohere",
+  "fireworks",
+  "together",
+  "deepseek",
+  "perplexity",
+]);
+
+function inferBillingType(provider: string | null): AdapterBillingType {
+  if (!provider) return "unknown";
+  if (API_BILLING_PROVIDERS.has(provider.toLowerCase())) return "api";
+  return "unknown";
 }
 
 function claudeSkillsHome(): string {
@@ -99,6 +119,19 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const command = asString(config.command, "opencode");
   const model = asString(config.model, "").trim();
   const variant = asString(config.variant, "").trim();
+  const agentName = asString(config.agent, "");
+  const pure = config.pure === true;
+  const format = asString(config.format, "json"); // default json for structured output
+  const files = asStringArray(config.files);
+  const share = config.share === true;
+  const thinking = config.thinking === true;
+  const attach = asString(config.attach, "");
+  const password = asString(config.password, "");
+  const dir = asString(config.dir, "");
+  const port = asNumber(config.port, 0);
+  const logLevel = asString(config.logLevel, "");
+  const sessionTitle = asString(config.sessionTitle, "");
+  const forkSession = config.forkSession === true;
 
   const workspaceContext = parseObject(context.clawdevWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
@@ -285,10 +318,45 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
 
     const buildArgs = (resumeSessionId: string | null) => {
-      const args = ["run", "--format", "json"];
+      const args = ["run"];
+
+      // Format
+      if (format) args.push("--format", format);
+
       if (resumeSessionId) args.push("--session", resumeSessionId);
       if (model) args.push("--model", model);
+
+      // Model variant
       if (variant) args.push("--variant", variant);
+
+      // Agent
+      if (agentName) args.push("--agent", agentName);
+
+      // Pure mode
+      if (pure) args.push("--pure");
+
+      // Files
+      for (const f of files) args.push("--file", f);
+
+      // Share
+      if (share) args.push("--share");
+
+      // Thinking
+      if (thinking) args.push("--thinking");
+
+      // Session
+      if (sessionTitle) args.push("--title", sessionTitle);
+      if (forkSession) args.push("--fork");
+
+      // Remote/Server
+      if (attach) args.push("--attach", attach);
+      if (password) args.push("--password", password);
+      if (dir) args.push("--dir", dir);
+      if (port > 0) args.push("--port", String(port));
+
+      // Logging
+      if (logLevel) args.push("--log-level", logLevel);
+
       if (extraArgs.length > 0) args.push(...extraArgs);
       return args;
     };
@@ -382,7 +450,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
         provider: parseModelProvider(modelId),
         biller: resolveOpenCodeBiller(runtimeEnv, parseModelProvider(modelId)),
         model: modelId,
-        billingType: "unknown",
+        billingType: inferBillingType(parseModelProvider(modelId)),
         costUsd: attempt.parsed.costUsd,
         resultJson: {
           stdout: attempt.proc.stdout,

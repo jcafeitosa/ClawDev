@@ -322,6 +322,194 @@ export async function testEnvironment(
         });
       }
     }
+    // ── Version check ──
+    if (canRunProbe) {
+      try {
+        const versionResult = await runChildProcess(
+          `opencode-version-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          ["--version"],
+          {
+            cwd,
+            env: runtimeEnv,
+            timeoutSec: 15,
+            graceSec: 3,
+            onLog: async () => {},
+          },
+        );
+        const versionLine = firstNonEmptyLine(versionResult.stdout) || firstNonEmptyLine(versionResult.stderr);
+        if ((versionResult.exitCode ?? 1) === 0 && versionLine) {
+          checks.push({
+            code: "opencode_version",
+            level: "info",
+            message: `OpenCode version: ${versionLine}`,
+            detail: versionLine,
+          });
+        } else {
+          checks.push({
+            code: "opencode_version_unknown",
+            level: "warn",
+            message: "Could not determine OpenCode version.",
+            detail: versionLine || undefined,
+          });
+        }
+      } catch (err) {
+        checks.push({
+          code: "opencode_version_failed",
+          level: "warn",
+          message: "Failed to probe OpenCode version.",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // ── Auth / Providers check ──
+    if (canRunProbe) {
+      try {
+        const providersResult = await runChildProcess(
+          `opencode-providers-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          ["providers", "list"],
+          {
+            cwd,
+            env: runtimeEnv,
+            timeoutSec: 15,
+            graceSec: 3,
+            onLog: async () => {},
+          },
+        );
+        const providerOutput = providersResult.stdout + "\n" + providersResult.stderr;
+        const credentialsMatch = providerOutput.match(/(\d+)\s+credential/i);
+        const credentialCount = credentialsMatch ? parseInt(credentialsMatch[1], 10) : null;
+
+        if ((providersResult.exitCode ?? 1) === 0 && credentialCount !== null) {
+          checks.push({
+            code: "opencode_auth_credentials",
+            level: credentialCount > 0 ? "info" : "warn",
+            message: credentialCount > 0
+              ? `${credentialCount} credential(s) configured.`
+              : "No credentials configured.",
+            detail: `${credentialCount} credential(s)`,
+            ...(credentialCount === 0
+              ? { hint: "Run `opencode auth login` to configure provider credentials." }
+              : {}),
+          });
+        } else {
+          checks.push({
+            code: "opencode_auth_credentials_unknown",
+            level: "warn",
+            message: "Could not determine configured credentials.",
+            detail: firstNonEmptyLine(providersResult.stderr) || firstNonEmptyLine(providersResult.stdout) || undefined,
+          });
+        }
+      } catch (err) {
+        checks.push({
+          code: "opencode_auth_credentials_failed",
+          level: "warn",
+          message: "Failed to probe OpenCode provider credentials.",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // ── Available models check ──
+    if (canRunProbe) {
+      try {
+        const modelsResult = await runChildProcess(
+          `opencode-models-probe-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          ["models"],
+          {
+            cwd,
+            env: runtimeEnv,
+            timeoutSec: 20,
+            graceSec: 3,
+            onLog: async () => {},
+          },
+        );
+        if ((modelsResult.exitCode ?? 1) === 0) {
+          const modelLines = modelsResult.stdout
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0 && l.includes("/"));
+          checks.push({
+            code: "opencode_available_models",
+            level: modelLines.length > 0 ? "info" : "warn",
+            message: modelLines.length > 0
+              ? `${modelLines.length} model(s) available.`
+              : "No models available from OpenCode.",
+            detail: modelLines.length > 0
+              ? modelLines.slice(0, 10).join(", ") + (modelLines.length > 10 ? ", ..." : "")
+              : undefined,
+            ...(modelLines.length === 0
+              ? { hint: "Verify provider credentials and run `opencode models` manually." }
+              : {}),
+          });
+        } else {
+          checks.push({
+            code: "opencode_available_models_failed",
+            level: "warn",
+            message: "Could not list available models.",
+            detail: firstNonEmptyLine(modelsResult.stderr) || firstNonEmptyLine(modelsResult.stdout) || undefined,
+          });
+        }
+      } catch (err) {
+        checks.push({
+          code: "opencode_available_models_failed",
+          level: "warn",
+          message: "Failed to probe available models.",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    // ── Agents check ──
+    if (canRunProbe) {
+      try {
+        const agentsResult = await runChildProcess(
+          `opencode-agents-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          ["agent", "list"],
+          {
+            cwd,
+            env: runtimeEnv,
+            timeoutSec: 15,
+            graceSec: 3,
+            onLog: async () => {},
+          },
+        );
+        if ((agentsResult.exitCode ?? 1) === 0) {
+          const agentLines = agentsResult.stdout
+            .split(/\r?\n/)
+            .map((l) => l.trim())
+            .filter((l) => l.length > 0);
+          checks.push({
+            code: "opencode_agents",
+            level: "info",
+            message: agentLines.length > 0
+              ? `${agentLines.length} agent(s) available.`
+              : "No agents reported by OpenCode.",
+            detail: agentLines.length > 0
+              ? agentLines.slice(0, 10).join(", ") + (agentLines.length > 10 ? ", ..." : "")
+              : undefined,
+          });
+        } else {
+          checks.push({
+            code: "opencode_agents_failed",
+            level: "warn",
+            message: "Could not list OpenCode agents.",
+            detail: firstNonEmptyLine(agentsResult.stderr) || firstNonEmptyLine(agentsResult.stdout) || undefined,
+          });
+        }
+      } catch (err) {
+        checks.push({
+          code: "opencode_agents_failed",
+          level: "warn",
+          message: "Failed to probe OpenCode agents.",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
   } finally {
     await preparedRuntimeConfig.cleanup();
   }
