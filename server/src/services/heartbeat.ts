@@ -51,6 +51,8 @@ import {
   resolveExecutionWorkspaceMode,
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { createModelRouterService } from "./model-router.js";
+import { createProviderStatusService } from "./provider-status.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import {
   hasSessionCompactionThresholds,
@@ -2512,19 +2514,100 @@ export function heartbeatService(db: Db) {
           "local agent jwt secret missing or invalid; running without injected CLAWDEV_API_KEY",
         );
       }
-      const adapterResult = await adapter.execute({
-        runId: run.id,
-        agent,
-        runtime: runtimeForAdapter,
-        config: runtimeConfig,
-        context,
-        onLog,
-        onMeta: onAdapterMeta,
-        onSpawn: async (meta) => {
-          await persistRunProcessMetadata(run.id, meta);
-        },
-        authToken: authToken ?? undefined,
-      });
+
+      // --- Model routing: resolve model via routing system ---
+      const requestedModel = typeof (runtimeConfig as Record<string, unknown>).model === "string" ? (runtimeConfig as Record<string, unknown>).model as string : undefined;
+      let resolvedAdapterType = agent.adapterType;
+      let modelResolution: import("./model-router.js").ModelResolution | null = null;
+
+      try {
+        const providerStatusSvc = createProviderStatusService(db);
+        const routerSvc = createModelRouterService(db, providerStatusSvc);
+        const resolution = await routerSvc.resolveModel(
+          agent.companyId,
+          agent.id,
+          agent.adapterType,
+          requestedModel,
+        );
+        modelResolution = resolution;
+
+        // If router resolved a different model, override the config
+        if (resolution.modelId && resolution.modelId !== requestedModel) {
+          (runtimeConfig as Record<string, unknown>).model = resolution.modelId;
+          await onLog("stdout", `[clawdev] Model routed: ${requestedModel ?? "auto"} → ${resolution.modelId} (${resolution.resolution}, depth=${resolution.fallbackDepth})\n`);
+        }
+        // If router resolved a different adapter type, switch adapter
+        if (resolution.adapterType !== agent.adapterType) {
+          resolvedAdapterType = resolution.adapterType;
+          // Note: switching adapter type mid-execution is complex; log it but keep original for now
+          await onLog("stdout", `[clawdev] Router suggests adapter ${resolution.adapterType} but keeping ${agent.adapterType}\n`);
+        }
+      } catch (routerErr) {
+        // Model routing is best-effort; if it fails, continue with original model
+        logger.warn({ err: routerErr, runId: run.id, agentId: agent.id }, "model routing failed, using original model");
+      }
+
+      // --- Execution with retry on rate limit ---
+      const MAX_RETRIES = 1;
+      let adapterResult: Awaited<ReturnType<typeof adapter.execute>>;
+      let retryCount = 0;
+
+      const executeWithConfig = async (config: Record<string, unknown>) => {
+        return adapter.execute({
+          runId: run.id,
+          agent,
+          runtime: runtimeForAdapter,
+          config,
+          context,
+          onLog,
+          onMeta: onAdapterMeta,
+          onSpawn: async (meta) => {
+            await persistRunProcessMetadata(run.id, meta);
+          },
+          authToken: authToken ?? undefined,
+        });
+      };
+
+      adapterResult = await executeWithConfig(runtimeConfig);
+
+      // If rate limited, try fallback
+      if (
+        retryCount < MAX_RETRIES &&
+        adapterResult.errorCode &&
+        ["rate_limited", "quota_exceeded"].includes(adapterResult.errorCode)
+      ) {
+        try {
+          const providerStatusSvc = createProviderStatusService(db);
+          // Mark the failed model in cooldown
+          await providerStatusSvc.handleExecutionError(
+            agent.adapterType,
+            readNonEmptyString(adapterResult.model) ?? (runtimeConfig as any).model ?? "unknown",
+            adapterResult.errorCode,
+            adapterResult.errorMessage,
+          );
+
+          // Try to resolve a fallback model
+          const routerSvc = createModelRouterService(db, providerStatusSvc);
+          const fallback = await routerSvc.resolveModel(
+            agent.companyId,
+            agent.id,
+            agent.adapterType,
+            undefined, // let router pick best available
+          );
+
+          if (fallback.modelId && fallback.modelId !== (runtimeConfig as any).model) {
+            await onLog("stdout", `[clawdev] Rate limited on ${(runtimeConfig as any).model}; retrying with fallback: ${fallback.modelId}\n`);
+            const fallbackConfig = { ...runtimeConfig, model: fallback.modelId };
+            adapterResult = await executeWithConfig(fallbackConfig as Record<string, unknown>);
+            modelResolution = fallback;
+            retryCount++;
+          }
+        } catch (retryErr) {
+          logger.warn({ err: retryErr, runId: run.id }, "fallback retry failed");
+        }
+      }
+      // --- End execution with retry ---
+
       const adapterManagedRuntimeServices = adapterResult.runtimeServices
         ? await persistAdapterManagedRuntimeServices({
             db,
@@ -2599,6 +2682,40 @@ export function heartbeatService(db: Db) {
         outcome = "succeeded";
       } else {
         outcome = "failed";
+      }
+
+      // --- Post-execution: update provider status and log routing ---
+      try {
+        const providerStatusSvc = createProviderStatusService(db);
+        const executedModel = readNonEmptyString(adapterResult.model) ?? requestedModel ?? "unknown";
+
+        if (outcome === "succeeded") {
+          // Record successful probe
+          await providerStatusSvc.recordProbeResult(agent.adapterType, executedModel, true);
+        } else if (outcome === "failed") {
+          // Handle execution error — may trigger cooldown
+          await providerStatusSvc.handleExecutionError(
+            agent.adapterType,
+            executedModel,
+            adapterResult.errorCode,
+            adapterResult.errorMessage,
+          );
+          await providerStatusSvc.recordProbeResult(agent.adapterType, executedModel, false);
+        }
+
+        // Log routing decision
+        if (modelResolution) {
+          const routerSvc = createModelRouterService(db, providerStatusSvc);
+          await routerSvc.logRoutingDecision(
+            agent.companyId,
+            agent.id,
+            run.id,
+            { adapterType: agent.adapterType, modelId: requestedModel },
+            modelResolution,
+          );
+        }
+      } catch (statusErr) {
+        logger.warn({ err: statusErr, runId: run.id }, "failed to update provider status after execution");
       }
 
       let logSummary: { bytes: number; sha256?: string; compressed: boolean } | null = null;
