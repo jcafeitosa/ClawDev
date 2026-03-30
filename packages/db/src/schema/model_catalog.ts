@@ -1,0 +1,42 @@
+import { pgTable, uuid, text, integer, timestamp, boolean, jsonb, index, uniqueIndex } from "drizzle-orm/pg-core";
+
+export const modelCatalog = pgTable(
+  "model_catalog",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    adapterType: text("adapter_type").notNull(),
+    modelId: text("model_id").notNull(),
+    label: text("label").notNull(),
+    provider: text("provider").notNull(),
+    family: text("family"),
+    tier: text("tier").notNull().default("paid"),
+    capabilities: jsonb("capabilities").$type<string[]>().notNull().default([]),
+    contextWindow: integer("context_window"),
+    maxOutputTokens: integer("max_output_tokens"),
+    inputPriceMicro: integer("input_price_micro").notNull().default(0),
+    outputPriceMicro: integer("output_price_micro").notNull().default(0),
+    cachedInputPriceMicro: integer("cached_input_price_micro").notNull().default(0),
+    rpmLimit: integer("rpm_limit"),
+    tpmLimit: integer("tpm_limit"),
+    deprecatedAt: timestamp("deprecated_at", { withTimezone: true }),
+    sunsetAt: timestamp("sunset_at", { withTimezone: true }),
+    upgradePath: text("upgrade_path"),
+    source: text("source").notNull().default("static"),
+    isLocal: boolean("is_local").notNull().default(false),
+    isFree: boolean("is_free").notNull().default(false),
+    freeQuotaDetail: text("free_quota_detail"),
+    lastProbedAt: timestamp("last_probed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => ({
+    adapterModelUniqueIdx: uniqueIndex("model_catalog_adapter_model_idx").on(
+      table.adapterType,
+      table.modelId,
+    ),
+    providerIdx: index("model_catalog_provider_idx").on(table.provider),
+    tierIdx: index("model_catalog_tier_idx").on(table.tier),
+    isFreeIdx: index("model_catalog_is_free_idx").on(table.isFree),
+    isLocalIdx: index("model_catalog_is_local_idx").on(table.isLocal),
+  }),
+);

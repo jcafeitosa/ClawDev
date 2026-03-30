@@ -57,3 +57,7 @@ export { pluginJobs, pluginJobRuns } from "./plugin_jobs.js";
 export { pluginWebhookDeliveries } from "./plugin_webhooks.js";
 export { pluginLogs } from "./plugin_logs.js";
 export { embeddings } from "./embeddings.js";
+export { modelCatalog } from "./model_catalog.js";
+export { providerModelStatus } from "./provider_model_status.js";
+export { companyModelPreferences } from "./company_model_preferences.js";
+export { modelRoutingLog } from "./model_routing_log.js";
