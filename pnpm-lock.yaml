@@ -154,6 +154,19 @@ importers:
         specifier: ^5.9.3
         version: 5.9.3
 
+  packages/adapters/copilot-local:
+    dependencies:
+      '@clawdev/adapter-utils':
+        specifier: workspace:*
+        version: link:../../adapter-utils
+    devDependencies:
+      '@types/node':
+        specifier: '>=24.0.0 <25.0.0'
+        version: 24.12.0
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/adapters/cursor-local:
     dependencies:
       '@clawdev/adapter-utils':
@@ -478,6 +491,9 @@ importers:
       '@clawdev/adapter-codex-local':
         specifier: workspace:*
         version: link:../packages/adapters/codex-local
+      '@clawdev/adapter-copilot-local':
+        specifier: workspace:*
+        version: link:../packages/adapters/copilot-local
       '@clawdev/adapter-cursor-local':
         specifier: workspace:*
         version: link:../packages/adapters/cursor-local
@@ -547,9 +563,6 @@ importers:
       embedded-postgres:
         specifier: 18.1.0-beta.16
         version: 18.1.0-beta.16(patch_hash=55uhvnotpqyiy37rn3pqpukhei)
-      hermes-paperclip-adapter:
-        specifier: 0.1.1
-        version: 0.1.1
       ioredis:
         specifier: ^5.10.1
         version: 5.10.1
@@ -1691,9 +1704,6 @@ packages:
     resolution: {integrity: sha512-NkT+YAdgS2FPCn8mIA9bQhiBs+xmniMGq1LFPDhcFn0+2yIUEiIG06t7bsZlhdjknEQRTSdT7YitP6fC5qwP0g==}
     cpu: [x64]
     os: [win32]
-
-  '@paperclipai/adapter-utils@0.3.1':
-    resolution: {integrity: sha512-W66k+hJkQE8ma0asM/Sd90AC8HHy/BLG/sd0aOC+rDWw+gOasQyUkTnDoPv1zhQuTyKEEvLFV6ByOOKqEiAz/A==}
 
   '@paralleldrive/cuid2@2.3.1':
     resolution: {integrity: sha512-XO7cAxhnTZl0Yggq6jOgjiOHhbgcO4NqFqwSmQpjK3b6TEE6Uj/jfSk6wzYyemh3+I0sHirKSetjQwn5cZktFw==}
@@ -3404,10 +3414,6 @@ packages:
 
   help-me@5.0.0:
     resolution: {integrity: sha512-7xgomUX6ADmcYzFik0HzAxh/73YlKR9bmFzf51CZwR+b6YtzU2m0u49hQCqV6SvlqIqsaxovfwdvbnsw3b/zpg==}
-
-  hermes-paperclip-adapter@0.1.1:
-    resolution: {integrity: sha512-kbdX349VxExSkVL8n4RwTpP9fUBf2yWpsTsJp02X12A9NynRJatlpYqt0vEkFyE/X7qEXqdJvpBm9tlvUHahsA==}
-    engines: {node: '>=20.0.0'}
 
   hookable@5.5.3:
     resolution: {integrity: sha512-Yc+BQe8SvoXH1643Qez1zqLRmbA5rCL+sSmk6TVos0LWVfNIB7PGncdlId77WzLGSIB5KaWgTaNTs2lNVEI6VQ==}
@@ -6274,8 +6280,6 @@ snapshots:
   '@pagefind/windows-x64@1.4.0':
     optional: true
 
-  '@paperclipai/adapter-utils@0.3.1': {}
-
   '@paralleldrive/cuid2@2.3.1':
     dependencies:
       '@noble/hashes': 1.8.0
@@ -8260,11 +8264,6 @@ snapshots:
       space-separated-tokens: 2.0.2
 
   help-me@5.0.0: {}
-
-  hermes-paperclip-adapter@0.1.1:
-    dependencies:
-      '@paperclipai/adapter-utils': 0.3.1
-      picocolors: 1.1.1
 
   hookable@5.5.3: {}
 

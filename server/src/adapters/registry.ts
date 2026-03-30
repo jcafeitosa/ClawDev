@@ -19,6 +19,14 @@ import {
 } from "@clawdev/adapter-codex-local/server";
 import { agentConfigurationDoc as codexAgentConfigurationDoc, models as codexModels } from "@clawdev/adapter-codex-local";
 import {
+  execute as copilotExecute,
+  listCopilotSkills,
+  syncCopilotSkills,
+  testEnvironment as copilotTestEnvironment,
+  sessionCodec as copilotSessionCodec,
+} from "@clawdev/adapter-copilot-local/server";
+import { agentConfigurationDoc as copilotAgentConfigurationDoc, models as copilotModels } from "@clawdev/adapter-copilot-local";
+import {
   execute as cursorExecute,
   listCursorSkills,
   syncCursorSkills,
@@ -66,15 +74,6 @@ import {
 import {
   agentConfigurationDoc as piAgentConfigurationDoc,
 } from "@clawdev/adapter-pi-local";
-import {
-  execute as hermesExecute,
-  testEnvironment as hermesTestEnvironment,
-  sessionCodec as hermesSessionCodec,
-} from "hermes-paperclip-adapter/server";
-import {
-  agentConfigurationDoc as hermesAgentConfigurationDoc,
-  models as hermesModels,
-} from "hermes-paperclip-adapter";
 import { processAdapter } from "./process/index.js";
 import { httpAdapter } from "./http/index.js";
 
@@ -105,6 +104,19 @@ const codexLocalAdapter: ServerAdapterModule = {
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: codexAgentConfigurationDoc,
   getQuotaWindows: codexGetQuotaWindows,
+};
+
+const copilotLocalAdapter: ServerAdapterModule = {
+  type: "copilot_local",
+  execute: copilotExecute,
+  testEnvironment: copilotTestEnvironment,
+  listSkills: listCopilotSkills,
+  syncSkills: syncCopilotSkills,
+  sessionCodec: copilotSessionCodec,
+  sessionManagement: getAdapterSessionManagement("copilot_local") ?? undefined,
+  models: copilotModels,
+  supportsLocalAgentJwt: true,
+  agentConfigurationDoc: copilotAgentConfigurationDoc,
 };
 
 const cursorLocalAdapter: ServerAdapterModule = {
@@ -171,27 +183,16 @@ const piLocalAdapter: ServerAdapterModule = {
   agentConfigurationDoc: piAgentConfigurationDoc,
 };
 
-const hermesLocalAdapter: ServerAdapterModule = {
-  type: "hermes_local",
-  execute: hermesExecute,
-  testEnvironment: hermesTestEnvironment,
-  sessionCodec: hermesSessionCodec,
-  // TODO: Add listSkills, syncSkills, detectModel when hermes-paperclip-adapter exports them
-  models: hermesModels,
-  supportsLocalAgentJwt: true,
-  agentConfigurationDoc: hermesAgentConfigurationDoc,
-};
-
 const adaptersByType = new Map<string, ServerAdapterModule>(
   [
     claudeLocalAdapter,
     codexLocalAdapter,
+    copilotLocalAdapter,
     openCodeLocalAdapter,
     piLocalAdapter,
     cursorLocalAdapter,
     geminiLocalAdapter,
     openclawGatewayAdapter,
-    hermesLocalAdapter,
     processAdapter,
     httpAdapter,
   ].map((a) => [a.type, a]),
