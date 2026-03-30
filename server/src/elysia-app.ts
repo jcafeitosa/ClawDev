@@ -14,7 +14,7 @@
  */
 
 import { Elysia, t } from "elysia";
-import { node } from "@elysiajs/node";
+// Bun-native runtime — no adapter needed
 import { cors } from "@elysiajs/cors";
 import { swagger } from "@elysiajs/swagger";
 import type { Db } from "@clawdev/db";
@@ -28,7 +28,6 @@ import {
   sql,
 } from "drizzle-orm";
 import {
-  companies,
   heartbeatRuns,
   instanceUserRoles,
   invites,
@@ -40,11 +39,14 @@ import { serverVersion } from "./version.js";
 
 // Middleware
 import { elysiaLogger, elysiaErrorHandler } from "./middleware/index.js";
+import { createActorResolver } from "./middleware/auth.js";
+import { checkBoardMutation } from "./middleware/board-mutation-guard.js";
 
 // Route modules
 import {
   issueRoutes,
   companyIssueRoutes,
+  companyRoutes,
   projectRoutes,
   goalRoutes,
   secretRoutes,
@@ -60,6 +62,7 @@ import {
   runRoutes,
   inboxRoutes,
   budgetRoutes,
+  searchRoutes,
 } from "./routes/index.js";
 import { llmRoutes } from "./routes/llms.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
@@ -104,6 +107,8 @@ export interface ElysiaAppOptions {
   serveUi?: boolean;
   localPluginDir?: string;
   resolveSessionFromHeaders?: (headers: Headers) => Promise<BetterAuthSessionResult | null>;
+  /** OpenAI API key for pgvector semantic search. When absent, search routes return empty results. */
+  openaiApiKey?: string;
   pluginDeps?: {
     jobScheduler: PluginJobScheduler;
     jobStore: PluginJobStore;
@@ -135,6 +140,19 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     .use(cors())
     .use(elysiaLogger)
     .use(elysiaErrorHandler)
+    .derive(
+      createActorResolver(db, {
+        deploymentMode,
+        resolveSession: resolveSessionFromHeaders,
+      }),
+    )
+    .onBeforeHandle((ctx: any) => {
+      const blocked = checkBoardMutation(ctx.request, ctx.actor);
+      if (blocked) {
+        ctx.set.status = blocked.status;
+        return blocked.body;
+      }
+    })
     .use(
       swagger({
         documentation: {
@@ -203,22 +221,8 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
       };
     })
 
-    // -- Companies (inline, simple CRUD) --
-    .get("/companies", async () => {
-      const rows = await db.select().from(companies);
-      return rows;
-    })
-    .get(
-      "/companies/:companyId",
-      async ({ params }) => {
-        const rows = await db.select().from(companies).where(eq(companies.id, params.companyId));
-        if (rows.length === 0) return new Response("Not found", { status: 404 });
-        return rows[0];
-      },
-      { params: t.Object({ companyId: t.String() }) },
-    )
-
     // -- Route modules --
+    .use(companyRoutes(db, storage))
     .use(agentRoutes(db))
     .use(issueRoutes(db))
     .use(companyIssueRoutes(db))
@@ -238,7 +242,8 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     .use(runRoutes(db))
     .use(inboxRoutes(db))
     .use(budgetRoutes(db))
-    .use(assetRoutes(db, storage));
+    .use(assetRoutes(db, storage))
+    .use(searchRoutes(db, opts.openaiApiKey));
 
   // -- Plugins (conditional — requires plugin deps) --
   if (pluginDeps) {
@@ -260,7 +265,14 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
       return authHandler(request);
     });
 
-  const rootApp = new Elysia({ adapter: node() })
+  const rootApp = new Elysia()
+    // Global error handler — ensures DB/runtime errors never leak to clients
+    .onError(({ error, set }) => {
+      const msg = (error as any)?.message ?? String(error);
+      set.status = 500;
+      set.headers["content-type"] = "application/json";
+      return JSON.stringify({ error: "Internal server error" });
+    })
     // LLM reflection routes (mounted at /llms, outside /api)
     .use(llmRoutes(db))
     // Plugin UI static files (mounted at /_plugins)

@@ -1,4 +1,8 @@
 export {
+  applyTimescaleMigrations,
+  type TimescaleMigrationResult,
+} from "./timescale-migrate-lib.js";
+export {
   createDb,
   getPostgresDataDirectory,
   ensurePostgresDatabase,

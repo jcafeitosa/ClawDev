@@ -11,6 +11,7 @@ import {
   getPostgresDataDirectory,
   inspectMigrations,
   applyPendingMigrations,
+  applyTimescaleMigrations,
   createEmbeddedPostgresLogBuffer,
   reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
@@ -29,6 +30,13 @@ import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
 import { maybePersistWorktreeRuntimePorts } from "./worktree-config.js";
+import { pluginJobStore } from "./services/plugin-job-store.js";
+import { createPluginWorkerManager } from "./services/plugin-worker-manager.js";
+import { createPluginStreamBus } from "./services/plugin-stream-bus.js";
+import { createPluginToolDispatcher } from "./services/plugin-tool-dispatcher.js";
+import { createBullMQJobScheduler } from "./services/bullmq-job-scheduler.js";
+import { createPluginJobScheduler } from "./services/plugin-job-scheduler.js";
+import { isRedisAvailable, disconnectRedis } from "./services/redis.js";
 
 type BetterAuthSessionUser = {
   id: string;
@@ -503,6 +511,59 @@ export async function startServer(): Promise<StartedServer> {
     serverPort: listenPort,
     databasePort: resolvedEmbeddedPostgresPort,
   });
+  // ── TimescaleDB migrations ────────────────────────────────────────────────
+  // Runs automatically when TIMESCALEDB_ENABLED=true (or by default with
+  // external postgres). Gracefully skipped when TimescaleDB is not installed
+  // (e.g. embedded-postgres which is vanilla PostgreSQL).
+  const timescaleEnabled =
+    process.env.TIMESCALEDB_ENABLED === "true" ||
+    (process.env.TIMESCALEDB_ENABLED !== "false" && !!config.databaseUrl);
+
+  if (timescaleEnabled) {
+    try {
+      const tsResult = await applyTimescaleMigrations(activeDatabaseConnectionString);
+      if (tsResult.skipped) {
+        logger.warn({ reason: tsResult.skipReason }, "TimescaleDB migrations skipped");
+      } else if (tsResult.applied > 0) {
+        logger.info({ applied: tsResult.applied }, "TimescaleDB migrations applied");
+      } else {
+        logger.debug("TimescaleDB migrations already up to date");
+      }
+    } catch (err) {
+      logger.error({ err }, "TimescaleDB migrations failed — continuing without hypertables");
+    }
+  }
+
+  // ── Plugin deps (BullMQ scheduler + worker manager) ───────────────────────
+  const jobStore = pluginJobStore(db as any);
+  const workerManager = createPluginWorkerManager();
+  const streamBus = createPluginStreamBus();
+  const toolDispatcher = createPluginToolDispatcher({ workerManager, db: db as any });
+
+  let jobScheduler: ReturnType<typeof createBullMQJobScheduler> | ReturnType<typeof createPluginJobScheduler>;
+  const redisAvailable = await isRedisAvailable().catch(() => false);
+
+  if (redisAvailable) {
+    logger.info("Redis available — using BullMQ job scheduler");
+    jobScheduler = createBullMQJobScheduler({ db: db as any, jobStore, workerManager });
+  } else {
+    logger.warn(
+      "Redis not available (REDIS_URL not set or unreachable) — using in-process tick-based scheduler. " +
+        "Set REDIS_URL to enable BullMQ for reliable job scheduling.",
+    );
+    jobScheduler = createPluginJobScheduler({ db: db as any, jobStore, workerManager });
+  }
+  jobScheduler.start();
+
+  // ── OpenAI key for pgvector semantic search ───────────────────────────────
+  const openaiApiKey = process.env.OPENAI_API_KEY?.trim() || undefined;
+  if (!openaiApiKey) {
+    logger.warn(
+      "OPENAI_API_KEY not set — semantic search (pgvector embeddings) disabled. " +
+        "Set OPENAI_API_KEY to enable semantic search and duplicate issue detection.",
+    );
+  }
+
   const storageService = createStorageServiceFromConfig(config);
   const app = createElysiaApp({
     db: db as any,
@@ -514,6 +575,8 @@ export async function startServer(): Promise<StartedServer> {
     storage: storageService,
     serveUi: config.serveUi,
     resolveSessionFromHeaders,
+    openaiApiKey,
+    pluginDeps: { jobScheduler, jobStore, workerManager, streamBus, toolDispatcher },
   });
 
   if (listenPort !== config.port) {
@@ -690,25 +753,37 @@ export async function startServer(): Promise<StartedServer> {
     );
   }
   
-  if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {
-    const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
+  const shutdown = async (signal: "SIGINT" | "SIGTERM") => {
+    logger.info({ signal }, "Graceful shutdown initiated");
+
+    // Stop job scheduler (flushes active BullMQ jobs)
+    try {
+      jobScheduler.stop();
+    } catch (err) {
+      logger.error({ err }, "Error stopping job scheduler");
+    }
+
+    // Disconnect Redis
+    try {
+      await disconnectRedis();
+    } catch (err) {
+      logger.error({ err }, "Error disconnecting Redis");
+    }
+
+    if (embeddedPostgres && embeddedPostgresStartedByThisProcess) {
       logger.info({ signal }, "Stopping embedded PostgreSQL");
       try {
         await embeddedPostgres?.stop();
       } catch (err) {
         logger.error({ err }, "Failed to stop embedded PostgreSQL cleanly");
-      } finally {
-        process.exit(0);
       }
-    };
-  
-    process.once("SIGINT", () => {
-      void shutdown("SIGINT");
-    });
-    process.once("SIGTERM", () => {
-      void shutdown("SIGTERM");
-    });
-  }
+    }
+
+    process.exit(0);
+  };
+
+  process.once("SIGINT", () => { void shutdown("SIGINT"); });
+  process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
 
   return {
     host: config.host,

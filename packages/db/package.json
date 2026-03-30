@@ -35,11 +35,12 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc && cp -r src/migrations dist/migrations",
+    "build": "tsc && cp -r src/migrations dist/migrations && cp -r src/timescale-migrations dist/timescale-migrations",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit",
     "generate": "tsc -p tsconfig.json && drizzle-kit generate",
     "migrate": "tsx src/migrate.ts",
+    "timescale:migrate": "tsx src/timescale-migrate.ts",
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
