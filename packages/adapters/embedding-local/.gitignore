@@ -1,0 +1,32 @@
+# llama.cpp binaries and dylibs (downloaded at setup time via `pnpm setup`)
+# The entire bin/ directory is ignored — run `pnpm setup` to populate it
+bin/
+*.exe
+
+# Model files — covered globally by root .gitignore (*.gguf, *.safetensors, *.pt, etc.)
+# Listed here explicitly for clarity and as a double-safety net
+models/Qwen3-Embedding-0.6B-q4_k_m.gguf
+models/Qwen3-Embedding-0.6B-Q4_K_M.gguf
+models/Qwen3-Embedding-0.6B*.gguf
+models/Qwen3-Embedding*.gguf
+models/*.gguf
+models/*.bin
+models/*.safetensors
+models/*.pt
+models/*.ckpt
+models/*.onnx
+
+# Keep directory stubs so git tracks empty dirs
+!models/.gitkeep
+!bin/.gitkeep
+
+# Build artifacts
+dist/
+node_modules/
+
+# PID file for background server
+*.pid
+server.pid
+
+# Local config written by setup script
+.env.local

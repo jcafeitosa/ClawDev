@@ -1,0 +1,50 @@
+{
+  "name": "@clawdev/embedding-local",
+  "version": "0.3.1",
+  "license": "MIT",
+  "homepage": "https://github.com/paperclipai/paperclip",
+  "bugs": {
+    "url": "https://github.com/paperclipai/paperclip/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/paperclipai/paperclip",
+    "directory": "packages/adapters/embedding-local"
+  },
+  "description": "Local embedding server using llama.cpp + Qwen3-Embedding (or any GGUF model). Provides an OpenAI-compatible /v1/embeddings endpoint for ClawDev semantic search.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "import": "./dist/index.js"
+      }
+    },
+    "main": "./dist/index.js",
+    "types": "./dist/index.d.ts"
+  },
+  "files": [
+    "dist",
+    "scripts"
+  ],
+  "scripts": {
+    "setup": "tsx scripts/setup.ts",
+    "download:model": "tsx scripts/setup.ts --model-only",
+    "download:binary": "tsx scripts/setup.ts --binary-only",
+    "start": "tsx scripts/start.ts",
+    "start:bg": "tsx scripts/start.ts --background",
+    "stop": "tsx scripts/stop.ts",
+    "build": "tsc",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^24.6.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3"
+  }
+}
