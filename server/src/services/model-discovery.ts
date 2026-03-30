@@ -2,7 +2,7 @@ import type { Db } from "@clawdev/db";
 import type { AdapterModel, AdapterModelStatus } from "@clawdev/adapter-utils";
 import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
 import { createModelCatalogService, type SyncInput } from "./model-catalog.js";
-import { createProviderStatusService } from "./provider-status.js";
+import { createProviderStatusService, getCooldownDuration } from "./provider-status.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -133,7 +133,7 @@ export function createModelDiscoveryService(
 
               if (mappedStatus === "cooldown") {
                 // Use a 5-minute cooldown window for quota_exceeded models
-                const cooldownUntil = new Date(Date.now() + 5 * 60 * 1000);
+                const cooldownUntil = new Date(Date.now() + getCooldownDuration(adapterType));
                 await providerStatusService.markCooldown(
                   adapterType,
                   model.id,
@@ -215,7 +215,7 @@ export function createModelDiscoveryService(
               const mappedStatus = adapterStatusToProviderStatus(model.status);
 
               if (mappedStatus === "cooldown") {
-                const cooldownUntil = new Date(Date.now() + 5 * 60 * 1000);
+                const cooldownUntil = new Date(Date.now() + getCooldownDuration(adapterType));
                 await providerStatusService.markCooldown(
                   adapterType,
                   model.id,

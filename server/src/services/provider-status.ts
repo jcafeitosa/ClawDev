@@ -8,6 +8,29 @@ import { providerModelStatus } from "@clawdev/db";
  */
 const EMA_ALPHA = 0.3;
 
+// ---------------------------------------------------------------------------
+// Configurable cooldown durations per adapter type (in minutes)
+// ---------------------------------------------------------------------------
+
+const DEFAULT_COOLDOWN_MINUTES: Record<string, number> = {
+  claude_local: 5,
+  codex_local: 10,
+  copilot_local: 5,
+  gemini_local: 5,
+  pi_local: 5,
+  opencode_local: 5,
+  cursor: 5,
+  openclaw_gateway: 15,
+};
+
+/**
+ * Returns the cooldown duration in milliseconds for a given adapter type.
+ * Falls back to 5 minutes if the adapter type is not in the map.
+ */
+export function getCooldownDuration(adapterType: string): number {
+  return (DEFAULT_COOLDOWN_MINUTES[adapterType] ?? 5) * 60 * 1000;
+}
+
 export function createProviderStatusService(db: Db) {
   return {
     /**
@@ -48,21 +71,24 @@ export function createProviderStatusService(db: Db) {
 
     /**
      * Place a model into cooldown until a specified time.
+     * If `until` is omitted, the configurable default duration for the adapter type is used.
      */
     async markCooldown(
       adapterType: string,
       modelId: string,
-      until: Date,
-      reason: string,
+      until?: Date,
+      reason?: string,
     ): Promise<void> {
+      const cooldownUntil = until ?? new Date(Date.now() + getCooldownDuration(adapterType));
+      const cooldownReason = reason ?? "cooldown";
       await db
         .insert(providerModelStatus)
         .values({
           adapterType,
           modelId,
           status: "cooldown",
-          cooldownUntil: until,
-          cooldownReason: reason,
+          cooldownUntil,
+          cooldownReason,
           statusChangedAt: new Date(),
           updatedAt: new Date(),
         })
@@ -70,8 +96,8 @@ export function createProviderStatusService(db: Db) {
           target: [providerModelStatus.adapterType, providerModelStatus.modelId],
           set: {
             status: "cooldown",
-            cooldownUntil: until,
-            cooldownReason: reason,
+            cooldownUntil,
+            cooldownReason,
             statusChangedAt: sql`
               CASE WHEN ${providerModelStatus.status} <> 'cooldown'
                 THEN now()
@@ -112,6 +138,9 @@ export function createProviderStatusService(db: Db) {
      * Check whether a model is available for routing.
      * A model is available if its status is "available" or "unknown"
      * AND it is not currently in an active cooldown window.
+     *
+     * If the row has status "cooldown" but cooldownUntil has passed,
+     * it is automatically cleared inline and treated as available.
      */
     async isAvailable(adapterType: string, modelId: string): Promise<boolean> {
       const rows = await db
@@ -134,7 +163,11 @@ export function createProviderStatusService(db: Db) {
       if (rows.length > 0) return true;
 
       const existsRows = await db
-        .select({ id: providerModelStatus.id })
+        .select({
+          id: providerModelStatus.id,
+          status: providerModelStatus.status,
+          cooldownUntil: providerModelStatus.cooldownUntil,
+        })
         .from(providerModelStatus)
         .where(
           and(
@@ -145,7 +178,30 @@ export function createProviderStatusService(db: Db) {
         .limit(1);
 
       // No row in the table means the model is untracked — assume available
-      return existsRows.length === 0;
+      if (existsRows.length === 0) return true;
+
+      // Auto-clear expired cooldowns inline: if the row is in "cooldown" but
+      // cooldownUntil has already passed, transition it to "available" and return true.
+      const row = existsRows[0]!;
+      if (
+        row.status === "cooldown" &&
+        row.cooldownUntil &&
+        row.cooldownUntil < new Date()
+      ) {
+        await db
+          .update(providerModelStatus)
+          .set({
+            status: "available",
+            cooldownUntil: null,
+            cooldownReason: null,
+            statusChangedAt: new Date(),
+            updatedAt: new Date(),
+          })
+          .where(eq(providerModelStatus.id, row.id));
+        return true;
+      }
+
+      return false;
     },
 
     /**
@@ -254,6 +310,32 @@ export function createProviderStatusService(db: Db) {
               updatedAt: now,
             },
           });
+      }
+    },
+
+    /**
+     * Inspect an execution error and, if it indicates rate limiting or quota
+     * exhaustion, automatically place the model into cooldown using the
+     * adapter-specific default duration.
+     */
+    async handleExecutionError(
+      adapterType: string,
+      modelId: string,
+      errorCode?: string | null,
+      errorMessage?: string | null,
+    ): Promise<void> {
+      const isRateLimited =
+        errorCode === "quota_exceeded" ||
+        errorCode === "rate_limited" ||
+        errorMessage?.includes("429") ||
+        errorMessage?.includes("rate limit") ||
+        errorMessage?.includes("quota") ||
+        errorMessage?.includes("Too Many Requests");
+
+      if (isRateLimited) {
+        const duration = getCooldownDuration(adapterType);
+        const until = new Date(Date.now() + duration);
+        await this.markCooldown(adapterType, modelId, until, errorCode || "rate_limited");
       }
     },
 

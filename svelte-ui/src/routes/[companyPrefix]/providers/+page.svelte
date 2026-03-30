@@ -35,6 +35,9 @@
     ToggleLeft,
     ToggleRight,
     Filter,
+    Timer,
+    ShieldOff,
+    ShieldCheck,
   } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Providers & Models' }]));
@@ -63,6 +66,7 @@
     outputPriceMicro: number;
     isFree: boolean;
     lastProbed: string | null;
+    cooldownEndsAt: string | null;
   }
 
   interface ModelStatus {
@@ -70,6 +74,9 @@
     modelName: string;
     status: string;
     cooldownEndsAt: string | null;
+    cooldownReason: string | null;
+    statusChangedAt: string | null;
+    adapterType: string;
     avgLatencyMs: number | null;
     errorRate: number | null;
     consecutiveFailures: number;
@@ -141,6 +148,19 @@
   // Auto-refresh
   let refreshInterval: ReturnType<typeof setInterval> | null = null;
   let lastRefreshed = $state<Date | null>(null);
+
+  // Tick timer for live cooldown countdowns
+  let now = $state(Date.now());
+  let tickInterval: ReturnType<typeof setInterval>;
+  $effect(() => {
+    tickInterval = setInterval(() => { now = Date.now(); }, 1000);
+    return () => clearInterval(tickInterval);
+  });
+
+  // Cooldown control state
+  let cooldownFormOpen = $state<string | null>(null); // modelId of open form
+  let cooldownDuration = $state(5);
+  let cooldownApplying = $state(false);
 
   let companyId = $derived(companyStore.selectedCompany?.id);
   let prefix = $derived($page.params.companyPrefix);
@@ -240,6 +260,7 @@
         outputPriceMicro: m.outputPriceMicro ?? m.outputCostMicro ?? 0,
         isFree: m.isFree === true,
         lastProbed: m.lastProbeAt ?? m.lastHealthCheck ?? m.lastProbedAt ?? m.lastProbed ?? null,
+        cooldownEndsAt: m.cooldownEndsAt ?? null,
       }));
     } catch {
       models = [];
@@ -265,6 +286,9 @@
           modelName: m.name ?? m.modelId ?? m.id ?? '',
           status: (m.status && m.status !== 'unknown') ? m.status : (m.circuitState && m.circuitState !== 'unknown') ? m.circuitState : 'available',
           cooldownEndsAt: m.cooldownEndsAt ?? null,
+          cooldownReason: m.cooldownReason ?? m.reason ?? null,
+          statusChangedAt: m.statusChangedAt ?? m.stateChangedAt ?? null,
+          adapterType: p.adapterType,
           avgLatencyMs: m.avgLatencyMs ?? null,
           errorRate: m.errorRate ?? m.errorRatePercent ?? null,
           consecutiveFailures: m.failureCount ?? m.consecutiveFailures ?? 0,
@@ -401,6 +425,45 @@
     if (modelId && !preferences.fallbackChain.includes(modelId)) {
       preferences.fallbackChain = [...preferences.fallbackChain, modelId];
     }
+  }
+
+  // ── Cooldown controls ──────────────────────────────────────────────
+  async function applyCooldown(adapterType: string, modelId: string, durationMinutes: number) {
+    cooldownApplying = true;
+    try {
+      await api(`/api/providers/${adapterType}/models/${encodeURIComponent(modelId)}/cooldown`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ durationMinutes }),
+      });
+      cooldownFormOpen = null;
+      cooldownDuration = 5;
+      await loadProviderStatuses();
+      await loadProviderSummaries();
+    } catch {
+      // silently fail
+    } finally {
+      cooldownApplying = false;
+    }
+  }
+
+  async function clearCooldown(adapterType: string, modelId: string) {
+    try {
+      await api(`/api/providers/${adapterType}/models/${encodeURIComponent(modelId)}/cooldown`, {
+        method: 'DELETE',
+      });
+      await loadProviderStatuses();
+      await loadProviderSummaries();
+    } catch {
+      // silently fail
+    }
+  }
+
+  function formatCooldownRemaining(cooldownEndsAt: string, currentTime: number): string {
+    const remaining = Math.max(0, new Date(cooldownEndsAt).getTime() - currentTime);
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   }
 
   // ── Formatters ────────────────────────────────────────────────────
@@ -594,10 +657,16 @@
             <div class="shrink-0 rounded-lg bg-muted p-2.5">
               <ProviderIcon adapterType={provider.adapterType} size={22} />
             </div>
-            <div class="min-w-0">
+            <div class="min-w-0 flex-1">
               <h3 class="text-sm font-semibold text-foreground truncate">{provider.displayName}</h3>
               <p class="text-xs text-muted-foreground">{provider.adapterType}</p>
             </div>
+            {#if provider.cooldown > 0}
+              <span class="inline-flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-semibold text-yellow-600 dark:text-yellow-400">
+                <Timer class="h-3 w-3" />
+                {provider.cooldown} cooldown
+              </span>
+            {/if}
           </div>
 
           <!-- Status counts -->
@@ -800,10 +869,25 @@
                     {formatContextWindow(model.contextWindow)}
                   </td>
                   <td class="px-4 py-3 text-center">
-                    <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium {statusStyle.bg} {statusStyle.text}">
-                      <span class="h-1.5 w-1.5 rounded-full {statusStyle.dot}"></span>
-                      {statusStyle.label}
-                    </span>
+                    {#if model.status === 'cooldown' && model.cooldownEndsAt}
+                      {@const remaining = Math.max(0, new Date(model.cooldownEndsAt).getTime() - now)}
+                      {#if remaining > 0}
+                        <span class="inline-flex items-center gap-1.5 text-xs font-medium text-yellow-600 dark:text-yellow-400">
+                          <span class="h-2 w-2 rounded-full bg-yellow-500 animate-pulse"></span>
+                          Cooldown {formatCooldownRemaining(model.cooldownEndsAt, now)}
+                        </span>
+                      {:else}
+                        <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium {statusStyle.bg} {statusStyle.text}">
+                          <span class="h-1.5 w-1.5 rounded-full {statusStyle.dot}"></span>
+                          {statusStyle.label}
+                        </span>
+                      {/if}
+                    {:else}
+                      <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-medium {statusStyle.bg} {statusStyle.text}">
+                        <span class="h-1.5 w-1.5 rounded-full {statusStyle.dot}"></span>
+                        {statusStyle.label}
+                      </span>
+                    {/if}
                   </td>
                   <td class="px-4 py-3 text-right text-xs text-muted-foreground whitespace-nowrap">
                     {formatPricing(model)}
@@ -866,6 +950,7 @@
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Error Rate</th>
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Failures</th>
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last Probed</th>
+                      <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -878,9 +963,27 @@
                             <span class="text-xs font-medium {statusStyle.text}">{statusStyle.label}</span>
                           </span>
                           {#if model.cooldownEndsAt && model.status === 'cooldown'}
-                            <p class="text-[10px] text-yellow-500 mt-0.5">
-                              Cooldown ends: <TimeAgo date={model.cooldownEndsAt} />
-                            </p>
+                            {@const remaining = Math.max(0, new Date(model.cooldownEndsAt).getTime() - now)}
+                            {#if remaining > 0}
+                              <p class="text-[10px] text-yellow-600 dark:text-yellow-400 mt-0.5 flex items-center gap-1">
+                                <span class="h-1.5 w-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                                {formatCooldownRemaining(model.cooldownEndsAt, now)} remaining
+                              </p>
+                            {:else}
+                              <p class="text-[10px] text-yellow-500 mt-0.5">
+                                Cooldown expired
+                              </p>
+                            {/if}
+                            {#if model.cooldownReason}
+                              <p class="text-[10px] text-muted-foreground mt-0.5">
+                                Reason: <span class="font-mono">{model.cooldownReason}</span>
+                              </p>
+                            {/if}
+                            {#if model.statusChangedAt}
+                              <p class="text-[10px] text-muted-foreground mt-0.5">
+                                Since: <TimeAgo date={model.statusChangedAt} class="text-[10px]" />
+                              </p>
+                            {/if}
                           {/if}
                         </td>
                         <td class="px-5 py-3">
@@ -897,6 +1000,61 @@
                         </td>
                         <td class="px-5 py-3 text-right">
                           <TimeAgo date={model.lastProbed} class="text-xs" />
+                        </td>
+                        <td class="px-5 py-3 text-right">
+                          <div class="flex items-center justify-end gap-1.5">
+                            {#if model.status === 'cooldown'}
+                              <button
+                                onclick={() => clearCooldown(model.adapterType, model.modelId)}
+                                class="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
+                                title="Clear cooldown"
+                              >
+                                <ShieldCheck class="h-3 w-3" />
+                                Clear
+                              </button>
+                            {:else}
+                              {#if cooldownFormOpen === model.modelId}
+                                <div class="flex items-center gap-1.5">
+                                  <input
+                                    type="number"
+                                    min="1"
+                                    max="1440"
+                                    bind:value={cooldownDuration}
+                                    class="h-7 w-16 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring/50"
+                                    placeholder="min"
+                                  />
+                                  <span class="text-[10px] text-muted-foreground">min</span>
+                                  <button
+                                    onclick={() => applyCooldown(model.adapterType, model.modelId, cooldownDuration)}
+                                    disabled={cooldownApplying}
+                                    class="inline-flex items-center gap-1 rounded-md bg-yellow-500/10 px-2 py-1 text-[11px] font-medium text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/20 transition-colors disabled:opacity-50"
+                                  >
+                                    {#if cooldownApplying}
+                                      <Loader2 class="h-3 w-3 animate-spin" />
+                                    {:else}
+                                      <Timer class="h-3 w-3" />
+                                    {/if}
+                                    Apply
+                                  </button>
+                                  <button
+                                    onclick={() => { cooldownFormOpen = null; cooldownDuration = 5; }}
+                                    class="inline-flex items-center rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
+                                  >
+                                    <XCircle class="h-3 w-3" />
+                                  </button>
+                                </div>
+                              {:else}
+                                <button
+                                  onclick={() => { cooldownFormOpen = model.modelId; cooldownDuration = 5; }}
+                                  class="inline-flex items-center gap-1 rounded-md bg-yellow-500/10 px-2 py-1 text-[11px] font-medium text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/20 transition-colors"
+                                  title="Set cooldown"
+                                >
+                                  <ShieldOff class="h-3 w-3" />
+                                  Cooldown
+                                </button>
+                              {/if}
+                            {/if}
+                          </div>
                         </td>
                       </tr>
                     {/each}

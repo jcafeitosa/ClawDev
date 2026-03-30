@@ -11,7 +11,7 @@ import type { Db } from "@clawdev/db";
 import { companyModelPreferences, providerModelStatus } from "@clawdev/db";
 import { and, eq } from "drizzle-orm";
 import { createModelCatalogService } from "../services/model-catalog.js";
-import { createProviderStatusService } from "../services/provider-status.js";
+import { createProviderStatusService, getCooldownDuration } from "../services/provider-status.js";
 import { createModelDiscoveryService } from "../services/model-discovery.js";
 import { createModelRouterService } from "../services/model-router.js";
 import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
@@ -291,6 +291,97 @@ export function modelRoutes(db: Db) {
       },
       {
         params: t.Object({ adapterType: t.String() }),
+      },
+    )
+
+    // ═══════════════════════════════════════════════════════════════════
+    // COOLDOWN MANAGEMENT
+    // ═══════════════════════════════════════════════════════════════════
+
+    // ── Manually place a model into cooldown ──────────────────────────
+    .post(
+      "/providers/:adapterType/models/:modelId/cooldown",
+      async ({ params, body }) => {
+        const durationMs = body.durationMinutes
+          ? body.durationMinutes * 60 * 1000
+          : getCooldownDuration(params.adapterType);
+        const until = new Date(Date.now() + durationMs);
+        const reason = body.reason ?? "manual_cooldown";
+
+        await providerStatus.markCooldown(
+          params.adapterType,
+          params.modelId,
+          until,
+          reason,
+        );
+
+        return {
+          adapterType: params.adapterType,
+          modelId: params.modelId,
+          status: "cooldown",
+          cooldownUntil: until.toISOString(),
+          reason,
+        };
+      },
+      {
+        params: t.Object({
+          adapterType: t.String(),
+          modelId: t.String(),
+        }),
+        body: t.Object({
+          durationMinutes: t.Optional(t.Number()),
+          reason: t.Optional(t.String()),
+        }),
+      },
+    )
+
+    // ── Clear cooldown for a specific model ───────────────────────────
+    .delete(
+      "/providers/:adapterType/models/:modelId/cooldown",
+      async ({ params }) => {
+        await providerStatus.updateStatus(
+          params.adapterType,
+          params.modelId,
+          "available",
+          "cooldown cleared manually",
+        );
+
+        // Also clear the cooldown fields
+        await db
+          .update(providerModelStatus)
+          .set({
+            cooldownUntil: null,
+            cooldownReason: null,
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(providerModelStatus.adapterType, params.adapterType),
+              eq(providerModelStatus.modelId, params.modelId),
+            ),
+          );
+
+        return {
+          adapterType: params.adapterType,
+          modelId: params.modelId,
+          status: "available",
+          cooldownUntil: null,
+        };
+      },
+      {
+        params: t.Object({
+          adapterType: t.String(),
+          modelId: t.String(),
+        }),
+      },
+    )
+
+    // ── Clear all expired cooldowns across all providers ──────────────
+    .post(
+      "/providers/clear-expired-cooldowns",
+      async () => {
+        const count = await providerStatus.clearExpiredCooldowns();
+        return { cleared: count };
       },
     )
 
