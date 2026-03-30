@@ -111,7 +111,7 @@
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(i =>
-        i.title.toLowerCase().includes(q) ||
+        (i.title ?? '').toLowerCase().includes(q) ||
         (i.identifier ?? '').toLowerCase().includes(q)
       );
     }

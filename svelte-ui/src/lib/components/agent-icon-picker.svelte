@@ -193,7 +193,10 @@
     aria-expanded={open}
   >
     <span class="flex h-7 w-7 items-center justify-center rounded-md bg-accent/75">
-      <svelte:component this={currentIcon} class="size-4 text-muted-foreground" />
+      {#if currentIcon}
+        {@const TriggerIcon = currentIcon}
+        <TriggerIcon class="size-4 text-muted-foreground" />
+      {/if}
     </span>
     <span class="text-muted-foreground/80">{value || "Bot"}</span>
   </button>
@@ -238,6 +241,7 @@
         {:else}
           <div class="grid grid-cols-8 gap-1">
             {#each filteredIcons as icon (icon.name)}
+              {@const GridIcon = icon.component}
               <button
                 type="button"
                 class="group flex h-8 w-8 items-center justify-center rounded-md transition-colors
@@ -247,7 +251,7 @@
                 title={icon.name}
                 onclick={() => select(icon.name)}
               >
-                <svelte:component this={icon.component} class="size-4" />
+                <GridIcon class="size-4" />
               </button>
             {/each}
           </div>

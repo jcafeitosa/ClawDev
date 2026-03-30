@@ -411,7 +411,10 @@
               onmouseenter={() => (selectedIndex = globalIdx)}
               onclick={() => executeItem(flatItems[globalIdx])}
             >
-              <svelte:component this={cmd.icon} class="size-4 shrink-0 text-zinc-400" />
+              {#if cmd.icon}
+                {@const CmdIcon = cmd.icon}
+                <CmdIcon class="size-4 shrink-0 text-zinc-400" />
+              {/if}
               <span class="flex-1 truncate">{cmd.label}</span>
               {#if cmd.description}
                 <span class="truncate text-xs text-zinc-500">{cmd.description}</span>
@@ -427,7 +430,10 @@
               onmouseenter={() => (selectedIndex = globalIdx)}
               onclick={() => executeItem(flatItems[globalIdx])}
             >
-              <svelte:component this={cmd.icon} class="size-4 shrink-0 text-zinc-400" />
+              {#if cmd.icon}
+                {@const InstIcon = cmd.icon}
+                <InstIcon class="size-4 shrink-0 text-zinc-400" />
+              {/if}
               <span class="flex-1 truncate">{cmd.label}</span>
               {#if cmd.description}
                 <span class="truncate text-xs text-zinc-500">{cmd.description}</span>
