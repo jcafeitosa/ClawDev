@@ -23,7 +23,6 @@
     GitCommit,
     MessageSquare,
     Zap,
-    TrendingUp,
     Wallet,
     ShieldCheck,
 
@@ -248,6 +247,74 @@
     return map[type] ?? Activity;
   }
 
+  /** Parse "issue.created" → "created", "agent.updated" → "updated" */
+  function parseActionVerb(action: string): string {
+    if (!action) return 'performed an action';
+    const parts = action.split('.');
+    if (parts.length >= 2) return parts.slice(1).join(' ');
+    return action;
+  }
+
+  /** Determine a human-readable actor name from an activity item */
+  function getActorDisplay(item: any): string {
+    // If there's an explicit actor name that isn't a UUID, use it
+    const actor = item.actor ?? item.agentName ?? item.userName ?? item.user;
+    if (actor && !isUUID(actor)) return actor;
+    // For actorType "user" or local_implicit source, show "Board"
+    if (item.actorType === 'user' || item.actorType === 'system' || item.source === 'local_implicit') return 'Board';
+    // Try to find agent by actorId
+    if (item.actorId && agents.length > 0) {
+      const agent = agents.find((a: any) => a.id === item.actorId);
+      if (agent) return agent.name ?? agent.slug ?? 'Agent';
+    }
+    return 'Board';
+  }
+
+  /** Get entity display: prefer details.identifier/name/title over raw entityId */
+  function getEntityDisplay(item: any): { label: string; subtitle: string } {
+    const details = item.details ?? {};
+    const identifier = details.identifier ?? item.entityIdentifier ?? '';
+    const title = details.title ?? details.name ?? item.entityName ?? '';
+    // If entityName is set and isn't a UUID, use it
+    if (item.entityName && !isUUID(item.entityName)) {
+      return { label: identifier || '', subtitle: item.entityName };
+    }
+    if (identifier || title) {
+      return { label: identifier, subtitle: title };
+    }
+    // Fallback: if entityId is a UUID, hide it; otherwise show it
+    if (item.entityId && !isUUID(item.entityId)) {
+      return { label: '', subtitle: item.entityId };
+    }
+    return { label: '', subtitle: '' };
+  }
+
+  function isUUID(str: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+  }
+
+  /** Get agent initials from name */
+  function getInitials(name: string): string {
+    if (!name) return '?';
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  }
+
+  /** Lookup agent by ID from loaded agents array */
+  function findAgentById(agentId: string | undefined): any | null {
+    if (!agentId || agents.length === 0) return null;
+    return agents.find((a: any) => a.id === agentId) ?? null;
+  }
+
+  // Color palette for agent initials badges
+  const AGENT_COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#ec4899', '#06b6d4'];
+  function agentColor(name: string): string {
+    let hash = 0;
+    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
+    return AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length];
+  }
+
   const prefix = $derived($page.params.companyPrefix);
 </script>
 
@@ -268,60 +335,7 @@
   <!-- ── Top Widget Cards (4-column) ────────────────────────────────── -->
   <div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
 
-    <!-- Widget 1: Issue Status -->
-    <div class="dash-card group">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-[--dash-primary]/10">
-            <ListTodo size={14} color="var(--dash-primary)" />
-          </div>
-          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Tasks In Progress</h3>
-        </div>
-        <a href="/{prefix}/issues" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
-          View all
-        </a>
-      </div>
-
-      {#if loading}
-        <div class="mt-4 space-y-3">
-          <Skeleton class="h-8 w-16 bg-white/5" />
-          <Skeleton class="h-3 w-full bg-white/5" />
-          <div class="flex gap-4">
-            <Skeleton class="h-3 w-20 bg-white/5" />
-            <Skeleton class="h-3 w-20 bg-white/5" />
-          </div>
-        </div>
-      {:else}
-        <div class="mt-3">
-          <p class="text-3xl font-bold text-[--dash-text]">{tasksInProgress}</p>
-          <p class="text-xs text-[--dash-muted]">{openIssues} open, {blockedIssues} blocked</p>
-        </div>
-
-        <!-- Stacked bar chart -->
-        <div class="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
-          {#each statusSegments as seg}
-            <div
-              class="h-full transition-all duration-500"
-              style="width: {seg.pct}%; background-color: {seg.color};"
-              title="{seg.label}: {seg.count}"
-            ></div>
-          {/each}
-        </div>
-
-        <!-- Status legend -->
-        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-          {#each statusSegments as seg}
-            <div class="flex items-center gap-1.5">
-              <span class="h-2 w-2 rounded-full" style="background-color: {seg.color};"></span>
-              <span class="text-[11px] text-[--dash-muted]">{seg.label}</span>
-              <span class="text-[11px] font-semibold text-[--dash-text]">{seg.count}</span>
-            </div>
-          {/each}
-        </div>
-      {/if}
-    </div>
-
-    <!-- Widget 2: Active Agents -->
+    <!-- Widget 1: Agents Enabled -->
     <div class="dash-card group">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
@@ -381,6 +395,59 @@
       {/if}
     </div>
 
+    <!-- Widget 2: Tasks In Progress -->
+    <div class="dash-card group">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-[--dash-primary]/10">
+            <ListTodo size={14} color="var(--dash-primary)" />
+          </div>
+          <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Tasks In Progress</h3>
+        </div>
+        <a href="/{prefix}/issues" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+          View all
+        </a>
+      </div>
+
+      {#if loading}
+        <div class="mt-4 space-y-3">
+          <Skeleton class="h-8 w-16 bg-white/5" />
+          <Skeleton class="h-3 w-full bg-white/5" />
+          <div class="flex gap-4">
+            <Skeleton class="h-3 w-20 bg-white/5" />
+            <Skeleton class="h-3 w-20 bg-white/5" />
+          </div>
+        </div>
+      {:else}
+        <div class="mt-3">
+          <p class="text-3xl font-bold text-[--dash-text]">{tasksInProgress}</p>
+          <p class="text-xs text-[--dash-muted]">{openIssues} open, {blockedIssues} blocked</p>
+        </div>
+
+        <!-- Stacked bar chart -->
+        <div class="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
+          {#each statusSegments as seg}
+            <div
+              class="h-full transition-all duration-500"
+              style="width: {seg.pct}%; background-color: {seg.color};"
+              title="{seg.label}: {seg.count}"
+            ></div>
+          {/each}
+        </div>
+
+        <!-- Status legend -->
+        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1">
+          {#each statusSegments as seg}
+            <div class="flex items-center gap-1.5">
+              <span class="h-2 w-2 rounded-full" style="background-color: {seg.color};"></span>
+              <span class="text-[11px] text-[--dash-muted]">{seg.label}</span>
+              <span class="text-[11px] font-semibold text-[--dash-text]">{seg.count}</span>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
     <!-- Widget 3: Month Spend -->
     <div class="dash-card group">
       <div class="flex items-center justify-between">
@@ -390,9 +457,9 @@
           </div>
           <h3 class="text-xs font-semibold uppercase tracking-wider text-[--dash-muted]">Month Spend</h3>
         </div>
-        <button class="opacity-0 transition-opacity group-hover:opacity-60">
-          <TrendingUp size={12} color="var(--dash-muted)" />
-        </button>
+        <a href="/{prefix}/costs" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+          View all
+        </a>
       </div>
 
       {#if loading}
@@ -510,6 +577,11 @@
   {/if}
 
 
+  <!-- ── Active Agents ─────────────────────────────────────────────── -->
+  {#if companyId}
+    <ActiveAgentsPanel {companyId} {prefix} />
+  {/if}
+
   <!-- ── Quick Actions ─────────────────────────────────────────────── -->
   <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
     <a
@@ -602,9 +674,9 @@
           <div class="divide-y divide-white/[0.04]">
             {#each recentActivity as item}
               {@const IconComp = activityIcon(item.type ?? item.entityType ?? 'activity')}
-              {@const agentName = item.actor ?? item.agentName ?? item.userName ?? item.user ?? 'System'}
-              {@const actionText = item.action ?? item.description ?? item.message ?? 'performed an action'}
-              {@const entityName = item.entityName ?? item.entityId ?? ''}
+              {@const actorDisplay = getActorDisplay(item)}
+              {@const verb = parseActionVerb(item.action ?? item.description ?? item.message ?? '')}
+              {@const entity = getEntityDisplay(item)}
               <div class="flex items-start gap-3 py-2.5">
                 <div
                   class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
@@ -613,7 +685,7 @@
                   {#if item.agentAvatar ?? item.actorAvatar}
                     <img
                       src={item.agentAvatar ?? item.actorAvatar}
-                      alt={agentName}
+                      alt={actorDisplay}
                       class="h-7 w-7 rounded-full object-cover"
                     />
                   {:else}
@@ -622,11 +694,10 @@
                 </div>
                 <div class="min-w-0 flex-1">
                   <p class="text-xs leading-snug text-[--dash-text]">
-                    <span class="font-semibold text-[--dash-primary]">{agentName}</span>
-                    {' '}<span class="text-[--dash-muted]">{actionText}</span>
-                    {#if entityName}
-                      {' '}<span class="text-[--dash-muted]">on</span>{' '}
-                      <span class="font-medium text-[--dash-text]">{entityName}</span>
+                    <span class="font-semibold text-[--dash-primary]">{actorDisplay}</span>
+                    {' '}<span class="text-[--dash-muted]">{verb}</span>
+                    {#if entity.label || entity.subtitle}
+                      {' '}<strong class="font-semibold text-[--dash-text]">{entity.label}{#if entity.label && entity.subtitle} &mdash; {/if}{entity.subtitle}</strong>
                     {/if}
                   </p>
                   <TimeAgo date={item.createdAt ?? item.timestamp ?? item.date} class="text-[10px] text-[--dash-muted]" />
@@ -675,10 +746,11 @@
             {#each recentIssues as issue}
               {@const statusColor = STATUS_CONFIG.find((s) => s.key === (issue.status ?? 'open'))?.color ?? '#64748b'}
               {@const identifier = issue.identifier ?? issue.slug ?? (issue.number ? `#${issue.number}` : '')}
-              {@const agentName = issue.assigneeName ?? issue.agentName ?? issue.agent?.name ?? ''}
+              {@const assignedAgent = findAgentById(issue.assigneeAgentId) ?? (issue.agentName ? { name: issue.agentName } : null)}
+              {@const agentName = assignedAgent?.name ?? issue.assigneeName ?? issue.agent?.name ?? ''}
               <a
                 href="/{prefix}/issues/{issue.id}"
-                class="flex items-center gap-3 py-2.5 transition-colors hover:bg-accent/25 -mx-2 px-2 rounded"
+                class="flex items-center gap-2 py-2.5 transition-colors hover:bg-accent/25 -mx-2 px-2 rounded"
               >
                 <!-- Status dot -->
                 <span
@@ -694,24 +766,28 @@
                   </span>
                 {/if}
 
-                <!-- Agent avatar / icon -->
-                <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style="background-color: rgba(255,255,255,0.06);">
-                  {#if issue.assigneeAvatar ?? issue.agentAvatar}
-                    <img
-                      src={issue.assigneeAvatar ?? issue.agentAvatar}
-                      alt={agentName}
-                      class="h-5 w-5 rounded-full object-cover"
-                    />
-                  {:else}
-                    <Bot size={10} color="var(--dash-muted)" />
-                  {/if}
-                </div>
-
-                <!-- Agent name (if any) -->
+                <!-- Agent initials badge + name -->
                 {#if agentName}
+                  <div
+                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white"
+                    style="background-color: {agentColor(agentName)};"
+                    title={agentName}
+                  >
+                    {getInitials(agentName)}
+                  </div>
                   <span class="shrink-0 text-[10px] font-medium text-[--dash-muted] max-w-[60px] truncate">
                     {agentName}
                   </span>
+                {:else if issue.assigneeAvatar ?? issue.agentAvatar}
+                  <img
+                    src={issue.assigneeAvatar ?? issue.agentAvatar}
+                    alt="Agent"
+                    class="h-5 w-5 shrink-0 rounded-full object-cover"
+                  />
+                {:else}
+                  <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style="background-color: rgba(255,255,255,0.06);">
+                    <Bot size={10} color="var(--dash-muted)" />
+                  </div>
                 {/if}
 
                 <!-- Time ago -->
