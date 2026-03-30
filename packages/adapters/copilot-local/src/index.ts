@@ -4,25 +4,25 @@ export const label = "GitHub Copilot (local)";
 const EFFORT_LEVELS = ["low", "medium", "high", "xhigh"] as const;
 
 const BASE_MODELS = [
-  { id: "claude-sonnet-4.6", label: "Claude Sonnet 4.6" },
-  { id: "claude-opus-4.6", label: "Claude Opus 4.6" },
-  { id: "claude-opus-4.6-fast", label: "Claude Opus 4.6 Fast" },
-  { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5" },
-  { id: "claude-opus-4.5", label: "Claude Opus 4.5" },
-  { id: "claude-haiku-4.5", label: "Claude Haiku 4.5" },
-  { id: "claude-sonnet-4", label: "Claude Sonnet 4" },
-  { id: "gemini-3-pro-preview", label: "Gemini 3 Pro Preview" },
-  { id: "gpt-5.4", label: "GPT 5.4" },
-  { id: "gpt-5.3-codex", label: "GPT 5.3 Codex" },
-  { id: "gpt-5.2-codex", label: "GPT 5.2 Codex" },
-  { id: "gpt-5.2", label: "GPT 5.2" },
-  { id: "gpt-5.1-codex-max", label: "GPT 5.1 Codex Max" },
-  { id: "gpt-5.1-codex", label: "GPT 5.1 Codex" },
-  { id: "gpt-5.1", label: "GPT 5.1" },
-  { id: "gpt-5.4-mini", label: "GPT 5.4 Mini" },
-  { id: "gpt-5.1-codex-mini", label: "GPT 5.1 Codex Mini" },
-  { id: "gpt-5-mini", label: "GPT 5 Mini" },
-  { id: "gpt-4.1", label: "GPT 4.1" },
+  { id: "claude-sonnet-4.6", label: "Claude Sonnet 4.6", provider: "anthropic" },
+  { id: "claude-opus-4.6", label: "Claude Opus 4.6", provider: "anthropic" },
+  { id: "claude-opus-4.6-fast", label: "Claude Opus 4.6 Fast", provider: "anthropic" },
+  { id: "claude-sonnet-4.5", label: "Claude Sonnet 4.5", provider: "anthropic" },
+  { id: "claude-opus-4.5", label: "Claude Opus 4.5", provider: "anthropic" },
+  { id: "claude-haiku-4.5", label: "Claude Haiku 4.5", provider: "anthropic" },
+  { id: "claude-sonnet-4", label: "Claude Sonnet 4", provider: "anthropic" },
+  { id: "gemini-3-pro-preview", label: "Gemini 3 Pro Preview", provider: "google" },
+  { id: "gpt-5.4", label: "GPT 5.4", provider: "openai" },
+  { id: "gpt-5.3-codex", label: "GPT 5.3 Codex", provider: "openai" },
+  { id: "gpt-5.2-codex", label: "GPT 5.2 Codex", provider: "openai" },
+  { id: "gpt-5.2", label: "GPT 5.2", provider: "openai" },
+  { id: "gpt-5.1-codex-max", label: "GPT 5.1 Codex Max", provider: "openai" },
+  { id: "gpt-5.1-codex", label: "GPT 5.1 Codex", provider: "openai" },
+  { id: "gpt-5.1", label: "GPT 5.1", provider: "openai" },
+  { id: "gpt-5.4-mini", label: "GPT 5.4 Mini", provider: "openai" },
+  { id: "gpt-5.1-codex-mini", label: "GPT 5.1 Codex Mini", provider: "openai" },
+  { id: "gpt-5-mini", label: "GPT 5 Mini", provider: "openai" },
+  { id: "gpt-4.1", label: "GPT 4.1", provider: "openai" },
 ];
 
 export { BASE_MODELS, EFFORT_LEVELS };
@@ -33,10 +33,11 @@ export { BASE_MODELS, EFFORT_LEVELS };
  * Plain model IDs (without effort) default to the provider's default effort.
  */
 export const models = BASE_MODELS.flatMap((base) => [
-  { id: base.id, label: `${base.label}` },
+  { id: base.id, label: `${base.label}`, provider: base.provider },
   ...EFFORT_LEVELS.map((effort) => ({
     id: `${base.id}:${effort}`,
     label: `${base.label} (${effort})`,
+    provider: base.provider,
   })),
 ]);
 

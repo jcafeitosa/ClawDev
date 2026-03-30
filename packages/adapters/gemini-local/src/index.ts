@@ -3,12 +3,12 @@ export const label = "Gemini CLI (local)";
 export const DEFAULT_GEMINI_LOCAL_MODEL = "auto";
 
 export const models = [
-  { id: DEFAULT_GEMINI_LOCAL_MODEL, label: "Auto" },
-  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro" },
-  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" },
-  { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite" },
-  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash" },
-  { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite" },
+  { id: DEFAULT_GEMINI_LOCAL_MODEL, label: "Auto", provider: "google" },
+  { id: "gemini-2.5-pro", label: "Gemini 2.5 Pro", provider: "google" },
+  { id: "gemini-2.5-flash", label: "Gemini 2.5 Flash", provider: "google" },
+  { id: "gemini-2.5-flash-lite", label: "Gemini 2.5 Flash Lite", provider: "google" },
+  { id: "gemini-2.0-flash", label: "Gemini 2.0 Flash", provider: "google" },
+  { id: "gemini-2.0-flash-lite", label: "Gemini 2.0 Flash Lite", provider: "google" },
 ];
 
 export const agentConfigurationDoc = `# gemini_local agent configuration

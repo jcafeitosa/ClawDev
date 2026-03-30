@@ -44,7 +44,21 @@ const CURSOR_FALLBACK_MODEL_IDS = [
   "kimi-k2.5",
 ];
 
-export const models = CURSOR_FALLBACK_MODEL_IDS.map((id) => ({ id, label: id }));
+function cursorModelProvider(id: string): string {
+  if (id.startsWith("opus-") || id.startsWith("sonnet-") || id.startsWith("haiku-")) return "anthropic";
+  if (id.startsWith("gpt-")) return "openai";
+  if (id.startsWith("gemini-")) return "google";
+  if (id.startsWith("grok")) return "xai";
+  if (id.startsWith("kimi-")) return "moonshot";
+  if (id === "auto" || id.startsWith("composer-")) return "cursor";
+  return "cursor";
+}
+
+export const models = CURSOR_FALLBACK_MODEL_IDS.map((id) => ({
+  id,
+  label: id,
+  provider: cursorModelProvider(id),
+}));
 
 export const agentConfigurationDoc = `# cursor agent configuration
 

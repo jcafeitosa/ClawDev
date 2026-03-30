@@ -1,5 +1,5 @@
 import type { ServerAdapterModule } from "./types.js";
-import { getAdapterSessionManagement } from "@clawdev/adapter-utils";
+import { getAdapterSessionManagement, type AdapterModel } from "@clawdev/adapter-utils";
 import {
   execute as claudeExecute,
   listClaudeSkills,
@@ -209,7 +209,7 @@ export function getServerAdapter(type: string): ServerAdapterModule {
   return adapter;
 }
 
-export async function listAdapterModels(type: string): Promise<{ id: string; label: string }[]> {
+export async function listAdapterModels(type: string): Promise<AdapterModel[]> {
   const adapter = adaptersByType.get(type);
   if (!adapter) return [];
   if (adapter.listModels) {

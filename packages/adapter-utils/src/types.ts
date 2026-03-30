@@ -124,9 +124,19 @@ export interface AdapterExecutionContext {
   authToken?: string;
 }
 
+export type AdapterModelStatus = "available" | "degraded" | "unavailable" | "quota_exceeded" | "auth_required" | "unknown";
+
 export interface AdapterModel {
   id: string;
   label: string;
+  /** Runtime availability status — set by listModels() probes */
+  status?: AdapterModelStatus;
+  /** Human-readable status detail (e.g. "402 quota exhausted", "CLI not found") */
+  statusDetail?: string;
+  /** Provider that serves this model (e.g. "anthropic", "openai", "github", "google") */
+  provider?: string;
+  /** Timestamp of the last probe that determined the status */
+  probedAt?: string;
 }
 
 export type AdapterEnvironmentCheckLevel = "info" | "warn" | "error";

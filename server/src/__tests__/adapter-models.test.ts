@@ -26,8 +26,15 @@ describe("adapter model listing", () => {
     const fetchSpy = vi.spyOn(globalThis, "fetch");
     const models = await listAdapterModels("codex_local");
 
-    expect(models).toEqual(codexFallbackModels);
     expect(fetchSpy).not.toHaveBeenCalled();
+    expect(models).toHaveLength(codexFallbackModels.length);
+    for (const model of models) {
+      expect(model.provider).toBe("openai");
+      expect(model.status).toBe("auth_required");
+      expect(model.statusDetail).toBe("No OpenAI API key configured");
+      expect(model.probedAt).toBeDefined();
+    }
+    expect(models.map((m) => m.id)).toEqual(codexFallbackModels.map((m) => m.id));
   });
 
   it("loads codex models dynamically and merges fallback options", async () => {
@@ -56,11 +63,19 @@ describe("adapter model listing", () => {
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: false,
       status: 401,
+      statusText: "Unauthorized",
       json: async () => ({}),
     } as Response);
 
     const models = await listAdapterModels("codex_local");
-    expect(models).toEqual(codexFallbackModels);
+    expect(models).toHaveLength(codexFallbackModels.length);
+    for (const model of models) {
+      expect(model.provider).toBe("openai");
+      expect(model.status).toBe("auth_required");
+      expect(model.statusDetail).toBe("OpenAI API 401 Unauthorized");
+      expect(model.probedAt).toBeDefined();
+    }
+    expect(models.map((m) => m.id)).toEqual(codexFallbackModels.map((m) => m.id));
   });
 
 

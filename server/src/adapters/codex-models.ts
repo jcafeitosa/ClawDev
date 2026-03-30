@@ -1,4 +1,4 @@
-import type { AdapterModel } from "./types.js";
+import type { AdapterModel, AdapterModelStatus } from "./types.js";
 import { models as codexFallbackModels } from "@clawdev/adapter-codex-local";
 import { readConfigFile } from "../config-file.js";
 
@@ -19,15 +19,19 @@ function dedupeModels(models: AdapterModel[]): AdapterModel[] {
     const id = model.id.trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    deduped.push({ id, label: model.label.trim() || id });
+    deduped.push({ ...model, id, label: model.label.trim() || id });
   }
   return deduped;
+}
+
+function withProvider(models: AdapterModel[]): AdapterModel[] {
+  return models.map((m) => (m.provider ? m : { ...m, provider: "openai" }));
 }
 
 function mergedWithFallback(models: AdapterModel[]): AdapterModel[] {
   return dedupeModels([
     ...models,
-    ...codexFallbackModels,
+    ...withProvider(codexFallbackModels),
   ]).sort((a, b) => a.id.localeCompare(b.id, "en", { numeric: true, sensitivity: "base" }));
 }
 
@@ -41,9 +45,16 @@ function resolveOpenAiApiKey(): string | null {
   return configKey && configKey.length > 0 ? configKey : null;
 }
 
-async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
+interface FetchResult {
+  models: AdapterModel[];
+  status: AdapterModelStatus;
+  statusDetail: string;
+}
+
+async function fetchOpenAiModels(apiKey: string): Promise<FetchResult> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), OPENAI_MODELS_TIMEOUT_MS);
+  const probedAt = new Date().toISOString();
   try {
     const response = await fetch(OPENAI_MODELS_ENDPOINT, {
       headers: {
@@ -51,7 +62,14 @@ async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
       },
       signal: controller.signal,
     });
-    if (!response.ok) return [];
+    if (!response.ok) {
+      const status: AdapterModelStatus =
+        response.status === 401 ? "auth_required" :
+        response.status === 429 ? "quota_exceeded" :
+        "unavailable";
+      const statusDetail = `OpenAI API ${response.status} ${response.statusText}`;
+      return { models: [], status, statusDetail };
+    }
 
     const payload = (await response.json()) as { data?: unknown };
     const data = Array.isArray(payload.data) ? payload.data : [];
@@ -60,11 +78,17 @@ async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
       if (typeof item !== "object" || item === null) continue;
       const id = (item as { id?: unknown }).id;
       if (typeof id !== "string" || id.trim().length === 0) continue;
-      models.push({ id, label: id });
+      models.push({ id, label: id, provider: "openai", status: "available", probedAt });
     }
-    return dedupeModels(models);
-  } catch {
-    return [];
+    return { models: dedupeModels(models), status: "available", statusDetail: `${models.length} models discovered` };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const isTimeout = message.includes("abort");
+    return {
+      models: [],
+      status: "unknown",
+      statusDetail: isTimeout ? `Probe timed out: ${message}` : message,
+    };
   } finally {
     clearTimeout(timeout);
   }
@@ -72,8 +96,17 @@ async function fetchOpenAiModels(apiKey: string): Promise<AdapterModel[]> {
 
 export async function listCodexModels(): Promise<AdapterModel[]> {
   const apiKey = resolveOpenAiApiKey();
-  const fallback = dedupeModels(codexFallbackModels);
-  if (!apiKey) return fallback;
+  const probedAt = new Date().toISOString();
+  if (!apiKey) {
+    // No API key — return fallback models with auth_required status
+    return dedupeModels(codexFallbackModels).map((m) => ({
+      ...m,
+      provider: "openai",
+      status: "auth_required" as AdapterModelStatus,
+      statusDetail: "No OpenAI API key configured",
+      probedAt,
+    }));
+  }
 
   const now = Date.now();
   const keyFingerprint = fingerprint(apiKey);
@@ -81,9 +114,9 @@ export async function listCodexModels(): Promise<AdapterModel[]> {
     return cached.models;
   }
 
-  const fetched = await fetchOpenAiModels(apiKey);
-  if (fetched.length > 0) {
-    const merged = mergedWithFallback(fetched);
+  const result = await fetchOpenAiModels(apiKey);
+  if (result.models.length > 0) {
+    const merged = mergedWithFallback(result.models);
     cached = {
       keyFingerprint,
       expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS,
@@ -92,11 +125,20 @@ export async function listCodexModels(): Promise<AdapterModel[]> {
     return merged;
   }
 
+  // Fetch returned no models — annotate fallback with the probe status
+  const fallbackWithStatus = dedupeModels(codexFallbackModels).map((m) => ({
+    ...m,
+    provider: "openai",
+    status: result.status,
+    statusDetail: result.statusDetail,
+    probedAt,
+  }));
+
   if (cached && cached.keyFingerprint === keyFingerprint && cached.models.length > 0) {
     return cached.models;
   }
 
-  return fallback;
+  return fallbackWithStatus;
 }
 
 export function resetCodexModelsCacheForTests() {
