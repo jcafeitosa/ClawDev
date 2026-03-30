@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@clawdev/adapter-utils";
+import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult, type AdapterBillingType } from "@clawdev/adapter-utils";
 import {
   asString,
   asNumber,
@@ -95,6 +95,26 @@ function resolvePiBiller(env: Record<string, string>, provider: string | null): 
   return inferOpenAiCompatibleBiller(env, null) ?? provider ?? "unknown";
 }
 
+const API_BILLING_PROVIDERS = new Set([
+  "groq",
+  "xai",
+  "openai",
+  "anthropic",
+  "google",
+  "mistral",
+  "cohere",
+  "fireworks",
+  "together",
+  "deepseek",
+  "perplexity",
+]);
+
+function inferBillingType(provider: string | null): AdapterBillingType {
+  if (!provider) return "unknown";
+  if (API_BILLING_PROVIDERS.has(provider.toLowerCase())) return "api";
+  return "unknown";
+}
+
 async function ensureSessionsDir(): Promise<string> {
   await fs.mkdir(CLAWDEV_SESSIONS_DIR, { recursive: true });
   return CLAWDEV_SESSIONS_DIR;
@@ -115,6 +135,24 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const command = asString(config.command, "pi");
   const model = asString(config.model, "").trim();
   const thinking = asString(config.thinking, "").trim();
+
+  // Pi CLI v0.63.1 flags
+  const systemPrompt = asString(config.systemPrompt, "");
+  const appendSystemPrompt = asString(config.appendSystemPrompt, "");
+  const toolsConfig = asString(config.tools, "");
+  const noTools = config.noTools === true;
+  const noSession = config.noSession === true;
+  const sessionDir = asString(config.sessionDir, "");
+  const modelsConfig = asString(config.models, "");
+  const extensions = asStringArray(config.extensions);
+  const noExtensions = config.noExtensions === true;
+  const skillPaths = asStringArray(config.skills);
+  const noSkills = config.noSkills === true;
+  const promptTemplates = asStringArray(config.promptTemplates);
+  const noPromptTemplates = config.noPromptTemplates === true;
+  const verbose = config.verbose === true;
+  const offline = config.offline === true;
+  const apiKey = asString(config.apiKey, "");
 
   // Parse model into provider and model id
   const provider = parseModelProvider(model);
@@ -197,6 +235,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   if (!hasExplicitApiKey && authToken) {
     env.CLAWDEV_API_KEY = authToken;
   }
+  if (apiKey) env.PI_API_KEY = apiKey;
   
   const runtimeEnv = Object.fromEntries(
     Object.entries(ensurePathInEnv({ ...process.env, ...env })).filter(
@@ -325,26 +364,51 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const buildArgs = (sessionFile: string): string[] => {
     const args: string[] = [];
-    
+
     // Use JSON mode for structured output with print mode (non-interactive)
     args.push("--mode", "json");
     args.push("-p"); // Non-interactive mode: process prompt and exit
-    
-    // Use --append-system-prompt to extend Pi's default system prompt
-    args.push("--append-system-prompt", renderedSystemPromptExtension);
-    
+
+    // System prompts
+    if (systemPrompt) args.push("--system-prompt", systemPrompt);
+    if (appendSystemPrompt) args.push("--append-system-prompt", appendSystemPrompt);
+    // Use --append-system-prompt to extend Pi's default system prompt (legacy behavior)
+    if (!systemPrompt && !appendSystemPrompt) {
+      args.push("--append-system-prompt", renderedSystemPromptExtension);
+    }
+
     if (provider) args.push("--provider", provider);
     if (modelId) args.push("--model", modelId);
     if (thinking) args.push("--thinking", thinking);
 
-    args.push("--tools", "read,bash,edit,write,grep,find,ls");
-    args.push("--session", sessionFile);
+    // Tools
+    if (noTools) args.push("--no-tools");
+    else if (toolsConfig) args.push("--tools", toolsConfig);
+    else args.push("--tools", "read,bash,edit,write,grep,find,ls");
+
+    // Session
+    if (noSession) args.push("--no-session");
+    else args.push("--session", sessionFile);
+    if (sessionDir) args.push("--session-dir", sessionDir);
+    if (modelsConfig) args.push("--models", modelsConfig);
+
+    // Extensions
+    for (const ext of extensions) args.push("--extension", ext);
+    if (noExtensions) args.push("--no-extensions");
+    for (const s of skillPaths) args.push("--skill", s);
+    if (noSkills) args.push("--no-skills");
+    for (const pt of promptTemplates) args.push("--prompt-template", pt);
+    if (noPromptTemplates) args.push("--no-prompt-templates");
 
     // Add ClawDev skills directory so Pi can load the clawdev skill
-    args.push("--skill", PI_AGENT_SKILLS_DIR);
+    if (!noSkills) args.push("--skill", PI_AGENT_SKILLS_DIR);
+
+    // Advanced
+    if (verbose) args.push("--verbose");
+    if (offline) args.push("--offline");
 
     if (extraArgs.length > 0) args.push(...extraArgs);
-    
+
     // Add the user prompt as the last argument
     args.push(userPrompt);
 
@@ -454,7 +518,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       provider: provider,
       biller: resolvePiBiller(runtimeEnv, provider),
       model: model,
-      billingType: "unknown",
+      billingType: inferBillingType(provider),
       costUsd: attempt.parsed.usage.costUsd,
       resultJson: {
         stdout: attempt.proc.stdout,

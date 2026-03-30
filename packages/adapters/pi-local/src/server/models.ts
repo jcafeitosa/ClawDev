@@ -4,6 +4,22 @@ import { asString, runChildProcess } from "@clawdev/adapter-utils/server-utils";
 
 const MODELS_CACHE_TTL_MS = 60_000;
 
+/** Providers that have dedicated adapters -- filter these out of Pi bridge results. */
+const DEDICATED_PROVIDERS = new Set(["anthropic", "openai", "google"]);
+
+/** Bridge providers and their API key env vars. */
+const BRIDGE_PROVIDERS: Record<string, string> = {
+  groq: "GROQ_API_KEY",
+  xai: "XAI_API_KEY",
+  mistral: "MISTRAL_API_KEY",
+  cerebras: "CEREBRAS_API_KEY",
+  openrouter: "OPENROUTER_API_KEY",
+  minimax: "MINIMAX_API_KEY",
+  "kimi-coding": "KIMI_API_KEY",
+};
+
+export { BRIDGE_PROVIDERS };
+
 function firstNonEmptyLine(text: string): string {
   return (
     text
@@ -13,35 +29,74 @@ function firstNonEmptyLine(text: string): string {
   );
 }
 
+/**
+ * Return the set of bridge provider names whose API key env var is present
+ * in the current process environment.
+ */
+function getActiveBridgeProviders(): Set<string> {
+  const active = new Set<string>();
+  for (const [provider, envVar] of Object.entries(BRIDGE_PROVIDERS)) {
+    const key = process.env[envVar];
+    if (key && key.trim().length > 0) {
+      active.add(provider);
+    }
+  }
+  return active;
+}
+
+/**
+ * Parse `pi --list-models` columnar output into AdapterModel entries.
+ * Returns ALL models without filtering so that internal callers (testEnvironment,
+ * ensurePiModelConfiguredAndAvailable) can validate any configured model.
+ */
 function parseModelsOutput(stdout: string): AdapterModel[] {
   const parsed: AdapterModel[] = [];
   const lines = stdout.split(/\r?\n/);
-  
+  const probedAt = new Date().toISOString();
+
   // Skip header line if present
   let startIndex = 0;
   if (lines.length > 0 && (lines[0].includes("provider") || lines[0].includes("model"))) {
     startIndex = 1;
   }
-  
+
   for (let i = startIndex; i < lines.length; i++) {
     const line = lines[i].trim();
     if (!line) continue;
-    
+
     // Parse format: "provider   model   context  max-out  thinking  images"
-    // Split by 2+ spaces to handle the columnar format
-    const parts = line.split(/\s{2,}/);
+    // Split by 2+ spaces or tabs to handle the columnar format
+    const parts = line.split(/\s{2,}|\t+/);
     if (parts.length < 2) continue;
-    
+
     const provider = parts[0].trim();
     const model = parts[1].trim();
-    
+
     if (!provider || !model) continue;
     if (provider === "provider" && model === "model") continue; // Skip header
-    
+
+    const context = parts[2]?.trim() || "";
+    const maxOut = parts[3]?.trim() || "";
+    const thinking = parts[4]?.trim() === "yes";
+    const images = parts[5]?.trim() === "yes";
+
     const id = `${provider}/${model}`;
-    parsed.push({ id, label: id });
+
+    const detailParts: string[] = [];
+    if (context) detailParts.push(`Context: ${context}`);
+    if (maxOut) detailParts.push(`Max output: ${maxOut}`);
+    if (images) detailParts.push("Vision");
+
+    parsed.push({
+      id,
+      label: `${model}${thinking ? " (thinking)" : ""}`,
+      status: "available",
+      statusDetail: detailParts.length > 0 ? detailParts.join(", ") : undefined,
+      provider,
+      probedAt,
+    });
   }
-  
+
   return parsed;
 }
 
@@ -52,7 +107,7 @@ function dedupeModels(models: AdapterModel[]): AdapterModel[] {
     const id = model.id.trim();
     if (!id || seen.has(id)) continue;
     seen.add(id);
-    deduped.push({ id, label: model.label.trim() || id });
+    deduped.push({ ...model, id });
   }
   return deduped;
 }
@@ -100,6 +155,14 @@ function pruneExpiredDiscoveryCache(now: number) {
   }
 }
 
+/**
+ * Run `pi --list-models` and return all discovered models.
+ *
+ * This is the low-level discovery function used by `testEnvironment` and
+ * `ensurePiModelConfiguredAndAvailable`. It returns ALL models reported by
+ * Pi (including those from dedicated providers) so that model validation
+ * works correctly regardless of provider.
+ */
 export async function discoverPiModels(input: {
   command?: unknown;
   cwd?: unknown;
@@ -197,9 +260,28 @@ export async function ensurePiModelConfiguredAndAvailable(input: {
   return models;
 }
 
+/**
+ * Public listing function used by the adapter registry.
+ *
+ * Filters the full Pi model list to only include bridge providers (those
+ * without dedicated adapters) that have their API key configured in the
+ * current process environment. This prevents duplicate models from appearing
+ * when e.g. the Anthropic adapter already handles Claude models.
+ */
 export async function listPiModels(): Promise<AdapterModel[]> {
+  const activeProviders = getActiveBridgeProviders();
+  if (activeProviders.size === 0) {
+    return [];
+  }
+
   try {
-    return await discoverPiModelsCached();
+    const all = await discoverPiModelsCached();
+    return all.filter((model) => {
+      const provider = model.provider ?? model.id.split("/")[0];
+      if (DEDICATED_PROVIDERS.has(provider)) return false;
+      if (!activeProviders.has(provider)) return false;
+      return true;
+    });
   } catch {
     return [];
   }
