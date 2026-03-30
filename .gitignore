@@ -56,3 +56,30 @@ svelte-ui/.svelte-kit/
 svelte-ui/build/
 server/ui-dist/
 docs-astro/.astro/
+
+# ---------------------------------------------------------------------------
+# AI / ML model files — NEVER commit these (they are large binary files)
+# Applies globally to all subdirectories in this repo
+# ---------------------------------------------------------------------------
+# GGUF format (llama.cpp, Ollama, LM Studio)
+*.gguf
+# Safetensors format (HuggingFace, PyTorch)
+*.safetensors
+# PyTorch checkpoints
+*.pt
+*.pth
+*.ckpt
+# TensorFlow / Keras
+*.pb
+*.h5
+*.tflite
+# ONNX
+*.onnx
+# Bin weight shards (GGML, old HF format)
+*.bin.index.json
+# ---------------------------------------------------------------------------
+
+# Local embedding server (llama.cpp — binary + pid + local config)
+packages/adapters/embedding-local/bin/
+packages/adapters/embedding-local/server.pid
+packages/adapters/embedding-local/.env.local
