@@ -194,7 +194,7 @@
   async function loadProviderSummaries() {
     if (!companyId) return;
     try {
-      const data = await safeFetch<any>(`/api/companies/${companyId}/providers`, []);
+      const data = await safeFetch<any>(`/api/providers/summary`, []);
       const raw = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
       const HIDDEN_ADAPTERS = ['process', 'http'];
       const filtered = raw.filter((p: any) => !HIDDEN_ADAPTERS.includes(p.adapterType));
@@ -235,7 +235,7 @@
     if (!companyId) return;
     modelsLoading = true;
     try {
-      const data = await safeFetch<any>(`/api/companies/${companyId}/models`, []);
+      const data = await safeFetch<any>(`/api/models`, []);
       const raw = Array.isArray(data) ? data : data?.data ?? data?.models ?? data?.items ?? [];
       models = raw.map((m: any) => ({
         id: m.id ?? m.modelId,
@@ -263,7 +263,7 @@
     statusLoading = true;
     try {
       // Use the providers list to fetch status per provider
-      const data = await safeFetch<any>(`/api/companies/${companyId}/providers`, []);
+      const data = await safeFetch<any>(`/api/providers/summary`, []);
       const raw = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
       const HIDDEN_ADAPTERS = ['process', 'http'];
       const filtered = raw.filter((p: any) => !HIDDEN_ADAPTERS.includes(p.adapterType));
@@ -368,7 +368,7 @@
     if (!companyId) return;
     syncing = true;
     try {
-      await api(`/api/companies/${companyId}/models/sync`, { method: 'POST' });
+      await api(`/api/models/sync`, { method: 'POST' });
       await loadModels();
       await loadProviderSummaries();
     } catch {
