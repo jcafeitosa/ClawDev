@@ -63,6 +63,7 @@ import {
   inboxRoutes,
   budgetRoutes,
   searchRoutes,
+  modelRoutes,
 } from "./routes/index.js";
 import { llmRoutes } from "./routes/llms.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
@@ -244,7 +245,8 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     .use(inboxRoutes(db))
     .use(budgetRoutes(db))
     .use(assetRoutes(db, storage))
-    .use(searchRoutes(db, opts.embeddingConfig ?? null));
+    .use(searchRoutes(db, opts.embeddingConfig ?? null))
+    .use(modelRoutes(db));
 
   // -- Plugins (conditional — requires plugin deps) --
   if (pluginDeps) {

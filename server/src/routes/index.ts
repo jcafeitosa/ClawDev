@@ -22,3 +22,4 @@ export { inboxRoutes } from "./inbox.js";
 export { budgetRoutes } from "./budgets.js";
 export { companyRoutes } from "./companies.js";
 export { searchRoutes } from "./search.js";
+export { modelRoutes } from "./models.js";
