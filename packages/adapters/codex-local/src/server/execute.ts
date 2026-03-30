@@ -473,12 +473,38 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     heartbeatPromptChars: renderedPrompt.length,
   };
 
+  const sandbox = asString(config.sandbox, "");
+  const fullAuto = asBoolean(config.fullAuto, false);
+  const profile = asString(config.profile, "");
+  const addDirs = asStringArray(config.addDirs);
+  const skipGitRepoCheck = asBoolean(config.skipGitRepoCheck, false);
+  const ephemeral = asBoolean(config.ephemeral, false);
+  const features = parseObject(config.features);
+  const ossProvider = asString(config.ossProvider, "");
+
   const buildArgs = (resumeSessionId: string | null) => {
     const args = ["exec", "--json"];
     if (search) args.unshift("--search");
-    if (bypass) args.push("--dangerously-bypass-approvals-and-sandbox");
+    if (sandbox) {
+      args.push("--sandbox", sandbox);
+    } else if (fullAuto) {
+      args.push("--full-auto");
+    } else if (bypass) {
+      args.push("--dangerously-bypass-approvals-and-sandbox");
+    }
     if (model) args.push("--model", model);
     if (modelReasoningEffort) args.push("-c", `model_reasoning_effort=${JSON.stringify(modelReasoningEffort)}`);
+    if (profile) args.push("--profile", profile);
+    for (const dir of addDirs) {
+      args.push("--add-dir", dir);
+    }
+    if (skipGitRepoCheck) args.push("--skip-git-repo-check");
+    if (ephemeral) args.push("--ephemeral");
+    for (const [key, value] of Object.entries(features)) {
+      if (value === true) args.push("--enable", key);
+      else if (value === false) args.push("--disable", key);
+    }
+    if (ossProvider) args.push("--oss", "--local-provider", ossProvider);
     if (extraArgs.length > 0) args.push(...extraArgs);
     if (resumeSessionId) args.push("resume", resumeSessionId, "-");
     else args.push("-");

@@ -13,6 +13,7 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { parseCodexJsonl } from "./parse.js";
 import { codexHomeDir, readCodexAuthInfo } from "./quota.js";
@@ -224,6 +225,96 @@ export async function testEnvironment(
         });
       }
     }
+  }
+
+  // --- Auth type detection ---
+  const resolvedCodexHome = isNonEmpty(env.CODEX_HOME) ? env.CODEX_HOME : codexHomeDir();
+  try {
+    const authRaw = await fs.readFile(path.join(resolvedCodexHome, "auth.json"), "utf8");
+    const authJson = JSON.parse(authRaw) as Record<string, unknown>;
+    const authMode = typeof authJson.auth_mode === "string" ? authJson.auth_mode : null;
+    const codexAuth = await readCodexAuthInfo(resolvedCodexHome).catch(() => null);
+    const emailSuffix = codexAuth?.email ? ` (${codexAuth.email})` : "";
+
+    if (authMode === "chatgpt") {
+      checks.push({
+        code: "codex_auth_mode",
+        level: "info",
+        message: "Authenticated via ChatGPT subscription",
+        detail: `auth_mode=chatgpt${emailSuffix}`,
+      });
+    } else if (authMode === "api_key") {
+      checks.push({
+        code: "codex_auth_mode",
+        level: "info",
+        message: "Authenticated via API key",
+        detail: `auth_mode=api_key${emailSuffix}`,
+      });
+    } else if (authMode) {
+      checks.push({
+        code: "codex_auth_mode",
+        level: "info",
+        message: `Auth mode: ${authMode}`,
+        detail: `auth_mode=${authMode}${emailSuffix}`,
+      });
+    }
+  } catch {
+    // auth.json not readable or missing — skip auth mode detection
+  }
+
+  // --- Codex version check ---
+  if (canRunProbe && commandLooksLike(command, "codex")) {
+    try {
+      const versionProbe = await runChildProcess(
+        `codex-version-${Date.now()}`,
+        command,
+        ["--version"],
+        {
+          cwd,
+          env,
+          timeoutSec: 10,
+          graceSec: 3,
+          onLog: async () => {},
+        },
+      );
+      const versionOutput = `${versionProbe.stdout}\n${versionProbe.stderr}`.trim();
+      const versionMatch = versionOutput.match(/\d+\.\d+\.\d+/);
+      if (versionMatch) {
+        checks.push({
+          code: "codex_version",
+          level: "info",
+          message: `Codex CLI version: ${versionMatch[0]}`,
+        });
+      }
+    } catch {
+      // version check is best-effort — skip on failure
+    }
+  }
+
+  // --- Config info from config.toml ---
+  try {
+    const configRaw = await fs.readFile(path.join(resolvedCodexHome, "config.toml"), "utf8");
+    const configDetails: string[] = [];
+
+    const modelMatch = configRaw.match(/^\s*model\s*=\s*"([^"]+)"/m);
+    if (modelMatch?.[1]) configDetails.push(`model=${modelMatch[1]}`);
+
+    const personalityMatch = configRaw.match(/^\s*personality\s*=\s*"([^"]+)"/m);
+    if (personalityMatch?.[1]) configDetails.push(`personality=${personalityMatch[1]}`);
+
+    const effortMatch = configRaw.match(/^\s*model_reasoning_effort\s*=\s*"([^"]+)"/m);
+    if (effortMatch?.[1]) configDetails.push(`model_reasoning_effort=${effortMatch[1]}`);
+
+    if (configDetails.length > 0) {
+      checks.push({
+        code: "codex_config_info",
+        level: "info",
+        message: "Codex configuration detected.",
+        detail: configDetails.join(", "),
+      });
+    }
+  } catch {
+    // config.toml not readable or missing — skip
   }
 
   return {

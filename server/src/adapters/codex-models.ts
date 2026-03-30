@@ -1,6 +1,9 @@
 import type { AdapterModel, AdapterModelStatus } from "./types.js";
 import { models as codexFallbackModels } from "@clawdev/adapter-codex-local";
+import { codexHomeDir } from "@clawdev/adapter-codex-local/server";
 import { readConfigFile } from "../config-file.js";
+import fs from "node:fs/promises";
+import path from "node:path";
 
 const OPENAI_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
 const OPENAI_MODELS_TIMEOUT_MS = 5000;
@@ -94,35 +97,129 @@ async function fetchOpenAiModels(apiKey: string): Promise<FetchResult> {
   }
 }
 
+interface CodexModelsCacheEntry {
+  slug: string;
+  display_name?: string;
+  description?: string;
+  default_reasoning_level?: string;
+  supported_reasoning_levels?: Array<{ effort: string; description?: string }>;
+  shell_type?: string;
+  visibility?: "list" | "hide";
+  supported_in_api?: boolean;
+  priority?: number;
+  upgrade?: { model: string; migration_markdown?: string } | null;
+}
+
+interface CodexModelsCache {
+  fetched_at?: string;
+  client_version?: string;
+  models?: CodexModelsCacheEntry[];
+}
+
+let disableModelsCache = false;
+
+async function readCodexModelsCache(): Promise<CodexModelsCacheEntry[]> {
+  if (disableModelsCache) return [];
+  const cachePath = path.join(codexHomeDir(), "models_cache.json");
+  try {
+    const raw = await fs.readFile(cachePath, "utf8");
+    const parsed = JSON.parse(raw) as CodexModelsCache;
+    if (!Array.isArray(parsed.models)) return [];
+    return parsed.models.filter(
+      (m): m is CodexModelsCacheEntry =>
+        typeof m === "object" && m !== null && typeof m.slug === "string" && m.slug.trim().length > 0,
+    );
+  } catch {
+    return [];
+  }
+}
+
+function enrichModelsWithCache(models: AdapterModel[], cacheEntries: CodexModelsCacheEntry[]): AdapterModel[] {
+  const cacheBySlug = new Map<string, CodexModelsCacheEntry>();
+  for (const entry of cacheEntries) {
+    cacheBySlug.set(entry.slug.trim(), entry);
+  }
+
+  const enriched = models.map((model) => {
+    const entry = cacheBySlug.get(model.id);
+    if (!entry) return model;
+    const details: string[] = [];
+    if (entry.description) details.push(entry.description);
+    if (entry.default_reasoning_level) details.push(`reasoning: ${entry.default_reasoning_level}`);
+    return {
+      ...model,
+      label: entry.display_name?.trim() || model.label,
+      ...(details.length > 0 ? { statusDetail: details.join(" — ") } : {}),
+    };
+  });
+
+  // Add cache-only models that are not yet in the list and are visible
+  const existingIds = new Set(models.map((m) => m.id));
+  const probedAt = new Date().toISOString();
+  for (const entry of cacheEntries) {
+    const slug = entry.slug.trim();
+    if (existingIds.has(slug)) continue;
+    if (entry.visibility === "hide") continue;
+    const details: string[] = [];
+    if (entry.description) details.push(entry.description);
+    if (entry.default_reasoning_level) details.push(`reasoning: ${entry.default_reasoning_level}`);
+    enriched.push({
+      id: slug,
+      label: entry.display_name?.trim() || slug,
+      provider: "openai",
+      status: "available" as AdapterModelStatus,
+      ...(details.length > 0 ? { statusDetail: details.join(" — ") } : {}),
+      probedAt,
+    });
+  }
+
+  return enriched;
+}
+
 export async function listCodexModels(): Promise<AdapterModel[]> {
   const apiKey = resolveOpenAiApiKey();
   const probedAt = new Date().toISOString();
+
+  // Read the local models cache (best-effort, never blocks)
+  const cacheEntries = await readCodexModelsCache();
+  const hiddenSlugs = new Set(
+    cacheEntries.filter((e) => e.visibility === "hide").map((e) => e.slug.trim()),
+  );
+
+  function applyCache(models: AdapterModel[]): AdapterModel[] {
+    const enriched = cacheEntries.length > 0 ? enrichModelsWithCache(models, cacheEntries) : models;
+    // Filter out hidden models
+    return hiddenSlugs.size > 0 ? enriched.filter((m) => !hiddenSlugs.has(m.id)) : enriched;
+  }
+
   if (!apiKey) {
     // No API key — return fallback models with auth_required status
-    return dedupeModels(codexFallbackModels).map((m) => ({
+    const fallback = dedupeModels(codexFallbackModels).map((m) => ({
       ...m,
       provider: "openai",
       status: "auth_required" as AdapterModelStatus,
       statusDetail: "No OpenAI API key configured",
       probedAt,
     }));
+    return applyCache(fallback);
   }
 
   const now = Date.now();
   const keyFingerprint = fingerprint(apiKey);
   if (cached && cached.keyFingerprint === keyFingerprint && cached.expiresAt > now) {
-    return cached.models;
+    return applyCache(cached.models);
   }
 
   const result = await fetchOpenAiModels(apiKey);
   if (result.models.length > 0) {
     const merged = mergedWithFallback(result.models);
+    const final = applyCache(merged);
     cached = {
       keyFingerprint,
       expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS,
-      models: merged,
+      models: final,
     };
-    return merged;
+    return final;
   }
 
   // Fetch returned no models — annotate fallback with the probe status
@@ -135,12 +232,13 @@ export async function listCodexModels(): Promise<AdapterModel[]> {
   }));
 
   if (cached && cached.keyFingerprint === keyFingerprint && cached.models.length > 0) {
-    return cached.models;
+    return applyCache(cached.models);
   }
 
-  return fallbackWithStatus;
+  return applyCache(fallbackWithStatus);
 }
 
 export function resetCodexModelsCacheForTests() {
   cached = null;
+  disableModelsCache = true;
 }
