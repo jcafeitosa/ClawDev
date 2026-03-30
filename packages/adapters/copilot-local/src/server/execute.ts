@@ -35,7 +35,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     "You are agent {{agent.id}} ({{agent.name}}). Continue your ClawDev work.",
   );
   const command = asString(config.command, "copilot");
-  const model = asString(config.model, "");
+  const rawModel = asString(config.model, "");
+  const [model, modelEffort] = rawModel.includes(":") ? rawModel.split(":", 2) : [rawModel, ""];
   const extraArgs = (() => {
     const fromExtraArgs = asStringArray(config.extraArgs);
     if (fromExtraArgs.length > 0) return fromExtraArgs;
@@ -159,7 +160,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     renderedPrompt,
   ]);
 
-  const effort = asString(config.effort, "");
+  const effort = modelEffort || asString(config.effort, "");
 
   const buildArgs = (resumeSessionId: string | null) => {
     const args: string[] = ["-p", prompt, "--yolo", "--output-format", "json"];
