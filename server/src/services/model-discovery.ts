@@ -3,6 +3,7 @@ import type { AdapterModel, AdapterModelStatus } from "@clawdev/adapter-utils";
 import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
 import { createModelCatalogService, type SyncInput } from "./model-catalog.js";
 import { createProviderStatusService, getCooldownDuration } from "./provider-status.js";
+import { probeAdapterModels, PROBE_CONFIGS } from "../adapters/cli-probe.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -103,7 +104,21 @@ export function createModelDiscoveryService(
         }
 
         adaptersProbed++;
-        const { models } = result.value;
+        let { models } = result.value;
+
+        // For adapters that only list models without probing,
+        // run CLI probes to get real availability status
+        const hasBuiltInProbing = models.some((m) => m.status && m.status !== "available");
+        if (!hasBuiltInProbing && PROBE_CONFIGS[adapterType]) {
+          try {
+            models = await probeAdapterModels(adapterType, models);
+          } catch (err) {
+            console.log(
+              `[model-discovery] CLI probe for ${adapterType} failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
+
         const modelIds: string[] = [];
 
         for (const model of models) {
@@ -192,11 +207,23 @@ export function createModelDiscoveryService(
      */
     async probeAdapter(adapterType: string): Promise<ProbeAdapterResult> {
       try {
-        const models = await withTimeout(
+        let models = await withTimeout(
           listAdapterModels(adapterType),
           PROBE_TIMEOUT_MS,
           `Probe timed out after ${Math.round(PROBE_TIMEOUT_MS / 1000)}s`,
         );
+
+        // For adapters without built-in probing, run CLI probes
+        const hasBuiltInProbing = models.some((m) => m.status && m.status !== "available");
+        if (!hasBuiltInProbing && PROBE_CONFIGS[adapterType]) {
+          try {
+            models = await probeAdapterModels(adapterType, models);
+          } catch (err) {
+            console.log(
+              `[model-discovery] CLI probe for ${adapterType} failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          }
+        }
 
         const syncInputs: SyncInput[] = models.map((model) => ({
           adapterType,

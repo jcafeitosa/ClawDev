@@ -105,8 +105,10 @@
     id: string;
     actor?: string | null;
     actorName?: string | null;
+    actorType?: string | null;
+    actorId?: string | null;
     action: string;
-    details?: string | null;
+    details?: Record<string, unknown> | null;
     createdAt?: string;
     [key: string]: unknown;
   }
@@ -119,6 +121,16 @@
     startedAt?: string | null;
     finishedAt?: string | null;
     summary?: string | null;
+    usageJson?: Record<string, unknown> | null;
+    resultJson?: Record<string, unknown> | null;
+    [key: string]: unknown;
+  }
+
+  interface Approval {
+    id: string;
+    type: string;
+    status: string;
+    createdAt?: string;
     [key: string]: unknown;
   }
 
@@ -141,6 +153,8 @@
   let subIssues = $state<SubIssue[]>([]);
   let activityEntries = $state<ActivityEntry[]>([]);
   let runs = $state<Run[]>([]);
+  let linkedApprovals = $state<Approval[]>([]);
+  let approvalsOpen = $state(false);
   let loading = $state(true);
   let notFound = $state(false);
   let activeTab = $state("details");
@@ -320,6 +334,43 @@
     } catch {
       runs = [];
     }
+  }
+
+  async function loadApprovals() {
+    if (!issueId) return;
+    try {
+      const res = await api(`/api/issues/${issueId}/approvals`);
+      linkedApprovals = res.ok ? ((await res.json()) as Approval[]) ?? [] : [];
+    } catch {
+      linkedApprovals = [];
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Derived: cost summary from linked runs
+  // ---------------------------------------------------------------------------
+  let costSummary = $derived.by(() => {
+    let input = 0, output = 0, cached = 0, cost = 0;
+    let hasCost = false, hasTokens = false;
+    for (const run of runs) {
+      const usage = run.usageJson;
+      if (!usage) continue;
+      const ri = Number(usage.inputTokens ?? usage.input_tokens ?? 0);
+      const ro = Number(usage.outputTokens ?? usage.output_tokens ?? 0);
+      const rc = Number(usage.cachedInputTokens ?? usage.cached_input_tokens ?? usage.cache_read_input_tokens ?? 0);
+      const result = run.resultJson;
+      const runCost = Number(result?.cost_usd ?? usage.cost_usd ?? 0);
+      if (runCost > 0) hasCost = true;
+      if (ri + ro + rc > 0) hasTokens = true;
+      input += ri; output += ro; cached += rc; cost += runCost;
+    }
+    return { input, output, cached, cost, totalTokens: input + output, hasCost, hasTokens };
+  });
+
+  function formatTokens(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+    return String(n);
   }
 
   async function submitComment(body: string) {
@@ -641,16 +692,74 @@
     }
   }
 
-  function formatActivityDetails(details: unknown): string {
-    if (typeof details === 'string') return details;
-    if (typeof details !== 'object' || details === null) return String(details);
-    const d = details as Record<string, unknown>;
-    if (d.oldStatus && d.newStatus) return `${d.oldStatus} → ${d.newStatus}`;
-    if (d.identifier) return String(d.identifier);
-    if (d.title) return String(d.title);
-    if (d.message) return String(d.message);
-    const strs = Object.values(d).filter(v => typeof v === 'string').slice(0, 2);
-    return strs.length > 0 ? strs.join(', ') : JSON.stringify(d);
+  const ACTION_LABELS: Record<string, string> = {
+    'issue.created': 'created the issue',
+    'issue.updated': 'updated the issue',
+    'issue.checked_out': 'checked out the issue',
+    'issue.released': 'released the issue',
+    'issue.comment_added': 'added a comment',
+    'issue.attachment_added': 'added an attachment',
+    'issue.attachment_removed': 'removed an attachment',
+    'issue.document_created': 'created a document',
+    'issue.document_updated': 'updated a document',
+    'issue.document_deleted': 'deleted a document',
+    'issue.deleted': 'deleted the issue',
+    'agent.created': 'created an agent',
+    'agent.updated': 'updated the agent',
+    'agent.paused': 'paused the agent',
+    'agent.resumed': 'resumed the agent',
+    'agent.terminated': 'terminated the agent',
+    'heartbeat.invoked': 'invoked a heartbeat',
+    'heartbeat.cancelled': 'cancelled a heartbeat',
+    'approval.created': 'requested approval',
+    'approval.approved': 'approved',
+    'approval.rejected': 'rejected',
+  };
+
+  function formatAction(action: string, details?: Record<string, unknown> | null): string {
+    if (action === 'issue.updated' && details) {
+      const prev = (details._previous ?? {}) as Record<string, unknown>;
+      const parts: string[] = [];
+      if (details.status !== undefined) {
+        const from = prev.status;
+        parts.push(from
+          ? `changed status from ${String(from).replace(/_/g, ' ')} to ${String(details.status).replace(/_/g, ' ')}`
+          : `changed status to ${String(details.status).replace(/_/g, ' ')}`);
+      }
+      if (details.priority !== undefined) {
+        const from = prev.priority;
+        parts.push(from
+          ? `changed priority from ${from} to ${details.priority}`
+          : `changed priority to ${details.priority}`);
+      }
+      if (details.assigneeAgentId !== undefined || details.assigneeUserId !== undefined) {
+        parts.push(details.assigneeAgentId || details.assigneeUserId ? 'assigned the issue' : 'unassigned the issue');
+      }
+      if (details.title !== undefined) parts.push('updated the title');
+      if (details.description !== undefined) parts.push('updated the description');
+      if (parts.length > 0) return parts.join(', ');
+    }
+    if ((action === 'issue.document_created' || action === 'issue.document_updated' || action === 'issue.document_deleted') && details) {
+      const key = typeof details.key === 'string' ? details.key : 'document';
+      const title = typeof details.title === 'string' && details.title ? ` (${details.title})` : '';
+      return `${ACTION_LABELS[action] ?? action} ${key}${title}`;
+    }
+    return ACTION_LABELS[action] ?? action.replace(/[._]/g, ' ');
+  }
+
+  function actorLabel(entry: ActivityEntry): string {
+    if (entry.actorName) return entry.actorName;
+    if (entry.actorType === 'system') return 'System';
+    if (entry.actorType === 'user') return 'Board';
+    if (entry.actor) return entry.actor;
+    return 'Unknown';
+  }
+
+  function actorInitials(entry: ActivityEntry): string {
+    const name = actorLabel(entry);
+    const parts = name.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
   }
 
   function formatFileSize(bytes?: number): string {
@@ -746,6 +855,7 @@
     loadSubIssues();
     loadActivity();
     loadRuns();
+    loadApprovals();
   });
 </script>
 
@@ -1126,7 +1236,26 @@
           <!-- Activity Tab                                                   -->
           <!-- ============================================================= -->
           <TabsContent value="activity">
-            <div class="mt-4 space-y-6">
+            <div class="mt-4 space-y-4">
+              <!-- Cost Summary -->
+              {#if runs.length > 0 && (costSummary.hasCost || costSummary.hasTokens)}
+                <div class="rounded-lg border border-border px-3 py-2">
+                  <div class="mb-1 text-sm font-medium text-muted-foreground">Cost Summary</div>
+                  <div class="flex flex-wrap gap-3 text-xs tabular-nums text-muted-foreground">
+                    {#if costSummary.hasCost}
+                      <span class="font-medium text-foreground">${costSummary.cost.toFixed(4)}</span>
+                    {/if}
+                    {#if costSummary.hasTokens}
+                      <span>
+                        Tokens {formatTokens(costSummary.totalTokens)}{#if costSummary.cached > 0}
+                          (in {formatTokens(costSummary.input)}, out {formatTokens(costSummary.output)}, cached {formatTokens(costSummary.cached)}){:else}
+                          (in {formatTokens(costSummary.input)}, out {formatTokens(costSummary.output)}){/if}
+                      </span>
+                    {/if}
+                  </div>
+                </div>
+              {/if}
+
               <!-- Activity feed -->
               <Card>
                 <CardHeader>
@@ -1139,24 +1268,15 @@
                   {#if activityEntries.length === 0}
                     <p class="text-sm text-zinc-500 dark:text-zinc-400 italic">No activity recorded yet.</p>
                   {:else}
-                    <div class="space-y-3">
+                    <div class="space-y-1.5">
                       {#each activityEntries as entry}
-                        <div class="flex items-start gap-3 text-sm">
-                          <div class="mt-1 size-2 rounded-full bg-blue-400 shrink-0"></div>
-                          <div class="min-w-0 flex-1">
-                            <div class="flex items-center gap-2 flex-wrap">
-                              <span class="font-medium text-[#F8FAFC]">
-                                {entry.actorName ?? entry.actor ?? 'System'}
-                              </span>
-                              <span class="text-zinc-400">{entry.action}</span>
-                              {#if entry.details}
-                                <span class="text-zinc-500">&mdash; {formatActivityDetails(entry.details)}</span>
-                              {/if}
-                            </div>
-                            {#if entry.createdAt}
-                              <TimeAgo date={entry.createdAt} class="text-xs text-zinc-500 mt-0.5" />
-                            {/if}
-                          </div>
+                        <div class="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span class="inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[9px] font-semibold uppercase">{actorInitials(entry)}</span>
+                          <span class="font-medium text-foreground/80">{actorLabel(entry)}</span>
+                          <span>{formatAction(entry.action, entry.details)}</span>
+                          {#if entry.createdAt}
+                            <TimeAgo date={entry.createdAt} class="ml-auto shrink-0" />
+                          {/if}
                         </div>
                       {/each}
                     </div>
@@ -1416,6 +1536,41 @@
             </div>
           </TabsContent>
         </Tabs>
+
+        <!-- Linked Approvals (collapsible, shown when present) -->
+        {#if linkedApprovals.length > 0}
+          <div class="mt-4 rounded-lg border border-border">
+            <button
+              type="button"
+              onclick={() => approvalsOpen = !approvalsOpen}
+              class="flex w-full items-center justify-between px-3 py-2 text-left"
+            >
+              <span class="text-sm font-medium text-muted-foreground">
+                Linked Approvals ({linkedApprovals.length})
+              </span>
+              <ChevronRight class="h-4 w-4 text-muted-foreground transition-transform {approvalsOpen ? 'rotate-90' : ''}" />
+            </button>
+            {#if approvalsOpen}
+              <div class="border-t border-border divide-y divide-border">
+                {#each linkedApprovals as approval}
+                  <a
+                    href="/{prefix}/approvals/{approval.id}"
+                    class="flex items-center justify-between px-3 py-2 text-xs transition-colors hover:bg-accent/20"
+                  >
+                    <div class="flex items-center gap-2">
+                      <StatusBadge status={approval.status} />
+                      <span class="font-medium">{approval.type.replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase())}</span>
+                      <span class="font-mono text-muted-foreground">{approval.id.slice(0, 8)}</span>
+                    </div>
+                    {#if approval.createdAt}
+                      <TimeAgo date={approval.createdAt} class="text-muted-foreground" />
+                    {/if}
+                  </a>
+                {/each}
+              </div>
+            {/if}
+          </div>
+        {/if}
       </div>
 
       <!-- Properties drawer panel -->

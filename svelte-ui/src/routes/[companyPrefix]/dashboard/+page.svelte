@@ -26,7 +26,6 @@
     Wallet,
     ShieldCheck,
 
-    Plus,
     ArrowRight,
   } from 'lucide-svelte';
 
@@ -45,8 +44,14 @@
   let recentActivityLoading = $state(true);
   let recentIssues = $state<any[]>([]);
 
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  let companyId = $derived(companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
   let companyName = $derived(companyStore.selectedCompany?.name ?? 'Company');
+
+  function normalizeIssueStatus(raw: string | null | undefined): string {
+    if (!raw) return 'todo';
+    if (raw === 'open') return 'todo';
+    return raw;
+  }
 
   // ── Computed metrics ───────────────────────────────────────────────
   let enabledAgents = $derived(
@@ -71,7 +76,10 @@
     agents.filter((a) => a.status === 'error' || a.status === 'failed').length,
   );
   let openIssues = $derived(
-    issues.filter((i) => i.status === 'open' || i.status === 'backlog' || i.status === 'in_progress' || i.status === 'in_review').length,
+    issues.filter((i) => {
+      const status = normalizeIssueStatus(i.status);
+      return status === 'todo' || status === 'backlog' || status === 'in_progress' || status === 'in_review';
+    }).length,
   );
   let blockedIssues = $derived(
     issues.filter((i) => i.status === 'blocked').length,
@@ -89,7 +97,7 @@
   // ── Widget derived data ──────────────────────────────────────────
   const STATUS_CONFIG: { key: string; label: string; color: string }[] = [
     { key: 'backlog', label: 'Backlog', color: '#64748b' },
-    { key: 'open', label: 'To Do', color: '#2563eb' },
+    { key: 'todo', label: 'To Do', color: '#2563eb' },
     { key: 'in_progress', label: 'In Progress', color: '#f59e0b' },
     { key: 'in_review', label: 'In Review', color: '#8b5cf6' },
     { key: 'done', label: 'Done', color: '#10b981' },
@@ -100,7 +108,7 @@
     const counts: Record<string, number> = {};
     for (const s of STATUS_CONFIG) counts[s.key] = 0;
     for (const issue of issues) {
-      const st = issue.status ?? 'open';
+      const st = normalizeIssueStatus(issue.status);
       if (st in counts) counts[st]++;
       else if (!counts[st]) counts[st] = 1;
       else counts[st]++;
@@ -123,7 +131,7 @@
   // Board columns for mini kanban
   let boardColumns = $derived.by(() => {
     return STATUS_CONFIG.map((s) => {
-      const columnIssues = issues.filter((i) => (i.status ?? 'open') === s.key);
+      const columnIssues = issues.filter((i) => normalizeIssueStatus(i.status) === s.key);
       return {
         ...s,
         count: columnIssues.length,
@@ -276,6 +284,36 @@
     return 'Board';
   }
 
+  /** Build a link href for an activity item based on its entity type */
+  function getActivityHref(item: any): string {
+    const details = item.details ?? {};
+    const identifier = details.identifier ?? item.entityIdentifier ?? '';
+    const entityId = item.entityId ?? '';
+    const entityType = item.entityType ?? item.type ?? '';
+    const action = item.action ?? '';
+
+    // Approval activities → approvals page
+    if (entityType === 'approval' || action.startsWith('approval.')) {
+      return `/${prefix}/approvals/${entityId}`;
+    }
+    // Issue activities → issue page (prefer identifier over UUID)
+    if (entityType === 'issue' || action.startsWith('issue.')) {
+      if (identifier) return `/${prefix}/issues/${identifier}`;
+      if (entityId) return `/${prefix}/issues/${entityId}`;
+    }
+    // Agent activities → agent page
+    if (entityType === 'agent' || action.startsWith('agent.')) {
+      return `/${prefix}/agents/${entityId}`;
+    }
+    // Company activities
+    if (entityType === 'company' || action.startsWith('company.')) {
+      return `/${prefix}/settings`;
+    }
+    // Fallback: if we have an identifier, link to issues
+    if (identifier) return `/${prefix}/issues/${identifier}`;
+    return '';
+  }
+
   /** Get entity display: prefer details.identifier/name/title over raw entityId */
   function getEntityDisplay(item: any): { label: string; subtitle: string } {
     const details = item.details ?? {};
@@ -325,24 +363,68 @@
 </script>
 
 <div class="dashboard-root min-h-screen space-y-8 p-6">
-  <!-- Header -->
-  <div class="flex items-end justify-between">
-    <div>
-      <h1 class="dash-section-header">Dashboard</h1>
-      <p class="mt-1 text-lg font-bold text-[--dash-text]">{companyName}</p>
-    </div>
-  </div>
-
   <!-- ── Active Agents Panel (top) ─────────────────────────────────── -->
   {#if companyId}
     <ActiveAgentsPanel companyId={companyId ?? ''} prefix={prefix ?? ''} />
+  {/if}
+
+  <!-- ── No agents warning ──────────────────────────────────────────── -->
+  {#if !loading && agents.length === 0}
+    <div class="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/25 dark:bg-amber-950/60">
+      <div class="flex items-center gap-2.5">
+        <Bot class="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+        <p class="text-sm text-amber-900 dark:text-amber-100">You have no agents.</p>
+      </div>
+      <a
+        href="/{prefix}/agents/new"
+        class="text-sm font-medium text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100 underline underline-offset-2 shrink-0"
+      >
+        Create one here
+      </a>
+    </div>
+  {/if}
+
+  <!-- ── Budget Incident Alert ──────────────────────────────────────── -->
+  {#if pendingIncidents.length > 0}
+    <div class="relative overflow-hidden rounded-xl border border-red-500/30 bg-red-500/[0.08] px-5 py-4">
+      <div class="flex items-start gap-4">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/20">
+          <AlertTriangle size={20} color="#ef4444" />
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold text-red-400">Budget Hard Stop Active</h3>
+            {#if pendingIncidents.length > 1}
+              <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
+                {pendingIncidents.length}
+              </span>
+            {/if}
+          </div>
+          {#if pendingIncidents.length === 1}
+            <p class="mt-0.5 text-sm text-red-300/80">
+              Agent <span class="font-medium text-red-300">{pendingIncidents[0].agentName ?? pendingIncidents[0].agent?.name ?? 'Unknown'}</span> has been paused — monthly budget exceeded.
+            </p>
+          {:else}
+            <p class="mt-0.5 text-sm text-red-300/80">
+              {pendingIncidents.length} agents have been paused — monthly budgets exceeded.
+            </p>
+          {/if}
+        </div>
+        <a
+          href="/{prefix}/budgets"
+          class="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
+        >
+          Resolve
+        </a>
+      </div>
+    </div>
   {/if}
 
   <!-- ── Top Widget Cards (4-column) ────────────────────────────────── -->
   <div class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
 
     <!-- Widget 1: Agents Enabled -->
-    <div class="dash-card dash-card--emerald group">
+    <a href="/{prefix}/agents" class="dash-card dash-card--emerald group no-underline block">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10">
@@ -350,9 +432,9 @@
           </div>
           <h3 class="dash-section-header !mb-0">Agents Enabled</h3>
         </div>
-        <a href="/{prefix}/agents" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+        <span class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted]">
           View all
-        </a>
+        </span>
       </div>
 
       {#if loading}
@@ -402,10 +484,10 @@
           {/if}
         </div>
       {/if}
-    </div>
+    </a>
 
     <!-- Widget 2: Tasks In Progress -->
-    <div class="dash-card dash-card--blue group">
+    <a href="/{prefix}/issues" class="dash-card dash-card--blue group no-underline block">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-[--dash-primary]/10">
@@ -413,9 +495,9 @@
           </div>
           <h3 class="dash-section-header !mb-0">Tasks In Progress</h3>
         </div>
-        <a href="/{prefix}/issues" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+        <span class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted]">
           View all
-        </a>
+        </span>
       </div>
 
       {#if loading}
@@ -458,10 +540,10 @@
           {/each}
         </div>
       {/if}
-    </div>
+    </a>
 
     <!-- Widget 3: Month Spend -->
-    <div class="dash-card dash-card--amber group">
+    <a href="/{prefix}/costs" class="dash-card dash-card--amber group no-underline block">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10">
@@ -469,9 +551,9 @@
           </div>
           <h3 class="dash-section-header !mb-0">Month Spend</h3>
         </div>
-        <a href="/{prefix}/costs" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+        <span class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted]">
           View all
-        </a>
+        </span>
       </div>
 
       {#if loading}
@@ -506,10 +588,10 @@
           </p>
         </div>
       {/if}
-    </div>
+    </a>
 
     <!-- Widget 4: Pending Approvals -->
-    <div class="dash-card dash-card--purple group">
+    <a href="/{prefix}/approvals" class="dash-card dash-card--purple group no-underline block">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-2">
           <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10">
@@ -517,9 +599,9 @@
           </div>
           <h3 class="dash-section-header !mb-0">Pending Approvals</h3>
         </div>
-        <a href="/{prefix}/approvals" class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted] hover:text-[--dash-text]">
+        <span class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted]">
           View all
-        </a>
+        </span>
       </div>
 
       {#if loading}
@@ -536,14 +618,13 @@
         <!-- Approval status indicator -->
         <div class="mt-4">
           {#if pendingApprovals > 0}
-            <a
-              href="/{prefix}/approvals"
+            <span
               class="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/[0.08] px-3 py-1.5 text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/[0.15]"
             >
               <ShieldCheck size={12} />
               Review now
               <ArrowRight size={10} />
-            </a>
+            </span>
           {:else}
             <div class="flex items-center gap-1.5 text-[11px] text-[--dash-muted]">
               <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
@@ -552,94 +633,6 @@
           {/if}
         </div>
       {/if}
-    </div>
-  </div>
-
-  <!-- ── Budget Incident Alert ──────────────────────────────────────── -->
-  {#if pendingIncidents.length > 0}
-    <div class="relative overflow-hidden rounded-xl border border-red-500/30 bg-red-500/[0.08] px-5 py-4">
-      <div class="flex items-start gap-4">
-        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/20">
-          <AlertTriangle size={20} color="#ef4444" />
-        </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <h3 class="text-sm font-semibold text-red-400">Budget Hard Stop Active</h3>
-            {#if pendingIncidents.length > 1}
-              <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                {pendingIncidents.length}
-              </span>
-            {/if}
-          </div>
-          {#if pendingIncidents.length === 1}
-            <p class="mt-0.5 text-sm text-red-300/80">
-              Agent <span class="font-medium text-red-300">{pendingIncidents[0].agentName ?? pendingIncidents[0].agent?.name ?? 'Unknown'}</span> has been paused — monthly budget exceeded.
-            </p>
-          {:else}
-            <p class="mt-0.5 text-sm text-red-300/80">
-              {pendingIncidents.length} agents have been paused — monthly budgets exceeded.
-            </p>
-          {/if}
-        </div>
-        <a
-          href="/{prefix}/budgets"
-          class="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
-        >
-          Resolve
-        </a>
-      </div>
-    </div>
-  {/if}
-
-
-  <!-- ── Quick Actions ─────────────────────────────────────────────── -->
-  <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-    <a
-      href="/{prefix}/issues?new=true"
-      class="dash-card dash-qa dash-qa--blue group/qa flex items-center gap-3 !py-3.5"
-    >
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[--dash-primary]/10">
-        <Plus size={16} color="var(--dash-primary)" />
-      </div>
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-[--dash-text]">New Issue</p>
-        <p class="text-xs text-[--dash-muted]">Create a task or bug report</p>
-      </div>
-      <ArrowRight size={14} class="dash-qa-arrow text-[--dash-muted]" />
-    </a>
-
-    <a
-      href="/{prefix}/agents/new"
-      class="dash-card dash-qa dash-qa--emerald group/qa flex items-center gap-3 !py-3.5"
-    >
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10">
-        <Bot size={16} color="#10b981" />
-      </div>
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-[--dash-text]">New Agent</p>
-        <p class="text-xs text-[--dash-muted]">Register an AI agent</p>
-      </div>
-      <ArrowRight size={14} class="dash-qa-arrow text-[--dash-muted]" />
-    </a>
-
-    <a
-      href="/{prefix}/activity"
-      class="dash-card dash-qa dash-qa--amber group/qa flex items-center gap-3 !py-3.5"
-    >
-      <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-500/10">
-        <Activity size={16} color="#f59e0b" />
-      </div>
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-[--dash-text]">View Activity</p>
-        <p class="text-xs text-[--dash-muted]">
-          {#if badgeCounts.activity}
-            {badgeCounts.activity} new events
-          {:else}
-            Recent team activity
-          {/if}
-        </p>
-      </div>
-      <ArrowRight size={14} class="dash-qa-arrow text-[--dash-muted]" />
     </a>
   </div>
 
@@ -689,7 +682,12 @@
               {@const entity = getEntityDisplay(item)}
               {@const actionType = item.action ?? ''}
               {@const activityBorderColor = actionType.includes('created') ? '#10b981' : actionType.includes('updated') || actionType.includes('changed') ? '#2563eb' : actionType.includes('deleted') ? '#ef4444' : 'transparent'}
-              <div class="dash-activity-item flex items-start gap-3 py-2.5" style="--activity-border-color: {activityBorderColor};">
+              {@const activityHref = getActivityHref(item)}
+              <a
+                href={activityHref || `/${prefix}/activity`}
+                class="dash-activity-item flex items-start gap-3 py-2.5 no-underline"
+                style="--activity-border-color: {activityBorderColor};"
+              >
                 <div
                   class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
                   style="background-color: rgba(255,255,255,0.06);"
@@ -714,7 +712,7 @@
                   </p>
                   <TimeAgo date={item.createdAt ?? item.timestamp ?? item.date} class="text-[10px] text-[--dash-muted]" />
                 </div>
-              </div>
+              </a>
             {/each}
           </div>
         {/if}
@@ -756,7 +754,8 @@
         {:else}
           <div class="divide-y divide-white/[0.04]">
             {#each recentIssues as issue}
-              {@const statusColor = STATUS_CONFIG.find((s) => s.key === (issue.status ?? 'open'))?.color ?? '#64748b'}
+              {@const normalizedStatus = normalizeIssueStatus(issue.status)}
+              {@const statusColor = STATUS_CONFIG.find((s) => s.key === normalizedStatus)?.color ?? '#64748b'}
               {@const identifier = issue.identifier ?? issue.slug ?? (issue.number ? `#${issue.number}` : '')}
               {@const assignedAgent = findAgentById(issue.assigneeAgentId) ?? (issue.agentName ? { name: issue.agentName } : null)}
               {@const agentName = assignedAgent?.name ?? issue.assigneeName ?? issue.agent?.name ?? ''}
@@ -768,7 +767,7 @@
                 <span
                   class="h-2.5 w-2.5 shrink-0 rounded-full"
                   style="background-color: {statusColor};"
-                  title={issue.status ?? 'open'}
+                  title={normalizedStatus}
                 ></span>
 
                 <!-- Identifier -->
@@ -923,53 +922,6 @@
     display: inline-flex;
     align-items: center;
     opacity: 0.7;
-  }
-
-  /* ── Quick Action Cards ──────────────────────────────────────────── */
-  .dash-qa {
-    transition: all 0.2s ease;
-    border-left: 3px solid transparent;
-  }
-  .dash-qa:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-  }
-  .dash-qa--blue {
-    border-left-color: #2563eb;
-    background: linear-gradient(135deg, rgba(37, 99, 235, 0.04), transparent 60%);
-  }
-  .dash-qa--blue:hover {
-    border-color: rgba(37, 99, 235, 0.25);
-    border-left-color: #2563eb;
-    background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), transparent 60%);
-  }
-  .dash-qa--emerald {
-    border-left-color: #10b981;
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.04), transparent 60%);
-  }
-  .dash-qa--emerald:hover {
-    border-color: rgba(16, 185, 129, 0.25);
-    border-left-color: #10b981;
-    background: linear-gradient(135deg, rgba(16, 185, 129, 0.08), transparent 60%);
-  }
-  .dash-qa--amber {
-    border-left-color: #f59e0b;
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.04), transparent 60%);
-  }
-  .dash-qa--amber:hover {
-    border-color: rgba(245, 158, 11, 0.25);
-    border-left-color: #f59e0b;
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.08), transparent 60%);
-  }
-
-  .dash-qa-arrow {
-    opacity: 0;
-    transition: all 0.2s ease;
-    transform: translateX(-4px);
-  }
-  .dash-qa:hover .dash-qa-arrow {
-    opacity: 1;
-    transform: translateX(0);
   }
 
   /* ── View All link with arrow animation ──────────────────────────── */

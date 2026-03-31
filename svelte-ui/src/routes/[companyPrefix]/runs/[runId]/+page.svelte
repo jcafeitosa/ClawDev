@@ -9,173 +9,523 @@
   import TimeAgo from '$lib/components/time-ago.svelte';
   import PageSkeleton from '$lib/components/page-skeleton.svelte';
   import MarkdownBody from '$lib/components/markdown-body.svelte';
-  import { Badge, Button, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Skeleton } from '$components/ui/index.js';
-  import { Collapsible, CollapsibleTrigger, CollapsibleContent } from '$components/ui/index.js';
   import {
-    ArrowDown, Timer, Zap, PlayCircle, Bot, Terminal,
-    ChevronDown, ChevronRight, XCircle, Radio, Eye, Code,
-    AlignJustify, Rows3, Info, Activity
+    Bot, Terminal, ChevronRight, ChevronDown, XCircle,
+    Check, Wrench, CircleAlert, User, TerminalSquare,
   } from 'lucide-svelte';
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // Types
-  // ---------------------------------------------------------------------------
-  interface RunData {
-    id: string;
-    identifier?: string;
-    status: string;
-    agentId?: string | null;
-    agentName?: string | null;
-    startedAt?: string | null;
-    finishedAt?: string | null;
-    createdAt?: string;
-    exitCode?: number | null;
-    invocationSource?: string | null;
-    trigger?: string | null;
-    error?: string | null;
-    errorMessage?: string | null;
-    summary?: string | null;
-    workspaceId?: string | null;
-    workspaceName?: string | null;
-    usage?: { inputTokens?: number; outputTokens?: number; totalTokens?: number } | null;
-    [key: string]: unknown;
-  }
+  // ============================================================
+  type TranscriptEntry =
+    | { kind: 'assistant'; ts: string; text: string; delta?: boolean }
+    | { kind: 'user'; ts: string; text: string }
+    | { kind: 'thinking'; ts: string; text: string; delta?: boolean }
+    | { kind: 'tool_call'; ts: string; name: string; toolUseId?: string; input: unknown }
+    | { kind: 'tool_result'; ts: string; toolUseId: string; content: string; isError?: boolean; toolName?: string }
+    | { kind: 'init'; ts: string; model: string; sessionId: string }
+    | { kind: 'result'; ts: string; text: string; inputTokens: number; outputTokens: number; cachedTokens: number; costUsd: number; subtype: string; isError: boolean; errors: string[] }
+    | { kind: 'stderr'; ts: string; text: string }
+    | { kind: 'stdout'; ts: string; text: string }
+    | { kind: 'system'; ts: string; text: string };
 
-  interface TranscriptMessage {
-    role: string;
-    content: unknown;
-    toolName?: string | null;
-    tool_calls?: any[];
+  type TranscriptBlock =
+    | { type: 'message'; role: 'assistant' | 'user'; ts: string; text: string; streaming: boolean }
+    | { type: 'thinking'; ts: string; text: string; streaming: boolean }
+    | { type: 'tool'; ts: string; endTs?: string; name: string; toolUseId?: string; input: unknown; result?: string; isError?: boolean; status: 'running' | 'completed' | 'error' }
+    | { type: 'activity'; ts: string; activityId?: string; name: string; status: 'running' | 'completed' }
+    | { type: 'command_group'; ts: string; endTs?: string; items: CommandItem[] }
+    | { type: 'tool_group'; ts: string; endTs?: string; items: ToolGroupItem[] }
+    | { type: 'stderr_group'; ts: string; endTs?: string; lines: { ts: string; text: string }[] }
+    | { type: 'stdout'; ts: string; text: string }
+    | { type: 'event'; ts: string; label: string; tone: 'info' | 'warn' | 'error' | 'neutral'; text: string };
+
+  type CommandItem = { ts: string; endTs?: string; input: unknown; result?: string; isError?: boolean; status: 'running' | 'completed' | 'error' };
+  type ToolGroupItem = { ts: string; endTs?: string; name: string; input: unknown; result?: string; isError?: boolean; status: 'running' | 'completed' | 'error' };
+
+  interface RunData {
+    id: string; identifier?: string; status: string;
+    agentId?: string | null; agentName?: string | null;
+    startedAt?: string | null; finishedAt?: string | null; createdAt?: string;
+    exitCode?: number | null; signal?: string | null;
+    invocationSource?: string | null; trigger?: string | null; triggerDetail?: string | null;
+    error?: string | null; errorMessage?: string | null; errorCode?: string | null;
+    summary?: string | null; workspaceId?: string | null; workspaceName?: string | null;
+    sessionIdBefore?: string | null; sessionIdAfter?: string | null;
+    stdoutExcerpt?: string | null; stderrExcerpt?: string | null;
+    logRef?: string | null; logBytes?: number | null;
+    usageJson?: Record<string, unknown> | null;
+    resultJson?: Record<string, unknown> | null;
     [key: string]: unknown;
   }
 
   interface RunEvent {
-    id?: string;
-    type: string;
-    timestamp?: string;
-    createdAt?: string;
-    details?: string | null;
-    [key: string]: unknown;
+    id?: number; seq: number; eventType: string; stream?: string | null;
+    level?: string | null; color?: string | null;
+    message?: string | null; payload?: Record<string, unknown> | null;
+    createdAt: string;
   }
 
-  // ---------------------------------------------------------------------------
+  interface TouchedIssue {
+    issueId: string; identifier?: string | null; title?: string | null; status?: string | null;
+  }
+
+  interface WorkspaceOp {
+    id: string; phase: string; status: string;
+    startedAt?: string | null; finishedAt?: string | null;
+    command?: string | null; cwd?: string | null;
+    stderrExcerpt?: string | null; stdoutExcerpt?: string | null;
+    metadata?: Record<string, unknown> | null;
+  }
+
+  // ============================================================
+  // Log parsing — port of Paperclip's parseClaudeStdoutLine
+  // ============================================================
+  function asRec(v: unknown): Record<string, unknown> | null {
+    return typeof v === 'object' && v !== null && !Array.isArray(v)
+      ? v as Record<string, unknown>
+      : null;
+  }
+
+  function parseClaudeStdoutLine(line: string, ts: string): TranscriptEntry[] {
+    let parsed: Record<string, unknown> | null;
+    try { parsed = asRec(JSON.parse(line)); } catch { parsed = null; }
+    if (!parsed) return [{ kind: 'stdout', ts, text: line }];
+
+    const type = typeof parsed.type === 'string' ? parsed.type : '';
+
+    if (type === 'system' && parsed.subtype === 'init') {
+      return [{ kind: 'init', ts, model: typeof parsed.model === 'string' ? parsed.model : 'unknown', sessionId: typeof parsed.session_id === 'string' ? parsed.session_id : '' }];
+    }
+
+    if (type === 'assistant') {
+      const msg = asRec(parsed.message) ?? {};
+      const content = Array.isArray(msg.content) ? msg.content : [];
+      const entries: TranscriptEntry[] = [];
+      for (const raw of content) {
+        const block = asRec(raw);
+        if (!block) continue;
+        const bt = typeof block.type === 'string' ? block.type : '';
+        if (bt === 'text') {
+          const text = typeof block.text === 'string' ? block.text : '';
+          if (text) entries.push({ kind: 'assistant', ts, text });
+        } else if (bt === 'thinking') {
+          const text = typeof block.thinking === 'string' ? block.thinking : '';
+          if (text) entries.push({ kind: 'thinking', ts, text });
+        } else if (bt === 'tool_use') {
+          entries.push({ kind: 'tool_call', ts, name: typeof block.name === 'string' ? block.name : 'unknown', toolUseId: typeof block.id === 'string' ? block.id : undefined, input: block.input ?? {} });
+        }
+      }
+      return entries.length > 0 ? entries : [{ kind: 'stdout', ts, text: line }];
+    }
+
+    if (type === 'user') {
+      const msg = asRec(parsed.message) ?? {};
+      const content = Array.isArray(msg.content) ? msg.content : [];
+      const entries: TranscriptEntry[] = [];
+      for (const raw of content) {
+        const block = asRec(raw);
+        if (!block) continue;
+        const bt = typeof block.type === 'string' ? block.type : '';
+        if (bt === 'text') {
+          const text = typeof block.text === 'string' ? block.text : '';
+          if (text) entries.push({ kind: 'user', ts, text });
+        } else if (bt === 'tool_result') {
+          const toolUseId = typeof block.tool_use_id === 'string' ? block.tool_use_id : '';
+          const isError = block.is_error === true;
+          let text = '';
+          if (typeof block.content === 'string') { text = block.content; }
+          else if (Array.isArray(block.content)) {
+            text = block.content.map((p: unknown) => { const r = asRec(p); return r && typeof r.text === 'string' ? r.text : ''; }).filter(Boolean).join('\n');
+          }
+          entries.push({ kind: 'tool_result', ts, toolUseId, content: text, isError });
+        }
+      }
+      if (entries.length > 0) return entries;
+    }
+
+    if (type === 'result') {
+      const usage = asRec(parsed.usage) ?? {};
+      return [{
+        kind: 'result', ts,
+        text: typeof parsed.result === 'string' ? parsed.result : '',
+        inputTokens: Number(usage.input_tokens ?? 0),
+        outputTokens: Number(usage.output_tokens ?? 0),
+        cachedTokens: Number(usage.cache_read_input_tokens ?? 0),
+        costUsd: typeof parsed.total_cost_usd === 'number' ? parsed.total_cost_usd : 0,
+        subtype: typeof parsed.subtype === 'string' ? parsed.subtype : '',
+        isError: parsed.is_error === true,
+        errors: Array.isArray(parsed.errors) ? parsed.errors.map((e: unknown) => typeof e === 'string' ? e : String(e)).filter(Boolean) : [],
+      }];
+    }
+
+    return [{ kind: 'stdout', ts, text: line }];
+  }
+
+  function buildTranscriptFromLog(logText: string): TranscriptEntry[] {
+    const entries: TranscriptEntry[] = [];
+    let stdoutBuf = '';
+    const lines = logText.split('\n');
+    for (const rawLine of lines) {
+      const trimmed = rawLine.trim();
+      if (!trimmed) continue;
+      let chunk: { ts?: unknown; stream?: unknown; chunk?: unknown } | null;
+      try { chunk = JSON.parse(trimmed); } catch { continue; }
+      if (!chunk || typeof chunk.chunk !== 'string') continue;
+      const ts = typeof chunk.ts === 'string' ? chunk.ts : new Date().toISOString();
+      const stream = chunk.stream === 'stderr' ? 'stderr' : chunk.stream === 'system' ? 'system' : 'stdout';
+      if (stream === 'stderr') { entries.push({ kind: 'stderr', ts, text: chunk.chunk }); continue; }
+      if (stream === 'system') { entries.push({ kind: 'system', ts, text: chunk.chunk }); continue; }
+      const combined = stdoutBuf + chunk.chunk;
+      const parts = combined.split(/\r?\n/);
+      stdoutBuf = parts.pop() ?? '';
+      for (const line of parts) {
+        const t = line.trim();
+        if (t) entries.push(...parseClaudeStdoutLine(t, ts));
+      }
+    }
+    const trailing = stdoutBuf.trim();
+    if (trailing) entries.push(...parseClaudeStdoutLine(trailing, new Date().toISOString()));
+    return entries;
+  }
+
+  // ============================================================
+  // Transcript block helpers
+  // ============================================================
+  function compactWs(s: string) { return s.replace(/\s+/g, ' ').trim(); }
+  function trunc(s: string, max: number) { return s.length > max ? s.slice(0, max - 1) + '…' : s; }
+  function humanize(s: string) { return s.replace(/[_-]+/g, ' ').trim().replace(/\b\w/g, c => c.toUpperCase()); }
+
+  function stripWrappedShell(cmd: string): string {
+    const t = compactWs(cmd);
+    const m = t.match(/^(?:(?:\/bin\/)?(?:zsh|bash|sh)|cmd(?:\.exe)?(?:\s+\/[dsc])*)\s+(?:-lc|\/c)\s+(.+)$/i);
+    const inner = m?.[1] ?? t;
+    const q = inner.match(/^(['"])([\s\S]*)\1$/);
+    return compactWs(q?.[2] ?? inner);
+  }
+
+  function isCommandTool(name: string, input: unknown): boolean {
+    if (['command_execution','shell','shellToolCall','bash'].includes(name)) return true;
+    if (typeof input === 'string') return /\b(?:bash|zsh|sh|cmd|powershell)\b/i.test(input);
+    const r = asRec(input);
+    return Boolean(r && (typeof r.command === 'string' || typeof r.cmd === 'string'));
+  }
+
+  function displayToolName(name: string, input: unknown): string {
+    return isCommandTool(name, input) ? 'Executing command' : humanize(name);
+  }
+
+  function parseStructuredResult(result: string | undefined) {
+    if (!result) return null;
+    const lines = result.split(/\r?\n/);
+    const meta = new Map<string, string>();
+    let bodyStart = lines.findIndex(l => l.trim() === '');
+    if (bodyStart === -1) bodyStart = lines.length;
+    for (let i = 0; i < bodyStart; i++) {
+      const m = lines[i]?.match(/^([a-z_]+):\s*(.+)$/i);
+      if (m) meta.set(m[1].toLowerCase(), compactWs(m[2]));
+    }
+    const body = lines.slice(Math.min(bodyStart + 1, lines.length)).map(l => compactWs(l)).filter(Boolean).join('\n');
+    return { command: meta.get('command') ?? null, status: meta.get('status') ?? null, exitCode: meta.get('exit_code') ?? null, body };
+  }
+
+  function summarizeToolInput(name: string, input: unknown): string {
+    if (typeof input === 'string') return trunc(isCommandTool(name, input) ? stripWrappedShell(input) : compactWs(input), 120);
+    const r = asRec(input);
+    if (!r) return trunc(compactWs(String(input)), 120);
+    const cmd = typeof r.command === 'string' ? r.command : typeof r.cmd === 'string' ? r.cmd : null;
+    if (cmd && isCommandTool(name, r)) return trunc(stripWrappedShell(cmd), 120);
+    for (const k of ['command','cmd','path','filePath','file_path','query','url','prompt','message','pattern','name']) {
+      const v = r[k]; if (typeof v === 'string' && v.trim()) return trunc(compactWs(v), 120);
+    }
+    const keys = Object.keys(r);
+    if (keys.length === 0) return `No ${name} input`;
+    return trunc(`${keys.length} fields: ${keys.slice(0, 3).join(', ')}`, 120);
+  }
+
+  function summarizeToolResult(result: string | undefined, isError: boolean | undefined): string {
+    if (!result) return isError ? 'Tool failed' : 'Waiting for result';
+    const s = parseStructuredResult(result);
+    if (s) {
+      if (s.body) return trunc(s.body.split('\n')[0] ?? s.body, 140);
+      if (s.status === 'completed') return 'Completed';
+      if (s.status === 'failed' || s.status === 'error') return s.exitCode ? `Failed with exit code ${s.exitCode}` : 'Failed';
+    }
+    const firstLine = result.split(/\r?\n/).map(l => compactWs(l)).filter(Boolean)[0] ?? result;
+    return trunc(firstLine, 140);
+  }
+
+  function formatToolPayload(v: unknown): string {
+    if (typeof v === 'string') { try { return JSON.stringify(JSON.parse(v), null, 2); } catch { return v; } }
+    try { return JSON.stringify(v, null, 2); } catch { return String(v ?? ''); }
+  }
+
+  function parseSystemActivity(text: string): { activityId?: string; name: string; status: 'running' | 'completed' } | null {
+    const m = text.match(/^item (started|completed):\s*([a-z0-9_-]+)(?:\s+\(id=([^)]+)\))?$/i);
+    if (!m) return null;
+    return { status: m[1].toLowerCase() === 'started' ? 'running' : 'completed', name: humanize(m[2] ?? 'Activity'), activityId: m[3] || undefined };
+  }
+
+  // ============================================================
+  // Normalize TranscriptEntry[] → TranscriptBlock[]
+  // ============================================================
+  function normalizeTranscript(entries: TranscriptEntry[], streaming: boolean): TranscriptBlock[] {
+    const blocks: TranscriptBlock[] = [];
+    const pendingTools = new Map<string, Extract<TranscriptBlock, { type: 'tool' }>>();
+    const pendingActivity = new Map<string, Extract<TranscriptBlock, { type: 'activity' }>>();
+
+    for (const entry of entries) {
+      const prev = blocks[blocks.length - 1];
+
+      if (entry.kind === 'assistant' || entry.kind === 'user') {
+        const isStreaming = streaming && entry.kind === 'assistant' && entry.delta === true;
+        if (prev?.type === 'message' && prev.role === entry.kind) {
+          prev.text += prev.text.endsWith('\n') || entry.text.startsWith('\n') ? entry.text : `\n${entry.text}`;
+          prev.ts = entry.ts; prev.streaming = prev.streaming || isStreaming;
+        } else {
+          blocks.push({ type: 'message', role: entry.kind, ts: entry.ts, text: entry.text, streaming: isStreaming });
+        }
+        continue;
+      }
+
+      if (entry.kind === 'thinking') {
+        if (prev?.type === 'thinking') {
+          prev.text += prev.text.endsWith('\n') || entry.text.startsWith('\n') ? entry.text : `\n${entry.text}`;
+          prev.ts = entry.ts;
+        } else {
+          blocks.push({ type: 'thinking', ts: entry.ts, text: entry.text, streaming: streaming && entry.delta === true });
+        }
+        continue;
+      }
+
+      if (entry.kind === 'tool_call') {
+        const tb: Extract<TranscriptBlock, { type: 'tool' }> = {
+          type: 'tool', ts: entry.ts, name: displayToolName(entry.name, entry.input),
+          toolUseId: entry.toolUseId, input: entry.input, status: 'running',
+        };
+        blocks.push(tb);
+        if (tb.toolUseId) pendingTools.set(tb.toolUseId, tb);
+        continue;
+      }
+
+      if (entry.kind === 'tool_result') {
+        const matched = (entry.toolUseId ? pendingTools.get(entry.toolUseId) : undefined)
+          ?? [...blocks].reverse().find((b): b is Extract<TranscriptBlock, { type: 'tool' }> => b.type === 'tool' && b.status === 'running');
+        if (matched) {
+          matched.result = entry.content; matched.isError = entry.isError;
+          matched.status = entry.isError ? 'error' : 'completed'; matched.endTs = entry.ts;
+          if (entry.toolUseId) pendingTools.delete(entry.toolUseId);
+        } else {
+          blocks.push({ type: 'tool', ts: entry.ts, endTs: entry.ts, name: entry.toolName ?? 'tool', toolUseId: entry.toolUseId, input: null, result: entry.content, isError: entry.isError, status: entry.isError ? 'error' : 'completed' });
+        }
+        continue;
+      }
+
+      if (entry.kind === 'init') {
+        blocks.push({ type: 'event', ts: entry.ts, label: 'init', tone: 'info', text: `model ${entry.model}${entry.sessionId ? ` • session ${entry.sessionId}` : ''}` });
+        continue;
+      }
+
+      if (entry.kind === 'result') {
+        blocks.push({ type: 'event', ts: entry.ts, label: 'result', tone: entry.isError ? 'error' : 'info', text: entry.text.trim() || entry.errors[0] || (entry.isError ? 'Run failed' : 'Completed') });
+        continue;
+      }
+
+      if (entry.kind === 'stderr') {
+        if (prev?.type === 'stderr_group') { prev.lines.push({ ts: entry.ts, text: entry.text }); prev.endTs = entry.ts; }
+        else blocks.push({ type: 'stderr_group', ts: entry.ts, endTs: entry.ts, lines: [{ ts: entry.ts, text: entry.text }] });
+        continue;
+      }
+
+      if (entry.kind === 'system') {
+        if (compactWs(entry.text).toLowerCase() === 'turn started') continue;
+        const act = parseSystemActivity(entry.text);
+        if (act) {
+          const existing = act.activityId ? pendingActivity.get(act.activityId) : undefined;
+          if (existing) { existing.status = act.status; existing.ts = entry.ts; if (act.status === 'completed' && act.activityId) pendingActivity.delete(act.activityId); }
+          else {
+            const ab: Extract<TranscriptBlock, { type: 'activity' }> = { type: 'activity', ts: entry.ts, activityId: act.activityId, name: act.name, status: act.status };
+            blocks.push(ab);
+            if (act.status === 'running' && act.activityId) pendingActivity.set(act.activityId, ab);
+          }
+          continue;
+        }
+        blocks.push({ type: 'event', ts: entry.ts, label: 'system', tone: 'warn', text: entry.text });
+        continue;
+      }
+
+      // stdout — check if active command block should consume it
+      const activeCmd = [...blocks].reverse().find((b): b is Extract<TranscriptBlock, { type: 'tool' }> => b.type === 'tool' && b.status === 'running' && isCommandTool(b.name, b.input));
+      if (activeCmd) {
+        activeCmd.result = activeCmd.result ? `${activeCmd.result}${activeCmd.result.endsWith('\n') || entry.text.startsWith('\n') ? entry.text : `\n${entry.text}`}` : entry.text;
+        continue;
+      }
+      if (prev?.type === 'stdout') { prev.text += prev.text.endsWith('\n') || entry.text.startsWith('\n') ? entry.text : `\n${entry.text}`; prev.ts = entry.ts; }
+      else blocks.push({ type: 'stdout', ts: entry.ts, text: entry.text });
+    }
+
+    return groupToolBlocks(groupCommandBlocks(blocks));
+  }
+
+  function groupCommandBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
+    const out: TranscriptBlock[] = [];
+    let pending: CommandItem[] = [], gTs: string | null = null, gEnd: string | undefined;
+    const flush = () => {
+      if (!pending.length || !gTs) return;
+      out.push({ type: 'command_group', ts: gTs, endTs: gEnd, items: pending });
+      pending = []; gTs = null; gEnd = undefined;
+    };
+    for (const b of blocks) {
+      if (b.type === 'tool' && isCommandTool(b.name, b.input)) {
+        if (!gTs) gTs = b.ts;
+        gEnd = b.endTs ?? b.ts;
+        pending.push({ ts: b.ts, endTs: b.endTs, input: b.input, result: b.result, isError: b.isError, status: b.status });
+      } else { flush(); out.push(b); }
+    }
+    flush(); return out;
+  }
+
+  function groupToolBlocks(blocks: TranscriptBlock[]): TranscriptBlock[] {
+    const out: TranscriptBlock[] = [];
+    let pending: ToolGroupItem[] = [], gTs: string | null = null, gEnd: string | undefined;
+    const flush = () => {
+      if (!pending.length || !gTs) return;
+      if (pending.length === 1) { const item = pending[0]!; out.push({ type: 'tool', ts: item.ts, endTs: item.endTs, name: item.name, input: item.input, result: item.result, isError: item.isError, status: item.status }); }
+      else out.push({ type: 'tool_group', ts: gTs, endTs: gEnd, items: pending });
+      pending = []; gTs = null; gEnd = undefined;
+    };
+    for (const b of blocks) {
+      if (b.type === 'tool' && !isCommandTool(b.name, b.input)) {
+        if (!gTs) gTs = b.ts;
+        gEnd = b.endTs ?? b.ts;
+        pending.push({ ts: b.ts, endTs: b.endTs, name: b.name, input: b.input, result: b.result, isError: b.isError, status: b.status });
+      } else { flush(); out.push(b); }
+    }
+    flush(); return out;
+  }
+
+  // ============================================================
   // State
-  // ---------------------------------------------------------------------------
+  // ============================================================
   let run = $state<RunData | null>(null);
-  let transcript = $state<TranscriptMessage[]>([]);
-  let events = $state<RunEvent[]>([]);
   let loading = $state(true);
-  let eventsLoading = $state(true);
+  let logText = $state('');
+  let logLoading = $state(false);
+  let events = $state<RunEvent[]>([]);
+  let touchedIssues = $state<TouchedIssue[]>([]);
+  let workspaceOps = $state<WorkspaceOp[]>([]);
 
-  let displayMode = $state<'nice' | 'raw'>('nice');
-  let density = $state<'comfortable' | 'compact'>('comfortable');
-  let activeTab = $state<'transcript' | 'events'>('transcript');
-  let metadataOpen = $state(false);
+  let transcriptMode = $state<'nice' | 'raw'>('nice');
+  let openBlocks = $state<Set<number>>(new Set());
+  let sessionOpen = $state(false);
 
-  // Expanded state for compact mode
-  let expandedMessages = $state<Set<number>>(new Set());
-
-  // Auto-scroll
   let transcriptContainer = $state<HTMLDivElement | null>(null);
   let userScrolledUp = $state(false);
-  let showScrollButton = $state(false);
+  let showScrollBtn = $state(false);
+  let pollInterval: ReturnType<typeof setInterval> | null = null;
 
-  // Polling
-  let pollInterval = $state<ReturnType<typeof setInterval> | null>(null);
-
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // Derived
-  // ---------------------------------------------------------------------------
+  // ============================================================
   let runId = $derived($page.params.runId);
   let prefix = $derived($page.params.companyPrefix);
-  let companyId = $derived(companyStore.selectedCompany?.id ?? '');
+  let companyId = $derived(companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id ?? '');
   let isLive = $derived(run?.status === 'started' || run?.status === 'running');
+
+  let transcriptEntries = $derived.by(() => logText ? buildTranscriptFromLog(logText) : []);
+  let transcriptBlocks = $derived.by(() => normalizeTranscript(transcriptEntries, isLive));
+
+  let adapterInvokePayload = $derived.by(() => {
+    const evt = events.find(e => e.eventType === 'adapter.invoke');
+    return evt?.payload ?? null;
+  });
+
+  let metrics = $derived.by(() => {
+    const raw = run?.usageJson;
+    if (!raw || typeof raw !== 'object') return null;
+    const r = raw as Record<string, unknown>;
+    const input = Math.max(0, Math.floor(Number(r.rawInputTokens ?? r.inputTokens ?? 0)));
+    const cached = Math.max(0, Math.floor(Number(r.rawCachedInputTokens ?? r.cachedInputTokens ?? 0)));
+    const output = Math.max(0, Math.floor(Number(r.rawOutputTokens ?? r.outputTokens ?? 0)));
+    if (input <= 0 && cached <= 0 && output <= 0) return null;
+    const costCents = typeof r.costCents === 'number' ? r.costCents : 0;
+    const costUsd = costCents > 0 ? costCents / 100 : 0;
+    return { input, cached, output, costUsd };
+  });
+
+  let hasSession = $derived(!!(run?.sessionIdBefore || run?.sessionIdAfter));
+  let sessionChanged = $derived(!!(run?.sessionIdBefore && run?.sessionIdAfter && run.sessionIdBefore !== run.sessionIdAfter));
+
+  const timeFormat: Intl.DateTimeFormatOptions = { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false };
+  let startTime = $derived(run?.startedAt ? new Date(run.startedAt).toLocaleTimeString('en-US', timeFormat) : null);
+  let endTime = $derived(run?.finishedAt ? new Date(run.finishedAt).toLocaleTimeString('en-US', timeFormat) : null);
 
   let duration = $derived.by(() => {
     if (!run?.startedAt) return null;
     const start = new Date(run.startedAt).getTime();
     const end = run.finishedAt ? new Date(run.finishedAt).getTime() : Date.now();
-    const diff = Math.max(0, end - start);
-    const secs = Math.floor(diff / 1000);
+    const secs = Math.floor(Math.max(0, end - start) / 1000);
     if (secs < 60) return `${secs}s`;
-    const mins = Math.floor(secs / 60);
-    const remSecs = secs % 60;
-    if (mins < 60) return `${mins}m ${remSecs}s`;
-    const hrs = Math.floor(mins / 60);
-    const remMins = mins % 60;
-    return `${hrs}h ${remMins}m`;
+    const mins = Math.floor(secs / 60), rs = secs % 60;
+    if (mins < 60) return `${mins}m ${rs}s`;
+    return `${Math.floor(mins / 60)}h ${mins % 60}m`;
   });
 
-  let sourceBadge = $derived.by(() => {
-    const src = run?.invocationSource ?? run?.trigger ?? null;
-    if (!src) return null;
-    const map: Record<string, { label: string; color: string }> = {
-      timer: { label: 'Timer', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
-      on_demand: { label: 'On Demand', color: 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' },
-      assignment: { label: 'Assignment', color: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300' },
-      automation: { label: 'Automation', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
-    };
-    return map[src] ?? { label: src.replace(/_/g, ' '), color: 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300' };
-  });
-
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // Data fetching
-  // ---------------------------------------------------------------------------
+  // ============================================================
   async function loadRun() {
     if (!runId || !companyId) return;
     try {
       const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}`);
-      if (res.ok) {
-        const data = await res.json();
-        run = data.run ?? data;
-      }
+      if (res.ok) { const d = await res.json(); run = d.run ?? d; }
     } catch { /* ignore */ }
   }
 
-  async function loadTranscript() {
+  async function loadLog() {
     if (!runId || !companyId) return;
+    logLoading = true;
     try {
-      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}/transcript`);
-      if (res.ok) {
-        const data = await res.json();
-        transcript = Array.isArray(data) ? data : data.messages ?? [];
-      }
-    } catch { /* ignore */ }
+      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}/log?limitBytes=2000000`);
+      if (res.ok) { const d = await res.json(); logText = typeof d.content === 'string' ? d.content : ''; }
+    } catch { /* ignore */ } finally { logLoading = false; }
   }
 
   async function loadEvents() {
     if (!runId || !companyId) return;
-    eventsLoading = true;
     try {
-      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}/events`);
-      if (res.ok) {
-        const data = await res.json();
-        events = Array.isArray(data) ? data : data.events ?? [];
-      }
-    } catch {
-      events = [];
-    } finally {
-      eventsLoading = false;
-    }
+      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}/events?limit=500`);
+      if (res.ok) { const d = await res.json(); events = Array.isArray(d) ? d : d.events ?? []; }
+    } catch { /* ignore */ }
+  }
+
+  async function loadTouchedIssues() {
+    if (!runId || !companyId) return;
+    try {
+      const res = await api(`/api/companies/${companyId}/runs/${runId}/issues`);
+      if (res.ok) { const d = await res.json(); touchedIssues = Array.isArray(d) ? d : []; }
+    } catch { /* ignore */ }
+  }
+
+  async function loadWorkspaceOps() {
+    if (!runId || !companyId) return;
+    try {
+      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}/workspace-operations`);
+      if (res.ok) { const d = await res.json(); workspaceOps = Array.isArray(d) ? d : []; }
+    } catch { /* ignore */ }
   }
 
   async function loadAll() {
-    await Promise.all([loadRun(), loadTranscript()]);
+    await Promise.all([loadRun(), loadLog(), loadEvents(), loadTouchedIssues(), loadWorkspaceOps()]);
     loading = false;
-    // Auto-scroll on initial load
     requestAnimationFrame(() => scrollToBottom());
   }
 
-  async function pollLiveData() {
-    await Promise.all([loadRun(), loadTranscript()]);
-    if (!userScrolledUp) {
-      requestAnimationFrame(() => scrollToBottom());
-    }
+  async function pollLive() {
+    await Promise.all([loadRun(), loadLog()]);
+    if (!userScrolledUp) requestAnimationFrame(() => scrollToBottom());
   }
 
-  // ---------------------------------------------------------------------------
-  // Actions
-  // ---------------------------------------------------------------------------
   async function cancelRun() {
     if (!runId) return;
     try {
@@ -184,417 +534,626 @@
       toastStore.push({ title: 'Run cancelled', tone: 'success' });
       await loadRun();
     } catch (err: any) {
-      toastStore.push({ title: 'Failed to cancel run', body: err?.message, tone: 'error' });
+      toastStore.push({ title: 'Failed to cancel', body: err?.message, tone: 'error' });
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Auto-scroll
-  // ---------------------------------------------------------------------------
+  // ============================================================
+  // Scroll
+  // ============================================================
   function scrollToBottom() {
-    if (transcriptContainer) {
-      transcriptContainer.scrollTop = transcriptContainer.scrollHeight;
-      userScrolledUp = false;
-      showScrollButton = false;
-    }
+    if (transcriptContainer) { transcriptContainer.scrollTop = transcriptContainer.scrollHeight; userScrolledUp = false; showScrollBtn = false; }
   }
-
   function handleScroll() {
     if (!transcriptContainer) return;
     const { scrollTop, scrollHeight, clientHeight } = transcriptContainer;
-    const distFromBottom = scrollHeight - scrollTop - clientHeight;
-    userScrolledUp = distFromBottom > 100;
-    showScrollButton = distFromBottom > 200;
+    const d = scrollHeight - scrollTop - clientHeight;
+    userScrolledUp = d > 32; showScrollBtn = d > 200;
   }
 
-  // ---------------------------------------------------------------------------
-  // Compact mode toggle
-  // ---------------------------------------------------------------------------
-  function toggleExpand(index: number) {
-    const next = new Set(expandedMessages);
-    if (next.has(index)) next.delete(index);
-    else next.add(index);
-    expandedMessages = next;
+  function toggleBlock(i: number) {
+    const next = new Set(openBlocks);
+    if (next.has(i)) next.delete(i); else next.add(i);
+    openBlocks = next;
   }
 
-  // ---------------------------------------------------------------------------
+  // ============================================================
   // Helpers
-  // ---------------------------------------------------------------------------
-  function getContentText(msg: TranscriptMessage): string {
-    if (typeof msg.content === 'string') return msg.content;
-    if (msg.content == null) return '';
-    return JSON.stringify(msg.content, null, 2);
-  }
-
-  function hasToolCalls(msg: TranscriptMessage): boolean {
-    return Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0;
-  }
-
-  function formatTokens(n: number | undefined | null): string {
+  // ============================================================
+  function formatTokens(n: number | null | undefined) {
     if (n == null) return '—';
     if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
     if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
     return String(n);
   }
 
-  // ---------------------------------------------------------------------------
+  function wsPhaseLabel(phase: string) {
+    const m: Record<string, string> = { setup: 'Setup', provision: 'Provision', teardown: 'Teardown' };
+    return m[phase] ?? humanize(phase);
+  }
+
+  function wsStatusColor(status: string) {
+    if (status === 'completed') return 'text-emerald-700 dark:text-emerald-300';
+    if (status === 'failed') return 'text-red-700 dark:text-red-300';
+    if (status === 'running') return 'text-cyan-700 dark:text-cyan-300';
+    return 'text-muted-foreground';
+  }
+
+  // ============================================================
   // Lifecycle
-  // ---------------------------------------------------------------------------
+  // ============================================================
   let dataLoaded = false;
   onMount(() => {
-    breadcrumbStore.set([
-      { label: 'Runs', href: `/${$page.params.companyPrefix}/runs` },
-      { label: runId ?? '' },
-    ]);
-    if (companyId) {
-      dataLoaded = true;
-      loadAll();
-      loadEvents();
-    }
+    breadcrumbStore.set([{ label: 'Runs', href: `/${$page.params.companyPrefix}/runs` }, { label: runId ?? '' }]);
+    if (companyId) { dataLoaded = true; loadAll(); }
   });
 
-  // Retry loading when companyId becomes available
   $effect(() => {
-    if (companyId && !dataLoaded && runId) {
-      dataLoaded = true;
-      loadAll();
-      loadEvents();
-    }
+    if (companyId && !dataLoaded && runId) { dataLoaded = true; loadAll(); }
   });
 
-  // Polling for live runs
   $effect(() => {
-    if (isLive && !pollInterval) {
-      pollInterval = setInterval(pollLiveData, 3000);
-    } else if (!isLive && pollInterval) {
-      clearInterval(pollInterval);
-      pollInterval = null;
-    }
+    if (isLive && !pollInterval) { pollInterval = setInterval(pollLive, 3000); }
+    else if (!isLive && pollInterval) { clearInterval(pollInterval); pollInterval = null; }
   });
 
-  onDestroy(() => {
-    if (pollInterval) clearInterval(pollInterval);
-  });
+  onDestroy(() => { if (pollInterval) clearInterval(pollInterval); });
 </script>
 
-<div class="p-6 space-y-6">
+{#snippet toolStatusIcon(status: string, size = 'h-3.5 w-3.5')}
+  {#if status === 'error'}
+    <CircleAlert class="{size} shrink-0 text-red-600 dark:text-red-300" />
+  {:else if status === 'completed'}
+    <Check class="{size} shrink-0 text-emerald-600 dark:text-emerald-300" />
+  {:else}
+    <Wrench class="{size} shrink-0 text-cyan-600 dark:text-cyan-300" />
+  {/if}
+{/snippet}
+
+{#snippet renderBlock(block: TranscriptBlock, i: number)}
+  {#if block.type === 'message'}
+    <div>
+      {#if block.role === 'user'}
+        <div class="mb-1.5 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
+          <User class="h-3.5 w-3.5" />
+          <span>User</span>
+        </div>
+      {/if}
+      <MarkdownBody content={block.text} class="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 text-sm" />
+      {#if block.streaming}
+        <div class="mt-2 inline-flex items-center gap-1 text-[10px] font-medium italic text-muted-foreground">
+          <span class="relative flex h-1.5 w-1.5">
+            <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-current opacity-70"></span>
+            <span class="relative inline-flex h-1.5 w-1.5 rounded-full bg-current"></span>
+          </span>
+          Streaming
+        </div>
+      {/if}
+    </div>
+
+  {:else if block.type === 'thinking'}
+    <div class="italic text-foreground/70 text-sm leading-6">
+      <MarkdownBody content={block.text} class="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0 italic text-foreground/70" />
+    </div>
+
+  {:else if block.type === 'tool'}
+    {@const open = openBlocks.has(i)}
+    {@const parsed = parseStructuredResult(block.result)}
+    {@const summary = block.status === 'running'
+      ? summarizeToolInput(block.name, block.input)
+      : block.status === 'completed' && parsed?.body
+        ? trunc(parsed.body.split('\n')[0] ?? parsed.body, 140)
+        : summarizeToolResult(block.result, block.isError)}
+    {@const statusTone = block.status === 'running' ? 'text-cyan-700 dark:text-cyan-300' : block.status === 'error' ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}
+    <div class="{block.status === 'error' ? 'rounded-xl border border-red-500/20 bg-red-500/[0.04] p-3' : ''}">
+      <div class="flex items-start gap-2">
+        <span class="mt-0.5">{@render toolStatusIcon(block.status)}</span>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{block.name}</span>
+            <span class="text-[10px] font-semibold uppercase tracking-[0.14em] {statusTone}">{block.status === 'running' ? 'Running' : block.status === 'error' ? 'Errored' : 'Completed'}</span>
+          </div>
+          <div class="mt-1 break-words text-foreground/80 text-sm">{summary}</div>
+        </div>
+        <button
+          class="mt-0.5 inline-flex h-5 w-5 items-center justify-center text-muted-foreground hover:text-foreground transition-colors"
+          onclick={() => toggleBlock(i)}
+        >
+          {#if open}<ChevronDown class="h-4 w-4" />{:else}<ChevronRight class="h-4 w-4" />{/if}
+        </button>
+      </div>
+      {#if open}
+        <div class="mt-3 {block.status === 'error' ? 'rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3' : ''}">
+          <div class="grid gap-3 lg:grid-cols-2">
+            <div>
+              <div class="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Input</div>
+              <pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80">{formatToolPayload(block.input) || '<empty>'}</pre>
+            </div>
+            <div>
+              <div class="mb-1 text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">Result</div>
+              <pre class="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] {block.status === 'error' ? 'text-red-700 dark:text-red-300' : 'text-foreground/80'}">{block.result ? formatToolPayload(block.result) : 'Waiting for result...'}</pre>
+            </div>
+          </div>
+        </div>
+      {/if}
+    </div>
+
+  {:else if block.type === 'command_group'}
+    {@const open = openBlocks.has(i)}
+    {@const hasError = block.items.some(it => it.status === 'error')}
+    {@const isRunning = block.items.some(it => it.status === 'running')}
+    {@const title = isRunning ? 'Executing command' : block.items.length === 1 ? 'Executed command' : `Executed ${block.items.length} commands`}
+    {@const runningItem = [...block.items].reverse().find(it => it.status === 'running')}
+    {@const subtitle = runningItem ? summarizeToolInput('command_execution', runningItem.input) : null}
+    <div class="{open && hasError ? 'rounded-xl border border-red-500/20 bg-red-500/[0.04] p-3' : ''}">
+      <div class="flex cursor-pointer gap-2 {subtitle ? 'items-start' : 'items-center'}" role="button" tabindex="0"
+        onclick={() => toggleBlock(i)}
+        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBlock(i); } }}>
+        <div class="flex shrink-0 {subtitle ? 'mt-0.5' : ''} items-center">
+          {#each block.items.slice(0, Math.min(block.items.length, 3)) as _, idx}
+            <span class="inline-flex h-6 w-6 items-center justify-center rounded-full border shadow-sm {idx > 0 ? '-ml-2' : ''} {isRunning ? 'bg-cyan-50 border-background/70 dark:bg-cyan-900/30' : hasError ? 'bg-red-50 border-background/70 dark:bg-red-900/30' : 'bg-muted border-background/70'}">
+              <TerminalSquare class="h-3.5 w-3.5 shrink-0 text-foreground/70" />
+            </span>
+          {/each}
+        </div>
+        <div class="min-w-0 flex-1">
+          <div class="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{title}</span>
+            <span class="text-[10px] font-semibold uppercase tracking-[0.14em] {isRunning ? 'text-cyan-700 dark:text-cyan-300' : 'text-foreground/70'}">{isRunning ? 'Running' : hasError ? 'Error' : 'Done'}</span>
+          </div>
+          {#if subtitle}<div class="mt-1 break-words text-foreground/80 text-sm">{subtitle}</div>{/if}
+        </div>
+        <div class="mt-0.5 inline-flex h-5 w-5 items-center justify-center text-muted-foreground">
+          {#if open}<ChevronDown class="h-4 w-4" />{:else}<ChevronRight class="h-4 w-4" />{/if}
+        </div>
+      </div>
+      {#if open}
+        <div class="mt-3 space-y-3">
+          {#each block.items as item, j}
+            <div class="{item.status === 'error' ? 'rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3' : j > 0 ? 'border-t border-border/40 pt-3' : ''}">
+              <div class="flex items-start gap-2 mb-2">
+                <span class="mt-0.5">{@render toolStatusIcon(item.status)}</span>
+                <pre class="flex-1 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/80">{summarizeToolInput('command_execution', item.input)}</pre>
+              </div>
+              {#if item.result}
+                <pre class="mt-1 overflow-x-auto whitespace-pre-wrap break-words font-mono text-[11px] {item.status === 'error' ? 'text-red-700 dark:text-red-300' : 'text-foreground/60'}">{formatToolPayload(item.result)}</pre>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+  {:else if block.type === 'tool_group'}
+    {@const open = openBlocks.has(i)}
+    {@const hasError = block.items.some(it => it.status === 'error')}
+    {@const isRunning = block.items.some(it => it.status === 'running')}
+    <div>
+      <div class="flex cursor-pointer items-center gap-2" role="button" tabindex="0"
+        onclick={() => toggleBlock(i)}
+        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBlock(i); } }}>
+        <Wrench class="h-3.5 w-3.5 shrink-0 {isRunning ? 'text-cyan-600' : hasError ? 'text-red-600' : 'text-emerald-600'}" />
+        <span class="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{block.items.length} tools</span>
+        <span class="text-[10px] font-semibold uppercase tracking-[0.14em] {isRunning ? 'text-cyan-700 dark:text-cyan-300' : hasError ? 'text-red-700 dark:text-red-300' : 'text-emerald-700 dark:text-emerald-300'}">{isRunning ? 'Running' : hasError ? 'Error' : 'Done'}</span>
+        <div class="ml-auto inline-flex h-5 w-5 items-center justify-center text-muted-foreground">
+          {#if open}<ChevronDown class="h-4 w-4" />{:else}<ChevronRight class="h-4 w-4" />{/if}
+        </div>
+      </div>
+      {#if open}
+        <div class="mt-2 space-y-2 pl-5">
+          {#each block.items as item}
+            <div class="flex items-start gap-2">
+              <span class="mt-0.5">{@render toolStatusIcon(item.status, 'h-3 w-3')}</span>
+              <div>
+                <div class="text-[11px] font-semibold text-muted-foreground">{item.name}</div>
+                <div class="text-xs text-foreground/70 mt-0.5">{summarizeToolResult(item.result, item.isError)}</div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
+
+  {:else if block.type === 'stderr_group'}
+    {@const open = openBlocks.has(i)}
+    <div class="rounded-xl border border-amber-500/20 bg-amber-500/[0.06] p-2 text-amber-700 dark:text-amber-300">
+      <div class="flex cursor-pointer items-center gap-2" role="button" tabindex="0"
+        onclick={() => toggleBlock(i)}
+        onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleBlock(i); } }}>
+        <span class="text-[10px] font-semibold uppercase">{block.lines.length} log {block.lines.length === 1 ? 'line' : 'lines'}</span>
+        {#if open}<ChevronDown class="h-3.5 w-3.5" />{:else}<ChevronRight class="h-3.5 w-3.5" />{/if}
+      </div>
+      {#if open}
+        <pre class="mt-2 overflow-x-auto whitespace-pre-wrap font-mono text-[11px] pl-2">{block.lines.map(l => l.text).join('\n')}</pre>
+      {/if}
+    </div>
+
+  {:else if block.type === 'stdout'}
+    <pre class="whitespace-pre-wrap break-words font-mono text-[11px] text-foreground/70">{block.text}</pre>
+
+  {:else if block.type === 'activity'}
+    <div class="flex items-start gap-2">
+      {#if block.status === 'completed'}
+        <Check class="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-300" />
+      {:else}
+        <span class="relative mt-1 flex h-2.5 w-2.5 shrink-0">
+          <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-70"></span>
+          <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-500"></span>
+        </span>
+      {/if}
+      <div class="break-words text-foreground/80">{block.name}</div>
+    </div>
+
+  {:else if block.type === 'event'}
+    {#if block.tone === 'error'}
+      <div class="rounded-xl border border-red-500/20 bg-red-500/[0.06] p-3 text-red-700 dark:text-red-300">
+        <div class="flex items-start gap-2">
+          <CircleAlert class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+          <div class="min-w-0 flex-1">
+            <div class="whitespace-pre-wrap break-words text-sm">{block.text}</div>
+          </div>
+        </div>
+      </div>
+    {:else if block.label === 'result'}
+      <div class="whitespace-pre-wrap break-words text-sky-700 dark:text-sky-300 text-sm">{block.text}</div>
+    {:else}
+      <div class="flex items-start gap-2 text-xs {block.tone === 'warn' ? 'text-amber-700 dark:text-amber-300' : 'text-foreground/75'}">
+        <div class="min-w-0 flex-1">
+          <span class="text-[10px] font-semibold uppercase tracking-[0.18em] text-muted-foreground/70">{block.label}</span>
+          {#if block.text}<span class="ml-2 break-all">{block.text}</span>{/if}
+        </div>
+      </div>
+    {/if}
+  {/if}
+{/snippet}
+
+<div class="p-6 space-y-4">
   {#if loading}
     <PageSkeleton showSidebar={false} />
   {:else if !run}
-    <p class="text-red-500">Run not found.</p>
+    <p class="text-destructive">Run not found.</p>
   {:else}
-    <!-- ================================================================== -->
-    <!-- Header                                                              -->
-    <!-- ================================================================== -->
-    <div class="flex items-start justify-between gap-4">
-      <div class="min-w-0">
-        <div class="flex items-center gap-3 flex-wrap">
-          <h1 class="text-2xl font-bold text-zinc-900 dark:text-zinc-50">
-            Run {run.identifier ?? runId}
-          </h1>
-          <StatusBadge status={run.status ?? 'unknown'} />
-          {#if isLive}
-            <span class="inline-flex items-center gap-1.5 rounded-full bg-green-100 px-2.5 py-0.5 text-xs font-semibold text-green-700 dark:bg-green-900/40 dark:text-green-300">
-              <span class="relative flex h-2 w-2">
-                <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-green-400 opacity-75"></span>
-                <span class="relative inline-flex h-2 w-2 rounded-full bg-green-500"></span>
-              </span>
-              Live
-            </span>
-          {/if}
-          {#if sourceBadge}
-            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-medium capitalize {sourceBadge.color}">
-              {sourceBadge.label}
-            </span>
-          {/if}
-          {#if run.exitCode != null}
-            <span class="inline-flex items-center rounded-md px-2 py-0.5 text-xs font-mono {run.exitCode === 0 ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'}">
-              exit {run.exitCode}
-            </span>
-          {/if}
-        </div>
 
-        <div class="mt-2 flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400 flex-wrap">
-          {#if run.agentName || run.agentId}
-            <span class="flex items-center gap-1.5">
-              <Bot class="h-3.5 w-3.5" />
-              {#if run.agentId}
-                <a href="/{prefix}/agents/{run.agentId}" class="text-primary hover:underline">
-                  {run.agentName ?? run.agentId.slice(0, 8)}
-                </a>
-              {:else}
-                {run.agentName}
-              {/if}
-            </span>
-          {/if}
-          {#if duration}
-            <span class="flex items-center gap-1.5">
-              <Timer class="h-3.5 w-3.5" />
-              {duration}
-            </span>
-          {/if}
-          <TimeAgo date={run.startedAt ?? run.createdAt} class="text-xs" />
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2 shrink-0">
-        {#if isLive}
-          <Button variant="destructive" size="sm" onclick={cancelRun}>
-            <XCircle class="h-4 w-4 mr-1.5" />
-            Cancel Run
-          </Button>
+    <!-- Breadcrumb -->
+    {#if run.agentName || run.agentId}
+      <div class="flex items-center gap-1.5 text-sm text-muted-foreground">
+        <Bot class="h-3.5 w-3.5" />
+        {#if run.agentId}
+          <a href="/{prefix}/agents/{run.agentId}" class="hover:text-foreground transition-colors">{run.agentName ?? run.agentId.slice(0, 8)}</a>
+          <span class="text-muted-foreground/50">/</span>
         {/if}
-        <Button variant="outline" size="sm" href="/{prefix}/runs">
-          Back
-        </Button>
+        <span class="font-mono text-xs text-foreground">{run.identifier ?? runId?.slice(0, 8) ?? run.id.slice(0, 8)}</span>
       </div>
-    </div>
+    {/if}
 
-    <!-- ================================================================== -->
-    <!-- Collapsible Metadata                                                -->
-    <!-- ================================================================== -->
-    <Collapsible bind:open={metadataOpen}>
-      <CollapsibleTrigger class="flex items-center gap-2 text-sm font-medium text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors cursor-pointer">
-        <Info class="h-4 w-4" />
-        Metadata
-        {#if metadataOpen}
-          <ChevronDown class="h-4 w-4" />
-        {:else}
-          <ChevronRight class="h-4 w-4" />
-        {/if}
-      </CollapsibleTrigger>
-      <CollapsibleContent>
-        <div class="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {#if run.invocationSource}
-            <div class="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-              <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1">Source</p>
-              <p class="text-sm text-zinc-900 dark:text-zinc-100 capitalize">{run.invocationSource.replace(/_/g, ' ')}</p>
-            </div>
-          {/if}
-          {#if run.trigger}
-            <div class="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-              <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1">Trigger</p>
-              <p class="text-sm text-zinc-900 dark:text-zinc-100 capitalize">{run.trigger.replace(/_/g, ' ')}</p>
-            </div>
-          {/if}
-          {#if run.usage}
-            <div class="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-              <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1">Token Usage</p>
-              <div class="flex items-center gap-3 text-sm text-zinc-900 dark:text-zinc-100">
-                <span>In: {formatTokens(run.usage.inputTokens)}</span>
-                <span>Out: {formatTokens(run.usage.outputTokens)}</span>
-                {#if run.usage.totalTokens}
-                  <span class="font-medium">Total: {formatTokens(run.usage.totalTokens)}</span>
-                {/if}
+    <!-- ====================================================== -->
+    <!-- Summary Card                                            -->
+    <!-- ====================================================== -->
+    <div class="border border-border rounded-lg overflow-hidden">
+      <div class="flex flex-col sm:flex-row">
+        <!-- Left: status + timing + error -->
+        <div class="flex-1 p-4 space-y-3">
+          <div class="flex items-center gap-2 flex-wrap">
+            <StatusBadge status={run.status ?? 'unknown'} />
+            {#if run.status === 'running' || run.status === 'queued'}
+              <button class="text-destructive text-xs h-6 px-2 rounded-md hover:bg-destructive/10 transition-colors" onclick={cancelRun}>
+                Cancel
+              </button>
+            {/if}
+          </div>
+          {#if startTime}
+            <div class="space-y-0.5">
+              <div class="text-sm font-mono">
+                {startTime}{#if endTime}<span class="text-muted-foreground"> → </span>{endTime}{/if}
               </div>
+              <div class="text-[11px] text-muted-foreground">
+                {#if run.startedAt}<TimeAgo date={run.startedAt} class="text-[11px]" />{/if}
+                {#if run.finishedAt}<span> → </span><TimeAgo date={run.finishedAt} class="text-[11px]" />{/if}
+              </div>
+              {#if duration}<div class="text-xs text-muted-foreground">Duration: {duration}</div>{/if}
             </div>
-          {/if}
-          {#if run.workspaceName || run.workspaceId}
-            <div class="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3">
-              <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1">Workspace</p>
-              <p class="text-sm text-zinc-900 dark:text-zinc-100">{run.workspaceName ?? run.workspaceId}</p>
-            </div>
+          {:else if run.createdAt}
+            <div class="text-[11px] text-muted-foreground"><TimeAgo date={run.createdAt} class="text-[11px]" /></div>
           {/if}
           {#if run.error || run.errorMessage}
-            <div class="rounded-lg border border-red-200 dark:border-red-900 bg-red-50 dark:bg-red-950/30 p-3 sm:col-span-2">
-              <p class="text-[11px] font-medium uppercase tracking-wider text-red-600 dark:text-red-400 mb-1">Error</p>
-              <p class="text-sm text-red-700 dark:text-red-300 whitespace-pre-wrap">{run.errorMessage ?? run.error}</p>
+            <div class="text-xs">
+              <span class="text-red-600 dark:text-red-400">{run.errorMessage ?? run.error}</span>
+              {#if run.errorCode}<span class="text-muted-foreground ml-1">({run.errorCode})</span>{/if}
             </div>
           {/if}
-          {#if run.summary}
-            <div class="rounded-lg border border-zinc-200 dark:border-zinc-800 p-3 sm:col-span-2 lg:col-span-3">
-              <p class="text-[11px] font-medium uppercase tracking-wider text-zinc-500 dark:text-zinc-400 mb-1">Summary</p>
-              <div class="text-sm text-zinc-900 dark:text-zinc-100">
-                <MarkdownBody content={run.summary} />
-              </div>
+          {#if run.exitCode != null && run.exitCode !== 0}
+            <div class="text-xs text-red-600 dark:text-red-400">
+              Exit code {run.exitCode}{#if run.signal}<span class="text-muted-foreground ml-1">(signal: {run.signal})</span>{/if}
             </div>
           {/if}
         </div>
-      </CollapsibleContent>
-    </Collapsible>
 
-    <Separator />
-
-    <!-- ================================================================== -->
-    <!-- Tabs: Transcript / Events                                           -->
-    <!-- ================================================================== -->
-    <Tabs bind:value={activeTab}>
-      <div class="flex items-center justify-between gap-4 flex-wrap">
-        <TabsList>
-          <TabsTrigger value="transcript">Transcript ({transcript.length})</TabsTrigger>
-          <TabsTrigger value="events">Events ({events.length})</TabsTrigger>
-        </TabsList>
-
-        {#if activeTab === 'transcript'}
-          <div class="flex items-center gap-2">
-            <!-- Display mode toggle -->
-            <div class="inline-flex items-center rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5 text-xs">
-              <button
-                class="rounded-md px-2.5 py-1 font-medium transition-colors {displayMode === 'nice' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}"
-                onclick={() => displayMode = 'nice'}
-              >
-                <Eye class="h-3 w-3 inline mr-1" />Nice
-              </button>
-              <button
-                class="rounded-md px-2.5 py-1 font-medium transition-colors {displayMode === 'raw' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}"
-                onclick={() => displayMode = 'raw'}
-              >
-                <Code class="h-3 w-3 inline mr-1" />Raw
-              </button>
-            </div>
-
-            <!-- Density toggle -->
-            <div class="inline-flex items-center rounded-lg border border-zinc-200 dark:border-zinc-800 p-0.5 text-xs">
-              <button
-                class="rounded-md px-2.5 py-1 font-medium transition-colors {density === 'comfortable' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}"
-                onclick={() => density = 'comfortable'}
-              >
-                <AlignJustify class="h-3 w-3 inline mr-1" />Full
-              </button>
-              <button
-                class="rounded-md px-2.5 py-1 font-medium transition-colors {density === 'compact' ? 'bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900' : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}"
-                onclick={() => density = 'compact'}
-              >
-                <Rows3 class="h-3 w-3 inline mr-1" />Compact
-              </button>
-            </div>
+        <!-- Right: metrics -->
+        {#if metrics}
+          <div class="border-t sm:border-t-0 sm:border-l border-border p-4 grid grid-cols-2 gap-x-8 gap-y-3 content-center tabular-nums">
+            <div><div class="text-xs text-muted-foreground">Input</div><div class="text-sm font-medium font-mono">{formatTokens(metrics.input)}</div></div>
+            <div><div class="text-xs text-muted-foreground">Output</div><div class="text-sm font-medium font-mono">{formatTokens(metrics.output)}</div></div>
+            <div><div class="text-xs text-muted-foreground">Cached</div><div class="text-sm font-medium font-mono">{formatTokens(metrics.cached)}</div></div>
+            <div><div class="text-xs text-muted-foreground">Cost</div><div class="text-sm font-medium font-mono">{metrics.costUsd > 0 ? `$${metrics.costUsd.toFixed(4)}` : '—'}</div></div>
           </div>
         {/if}
       </div>
 
-      <!-- ============================================================= -->
-      <!-- Transcript Tab                                                  -->
-      <!-- ============================================================= -->
-      <TabsContent value="transcript">
-        <div
-          class="mt-4 space-y-3 max-h-[70vh] overflow-y-auto scroll-smooth relative"
-          bind:this={transcriptContainer}
-          onscroll={handleScroll}
-        >
-          {#if transcript.length === 0}
-            <p class="text-sm text-zinc-500 py-8 text-center">No transcript available.</p>
-          {:else}
-            {#each transcript as msg, i}
-              {@const text = getContentText(msg)}
-              {@const isCompactTruncated = density === 'compact' && !expandedMessages.has(i) && text.split('\n').length > 3}
-              <div class="rounded-lg border border-zinc-200 dark:border-zinc-800 {density === 'compact' ? 'p-2.5' : 'p-3'}">
-                <!-- Message header -->
-                <div class="flex items-center gap-2 mb-1">
-                  <span class="rounded px-1.5 py-0.5 text-xs font-medium {
-                    msg.role === 'assistant'
-                      ? 'bg-indigo-100 text-indigo-700 dark:bg-indigo-900 dark:text-indigo-300'
-                      : msg.role === 'tool'
-                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300'
-                        : 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-                  }">{msg.role ?? 'unknown'}</span>
-                  {#if msg.toolName}
-                    <code class="text-xs text-zinc-500 dark:text-zinc-400 bg-zinc-100 dark:bg-zinc-800 px-1.5 py-0.5 rounded">
-                      {msg.toolName}
-                    </code>
-                  {/if}
-                  {#if density === 'compact' && text.split('\n').length > 3}
-                    <button
-                      class="ml-auto text-[11px] text-primary hover:underline"
-                      onclick={() => toggleExpand(i)}
-                    >
-                      {expandedMessages.has(i) ? 'Collapse' : 'Expand'}
-                    </button>
-                  {/if}
+      <!-- Session row -->
+      {#if hasSession}
+        <div class="border-t border-border">
+          <button class="flex items-center gap-1.5 w-full px-4 py-2 text-xs text-muted-foreground hover:text-foreground transition-colors" onclick={() => sessionOpen = !sessionOpen}>
+            <ChevronRight class="h-3 w-3 transition-transform {sessionOpen ? 'rotate-90' : ''}" />
+            Session{#if sessionChanged}<span class="text-yellow-400 ml-1">(changed)</span>{/if}
+          </button>
+          {#if sessionOpen}
+            <div class="px-4 pb-3 space-y-1 text-xs">
+              {#if run.sessionIdBefore}
+                <div class="flex items-center gap-2">
+                  <span class="text-muted-foreground w-12">{sessionChanged ? 'Before' : 'ID'}</span>
+                  <code class="font-mono text-foreground break-all">{run.sessionIdBefore}</code>
                 </div>
+              {/if}
+              {#if sessionChanged && run.sessionIdAfter}
+                <div class="flex items-center gap-2">
+                  <span class="text-muted-foreground w-12">After</span>
+                  <code class="font-mono text-foreground break-all">{run.sessionIdAfter}</code>
+                </div>
+              {/if}
+            </div>
+          {/if}
+        </div>
+      {/if}
+    </div>
 
-                <!-- Message body -->
-                {#if displayMode === 'raw'}
-                  <pre class="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300 {isCompactTruncated ? 'line-clamp-3' : ''}">{text}</pre>
-                {:else}
-                  <!-- Nice mode -->
-                  {#if msg.role === 'assistant' && text}
-                    <div class="{isCompactTruncated ? 'line-clamp-3 overflow-hidden' : ''}">
-                      <MarkdownBody content={text} />
-                    </div>
-                  {:else if msg.role === 'user'}
-                    <p class="text-sm text-zinc-700 dark:text-zinc-300 {isCompactTruncated ? 'line-clamp-3' : ''}">{text}</p>
-                  {:else}
-                    <pre class="whitespace-pre-wrap text-sm text-zinc-700 dark:text-zinc-300 font-mono text-xs {isCompactTruncated ? 'line-clamp-3' : ''}">{text}</pre>
-                  {/if}
+    <!-- ====================================================== -->
+    <!-- Issues Touched                                          -->
+    <!-- ====================================================== -->
+    {#if touchedIssues.length > 0}
+      <div class="space-y-2">
+        <span class="text-xs font-medium text-muted-foreground">Issues Touched ({touchedIssues.length})</span>
+        <div class="border border-border rounded-lg divide-y divide-border">
+          {#each touchedIssues as issue}
+            <a href="/{prefix}/issues/{issue.identifier ?? issue.issueId}" class="flex items-center justify-between w-full px-3 py-2 text-xs hover:bg-accent/20 transition-colors no-underline text-inherit">
+              <div class="flex items-center gap-2 min-w-0">
+                {#if issue.status}<StatusBadge status={issue.status} />{/if}
+                <span class="truncate">{issue.title ?? issue.issueId}</span>
+              </div>
+              {#if issue.identifier}<span class="shrink-0 text-muted-foreground font-mono ml-2">{issue.identifier}</span>{/if}
+            </a>
+          {/each}
+        </div>
+      </div>
+    {/if}
 
-                  <!-- Tool calls -->
-                  {#if hasToolCalls(msg)}
-                    <div class="mt-2 space-y-1.5">
-                      {#each msg.tool_calls as tc, j}
-                        <Collapsible>
-                          <CollapsibleTrigger class="flex items-center gap-1.5 text-xs font-medium text-amber-600 dark:text-amber-400 hover:text-amber-700 dark:hover:text-amber-300 cursor-pointer">
-                            <Terminal class="h-3 w-3" />
-                            <span>{tc.function?.name ?? tc.name ?? `tool_call_${j}`}</span>
-                            <ChevronRight class="h-3 w-3 collapsible-icon" />
-                          </CollapsibleTrigger>
-                          <CollapsibleContent>
-                            <pre class="mt-1 rounded bg-zinc-50 dark:bg-zinc-800/50 p-2 text-xs font-mono text-zinc-600 dark:text-zinc-400 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(tc.function?.arguments ?? tc.arguments ?? tc, null, 2)}</pre>
-                          </CollapsibleContent>
-                        </Collapsible>
-                      {/each}
-                    </div>
-                  {/if}
+    <!-- ====================================================== -->
+    <!-- stderr excerpt (shown outside log when failed)         -->
+    <!-- ====================================================== -->
+    {#if run.stderrExcerpt && !logText}
+      <div class="space-y-1">
+        <span class="text-xs font-medium text-red-600 dark:text-red-400">stderr</span>
+        <pre class="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-red-700 dark:text-red-300 overflow-x-auto whitespace-pre-wrap">{run.stderrExcerpt}</pre>
+      </div>
+    {/if}
+    {#if run.stdoutExcerpt && !run.logRef && !logText}
+      <div class="space-y-1">
+        <span class="text-xs font-medium text-muted-foreground">stdout</span>
+        <pre class="bg-neutral-100 dark:bg-neutral-950 rounded-md p-3 text-xs font-mono text-foreground overflow-x-auto whitespace-pre-wrap">{run.stdoutExcerpt}</pre>
+      </div>
+    {/if}
+
+    <!-- ====================================================== -->
+    <!-- Log Viewer                                              -->
+    <!-- ====================================================== -->
+    <div class="space-y-3">
+
+      <!-- Workspace Operations -->
+      {#if workspaceOps.length > 0}
+        <div class="rounded-lg border border-border bg-background/60 p-3 space-y-3">
+          <div class="text-xs font-medium text-muted-foreground">Workspace ({workspaceOps.length})</div>
+          <div class="space-y-3">
+            {#each workspaceOps as op}
+              {@const meta = op.metadata ?? {}}
+              <div class="rounded-md border border-border/70 bg-background/70 p-3 space-y-2">
+                <div class="flex flex-wrap items-center gap-2">
+                  <div class="text-sm font-medium">{wsPhaseLabel(op.phase)}</div>
+                  <span class="text-xs font-medium {wsStatusColor(op.status)}">{humanize(op.status)}</span>
+                  {#if op.startedAt}<div class="text-[11px] text-muted-foreground"><TimeAgo date={op.startedAt} class="text-[11px]" /></div>{/if}
+                </div>
+                {#if op.command}<div class="text-xs break-all"><span class="text-muted-foreground">Command: </span><span class="font-mono">{op.command}</span></div>{/if}
+                {#if op.cwd}<div class="text-xs break-all"><span class="text-muted-foreground">Working dir: </span><span class="font-mono">{op.cwd}</span></div>{/if}
+                {#if typeof meta.branchName === 'string' || typeof meta.worktreePath === 'string' || typeof meta.repoRoot === 'string'}
+                  <div class="grid gap-1 text-xs sm:grid-cols-2">
+                    {#if typeof meta.branchName === 'string'}<div><span class="text-muted-foreground">Branch: </span><span class="font-mono">{meta.branchName}</span></div>{/if}
+                    {#if typeof meta.baseRef === 'string'}<div><span class="text-muted-foreground">Base ref: </span><span class="font-mono">{meta.baseRef}</span></div>{/if}
+                    {#if typeof meta.worktreePath === 'string'}<div class="break-all"><span class="text-muted-foreground">Worktree: </span><span class="font-mono">{meta.worktreePath}</span></div>{/if}
+                    {#if typeof meta.repoRoot === 'string'}<div class="break-all"><span class="text-muted-foreground">Repo root: </span><span class="font-mono">{meta.repoRoot}</span></div>{/if}
+                  </div>
+                {/if}
+                {#if typeof meta.created === 'boolean'}<div class="text-xs text-muted-foreground">{meta.created ? 'Created by this run' : 'Reused existing workspace'}</div>{/if}
+                {#if op.stderrExcerpt?.trim()}
+                  <div>
+                    <div class="mb-1 text-xs text-red-700 dark:text-red-300">stderr excerpt</div>
+                    <pre class="rounded-md bg-red-50 p-2 text-xs whitespace-pre-wrap break-all text-red-800 dark:bg-neutral-950 dark:text-red-100">{op.stderrExcerpt}</pre>
+                  </div>
                 {/if}
               </div>
             {/each}
-          {/if}
+          </div>
+        </div>
+      {/if}
 
-          <!-- Scroll to bottom button -->
-          {#if showScrollButton}
-            <button
-              class="sticky bottom-4 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-zinc-900 dark:bg-zinc-100 px-3 py-1.5 text-xs font-medium text-white dark:text-zinc-900 shadow-lg hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors z-10"
-              onclick={scrollToBottom}
-            >
-              <ArrowDown class="h-3.5 w-3.5" />
-              Scroll to bottom
-            </button>
+      <!-- Invocation (from adapter.invoke event) -->
+      {#if adapterInvokePayload}
+        <div class="rounded-lg border border-border bg-background/60 p-3 space-y-2">
+          <div class="text-xs font-medium text-muted-foreground">Invocation</div>
+          {#if typeof adapterInvokePayload.adapterType === 'string'}
+            <div class="text-xs"><span class="text-muted-foreground">Adapter: </span>{adapterInvokePayload.adapterType}</div>
+          {/if}
+          {#if typeof adapterInvokePayload.cwd === 'string'}
+            <div class="text-xs break-all"><span class="text-muted-foreground">Working dir: </span><span class="font-mono">{adapterInvokePayload.cwd}</span></div>
+          {/if}
+          {#if typeof adapterInvokePayload.command === 'string'}
+            <div class="text-xs break-all">
+              <span class="text-muted-foreground">Command: </span>
+              <span class="font-mono">{[adapterInvokePayload.command, ...(Array.isArray(adapterInvokePayload.commandArgs) ? adapterInvokePayload.commandArgs.filter((v): v is string => typeof v === 'string') : [])].join(' ')}</span>
+            </div>
+          {/if}
+          {#if Array.isArray(adapterInvokePayload.commandNotes) && adapterInvokePayload.commandNotes.length > 0}
+            <div>
+              <div class="text-xs text-muted-foreground mb-1">Command notes</div>
+              <ul class="list-disc pl-5 space-y-1">
+                {#each adapterInvokePayload.commandNotes.filter((v: unknown): v is string => typeof v === 'string' && v.trim().length > 0) as note}
+                  <li class="text-xs break-all font-mono">{note}</li>
+                {/each}
+              </ul>
+            </div>
+          {/if}
+          {#if adapterInvokePayload.prompt !== undefined}
+            <div>
+              <div class="text-xs text-muted-foreground mb-1">Prompt</div>
+              <pre class="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">{typeof adapterInvokePayload.prompt === 'string' ? adapterInvokePayload.prompt : JSON.stringify(adapterInvokePayload.prompt, null, 2)}</pre>
+            </div>
+          {/if}
+          {#if adapterInvokePayload.context !== undefined}
+            <div>
+              <div class="text-xs text-muted-foreground mb-1">Context</div>
+              <pre class="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap">{JSON.stringify(adapterInvokePayload.context, null, 2)}</pre>
+            </div>
+          {/if}
+          {#if adapterInvokePayload.env !== undefined}
+            {@const env = typeof adapterInvokePayload.env === 'object' && adapterInvokePayload.env !== null ? adapterInvokePayload.env as Record<string, unknown> : null}
+            <div>
+              <div class="text-xs text-muted-foreground mb-1">Environment</div>
+              <pre class="bg-neutral-100 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap font-mono">{env ? Object.keys(env).sort().map(k => `${k}=${env[k]}`).join('\n') : String(adapterInvokePayload.env)}</pre>
+            </div>
           {/if}
         </div>
-      </TabsContent>
+      {/if}
 
-      <!-- ============================================================= -->
-      <!-- Events Tab                                                      -->
-      <!-- ============================================================= -->
-      <TabsContent value="events">
-        <div class="mt-4">
-          {#if eventsLoading}
-            <div class="space-y-2">
-              {#each Array(4) as _}
-                <div class="flex items-center gap-3 p-3 rounded-lg border border-zinc-200 dark:border-zinc-800">
-                  <Skeleton class="h-4 w-20 rounded" />
-                  <Skeleton class="h-4 w-32 rounded" />
-                  <div class="flex-1"></div>
-                  <Skeleton class="h-4 w-24 rounded" />
-                </div>
-              {/each}
-            </div>
-          {:else if events.length === 0}
-            <p class="text-sm text-zinc-500 py-8 text-center">No events recorded.</p>
+      <!-- Transcript header -->
+      <div class="flex items-center justify-between">
+        <span class="text-xs font-medium text-muted-foreground">
+          Transcript ({transcriptBlocks.length})
+        </span>
+        <div class="flex items-center gap-2">
+          <div class="inline-flex rounded-lg border border-border/70 bg-background/70 p-0.5">
+            {#each (['nice', 'raw'] as const) as mode}
+              <button
+                class="rounded-md px-2.5 py-1 text-[11px] font-medium capitalize transition-colors {transcriptMode === mode ? 'bg-accent text-foreground shadow-sm' : 'text-muted-foreground hover:text-foreground'}"
+                onclick={() => transcriptMode = mode}
+              >{mode}</button>
+            {/each}
+          </div>
+          {#if isLive}
+            <span class="flex items-center gap-1 text-xs text-cyan-400">
+              <span class="relative flex h-2 w-2">
+                <span class="animate-pulse absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-75"></span>
+                <span class="relative inline-flex rounded-full h-2 w-2 bg-cyan-400"></span>
+              </span>
+              Live
+            </span>
+          {/if}
+        </div>
+      </div>
+
+      <!-- Transcript container -->
+      <div class="max-h-[38rem] overflow-y-auto rounded-2xl border border-border/70 bg-background/40 p-3 sm:p-4 relative"
+        bind:this={transcriptContainer}
+        onscroll={handleScroll}>
+        {#if logLoading}
+          <p class="text-xs text-muted-foreground">Loading run logs...</p>
+        {:else if transcriptMode === 'raw'}
+          {#if transcriptEntries.length === 0}
+            <p class="text-xs text-muted-foreground italic">{run.logRef ? 'Waiting for transcript...' : 'No persisted transcript for this run.'}</p>
           {:else}
-            <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-              {#each events as evt, i}
-                <div class="flex items-start gap-3 p-3 text-sm {i % 2 === 0 ? '' : 'bg-zinc-50/50 dark:bg-zinc-800/20'}">
-                  <span class="shrink-0 rounded px-1.5 py-0.5 text-xs font-medium bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300">
-                    {evt.type}
-                  </span>
-                  <span class="text-zinc-700 dark:text-zinc-300 flex-1 min-w-0">
-                    {#if evt.details}
-                      <span class="whitespace-pre-wrap break-words">{evt.details}</span>
-                    {:else}
-                      <span class="text-zinc-400 italic">No details</span>
-                    {/if}
-                  </span>
-                  <span class="shrink-0 text-xs text-zinc-500">
-                    {#if evt.timestamp || evt.createdAt}
-                      <TimeAgo date={evt.timestamp ?? evt.createdAt} class="text-xs" />
-                    {/if}
-                  </span>
+            <div class="font-mono space-y-1 text-[11px]">
+              {#each transcriptEntries as entry, idx (`${entry.kind}-${entry.ts}-${idx}`)}
+                <div class="grid gap-x-3 grid-cols-[auto_1fr]">
+                  <span class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{entry.kind}</span>
+                  <pre class="min-w-0 whitespace-pre-wrap break-words text-foreground/80">{
+                    entry.kind === 'tool_call' ? `${entry.name}\n${formatToolPayload(entry.input)}`
+                    : entry.kind === 'tool_result' ? formatToolPayload(entry.content)
+                    : entry.kind === 'result' ? `${entry.text}\n${formatTokens(entry.inputTokens)} in / ${formatTokens(entry.outputTokens)} out / $${entry.costUsd.toFixed(6)}`
+                    : entry.kind === 'init' ? `model=${entry.model}${entry.sessionId ? ` session=${entry.sessionId}` : ''}`
+                    : entry.text
+                  }</pre>
                 </div>
               {/each}
             </div>
           {/if}
+        {:else if transcriptBlocks.length === 0}
+          <p class="text-xs text-muted-foreground italic">{run.logRef ? 'Waiting for transcript...' : 'No persisted transcript for this run.'}</p>
+        {:else}
+          <div class="space-y-3">
+            {#each transcriptBlocks as block, i (i)}
+              {@render renderBlock(block, i)}
+            {/each}
+          </div>
+        {/if}
+
+        {#if showScrollBtn}
+          <button class="sticky bottom-4 left-1/2 -translate-x-1/2 inline-flex items-center gap-1.5 rounded-full bg-foreground px-3 py-1.5 text-xs font-medium text-background shadow-lg hover:opacity-90 transition-opacity z-10" onclick={scrollToBottom}>
+            ↓ Jump to live
+          </button>
+        {/if}
+      </div>
+
+      <!-- Failure details -->
+      {#if run.status === 'failed' || run.status === 'timed_out'}
+        <div class="rounded-lg border border-red-300 dark:border-red-500/30 bg-red-50 dark:bg-red-950/20 p-3 space-y-2">
+          <div class="text-xs font-medium text-red-700 dark:text-red-300">Failure details</div>
+          {#if run.error}
+            <div class="text-xs text-red-600 dark:text-red-200">
+              <span class="text-red-700 dark:text-red-300">Error: </span>{run.error}
+            </div>
+          {/if}
+          {#if run.stderrExcerpt?.trim()}
+            <div>
+              <div class="text-xs text-red-700 dark:text-red-300 mb-1">stderr excerpt</div>
+              <pre class="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">{run.stderrExcerpt}</pre>
+            </div>
+          {/if}
+          {#if run.resultJson}
+            <div>
+              <div class="text-xs text-red-700 dark:text-red-300 mb-1">adapter result JSON</div>
+              <pre class="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">{JSON.stringify(run.resultJson, null, 2)}</pre>
+            </div>
+          {/if}
+          {#if run.stdoutExcerpt?.trim() && !run.resultJson}
+            <div>
+              <div class="text-xs text-red-700 dark:text-red-300 mb-1">stdout excerpt</div>
+              <pre class="bg-red-50 dark:bg-neutral-950 rounded-md p-2 text-xs overflow-x-auto whitespace-pre-wrap text-red-800 dark:text-red-100">{run.stdoutExcerpt}</pre>
+            </div>
+          {/if}
         </div>
-      </TabsContent>
-    </Tabs>
+      {/if}
+
+      <!-- Events -->
+      {#if events.length > 0}
+        <div>
+          <div class="mb-2 text-xs font-medium text-muted-foreground">Events ({events.length})</div>
+          <div class="bg-neutral-100 dark:bg-neutral-950 rounded-lg p-3 font-mono text-xs space-y-0.5">
+            {#each events as evt}
+              {@const levelColors: Record<string, string> = { info: 'text-foreground', warn: 'text-yellow-600 dark:text-yellow-400', error: 'text-red-600 dark:text-red-400' }}
+              {@const streamColors: Record<string, string> = { stdout: 'text-foreground', stderr: 'text-red-600 dark:text-red-300', system: 'text-blue-600 dark:text-blue-300' }}
+              {@const color = evt.color ?? (evt.level ? levelColors[evt.level] : null) ?? (evt.stream ? streamColors[evt.stream] : null) ?? 'text-foreground'}
+              <div class="flex gap-2">
+                <span class="text-neutral-400 dark:text-neutral-600 shrink-0 select-none w-16">
+                  {new Date(evt.createdAt).toLocaleTimeString('en-US', { hour12: false })}
+                </span>
+                <span class="shrink-0 w-14 {evt.stream ? (streamColors[evt.stream] ?? 'text-neutral-500') : 'text-neutral-500'}">
+                  {evt.stream ? `[${evt.stream}]` : ''}
+                </span>
+                <span class="break-all {color}">
+                  {evt.message ?? (evt.payload ? JSON.stringify(evt.payload) : '')}
+                </span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/if}
+    </div>
+
   {/if}
 </div>

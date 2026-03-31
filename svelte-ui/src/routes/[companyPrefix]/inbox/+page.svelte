@@ -71,6 +71,7 @@
   let allLoaded = $derived(
     !loadingIssuesMine &&
     !loadingIssuesTouched &&
+    !loadingIssuesAll &&
     !loadingApprovals &&
     !loadingHeartbeats &&
     !loadingDashboard &&

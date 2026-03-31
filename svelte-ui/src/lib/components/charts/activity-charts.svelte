@@ -1,32 +1,19 @@
 <script lang="ts">
   /**
-   * ActivityCharts — 2x2 grid of mini dashboard charts:
-   * 1. Run Activity (line)
-   * 2. Issues by Priority (donut)
-   * 3. Issues by Status (horizontal bar)
-   * 4. Success Rate (gauge donut)
+   * ActivityCharts — 2x2 grid of mini stacked bar charts:
+   * 1. Run Activity (stacked: succeeded / failed / other)
+   * 2. Issues by Priority (stacked: critical / high / medium / low)
+   * 3. Issues by Status (stacked: todo / in_progress / in_review / done / blocked / cancelled / backlog)
+   * 4. Success Rate (single bar per day, colored by rate)
    */
-  import { LineChart, PieChart, BarChart } from 'echarts/charts';
-  import {
-    GridComponent,
-    TooltipComponent,
-    LegendComponent,
-    TitleComponent,
-  } from 'echarts/components';
+  import { BarChart } from 'echarts/charts';
+  import { GridComponent, TooltipComponent } from 'echarts/components';
   import * as echarts from 'echarts/core';
   import BaseChart from './base-chart.svelte';
   import { api } from '$lib/api';
   import type { EChartsOption } from 'echarts';
 
-  echarts.use([
-    LineChart,
-    PieChart,
-    BarChart,
-    GridComponent,
-    TooltipComponent,
-    LegendComponent,
-    TitleComponent,
-  ]);
+  echarts.use([BarChart, GridComponent, TooltipComponent]);
 
   interface Props {
     companyId: string;
@@ -64,148 +51,221 @@
     });
   });
 
-  // ── Chart 1: Run Activity (line) ────────────────────────────────────
-  let runActivityOption = $derived.by((): EChartsOption => {
-    const today = new Date();
-    const days: string[] = [];
-    const countsMap = new Map<string, number>();
+  // ── Helpers ────────────────────────────────────────────────────────
+  function getLast14Days(): string[] {
+    return Array.from({ length: 14 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (13 - i));
+      return d.toISOString().slice(0, 10);
+    });
+  }
 
-    for (let i = 6; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(d.getDate() - i);
-      const key = d.toISOString().slice(0, 10);
-      days.push(key);
-      countsMap.set(key, 0);
+  function formatDayLabel(dateStr: string, i: number): string {
+    if (i !== 0 && i !== 6 && i !== 13) return '';
+    const d = new Date(dateStr + 'T12:00:00');
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+
+  const tooltipStyle = {
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    borderColor: 'transparent',
+    textStyle: { color: '#fff', fontSize: 11 },
+  };
+
+  const chartGrid = { left: 0, right: 0, top: 4, bottom: 20, containLabel: false };
+
+  function makeXAxis(days: string[]) {
+    return {
+      type: 'category' as const,
+      data: days.map((d, i) => formatDayLabel(d, i)),
+      axisLine: { show: false },
+      axisTick: { show: false },
+      axisLabel: { color: '#71717a', fontSize: 9 },
+    };
+  }
+
+  function makeYAxis() {
+    return {
+      type: 'value' as const,
+      show: true,
+      axisLabel: { show: false },
+      axisTick: { show: false },
+      axisLine: { show: false },
+      splitLine: { lineStyle: { color: '#27272a' } },
+    };
+  }
+
+  // ── Chart 1: Run Activity ──────────────────────────────────────────
+  let runActivityOption = $derived.by((): EChartsOption | null => {
+    if (runs.length === 0) return null;
+
+    const days = getLast14Days();
+    const succeeded = new Map<string, number>();
+    const failed = new Map<string, number>();
+    const other = new Map<string, number>();
+    for (const d of days) {
+      succeeded.set(d, 0);
+      failed.set(d, 0);
+      other.set(d, 0);
     }
 
     for (const run of runs) {
       const dateStr = (run.createdAt ?? run.startedAt ?? run.date ?? '').slice(0, 10);
-      if (countsMap.has(dateStr)) {
-        countsMap.set(dateStr, (countsMap.get(dateStr) ?? 0) + 1);
+      if (!succeeded.has(dateStr)) continue;
+      const status = run.status ?? '';
+      if (status === 'succeeded') {
+        succeeded.set(dateStr, (succeeded.get(dateStr) ?? 0) + 1);
+      } else if (status === 'failed' || status === 'timed_out') {
+        failed.set(dateStr, (failed.get(dateStr) ?? 0) + 1);
+      } else {
+        other.set(dateStr, (other.get(dateStr) ?? 0) + 1);
       }
     }
 
-    const values = days.map((d) => countsMap.get(d) ?? 0);
-    const labels = days.map((d) => {
-      const dt = new Date(d + 'T00:00:00');
-      return dt.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
-    });
-
     return {
       backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'axis',
-        backgroundColor: 'rgba(0,0,0,0.85)',
-        borderColor: 'rgba(255,255,255,0.1)',
-        textStyle: { color: '#fff', fontSize: 11 },
-      },
-      grid: { left: 36, right: 12, top: 12, bottom: 24 },
-      xAxis: {
-        type: 'category',
-        data: labels,
-        axisLine: { lineStyle: { color: '#3f3f46' } },
-        axisLabel: { color: '#71717a', fontSize: 10, rotate: 0 },
-        boundaryGap: false,
-      },
-      yAxis: {
-        type: 'value',
-        minInterval: 1,
-        splitLine: { lineStyle: { color: '#27272a' } },
-        axisLabel: { color: '#71717a', fontSize: 10 },
-      },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...tooltipStyle },
+      grid: chartGrid,
+      xAxis: makeXAxis(days),
+      yAxis: makeYAxis(),
       series: [
         {
-          type: 'line',
-          smooth: true,
-          data: values,
-          symbol: 'circle',
-          symbolSize: 6,
-          areaStyle: {
-            color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-              { offset: 0, color: 'rgba(99, 102, 241, 0.35)' },
-              { offset: 1, color: 'rgba(99, 102, 241, 0)' },
-            ]),
-          },
-          lineStyle: { color: '#6366f1', width: 2.5 },
-          itemStyle: { color: '#6366f1', borderColor: '#1a1a24', borderWidth: 2 },
+          name: 'Succeeded',
+          type: 'bar',
+          stack: 'total',
+          barMaxWidth: 12,
+          data: days.map((d) => succeeded.get(d) ?? 0),
+          itemStyle: { color: '#10b981' },
+        },
+        {
+          name: 'Failed',
+          type: 'bar',
+          stack: 'total',
+          barMaxWidth: 12,
+          data: days.map((d) => failed.get(d) ?? 0),
+          itemStyle: { color: '#ef4444' },
+        },
+        {
+          name: 'Other',
+          type: 'bar',
+          stack: 'total',
+          barMaxWidth: 12,
+          data: days.map((d) => other.get(d) ?? 0),
+          itemStyle: { color: '#71717a' },
         },
       ],
     };
   });
 
-  // ── Chart 2: Issues by Priority (donut) ─────────────────────────────
-  let priorityChartOption = $derived.by((): EChartsOption => {
-    const priorityConfig = [
-      { key: 'critical', label: 'Critical', color: '#EF4444' },
-      { key: 'high', label: 'High', color: '#F97316' },
-      { key: 'medium', label: 'Medium', color: '#3B82F6' },
-      { key: 'low', label: 'Low', color: '#71717A' },
-    ];
+  // ── Chart 2: Issues by Priority ────────────────────────────────────
+  const priorityConfig = [
+    { key: 'critical', label: 'Critical', color: '#ef4444' },
+    { key: 'high', label: 'High', color: '#f97316' },
+    { key: 'medium', label: 'Medium', color: '#eab308' },
+    { key: 'low', label: 'Low', color: '#6b7280' },
+  ];
 
-    const counts = new Map<string, number>();
-    for (const p of priorityConfig) counts.set(p.key, 0);
+  let priorityChartOption = $derived.by((): EChartsOption | null => {
+    if (issues.length === 0) return null;
 
-    for (const issue of issues) {
-      const pri = issue.priority ?? 'medium';
-      counts.set(pri, (counts.get(pri) ?? 0) + 1);
+    const days = getLast14Days();
+    const buckets = new Map<string, Map<string, number>>();
+    for (const d of days) {
+      const m = new Map<string, number>();
+      for (const p of priorityConfig) m.set(p.key, 0);
+      buckets.set(d, m);
     }
 
-    const data = priorityConfig
-      .map((p) => ({ name: p.label, value: counts.get(p.key) ?? 0, itemStyle: { color: p.color } }))
-      .filter((d) => d.value > 0);
+    for (const issue of issues) {
+      const dateStr = (issue.createdAt ?? '').slice(0, 10);
+      const dayBucket = buckets.get(dateStr);
+      if (!dayBucket) continue;
+      const pri = issue.priority ?? 'medium';
+      dayBucket.set(pri, (dayBucket.get(pri) ?? 0) + 1);
+    }
 
     return {
       backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: 'rgba(0,0,0,0.85)',
-        borderColor: 'rgba(255,255,255,0.1)',
-        textStyle: { color: '#fff', fontSize: 11 },
-        formatter: '{b}: {c} ({d}%)',
-      },
-      legend: {
-        orient: 'vertical',
-        right: 8,
-        top: 'center',
-        textStyle: { color: '#a1a1aa', fontSize: 11 },
-        itemWidth: 10,
-        itemHeight: 10,
-        itemGap: 8,
-      },
-      series: [
-        {
-          type: 'pie',
-          radius: ['50%', '75%'],
-          center: ['35%', '50%'],
-          avoidLabelOverlap: true,
-          label: { show: false },
-          emphasis: {
-            label: { show: false },
-            scaleSize: 4,
-          },
-          data,
-        },
-      ],
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...tooltipStyle },
+      grid: chartGrid,
+      xAxis: makeXAxis(days),
+      yAxis: makeYAxis(),
+      series: priorityConfig.map((p) => ({
+        name: p.label,
+        type: 'bar' as const,
+        stack: 'total',
+        barMaxWidth: 12,
+        data: days.map((d) => buckets.get(d)?.get(p.key) ?? 0),
+        itemStyle: { color: p.color },
+      })),
     };
   });
 
-  // ── Chart 3: Issues by Status (horizontal bar) ──────────────────────
-  let statusChartOption = $derived.by((): EChartsOption => {
-    const statusConfig = [
-      { key: 'backlog', label: 'Backlog', color: '#64748b' },
-      { key: 'todo', label: 'To Do', color: '#2563eb' },
-      { key: 'in_progress', label: 'In Progress', color: '#f59e0b' },
-      { key: 'in_review', label: 'In Review', color: '#8b5cf6' },
-      { key: 'done', label: 'Done', color: '#10b981' },
-    ];
+  // ── Chart 3: Issues by Status ──────────────────────────────────────
+  const statusConfig = [
+    { key: 'todo', label: 'To Do', color: '#3b82f6' },
+    { key: 'in_progress', label: 'In Progress', color: '#8b5cf6' },
+    { key: 'in_review', label: 'In Review', color: '#a855f7' },
+    { key: 'done', label: 'Done', color: '#10b981' },
+    { key: 'blocked', label: 'Blocked', color: '#ef4444' },
+    { key: 'cancelled', label: 'Cancelled', color: '#6b7280' },
+    { key: 'backlog', label: 'Backlog', color: '#64748b' },
+  ];
 
-    const counts = new Map<string, number>();
-    for (const s of statusConfig) counts.set(s.key, 0);
+  let statusChartOption = $derived.by((): EChartsOption | null => {
+    if (issues.length === 0) return null;
+
+    const days = getLast14Days();
+    const buckets = new Map<string, Map<string, number>>();
+    for (const d of days) {
+      const m = new Map<string, number>();
+      for (const s of statusConfig) m.set(s.key, 0);
+      buckets.set(d, m);
+    }
 
     for (const issue of issues) {
+      const dateStr = (issue.createdAt ?? '').slice(0, 10);
+      const dayBucket = buckets.get(dateStr);
+      if (!dayBucket) continue;
       const st = issue.status ?? 'backlog';
-      if (counts.has(st)) {
-        counts.set(st, (counts.get(st) ?? 0) + 1);
+      dayBucket.set(st, (dayBucket.get(st) ?? 0) + 1);
+    }
+
+    return {
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...tooltipStyle },
+      grid: chartGrid,
+      xAxis: makeXAxis(days),
+      yAxis: makeYAxis(),
+      series: statusConfig.map((s) => ({
+        name: s.label,
+        type: 'bar' as const,
+        stack: 'total',
+        barMaxWidth: 12,
+        data: days.map((d) => buckets.get(d)?.get(s.key) ?? 0),
+        itemStyle: { color: s.color },
+      })),
+    };
+  });
+
+  // ── Chart 4: Success Rate ──────────────────────────────────────────
+  let successRateOption = $derived.by((): EChartsOption | null => {
+    if (runs.length === 0) return null;
+
+    const days = getLast14Days();
+    const succeededMap = new Map<string, number>();
+    const totalMap = new Map<string, number>();
+    for (const d of days) {
+      succeededMap.set(d, 0);
+      totalMap.set(d, 0);
+    }
+
+    for (const run of runs) {
+      const dateStr = (run.createdAt ?? run.startedAt ?? run.date ?? '').slice(0, 10);
+      if (!totalMap.has(dateStr)) continue;
+      totalMap.set(dateStr, (totalMap.get(dateStr) ?? 0) + 1);
+      if (run.status === 'succeeded') {
+        succeededMap.set(dateStr, (succeededMap.get(dateStr) ?? 0) + 1);
       }
     }
 
@@ -214,118 +274,33 @@
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        backgroundColor: 'rgba(0,0,0,0.85)',
-        borderColor: 'rgba(255,255,255,0.1)',
-        textStyle: { color: '#fff', fontSize: 11 },
+        ...tooltipStyle,
+        formatter: (params: any) => {
+          const p = Array.isArray(params) ? params[0] : params;
+          const idx = p.dataIndex;
+          const day = days[idx];
+          const total = totalMap.get(day) ?? 0;
+          const rate = total > 0 ? Math.round(((succeededMap.get(day) ?? 0) / total) * 100) : 0;
+          return `${day}<br/>Rate: ${total > 0 ? rate + '%' : 'N/A'} (${succeededMap.get(day) ?? 0}/${total})`;
+        },
       },
-      grid: { left: 80, right: 24, top: 8, bottom: 8 },
-      xAxis: {
-        type: 'value',
-        minInterval: 1,
-        splitLine: { lineStyle: { color: '#27272a' } },
-        axisLabel: { color: '#71717a', fontSize: 10 },
-      },
-      yAxis: {
-        type: 'category',
-        data: statusConfig.map((s) => s.label),
-        axisLine: { show: false },
-        axisTick: { show: false },
-        axisLabel: { color: '#a1a1aa', fontSize: 11 },
-      },
+      grid: chartGrid,
+      xAxis: makeXAxis(days),
+      yAxis: { ...makeYAxis(), max: 100 },
       series: [
         {
           type: 'bar',
-          data: statusConfig.map((s) => ({
-            value: counts.get(s.key) ?? 0,
-            itemStyle: {
-              color: new echarts.graphic.LinearGradient(0, 0, 1, 0, [
-                { offset: 0, color: s.color },
-                { offset: 1, color: s.color + '99' },
-              ]),
-              borderRadius: [0, 4, 4, 0],
-            },
-          })),
-          barWidth: 14,
-        },
-      ],
-    };
-  });
-
-  // ── Chart 4: Success Rate (donut gauge) ─────────────────────────────
-  let successRateOption = $derived.by((): EChartsOption => {
-    let success = 0;
-    let failed = 0;
-
-    for (const run of runs) {
-      const status = (run.status ?? '').toLowerCase();
-      if (status === 'success' || status === 'completed' || status === 'passed') {
-        success++;
-      } else if (status === 'failed' || status === 'error' || status === 'errored') {
-        failed++;
-      }
-    }
-
-    const total = success + failed;
-    const rate = total > 0 ? Math.round((success / total) * 100) : 0;
-    const rateColor = rate >= 80 ? '#10b981' : rate >= 50 ? '#f59e0b' : '#ef4444';
-
-    return {
-      backgroundColor: 'transparent',
-      tooltip: {
-        trigger: 'item',
-        backgroundColor: 'rgba(0,0,0,0.85)',
-        borderColor: 'rgba(255,255,255,0.1)',
-        textStyle: { color: '#fff', fontSize: 11 },
-        formatter: '{b}: {c}',
-      },
-      graphic: [
-        {
-          type: 'group',
-          left: 'center',
-          top: 'center',
-          children: [
-            {
-              type: 'text',
-              style: {
-                text: total > 0 ? `${rate}%` : 'N/A',
-                fill: '#F8FAFC',
-                fontSize: 22,
-                fontWeight: 'bold' as const,
-                textAlign: 'center' as const,
-                textVerticalAlign: 'middle' as const,
-              },
-              left: 'center',
-              top: -8,
-            },
-            {
-              type: 'text',
-              style: {
-                text: total > 0 ? `${success}/${total} runs` : 'No runs',
-                fill: '#71717a',
-                fontSize: 11,
-                textAlign: 'center' as const,
-                textVerticalAlign: 'middle' as const,
-              },
-              left: 'center',
-              top: 16,
-            },
-          ],
-        },
-      ] as any,
-      series: [
-        {
-          type: 'pie',
-          radius: ['60%', '80%'],
-          avoidLabelOverlap: false,
-          label: { show: false },
-          emphasis: { scaleSize: 3 },
-          data:
-            total > 0
-              ? [
-                  { value: success, name: 'Success', itemStyle: { color: rateColor } },
-                  { value: failed, name: 'Failed', itemStyle: { color: '#ef444466' } },
-                ]
-              : [{ value: 1, name: 'No data', itemStyle: { color: '#27272a' } }],
+          barMaxWidth: 12,
+          data: days.map((d) => {
+            const total = totalMap.get(d) ?? 0;
+            if (total === 0) {
+              return { value: 5, itemStyle: { color: '#27272a' } };
+            }
+            const rate = (succeededMap.get(d) ?? 0) / total;
+            const pct = Math.round(rate * 100);
+            const color = rate >= 0.8 ? '#10b981' : rate >= 0.5 ? '#eab308' : '#ef4444';
+            return { value: pct, itemStyle: { color } };
+          }),
         },
       ],
     };
@@ -333,58 +308,90 @@
 </script>
 
 {#if loading}
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
     {#each Array(4) as _}
-      <div class="rounded-xl border border-border bg-card p-4">
-        <div class="mb-3 h-4 w-28 animate-pulse rounded bg-accent/75"></div>
-        <div class="h-[200px] animate-pulse rounded-lg bg-accent/40"></div>
+      <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+        <div class="h-3 w-20 animate-pulse rounded bg-accent/75"></div>
+        <div class="h-[80px] animate-pulse rounded bg-accent/40"></div>
       </div>
     {/each}
   </div>
 {:else}
-  <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-    <!-- Run Activity -->
-    <div class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Run Activity
-      </h3>
-      <BaseChart option={runActivityOption} height="200px" />
-    </div>
-
-    <!-- Issues by Priority -->
-    <div class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Issues by Priority
-      </h3>
-      {#if issues.length === 0}
-        <div class="flex h-[200px] items-center justify-center">
-          <p class="text-xs text-muted-foreground/60">No issues</p>
-        </div>
+  <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+    <!-- Chart 1: Run Activity -->
+    <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+      <div>
+        <h3 class="text-xs font-medium text-muted-foreground">Run Activity</h3>
+        <span class="text-[10px] text-muted-foreground/60">Last 14 days</span>
+      </div>
+      {#if runActivityOption}
+        <BaseChart option={runActivityOption} height="80px" />
       {:else}
-        <BaseChart option={priorityChartOption} height="200px" />
+        <div class="flex h-[80px] items-center justify-center">
+          <p class="text-[10px] text-muted-foreground/60">No runs yet</p>
+        </div>
       {/if}
     </div>
 
-    <!-- Issues by Status -->
-    <div class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Issues by Status
-      </h3>
-      {#if issues.length === 0}
-        <div class="flex h-[200px] items-center justify-center">
-          <p class="text-xs text-muted-foreground/60">No issues</p>
+    <!-- Chart 2: Issues by Priority -->
+    <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+      <div>
+        <h3 class="text-xs font-medium text-muted-foreground">Issues by Priority</h3>
+        <span class="text-[10px] text-muted-foreground/60">Last 14 days</span>
+      </div>
+      {#if priorityChartOption}
+        <BaseChart option={priorityChartOption} height="80px" />
+        <div class="flex flex-wrap gap-x-3 gap-y-1">
+          {#each priorityConfig as p}
+            <div class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full" style="background:{p.color}"></span>
+              <span class="text-[9px] text-muted-foreground">{p.label}</span>
+            </div>
+          {/each}
         </div>
       {:else}
-        <BaseChart option={statusChartOption} height="200px" />
+        <div class="flex h-[80px] items-center justify-center">
+          <p class="text-[10px] text-muted-foreground/60">No issues</p>
+        </div>
       {/if}
     </div>
 
-    <!-- Success Rate -->
-    <div class="rounded-xl border border-border bg-card p-4 transition-colors hover:border-border">
-      <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-        Success Rate
-      </h3>
-      <BaseChart option={successRateOption} height="200px" />
+    <!-- Chart 3: Issues by Status -->
+    <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+      <div>
+        <h3 class="text-xs font-medium text-muted-foreground">Issues by Status</h3>
+        <span class="text-[10px] text-muted-foreground/60">Last 14 days</span>
+      </div>
+      {#if statusChartOption}
+        <BaseChart option={statusChartOption} height="80px" />
+        <div class="flex flex-wrap gap-x-3 gap-y-1">
+          {#each statusConfig as s}
+            <div class="flex items-center gap-1">
+              <span class="inline-block h-2 w-2 rounded-full" style="background:{s.color}"></span>
+              <span class="text-[9px] text-muted-foreground">{s.label}</span>
+            </div>
+          {/each}
+        </div>
+      {:else}
+        <div class="flex h-[80px] items-center justify-center">
+          <p class="text-[10px] text-muted-foreground/60">No issues</p>
+        </div>
+      {/if}
+    </div>
+
+    <!-- Chart 4: Success Rate -->
+    <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+      <div>
+        <h3 class="text-xs font-medium text-muted-foreground">Success Rate</h3>
+        <span class="text-[10px] text-muted-foreground/60">Last 14 days</span>
+      </div>
+      {#if successRateOption}
+        <BaseChart option={successRateOption} height="80px" />
+      {:else}
+        <div class="flex h-[80px] items-center justify-center">
+          <p class="text-[10px] text-muted-foreground/60">No runs yet</p>
+        </div>
+      {/if}
     </div>
   </div>
 {/if}

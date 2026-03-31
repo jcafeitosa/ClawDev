@@ -5,6 +5,7 @@ import {
   agents,
   companies,
   createDb,
+  heartbeatRuns,
   issueComments,
   issueInboxArchives,
   issues,
@@ -39,6 +40,7 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
     await db.delete(issueComments);
     await db.delete(issueInboxArchives);
     await db.delete(activityLog);
+    await db.delete(heartbeatRuns);
     await db.delete(issues);
     await db.delete(agents);
     await db.delete(companies);
@@ -312,5 +314,60 @@ describeEmbeddedPostgres("issueService.list participantAgentId", () => {
       archivedIssueId,
       resurfacedIssueId,
     ]));
+  });
+
+  it("clears execution lock metadata when an in-progress issue is marked done", async () => {
+    const companyId = randomUUID();
+    const agentId = randomUUID();
+    const runId = randomUUID();
+    const issueId = randomUUID();
+
+    await db.insert(companies).values({
+      id: companyId,
+      name: "ClawDev",
+      issuePrefix: `T${companyId.replace(/-/g, "").slice(0, 6).toUpperCase()}`,
+      requireBoardApprovalForNewAgents: false,
+    });
+
+    await db.insert(agents).values({
+      id: agentId,
+      companyId,
+      name: "CodexCoder",
+      role: "engineer",
+      status: "active",
+      adapterType: "codex_local",
+      adapterConfig: {},
+      runtimeConfig: {},
+      permissions: {},
+    });
+
+    await db.insert(heartbeatRuns).values({
+      id: runId,
+      companyId,
+      agentId,
+      status: "succeeded",
+      invocationSource: "assignment",
+    });
+
+    await db.insert(issues).values({
+      id: issueId,
+      companyId,
+      title: "In-progress issue with execution lock",
+      status: "in_progress",
+      priority: "medium",
+      assigneeAgentId: agentId,
+      checkoutRunId: runId,
+      executionRunId: runId,
+      executionLockedAt: new Date("2026-03-30T00:00:00.000Z"),
+      createdByAgentId: agentId,
+    });
+
+    const updated = await svc.update(issueId, { status: "done" });
+
+    expect(updated).toBeTruthy();
+    expect(updated?.status).toBe("done");
+    expect(updated?.checkoutRunId).toBeNull();
+    expect(updated?.executionRunId).toBeNull();
+    expect(updated?.executionLockedAt).toBeNull();
   });
 });

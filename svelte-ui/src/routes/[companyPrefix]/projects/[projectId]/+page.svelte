@@ -13,6 +13,22 @@
   // ---------------------------------------------------------------------------
   // Types
   // ---------------------------------------------------------------------------
+  interface ProjectExecutionWorkspacePolicy {
+    enabled: boolean;
+    defaultMode?: "shared_workspace" | "isolated_workspace" | "operator_branch" | "adapter_default" | null;
+    allowIssueOverride?: boolean;
+    defaultProjectWorkspaceId?: string | null;
+    workspaceStrategy?: {
+      type?: "project_primary" | "git_worktree" | "adapter_managed" | "cloud_sandbox";
+      baseRef?: string | null;
+      branchTemplate?: string | null;
+      worktreeParentDir?: string | null;
+      provisionCommand?: string | null;
+      teardownCommand?: string | null;
+    } | null;
+    [key: string]: unknown;
+  }
+
   interface Project {
     id: string;
     name: string;
@@ -24,6 +40,14 @@
     goalIds?: string[];
     targetDate?: string | null;
     archivedAt?: string | null;
+    executionWorkspacePolicy?: ProjectExecutionWorkspacePolicy | null;
+    codebase?: {
+      repoUrl?: string | null;
+      localFolder?: string | null;
+      effectiveLocalFolder?: string;
+      origin?: "local_folder" | "managed_checkout";
+    };
+    primaryWorkspace?: Workspace | null;
     createdAt?: string;
     updatedAt?: string;
     [key: string]: unknown;
@@ -52,6 +76,9 @@
     id: string;
     name?: string;
     cwd?: string;
+    repoUrl?: string | null;
+    repoRef?: string | null;
+    sourceType?: string;
     isPrimary?: boolean;
     [key: string]: unknown;
   }
@@ -59,7 +86,8 @@
   // ---------------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------------
-  const PROJECT_STATUSES = ["backlog", "active", "paused", "completed", "archived"];
+  const PROJECT_STATUSES = ["backlog", "planned", "in_progress", "completed", "cancelled"];
+  const EXECUTION_WORKSPACE_DEFAULT_MODES = ["shared_workspace", "isolated_workspace", "operator_branch", "adapter_default"];
 
   // ---------------------------------------------------------------------------
   // State
@@ -67,10 +95,13 @@
   let project = $state<Project | null>(null);
   let issues = $state<Issue[]>([]);
   let goals = $state<Goal[]>([]);
+  let allGoals = $state<Goal[]>([]);
   let workspaces = $state<Workspace[]>([]);
   let loading = $state(true);
   let notFound = $state(false);
   let activeTab = $state("issues");
+  let workspacesLoading = $state(false);
+  let workspacesLoadError = $state<string | null>(null);
 
   // Edit form state
   let editing = $state(false);
@@ -87,7 +118,32 @@
   let showCreateWorkspace = $state(false);
   let newWsName = $state("");
   let newWsCwd = $state("");
+  let newWsRepoUrl = $state("");
+  let newWsPrimary = $state(false);
   let creatingWorkspace = $state(false);
+  let editingWorkspaceId = $state<string | null>(null);
+  let editWsName = $state("");
+  let editWsCwd = $state("");
+  let editWsRepoUrl = $state("");
+  let editWsPrimary = $state(false);
+  let savingWorkspaceId = $state<string | null>(null);
+  let deletingWorkspaceId = $state<string | null>(null);
+
+  // Settings tab state
+  let settingsDescription = $state("");
+  let settingsStatus = $state("backlog");
+  let settingsTargetDate = $state("");
+  let settingsGoalToAdd = $state("");
+  let settingsRepoUrl = $state("");
+  let settingsLocalFolder = $state("");
+  let policyEnabled = $state(false);
+  let policyDefaultMode = $state("shared_workspace");
+  let policyBaseRef = $state("");
+  let policyBranchTemplate = $state("");
+  let policyWorktreeParentDir = $state("");
+  let policyProvisionCommand = $state("");
+  let policyTeardownCommand = $state("");
+  let savingSettings = $state(false);
 
   // ---------------------------------------------------------------------------
   // Derived
@@ -137,32 +193,54 @@
     if (!companyId) return;
     try {
       const res = await api(`/api/companies/${companyId}/goals`);
-      const allGoals = res.ok ? ((await res.json()) as Goal[]) ?? [] : [];
+      allGoals = res.ok ? ((await res.json()) as Goal[]) ?? [] : [];
       const projectGoalIds = new Set([
         ...(project?.goalIds ?? []),
         ...(project?.goalId ? [project.goalId] : []),
       ]);
       goals = projectGoalIds.size > 0 ? allGoals.filter((g) => projectGoalIds.has(g.id)) : [];
     } catch {
+      allGoals = [];
       goals = [];
     }
   }
 
   async function loadWorkspaces() {
     if (!projectId) return;
+    workspacesLoading = true;
+    workspacesLoadError = null;
     try {
       const res = await api(`/api/projects/${projectId}/workspaces`);
-      workspaces = res.ok ? ((await res.json()) as Workspace[]) ?? [] : [];
+      if (!res.ok) throw new Error(await res.text());
+      workspaces = ((await res.json()) as Workspace[]) ?? [];
     } catch {
       workspaces = [];
+      workspacesLoadError = "Failed to load workspaces";
+    } finally {
+      workspacesLoading = false;
     }
   }
 
   onMount(async () => {
     await loadProject();
-    loadIssues();
-    loadGoals();
-    loadWorkspaces();
+    await Promise.all([loadIssues(), loadGoals(), loadWorkspaces()]);
+  });
+
+  $effect(() => {
+    if (!project) return;
+    settingsDescription = project.description ?? "";
+    settingsStatus = project.status ?? "backlog";
+    settingsTargetDate = project.targetDate ? project.targetDate.slice(0, 10) : "";
+    settingsRepoUrl = project.codebase?.repoUrl ?? "";
+    settingsLocalFolder = project.codebase?.localFolder ?? "";
+    const policy = project.executionWorkspacePolicy;
+    policyEnabled = policy?.enabled === true;
+    policyDefaultMode = policy?.defaultMode ?? "shared_workspace";
+    policyBaseRef = policy?.workspaceStrategy?.baseRef ?? "";
+    policyBranchTemplate = policy?.workspaceStrategy?.branchTemplate ?? "";
+    policyWorktreeParentDir = policy?.workspaceStrategy?.worktreeParentDir ?? "";
+    policyProvisionCommand = policy?.workspaceStrategy?.provisionCommand ?? "";
+    policyTeardownCommand = policy?.workspaceStrategy?.teardownCommand ?? "";
   });
 
   // ---------------------------------------------------------------------------
@@ -229,24 +307,199 @@
   }
 
   async function createWorkspace() {
-    if (!newWsName.trim()) return;
+    if (!newWsName.trim() || (!newWsCwd.trim() && !newWsRepoUrl.trim())) return;
     creatingWorkspace = true;
     try {
+      const body: Record<string, unknown> = {
+        name: newWsName.trim(),
+        isPrimary: newWsPrimary,
+      };
+      if (newWsCwd.trim()) body.cwd = newWsCwd.trim();
+      if (newWsRepoUrl.trim()) body.repoUrl = newWsRepoUrl.trim();
       const res = await api(`/api/projects/${projectId}/workspaces`, {
         method: "POST",
-        body: JSON.stringify({ name: newWsName.trim(), cwd: newWsCwd.trim() || undefined }),
+        body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Workspace created", tone: "success" });
       showCreateWorkspace = false;
       newWsName = "";
       newWsCwd = "";
+      newWsRepoUrl = "";
+      newWsPrimary = false;
       await loadWorkspaces();
+      await loadProject();
     } catch (err: any) {
       toastStore.push({ title: "Failed to create workspace", body: err?.message, tone: "error" });
     } finally {
       creatingWorkspace = false;
     }
+  }
+
+  function startWorkspaceEdit(ws: Workspace) {
+    editingWorkspaceId = ws.id;
+    editWsName = ws.name ?? "";
+    editWsCwd = ws.cwd ?? "";
+    editWsRepoUrl = ws.repoUrl ?? "";
+    editWsPrimary = ws.isPrimary === true;
+  }
+
+  function cancelWorkspaceEdit() {
+    editingWorkspaceId = null;
+    editWsName = "";
+    editWsCwd = "";
+    editWsRepoUrl = "";
+    editWsPrimary = false;
+  }
+
+  async function saveWorkspaceEdit(workspaceId: string) {
+    if (!editWsName.trim() || (!editWsCwd.trim() && !editWsRepoUrl.trim())) return;
+    savingWorkspaceId = workspaceId;
+    try {
+      const body: Record<string, unknown> = {
+        name: editWsName.trim(),
+        isPrimary: editWsPrimary,
+      };
+      if (editWsCwd.trim()) body.cwd = editWsCwd.trim();
+      if (editWsRepoUrl.trim()) body.repoUrl = editWsRepoUrl.trim();
+      const res = await api(`/api/projects/${projectId}/workspaces/${workspaceId}`, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Workspace updated", tone: "success" });
+      cancelWorkspaceEdit();
+      await loadWorkspaces();
+      await loadProject();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to update workspace", body: err?.message, tone: "error" });
+    } finally {
+      savingWorkspaceId = null;
+    }
+  }
+
+  async function makeWorkspacePrimary(workspaceId: string) {
+    savingWorkspaceId = workspaceId;
+    try {
+      const res = await api(`/api/projects/${projectId}/workspaces/${workspaceId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ isPrimary: true }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Primary workspace updated", tone: "success" });
+      await loadWorkspaces();
+      await loadProject();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to set primary workspace", body: err?.message, tone: "error" });
+    } finally {
+      savingWorkspaceId = null;
+    }
+  }
+
+  async function deleteWorkspace(workspaceId: string) {
+    if (!confirm("Delete this workspace?")) return;
+    deletingWorkspaceId = workspaceId;
+    try {
+      const res = await api(`/api/projects/${projectId}/workspaces/${workspaceId}`, { method: "DELETE" });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Workspace deleted", tone: "success" });
+      if (editingWorkspaceId === workspaceId) cancelWorkspaceEdit();
+      await loadWorkspaces();
+      await loadProject();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to delete workspace", body: err?.message, tone: "error" });
+    } finally {
+      deletingWorkspaceId = null;
+    }
+  }
+
+  async function upsertPrimaryWorkspaceFromCodebase() {
+    const primary = project?.primaryWorkspace;
+    const cwd = settingsLocalFolder.trim();
+    const repoUrl = settingsRepoUrl.trim();
+    if (!cwd && !repoUrl) {
+      if (primary?.id) {
+        const res = await api(`/api/projects/${projectId}/workspaces/${primary.id}`, { method: "DELETE" });
+        if (!res.ok) throw new Error(await res.text());
+      }
+      return;
+    }
+    const payload: Record<string, unknown> = {
+      name: primary?.name ?? project?.name ?? "Workspace",
+      isPrimary: true,
+      cwd: cwd || null,
+      repoUrl: repoUrl || null,
+    };
+    if (primary?.id) {
+      const res = await api(`/api/projects/${projectId}/workspaces/${primary.id}`, {
+        method: "PATCH",
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      return;
+    }
+    const res = await api(`/api/projects/${projectId}/workspaces`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+  }
+
+  async function saveSettings() {
+    if (!project) return;
+    savingSettings = true;
+    try {
+      const nextGoalIds = Array.from(new Set(goals.map((g) => g.id)));
+      const projectBody: Record<string, unknown> = {
+        description: settingsDescription.trim() || null,
+        status: settingsStatus,
+        targetDate: settingsTargetDate ? new Date(settingsTargetDate).toISOString() : null,
+        goalIds: nextGoalIds,
+        executionWorkspacePolicy: {
+          enabled: policyEnabled,
+          defaultMode: policyDefaultMode,
+          allowIssueOverride: true,
+          defaultProjectWorkspaceId:
+            (project.executionWorkspacePolicy?.defaultProjectWorkspaceId as string | null | undefined) ??
+            project.primaryWorkspace?.id ??
+            null,
+          workspaceStrategy: {
+            type: "git_worktree",
+            baseRef: policyBaseRef.trim() || null,
+            branchTemplate: policyBranchTemplate.trim() || null,
+            worktreeParentDir: policyWorktreeParentDir.trim() || null,
+            provisionCommand: policyProvisionCommand.trim() || null,
+            teardownCommand: policyTeardownCommand.trim() || null,
+          },
+        },
+      };
+      const projectRes = await api(`/api/projects/${projectId}`, {
+        method: "PATCH",
+        body: JSON.stringify(projectBody),
+      });
+      if (!projectRes.ok) throw new Error(await projectRes.text());
+      await upsertPrimaryWorkspaceFromCodebase();
+      toastStore.push({ title: "Project settings updated", tone: "success" });
+      await loadProject();
+      await Promise.all([loadGoals(), loadWorkspaces()]);
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to save settings", body: err?.message, tone: "error" });
+    } finally {
+      savingSettings = false;
+    }
+  }
+
+  function unlinkGoal(goalId: string) {
+    goals = goals.filter((g) => g.id !== goalId);
+  }
+
+  function linkGoal(goalId: string) {
+    const existing = new Set(goals.map((g) => g.id));
+    if (existing.has(goalId)) return;
+    const goal = allGoals.find((g) => g.id === goalId);
+    if (!goal) return;
+    goals = [...goals, goal];
+    settingsGoalToAdd = "";
   }
 
   // ---------------------------------------------------------------------------
@@ -373,6 +626,7 @@
             <TabsTrigger value="issues">Issues ({issues.length})</TabsTrigger>
             <TabsTrigger value="goals">Goals ({goals.length})</TabsTrigger>
             <TabsTrigger value="workspaces">Workspaces ({workspaces.length})</TabsTrigger>
+            <TabsTrigger value="settings">Settings</TabsTrigger>
           </TabsList>
 
           <TabsContent value="issues">
@@ -468,8 +722,26 @@
                             class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm font-mono text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </div>
+                        <div>
+                          <label for="ws-repo-url" class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
+                          <input
+                            id="ws-repo-url"
+                            type="text"
+                            bind:value={newWsRepoUrl}
+                            placeholder="https://github.com/org/repo"
+                            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </div>
+                        <label class="flex items-center gap-2 text-xs text-zinc-400">
+                          <input type="checkbox" bind:checked={newWsPrimary} />
+                          Set as primary workspace
+                        </label>
                         <div class="flex items-center gap-2">
-                          <Button size="sm" onclick={createWorkspace} disabled={creatingWorkspace || !newWsName.trim()}>
+                          <Button
+                            size="sm"
+                            onclick={createWorkspace}
+                            disabled={creatingWorkspace || !newWsName.trim() || (!newWsCwd.trim() && !newWsRepoUrl.trim())}
+                          >
                             {creatingWorkspace ? "Creating..." : "Create"}
                           </Button>
                           <Button variant="ghost" size="sm" onclick={() => (showCreateWorkspace = false)} disabled={creatingWorkspace}>
@@ -487,27 +759,265 @@
                 {/if}
               </div>
 
-              {#if workspaces.length === 0 && !showCreateWorkspace}
+              {#if workspacesLoading}
+                <PageSkeleton lines={4} />
+              {:else if workspacesLoadError}
+                <EmptyState title="Workspace load failed" description={workspacesLoadError} icon="⚠️" />
+              {:else if workspaces.length === 0 && !showCreateWorkspace}
                 <EmptyState title="No workspaces" description="No execution workspaces configured for this project." icon="🗂" />
               {:else if workspaces.length > 0}
                 <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
                   {#each workspaces as ws}
-                    <div class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                      <div class="min-w-0">
-                        <div class="flex items-center gap-2">
-                          <p class="font-medium truncate">{ws.name ?? "Workspace"}</p>
-                          {#if ws.isPrimary}
-                            <Badge variant="outline" class="text-xs">Primary</Badge>
-                          {/if}
+                    <div class="p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                      {#if editingWorkspaceId === ws.id}
+                        <div class="space-y-3">
+                          <div>
+                            <label class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+                            <input
+                              type="text"
+                              bind:value={editWsName}
+                              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                          </div>
+                          <div>
+                            <label class="block text-xs font-medium text-zinc-400 mb-1">CWD</label>
+                            <input
+                              type="text"
+                              bind:value={editWsCwd}
+                              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm font-mono text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                          </div>
+                          <div>
+                            <label class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
+                            <input
+                              type="text"
+                              bind:value={editWsRepoUrl}
+                              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                          </div>
+                          <label class="flex items-center gap-2 text-xs text-zinc-400">
+                            <input type="checkbox" bind:checked={editWsPrimary} />
+                            Primary workspace
+                          </label>
+                          <div class="flex items-center gap-2">
+                            <Button
+                              size="sm"
+                              onclick={() => saveWorkspaceEdit(ws.id)}
+                              disabled={savingWorkspaceId === ws.id || !editWsName.trim() || (!editWsCwd.trim() && !editWsRepoUrl.trim())}
+                            >
+                              {savingWorkspaceId === ws.id ? "Saving..." : "Save"}
+                            </Button>
+                            <Button variant="ghost" size="sm" onclick={cancelWorkspaceEdit} disabled={savingWorkspaceId === ws.id}>
+                              Cancel
+                            </Button>
+                          </div>
                         </div>
-                        {#if ws.cwd}
-                          <p class="text-xs font-mono text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">{ws.cwd}</p>
-                        {/if}
-                      </div>
+                      {:else}
+                        <div class="flex items-center justify-between gap-3">
+                          <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                              <p class="font-medium truncate">{ws.name ?? "Workspace"}</p>
+                              {#if ws.isPrimary}
+                                <Badge variant="outline" class="text-xs">Primary</Badge>
+                              {/if}
+                              {#if ws.sourceType}
+                                <Badge variant="secondary" class="text-xs">{ws.sourceType}</Badge>
+                              {/if}
+                            </div>
+                            {#if ws.cwd}
+                              <p class="text-xs font-mono text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">{ws.cwd}</p>
+                            {/if}
+                            {#if ws.repoUrl}
+                              <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">{ws.repoUrl}</p>
+                            {/if}
+                          </div>
+                          <div class="flex items-center gap-2 shrink-0">
+                            {#if !ws.isPrimary}
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onclick={() => makeWorkspacePrimary(ws.id)}
+                                disabled={savingWorkspaceId === ws.id}
+                              >
+                                Set Primary
+                              </Button>
+                            {/if}
+                            <Button variant="outline" size="sm" onclick={() => startWorkspaceEdit(ws)}>
+                              <Pencil class="size-3.5 mr-1.5" />
+                              Edit
+                            </Button>
+                            <Button
+                              variant="destructive"
+                              size="sm"
+                              onclick={() => deleteWorkspace(ws.id)}
+                              disabled={deletingWorkspaceId === ws.id}
+                            >
+                              <Trash2 class="size-3.5 mr-1.5" />
+                              {deletingWorkspaceId === ws.id ? "Deleting..." : "Delete"}
+                            </Button>
+                          </div>
+                        </div>
+                      {/if}
                     </div>
                   {/each}
                 </div>
               {/if}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="settings">
+            <div class="mt-4 space-y-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle class="text-base">Project Settings</CardTitle>
+                </CardHeader>
+                <CardContent class="space-y-4">
+                  <div>
+                    <label class="block text-xs font-medium text-zinc-400 mb-1">Description</label>
+                    <textarea
+                      bind:value={settingsDescription}
+                      rows="3"
+                      class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    ></textarea>
+                  </div>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+                      <select
+                        bind:value={settingsStatus}
+                        class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      >
+                        {#each PROJECT_STATUSES as s}
+                          <option value={s}>{s}</option>
+                        {/each}
+                      </select>
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1">Target Date</label>
+                      <input
+                        type="date"
+                        bind:value={settingsTargetDate}
+                        class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle class="text-base">Codebase</CardTitle>
+                </CardHeader>
+                <CardContent class="space-y-3">
+                  <div>
+                    <label class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
+                    <input
+                      type="text"
+                      bind:value={settingsRepoUrl}
+                      placeholder="https://github.com/org/repo"
+                      class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-zinc-400 mb-1">Local Folder</label>
+                    <input
+                      type="text"
+                      bind:value={settingsLocalFolder}
+                      placeholder="/absolute/path/to/workspace"
+                      class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm font-mono text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    />
+                    {#if project.codebase?.effectiveLocalFolder}
+                      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Effective folder: {project.codebase.effectiveLocalFolder}</p>
+                    {/if}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle class="text-base">Goals</CardTitle>
+                </CardHeader>
+                <CardContent class="space-y-3">
+                  {#if goals.length > 0}
+                    <div class="flex flex-wrap gap-2">
+                      {#each goals as goal}
+                        <span class="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2 py-1 text-xs">
+                          <a href="/{prefix}/goals/{goal.id}" class="hover:underline">{goal.title}</a>
+                          <button class="text-zinc-400 hover:text-zinc-100" onclick={() => unlinkGoal(goal.id)} aria-label="Remove goal">
+                            <X class="size-3" />
+                          </button>
+                        </span>
+                      {/each}
+                    </div>
+                  {:else}
+                    <p class="text-xs text-zinc-500 dark:text-zinc-400">No linked goals.</p>
+                  {/if}
+                  <div class="flex gap-2">
+                    <select
+                      bind:value={settingsGoalToAdd}
+                      class="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      <option value="">Select a goal</option>
+                      {#each allGoals.filter((g) => !goals.some((x) => x.id === g.id)) as g}
+                        <option value={g.id}>{g.title}</option>
+                      {/each}
+                    </select>
+                    <Button variant="outline" size="sm" onclick={() => linkGoal(settingsGoalToAdd)} disabled={!settingsGoalToAdd}>
+                      Add Goal
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle class="text-base">Execution Workspace Policy</CardTitle>
+                </CardHeader>
+                <CardContent class="space-y-3">
+                  <label class="flex items-center gap-2 text-sm">
+                    <input type="checkbox" bind:checked={policyEnabled} />
+                    Enable isolated execution workspaces
+                  </label>
+                  <div>
+                    <label class="block text-xs font-medium text-zinc-400 mb-1">Default Mode</label>
+                    <select
+                      bind:value={policyDefaultMode}
+                      class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                    >
+                      {#each EXECUTION_WORKSPACE_DEFAULT_MODES as mode}
+                        <option value={mode}>{mode}</option>
+                      {/each}
+                    </select>
+                  </div>
+                  <div class="grid gap-3 sm:grid-cols-2">
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1">Base Ref</label>
+                      <input type="text" bind:value={policyBaseRef} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1">Branch Template</label>
+                      <input type="text" bind:value={policyBranchTemplate} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    </div>
+                    <div>
+                      <label class="block text-xs font-medium text-zinc-400 mb-1">Worktree Parent Dir</label>
+                      <input type="text" bind:value={policyWorktreeParentDir} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-zinc-400 mb-1">Provision Command</label>
+                    <input type="text" bind:value={policyProvisionCommand} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                  </div>
+                  <div>
+                    <label class="block text-xs font-medium text-zinc-400 mb-1">Teardown Command</label>
+                    <input type="text" bind:value={policyTeardownCommand} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <Button size="sm" onclick={saveSettings} disabled={savingSettings}>
+                      {savingSettings ? "Saving..." : "Save Settings"}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
             </div>
           </TabsContent>
         </Tabs>

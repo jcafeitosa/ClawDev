@@ -2,6 +2,7 @@ import type { AdapterModel, AdapterModelStatus } from "./types.js";
 import { models as codexFallbackModels } from "@clawdev/adapter-codex-local";
 import { codexHomeDir } from "@clawdev/adapter-codex-local/server";
 import { readConfigFile } from "../config-file.js";
+import { runChildProcess } from "@clawdev/adapter-utils/server-utils";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -95,6 +96,93 @@ async function fetchOpenAiModels(apiKey: string): Promise<FetchResult> {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+// ── Per-model probing via codex CLI ──────────────────────────────────────────
+
+interface ProbeResult {
+  status: AdapterModelStatus;
+  statusDetail: string;
+}
+
+const CODEX_PROBE_TIMEOUT_SEC = 15;
+
+async function probeCodexModel(modelId: string): Promise<ProbeResult> {
+  try {
+    const proc = await runChildProcess(
+      `codex-probe-${modelId}-${Date.now()}`,
+      "codex",
+      ["exec", "--json", "--model", modelId, "--full-auto", "-"],
+      {
+        cwd: process.cwd(),
+        env: {},
+        stdin: "hi",
+        timeoutSec: CODEX_PROBE_TIMEOUT_SEC,
+        graceSec: 2,
+        onLog: async () => {},
+      },
+    );
+    const combined = proc.stderr + proc.stdout;
+    if (combined.includes("no quota") || combined.includes("\"status\":402")) {
+      return { status: "quota_exceeded", statusDetail: "Quota exceeded" };
+    }
+    if (combined.includes("\"status\":401") || combined.includes("status_code\":401") || combined.includes("Unauthorized")) {
+      return { status: "auth_required", statusDetail: "Auth required" };
+    }
+    // "model is not supported" = model not available on this account type
+    if (combined.includes("not supported") || combined.includes("not available") || combined.includes("not found") || combined.includes("404")) {
+      return { status: "unavailable", statusDetail: "Model not supported on this account" };
+    }
+
+    // Check for successful response indicators
+    const hasResponse =
+      combined.includes("item.completed") ||
+      combined.includes("turn.completed") ||
+      combined.includes("assistant.") ||
+      combined.includes('"type":"item.completed"');
+
+    if (hasResponse) {
+      return { status: "available", statusDetail: "Probe succeeded" };
+    }
+
+    // Exit code 0 without errors is also a success
+    if ((proc.exitCode ?? 1) === 0) {
+      return { status: "available", statusDetail: "Probe succeeded" };
+    }
+
+    return { status: "unknown", statusDetail: combined.trim().slice(0, 200) || `exit code ${proc.exitCode}` };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes("timeout") || message.includes("TIMEOUT") || message.includes("timed out")) {
+      return { status: "unknown", statusDetail: `Probe timed out: ${message}` };
+    }
+    return { status: "unknown", statusDetail: message.slice(0, 200) };
+  }
+}
+
+/**
+ * Probe a batch of models in parallel, returning a map from model ID to probe result.
+ * Limited concurrency to avoid overwhelming the system.
+ */
+async function probeCodexModels(modelIds: string[]): Promise<Map<string, ProbeResult>> {
+  const results = new Map<string, ProbeResult>();
+  // Probe up to 5 models in parallel
+  const CONCURRENCY = 5;
+  for (let i = 0; i < modelIds.length; i += CONCURRENCY) {
+    const batch = modelIds.slice(i, i + CONCURRENCY);
+    const settled = await Promise.allSettled(
+      batch.map(async (id) => {
+        const result = await probeCodexModel(id);
+        return { id, result };
+      }),
+    );
+    for (const entry of settled) {
+      if (entry.status === "fulfilled") {
+        results.set(entry.value.id, entry.value.result);
+      }
+    }
+  }
+  return results;
 }
 
 interface CodexModelsCacheEntry {
@@ -193,7 +281,40 @@ export async function listCodexModels(): Promise<AdapterModel[]> {
   }
 
   if (!apiKey) {
-    // No API key — return fallback models with auth_required status
+    // No API key — user may still be authenticated via `codex auth` (ChatGPT account).
+    // If we have a models_cache.json, probe those models via the CLI.
+    const cachedVisible = cacheEntries.filter((e) => e.visibility !== "hide");
+    if (cachedVisible.length > 0) {
+      const fallback = applyCache(
+        dedupeModels(codexFallbackModels).map((m) => ({
+          ...m,
+          provider: "openai",
+          status: "available" as AdapterModelStatus,
+          probedAt,
+        })),
+      );
+
+      // Probe only models from the cache (which the CLI knows about)
+      const cachedSlugs = new Set(cachedVisible.map((e) => e.slug.trim()));
+      const modelsToProbe = fallback.filter((m) => cachedSlugs.has(m.id)).map((m) => m.id);
+
+      if (modelsToProbe.length > 0) {
+        const probeResults = await probeCodexModels(modelsToProbe);
+        return fallback.map((m) => {
+          const probe = probeResults.get(m.id);
+          if (probe) {
+            return { ...m, status: probe.status, statusDetail: probe.statusDetail, probedAt: new Date().toISOString() };
+          }
+          // Not in cache = not available on this account
+          if (!cachedSlugs.has(m.id)) {
+            return { ...m, status: "unavailable" as AdapterModelStatus, statusDetail: "Model not available on this account", probedAt: new Date().toISOString() };
+          }
+          return m;
+        });
+      }
+    }
+
+    // No cache and no API key — truly auth_required
     const fallback = dedupeModels(codexFallbackModels).map((m) => ({
       ...m,
       provider: "openai",
@@ -214,12 +335,37 @@ export async function listCodexModels(): Promise<AdapterModel[]> {
   if (result.models.length > 0) {
     const merged = mergedWithFallback(result.models);
     const final = applyCache(merged);
+
+    // Only probe models from the local models_cache (which reflects the user's
+    // actual account capabilities). Models only in the API list but not in the
+    // cache are likely not supported on this account type (e.g. ChatGPT vs API).
+    const cachedSlugs = new Set(
+      cacheEntries.filter((e) => e.visibility !== "hide").map((e) => e.slug.trim()),
+    );
+    const modelsToProbe = cachedSlugs.size > 0
+      ? final.filter((m) => cachedSlugs.has(m.id)).map((m) => m.id)
+      : final.slice(0, 5).map((m) => m.id); // Fallback: probe first 5 as sample
+
+    const probeResults = await probeCodexModels(modelsToProbe);
+    const probedFinal = final.map((m) => {
+      const probe = probeResults.get(m.id);
+      if (probe) {
+        return { ...m, status: probe.status, statusDetail: probe.statusDetail, probedAt: new Date().toISOString() };
+      }
+      // Models not probed: if they're in the cache, assume available;
+      // if they're only from API and not in cache, mark as unavailable
+      if (cachedSlugs.size > 0 && !cachedSlugs.has(m.id)) {
+        return { ...m, status: "unavailable" as AdapterModelStatus, statusDetail: "Model not available on this account", probedAt: new Date().toISOString() };
+      }
+      return m;
+    });
+
     cached = {
       keyFingerprint,
       expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS,
-      models: final,
+      models: probedFinal,
     };
-    return final;
+    return probedFinal;
   }
 
   // Fetch returned no models — annotate fallback with the probe status

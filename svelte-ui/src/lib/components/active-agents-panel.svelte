@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
-  import { Copy, ChevronRight, ExternalLink } from 'lucide-svelte';
+  import { ExternalLink, ChevronRight } from 'lucide-svelte';
 
   // ---------------------------------------------------------------------------
   // Props
@@ -21,12 +21,6 @@
   let now = $state(Date.now());
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
   let tickInterval: ReturnType<typeof setInterval> | undefined;
-
-  /** Track which expandable sections are open per run, keyed by `${runId}:${section}` */
-  let expandedSections = $state<Set<string>>(new Set());
-
-  /** Track copied run IDs for brief feedback */
-  let copiedRunId = $state<string | null>(null);
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -79,7 +73,7 @@
   }
 
   function isFailed(run: any): boolean {
-    return run.status === 'failed' || run.status === 'error';
+    return run.status === 'error' || run.status === 'failed' || run.exitCode > 0;
   }
 
   function getAgentName(run: any): string {
@@ -90,17 +84,6 @@
     const parts = name.trim().split(/\s+/);
     if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
     return name.slice(0, 2).toUpperCase();
-  }
-
-  /** Simple deterministic color from a string */
-  function avatarColor(name: string): string {
-    const colors = [
-      '#10b981', '#3b82f6', '#8b5cf6', '#f59e0b', '#ef4444',
-      '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#6366f1',
-    ];
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = (hash * 31 + name.charCodeAt(i)) | 0;
-    return colors[Math.abs(hash) % colors.length];
   }
 
   function formatTimeAgo(dateStr: string | null | undefined): string {
@@ -128,41 +111,39 @@
     return !!(getIssueIdentifier(run) || getIssueTitle(run));
   }
 
-  function getStdout(run: any): string {
-    return run.stdoutExcerpt ?? run.stdout ?? run.lastTranscriptLine ?? run.lastMessage ?? run.summary ?? '';
+  function cleanExcerpt(raw: string | null | undefined, maxLines = 5): string {
+    if (!raw) return '';
+    const lines = String(raw)
+      .split('\n')
+      .map(l => l.replace(/^\[clawdev\]\s*/i, '').trim())
+      .filter(l => l.length > 0 && !/^\/?Users\//.test(l) && !/^Injected\s/i.test(l) && !/^Using ClawDev-managed/i.test(l) && !/^seeded from/i.test(l));
+    return lines.slice(-maxLines).join('\n');
   }
 
-  function getErrorText(run: any): string {
-    return run.error ?? run.stderrExcerpt ?? '';
+  function getStdout(run: any): string {
+    return cleanExcerpt(run.stdoutExcerpt ?? run.lastTranscriptLine ?? run.lastMessage ?? run.summary);
+  }
+
+  function getStderr(run: any): string {
+    return cleanExcerpt(run.stderrExcerpt);
   }
 
   function getResult(run: any): string {
-    return run.result ?? run.exitCode != null ? `Exit code ${run.exitCode}` : '';
+    if (!run.result && !run.error) return '';
+    return run.error ?? run.result ?? '';
   }
 
-  function toggleSection(runId: string, section: string) {
-    const key = `${runId}:${section}`;
-    const next = new Set(expandedSections);
-    if (next.has(key)) {
-      next.delete(key);
-    } else {
-      next.add(key);
-    }
-    expandedSections = next;
-  }
+  // Track expanded stdout sections
+  let expandedStdout = $state<Set<string>>(new Set());
 
-  function isSectionOpen(runId: string, section: string): boolean {
-    return expandedSections.has(`${runId}:${section}`);
-  }
-
-  async function copyRunId(e: MouseEvent, runId: string) {
-    e.preventDefault();
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(runId);
-      copiedRunId = runId;
-      setTimeout(() => { if (copiedRunId === runId) copiedRunId = null; }, 1500);
-    } catch { /* ignore */ }
+  function statusText(run: any): string {
+    if (isActive(run)) return 'Live now';
+    if (isFailed(run)) return `Failed ${formatTimeAgo(run.finishedAt ?? run.completedAt ?? run.updatedAt)}`;
+    const ts = run.finishedAt ?? run.completedAt ?? run.updatedAt;
+    if (ts) return `Finished ${formatTimeAgo(ts)}`;
+    const started = run.startedAt ?? run.createdAt;
+    if (started) return `Started ${formatTimeAgo(started)}`;
+    return '';
   }
 
   // ---------------------------------------------------------------------------
@@ -183,162 +164,141 @@
 {#if !loading && allRuns.length > 0}
   <div class="space-y-3">
     <!-- Section header -->
-    <h3 class="text-sm font-semibold uppercase tracking-wide text-[--dash-muted]">
-      Agents
+    <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      AGENTS
     </h3>
 
-    <!-- Horizontal scroll container -->
-    <div class="flex gap-3 overflow-x-auto pb-2" style="-webkit-overflow-scrolling: touch;">
+    <!-- Responsive grid -->
+    <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 sm:gap-4 xl:grid-cols-4">
       {#each allRuns as run (run.id)}
         {@const active = isActive(run)}
-        {@const failed = isFailed(run)}
         {@const name = getAgentName(run)}
         {@const initials = getInitials(name)}
-        {@const color = avatarColor(name)}
         {@const issueId = getIssueIdentifier(run)}
         {@const issueTitle = getIssueTitle(run)}
         {@const stdout = getStdout(run)}
-        {@const errorText = getErrorText(run)}
+        {@const stderr = getStderr(run)}
         {@const result = getResult(run)}
 
         <div
-          class="agent-card flex min-w-[350px] max-w-[450px] flex-shrink-0 flex-col rounded-xl border transition-all"
-          style="
-            background-color: var(--clawdev-bg-surface, rgba(255,255,255,0.03));
-            border-color: {active ? 'rgba(16,185,129,0.35)' : 'var(--clawdev-bg-surface-border, rgba(200,200,200,0.2))'};
-            {active ? 'box-shadow: 0 0 20px rgba(16,185,129,0.06);' : ''}
-          "
+          class="flex h-[320px] flex-col overflow-hidden rounded-xl border shadow-sm {active
+            ? 'border-cyan-500/25 bg-cyan-500/[0.04] shadow-[0_16px_40px_rgba(6,182,212,0.08)]'
+            : 'border-border bg-background/70'}"
         >
-          <!-- Card header: clickable to navigate -->
-          <a
-            href="/{prefix}/runs/{run.id}"
-            class="block px-4 pt-3.5 pb-0 no-underline"
-          >
-            <!-- Row 1: Avatar + Name + Copy -->
-            <div class="flex items-center gap-2.5">
-              <!-- Avatar circle with initials -->
-              <div
-                class="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-[11px] font-bold text-white"
-                style="background-color: {color};"
+          <!-- Card header (matches Paperclip: border-b/60, items-start justify-between) -->
+          <div class="border-b border-border/60 px-3 py-3">
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <!-- Dot + avatar + name row -->
+                <div class="flex items-center gap-2">
+                  {#if active}
+                    <span class="relative flex h-2.5 w-2.5 shrink-0">
+                      <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-cyan-400 opacity-70"></span>
+                      <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-cyan-500"></span>
+                    </span>
+                  {:else}
+                    <span class="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/35"></span>
+                  {/if}
+
+                  <!-- Identity (avatar + name, gap-1.5 matching Paperclip's Identity component) -->
+                  <span class="inline-flex min-w-0 items-center gap-1.5">
+                    <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground">
+                      {initials}
+                    </span>
+                    <span class="min-w-0 truncate text-[11px]">{name}</span>
+                  </span>
+                </div>
+
+                <!-- Status text (mt-2, matches Paperclip) -->
+                <div class="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+                  <span>{isActive(run) ? 'Live now' : statusText(run)}</span>
+                </div>
+              </div>
+
+              <!-- External link pill -->
+              <a
+                href="/{prefix}/agents/{run.agentId}/runs/{run.id}"
+                class="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
+                title="View run"
               >
-                {initials}
-              </div>
-
-              <div class="min-w-0 flex-1">
-                <span class="truncate text-sm font-medium text-[--dash-text]">{name}</span>
-              </div>
-
-              <!-- Open run detail -->
-              <span class="shrink-0 rounded p-1 text-[--dash-muted]" title="View run details">
-                <ExternalLink size={12} />
-              </span>
+                <ExternalLink size={10} />
+              </a>
             </div>
 
-            <!-- Row 2: Status line -->
-            <div class="mt-1.5 flex items-center gap-2 text-[11px]">
-              {#if active}
-                <span class="relative flex h-2 w-2 shrink-0">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                  <span class="relative inline-flex h-2 w-2 rounded-full bg-emerald-500"></span>
-                </span>
-                <span class="text-emerald-400 font-medium">Live now</span>
-              {:else}
-                <span class="inline-flex h-2 w-2 shrink-0 rounded-full" style="background-color: {failed ? '#ef4444' : 'var(--clawdev-text-muted, #888)'}"></span>
-                <span style="color: {failed ? '#ef4444' : 'var(--clawdev-text-muted, #888)'};">
-                  {failed ? 'Failed' : 'Finished'} {formatTimeAgo(run.finishedAt ?? run.completedAt ?? run.updatedAt)}
-                </span>
-              {/if}
-            </div>
-
-            <!-- Row 3: Issue card -->
+            <!-- Issue box (inside header, mt-3, matches Paperclip) -->
             {#if hasIssue(run)}
-              <div
-                class="mt-2.5 flex items-center gap-1.5 rounded-md px-2.5 py-1.5"
-                style="background-color: {active ? 'rgba(59,130,246,0.15)' : 'var(--clawdev-bg-surface, rgba(0,0,0,0.03))'};"
-              >
-                {#if issueId}
-                  <span class="shrink-0 font-mono text-[10px]" style="color: {active ? '#3b82f6' : 'var(--clawdev-text-muted, #888)'};">
-                    {issueId}
-                  </span>
-                {/if}
-                {#if issueTitle}
-                  <span class="truncate text-xs" style="color: {active ? '#2563eb' : 'var(--clawdev-text-primary, #333)'};">
-                    {issueTitle}
-                  </span>
-                {/if}
+              <div class="mt-3 rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-xs">
+                <a
+                  href="/{prefix}/issues/{issueId || run.issueId}"
+                  class="line-clamp-2 hover:underline {active ? 'text-cyan-700 dark:text-cyan-300' : 'text-muted-foreground hover:text-foreground'}"
+                >
+                  {issueId ?? run.issueId?.slice(0, 8) ?? ''}{issueTitle ? ` - ${issueTitle}` : ''}
+                </a>
               </div>
             {/if}
-          </a>
+          </div>
 
-          <!-- Expandable sections -->
-          <div class="px-4 pb-3 pt-2 space-y-1">
-            <!-- STDOUT section -->
-            {#if stdout}
+          <!-- STDOUT / STDERR / RESULT sections (matches Paperclip) -->
+          <div class="min-h-0 flex-1 overflow-y-auto">
+            <!-- STDOUT -->
+            <div class="border-b border-border/40">
               <button
-                class="expandable-toggle flex w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wider"
-                style="background: none; border: none; cursor: pointer; color: var(--clawdev-text-muted, #888); padding: 2px 0;"
-                onclick={(e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleSection(run.id, 'stdout'); }}
+                type="button"
+                class="flex w-full items-center gap-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 transition-colors"
+                onclick={() => {
+                  const next = new Set(expandedStdout);
+                  if (next.has(run.id)) next.delete(run.id);
+                  else next.add(run.id);
+                  expandedStdout = next;
+                }}
               >
-                <ChevronRight
-                  size={10}
-                  class="shrink-0 transition-transform {isSectionOpen(run.id, 'stdout') ? 'rotate-90' : ''}"
-                />
-                STDOUT
+                <span class="font-mono">stdout</span>
+                <ChevronRight size={10} class="transition-transform {expandedStdout.has(run.id) ? 'rotate-90' : ''}" />
               </button>
-              {#if isSectionOpen(run.id, 'stdout')}
-                <div
-                  class="rounded-md px-2.5 py-2 font-mono text-[11px] leading-relaxed max-h-[120px] overflow-y-auto"
-                  style="background-color: var(--clawdev-bg-surface, rgba(0,0,0,0.05)); color: var(--clawdev-text-secondary, #555);"
-                >
-                  <pre class="whitespace-pre-wrap m-0">{typeof stdout === 'string' ? stdout : JSON.stringify(stdout, null, 2)}</pre>
+              {#if expandedStdout.has(run.id)}
+                <div class="px-3 pb-2">
+                  {#if stdout}
+                    <pre class="m-0 whitespace-pre-wrap font-mono text-[10px] leading-4 text-muted-foreground">{stdout}</pre>
+                  {:else if active}
+                    <p class="text-[10px] italic text-muted-foreground/60">Waiting for output...</p>
+                  {:else}
+                    <p class="text-[10px] italic text-muted-foreground/60">No transcript captured.</p>
+                  {/if}
                 </div>
               {/if}
+            </div>
+
+            <!-- STDERR (only if present) -->
+            {#if stderr}
+              <div class="border-b border-border/40">
+                <div class="px-3 py-1.5">
+                  <span class="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">stderr</span>
+                </div>
+                <div class="px-3 pb-2">
+                  <div class="rounded border border-red-500/20 bg-red-500/[0.06] px-2 py-1.5">
+                    <pre class="m-0 whitespace-pre-wrap font-mono text-[10px] leading-4 text-red-400">{stderr}</pre>
+                  </div>
+                </div>
+              </div>
             {/if}
 
-            <!-- Result section (non-error) -->
-            {#if result && !errorText}
-              <button
-                class="expandable-toggle flex w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wider"
-                style="background: none; border: none; cursor: pointer; color: var(--clawdev-text-muted, #888); padding: 2px 0;"
-                onclick={(e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleSection(run.id, 'result'); }}
-              >
-                <ChevronRight
-                  size={10}
-                  class="shrink-0 transition-transform {isSectionOpen(run.id, 'result') ? 'rotate-90' : ''}"
-                />
-                RESULT
-              </button>
-              {#if isSectionOpen(run.id, 'result')}
-                <div
-                  class="rounded-md px-2.5 py-2 font-mono text-[11px] leading-relaxed max-h-[120px] overflow-y-auto"
-                  style="background-color: var(--clawdev-bg-surface, rgba(0,0,0,0.05)); color: var(--clawdev-text-secondary, #555);"
-                >
-                  <pre class="whitespace-pre-wrap m-0">{typeof result === 'string' ? result : JSON.stringify(result, null, 2)}</pre>
+            <!-- RESULT (only if present) -->
+            {#if result}
+              <div>
+                <div class="px-3 py-1.5">
+                  <span class="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">result</span>
                 </div>
-              {/if}
+                <div class="px-3 pb-2">
+                  <pre class="m-0 whitespace-pre-wrap font-mono text-[10px] leading-4 text-muted-foreground">{result}</pre>
+                </div>
+              </div>
             {/if}
 
-            <!-- Error section -->
-            {#if errorText}
-              <button
-                class="expandable-toggle flex w-full items-center gap-1 text-[10px] font-semibold uppercase tracking-wider"
-                style="background: none; border: none; cursor: pointer; color: #f87171; padding: 2px 0;"
-                onclick={(e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); toggleSection(run.id, 'error'); }}
-              >
-                <ChevronRight
-                  size={10}
-                  class="shrink-0 transition-transform {isSectionOpen(run.id, 'error') ? 'rotate-90' : ''}"
-                />
-                ERROR
-              </button>
-              {#if isSectionOpen(run.id, 'error')}
-                <div
-                  class="rounded-md px-2.5 py-2 font-mono text-[11px] leading-relaxed max-h-[120px] overflow-y-auto"
-                  style="background-color: rgba(239,68,68,0.1); color: #fca5a5;"
-                >
-                  <pre class="whitespace-pre-wrap m-0">{typeof errorText === 'string' ? errorText : JSON.stringify(errorText, null, 2)}</pre>
-                </div>
-              {/if}
+            <!-- Fallback if nothing at all -->
+            {#if !stdout && !stderr && !result && !active}
+              <div class="p-3">
+                <p class="text-[10px] italic text-muted-foreground/60">No transcript captured.</p>
+              </div>
             {/if}
           </div>
         </div>
@@ -347,38 +307,11 @@
   </div>
 {:else if !loading && allRuns.length === 0}
   <div class="space-y-3">
-    <h3 class="text-sm font-semibold uppercase tracking-wide text-[--dash-muted]">
-      Agents
+    <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
+      AGENTS
     </h3>
-    <div class="rounded-xl border px-4 py-4" style="border-color: rgba(255,255,255,0.08);">
-      <p class="text-sm text-[--dash-muted]">No recent agent runs.</p>
+    <div class="rounded-xl border border-border p-4">
+      <p class="text-sm text-muted-foreground">No recent agent runs.</p>
     </div>
   </div>
 {/if}
-
-<style>
-  .agent-card {
-    /* Scrollbar for expandable content */
-  }
-  .agent-card:hover {
-    border-color: rgba(255,255,255,0.15) !important;
-  }
-  .expandable-toggle:hover {
-    color: rgba(255,255,255,0.65) !important;
-  }
-  /* Chevron rotation */
-  :global(.rotate-90) {
-    transform: rotate(90deg);
-  }
-  /* Hide scrollbar in horizontal scroll */
-  .flex.gap-3.overflow-x-auto::-webkit-scrollbar {
-    height: 4px;
-  }
-  .flex.gap-3.overflow-x-auto::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.1);
-    border-radius: 2px;
-  }
-  .flex.gap-3.overflow-x-auto::-webkit-scrollbar-track {
-    background: transparent;
-  }
-</style>

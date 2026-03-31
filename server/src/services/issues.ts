@@ -1024,6 +1024,10 @@ export function issueService(db: Db) {
       if (issueData.status && issueData.status !== "in_progress") {
         patch.checkoutRunId = null;
       }
+      if (issueData.status === "done" || issueData.status === "cancelled") {
+        patch.executionRunId = null;
+        patch.executionLockedAt = null;
+      }
       if (
         (issueData.assigneeAgentId !== undefined && issueData.assigneeAgentId !== existing.assigneeAgentId) ||
         (issueData.assigneeUserId !== undefined && issueData.assigneeUserId !== existing.assigneeUserId)
