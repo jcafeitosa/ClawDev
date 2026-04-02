@@ -53,6 +53,7 @@ import {
 import { instanceSettingsService } from "./instance-settings.js";
 import { createModelRouterService } from "./model-router.js";
 import { createProviderStatusService } from "./provider-status.js";
+import { normalizeRuntimeConfigForAdapterType } from "./runtime-config.js";
 import { redactCurrentUserText, redactCurrentUserValue } from "../log-redaction.js";
 import {
   hasSessionCompactionThresholds,
@@ -77,6 +78,26 @@ const SESSIONED_LOCAL_ADAPTERS = new Set([
   "opencode_local",
   "pi_local",
 ]);
+
+export function normalizeHeartbeatRuntimeConfigForExecution(
+  adapterType: string,
+  runtimeConfig: Record<string, unknown>,
+  requestedModel: string | undefined,
+  resolvedModelId: string | null | undefined,
+): Record<string, unknown> {
+  const next = { ...runtimeConfig };
+
+  if (adapterType === "claude_local" && resolvedModelId === "auto") {
+    delete next.model;
+    return next;
+  }
+
+  if (resolvedModelId && resolvedModelId !== requestedModel) {
+    next.model = resolvedModelId;
+  }
+
+  return next;
+}
 
 function deriveRepoNameFromRepoUrl(repoUrl: string | null): string | null {
   const trimmed = repoUrl?.trim() ?? "";
@@ -2515,10 +2536,34 @@ export function heartbeatService(db: Db) {
         );
       }
 
+      let adapterResult: Awaited<ReturnType<typeof adapter.execute>>;
+      let triedFallback = false;
+
+      const executeWithConfig = async (config: Record<string, unknown>) => {
+        const normalizedConfig = normalizeRuntimeConfigForAdapterType(agent.adapterType, config);
+        return adapter.execute({
+          runId: run.id,
+          agent,
+          runtime: runtimeForAdapter,
+          config: normalizedConfig,
+          context,
+          onLog,
+          onMeta: onAdapterMeta,
+          onSpawn: async (meta) => {
+            await persistRunProcessMetadata(run.id, meta);
+          },
+          authToken: authToken ?? undefined,
+        });
+      };
+
       // --- Model routing: resolve model via routing system ---
-      const requestedModel = typeof (runtimeConfig as Record<string, unknown>).model === "string" ? (runtimeConfig as Record<string, unknown>).model as string : undefined;
+      const requestedModel =
+        typeof (runtimeConfig as Record<string, unknown>).model === "string"
+          ? ((runtimeConfig as Record<string, unknown>).model as string)
+          : undefined;
       let modelResolution: import("./model-router.js").ModelResolution | null = null;
       const providerStatusSvc = createProviderStatusService(db);
+      let runtimeConfigForExecution: Record<string, unknown> = runtimeConfig;
 
       try {
         const routerSvc = createModelRouterService(db, providerStatusSvc);
@@ -2530,41 +2575,36 @@ export function heartbeatService(db: Db) {
         );
         modelResolution = resolution;
 
-        // If router resolved a different model, override the config
-        if (resolution.modelId && resolution.modelId !== requestedModel) {
-          (runtimeConfig as Record<string, unknown>).model = resolution.modelId;
-          await onLog("stdout", `[clawdev] Model routed: ${requestedModel ?? "auto"} → ${resolution.modelId} (${resolution.resolution}, depth=${resolution.fallbackDepth})\n`);
+        runtimeConfigForExecution = normalizeHeartbeatRuntimeConfigForExecution(
+          agent.adapterType,
+          runtimeConfig as Record<string, unknown>,
+          requestedModel,
+          resolution.modelId,
+        );
+        if (JSON.stringify(runtimeConfigForExecution) !== JSON.stringify(runtimeConfig)) {
+          if (resolution.modelId && !(agent.adapterType === "claude_local" && resolution.modelId === "auto")) {
+            await onLog(
+              "stdout",
+              `[clawdev] Model routed: ${requestedModel ?? "auto"} → ${resolution.modelId} (${resolution.resolution}, depth=${resolution.fallbackDepth})\n`,
+            );
+          }
+          adapterResult = await executeWithConfig(runtimeConfigForExecution);
+        } else {
+          adapterResult = await executeWithConfig(runtimeConfig);
         }
-        // If router resolved a different adapter type, log it but keep original for now
         if (resolution.adapterType !== agent.adapterType) {
-          await onLog("stdout", `[clawdev] Router suggests adapter ${resolution.adapterType} but keeping ${agent.adapterType}\n`);
+          await onLog(
+            "stdout",
+            `[clawdev] Router suggests adapter ${resolution.adapterType} but keeping ${agent.adapterType}\n`,
+          );
         }
       } catch (routerErr) {
-        // Model routing is best-effort; if it fails, continue with original model
         logger.warn({ err: routerErr, runId: run.id, agentId: agent.id }, "model routing failed, using original model");
+        runtimeConfigForExecution = runtimeConfig;
+        adapterResult = await executeWithConfig(runtimeConfig);
       }
 
       // --- Execution with fallback on rate limit ---
-      let adapterResult: Awaited<ReturnType<typeof adapter.execute>>;
-      let triedFallback = false;
-
-      const executeWithConfig = async (config: Record<string, unknown>) => {
-        return adapter.execute({
-          runId: run.id,
-          agent,
-          runtime: runtimeForAdapter,
-          config,
-          context,
-          onLog,
-          onMeta: onAdapterMeta,
-          onSpawn: async (meta) => {
-            await persistRunProcessMetadata(run.id, meta);
-          },
-          authToken: authToken ?? undefined,
-        });
-      };
-
-      adapterResult = await executeWithConfig(runtimeConfig);
 
       // If rate limited, try fallback once
       if (
@@ -2573,7 +2613,10 @@ export function heartbeatService(db: Db) {
         ["rate_limited", "quota_exceeded"].includes(adapterResult.errorCode)
       ) {
         try {
-          const currentModel = readNonEmptyString(adapterResult.model) ?? (runtimeConfig as any).model ?? "unknown";
+          const currentModel =
+            readNonEmptyString(adapterResult.model) ??
+            readNonEmptyString((runtimeConfigForExecution as Record<string, unknown>).model) ??
+            "unknown";
           // Mark the failed model in cooldown
           await providerStatusSvc.handleExecutionError(
             agent.adapterType,
@@ -2593,7 +2636,12 @@ export function heartbeatService(db: Db) {
 
           if (fallback.modelId && fallback.modelId !== currentModel) {
             await onLog("stdout", `[clawdev] Rate limited on ${currentModel}; retrying with fallback: ${fallback.modelId}\n`);
-            const fallbackConfig = { ...runtimeConfig, model: fallback.modelId };
+            const fallbackConfig = normalizeHeartbeatRuntimeConfigForExecution(
+              agent.adapterType,
+              runtimeConfigForExecution,
+              currentModel,
+              fallback.modelId,
+            );
             adapterResult = await executeWithConfig(fallbackConfig as Record<string, unknown>);
             modelResolution = fallback;
             triedFallback = true;
@@ -3779,8 +3827,14 @@ export function heartbeatService(db: Db) {
   return {
     list: async (companyId: string, agentId?: string, limit?: number) => {
       const query = db
-        .select(heartbeatRunListColumns)
+        .select({
+          ...heartbeatRunListColumns,
+          agentName: agents.name,
+          agentIcon: agents.icon,
+          agentRole: agents.role,
+        })
         .from(heartbeatRuns)
+        .leftJoin(agents, eq(agents.id, heartbeatRuns.agentId))
         .where(
           agentId
             ? and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, agentId))

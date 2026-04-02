@@ -503,12 +503,14 @@
           onclick={() => updateView({ viewMode: 'list' })}
           class="p-1.5 transition-colors {viewState.viewMode === 'list' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}"
           title="List view"
+          aria-label="List view"
         ><List class="h-3.5 w-3.5" /></button>
         <button
           type="button"
           onclick={() => updateView({ viewMode: 'board' })}
           class="p-1.5 transition-colors {viewState.viewMode === 'board' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}"
           title="Board view"
+          aria-label="Board view"
         ><LayoutGrid class="h-3.5 w-3.5" /></button>
       </div>
 
@@ -518,17 +520,20 @@
           type="button"
           onclick={() => { filterOpen = !filterOpen; sortOpen = false; groupOpen = false; }}
           class="inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs transition-colors hover:bg-accent/50 {activeFilterCount > 0 ? 'text-blue-600 dark:text-blue-400' : 'text-muted-foreground'}"
+          aria-label={activeFilterCount > 0 ? `Filters (${activeFilterCount} active)` : 'Filter issues'}
         >
           <Filter class="h-3.5 w-3.5" />
           <span class="hidden sm:inline">{activeFilterCount > 0 ? `Filters: ${activeFilterCount}` : 'Filter'}</span>
-          {#if activeFilterCount > 0}
-            <button
-              type="button"
-              class="hidden sm:block"
-              onclick={(e) => { e.stopPropagation(); updateView({ statuses: [], priorities: [], assignees: [] }); }}
-            ><X class="h-3 w-3" /></button>
-          {/if}
         </button>
+        {#if activeFilterCount > 0}
+          <button
+            type="button"
+            class="ml-1 hidden sm:inline-flex items-center rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+            onclick={(e) => { e.stopPropagation(); updateView({ statuses: [], priorities: [], assignees: [] }); }}
+            aria-label="Clear filters"
+            title="Clear filters"
+          ><X class="h-3 w-3" /></button>
+        {/if}
 
         {#if filterOpen}
           <div class="absolute right-0 top-full z-30 mt-1 w-[min(480px,calc(100vw-2rem))] rounded-lg border border-border bg-card p-3 shadow-xl space-y-3">

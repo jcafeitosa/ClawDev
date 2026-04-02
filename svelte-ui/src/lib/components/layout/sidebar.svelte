@@ -133,11 +133,12 @@
 
   function fetchActiveRunCount() {
     if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/runs?status=running&limit=0`)
+    fetch(`/api/companies/${companyStore.selectedCompanyId}/live-runs?minCount=0`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.total != null) activeRunCount = data.total;
-        else if (Array.isArray(data)) activeRunCount = data.length;
+        if (Array.isArray(data)) activeRunCount = data.length;
+        else if (data?.runs != null) activeRunCount = Array.isArray(data.runs) ? data.runs.length : Number(data.count ?? 0);
+        else if (data?.count != null) activeRunCount = Number(data.count);
         else activeRunCount = null;
       })
       .catch(() => { activeRunCount = null; });
@@ -429,7 +430,7 @@
         </button>
 
         {#if companySwitcherOpen}
-          <div class="absolute top-full left-0 mt-1 w-56 rounded-lg border border-[var(--clawdev-bg-surface-border)] bg-[#11111a] shadow-xl z-50 py-1" onclick={(e) => e.stopPropagation()}>
+          <div class="absolute top-full left-0 mt-1 w-56 rounded-lg border border-[var(--clawdev-bg-surface-border)] bg-[#11111a] shadow-xl z-50 py-1">
             <div class="px-3 py-1.5 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest">
               Companies
             </div>
@@ -785,7 +786,7 @@
   <!-- Footer -->
   <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-1.5">
     <a
-      href="/docs"
+      href="https://github.com/jcafeitosa/ClawDev/blob/main/doc/SPEC-implementation.md"
       target="_blank"
       rel="noopener noreferrer"
       class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors"

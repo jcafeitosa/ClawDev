@@ -87,6 +87,47 @@ export function issueRoutes(db: Db, _storage?: any) {
     return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
   }
 
+  async function deleteCommentForBoardActor(
+    actor: Actor,
+    commentId: string,
+    opts?: { issueId?: string | null },
+  ) {
+    const comment = await svc.getComment(commentId);
+    if (!comment) return { status: 404 as const, body: { error: "Comment not found" } };
+    if (opts?.issueId && comment.issueId !== opts.issueId) {
+      return { status: 404 as const, body: { error: "Comment not found" } };
+    }
+    if (actor.type !== "board") {
+      return { status: 403 as const, body: { error: "Board authentication required" } };
+    }
+
+    const removed = await svc.removeComment(commentId);
+    if (!removed) return { status: 404 as const, body: { error: "Comment not found" } };
+
+    const issue = await svc.getById(removed.issueId);
+    if (!issue) return { status: 404 as const, body: { error: "Issue not found" } };
+
+    const actorInfo = getActorInfo(actor);
+    await logActivity(db, {
+      companyId: issue.companyId,
+      actorType: actorInfo.actorType,
+      actorId: actorInfo.actorId,
+      agentId: actorInfo.agentId,
+      runId: actorInfo.runId,
+      action: "issue.comment_deleted",
+      entityType: "issue",
+      entityId: issue.id,
+      details: {
+        commentId: removed.id,
+        bodySnippet: removed.body.slice(0, 120),
+        identifier: issue.identifier,
+        issueTitle: issue.title,
+      },
+    });
+
+    return { status: 200 as const, body: removed };
+  }
+
   async function assertCanAssignTasks(actor: Actor, companyId: string) {
     assertCompanyAccess(actor, companyId);
     if (actor.type === "board") {
@@ -159,10 +200,11 @@ export function issueRoutes(db: Db, _storage?: any) {
 
   return new Elysia({ prefix: "/issues" })
     /* ------------------------------------------------------------------ */
-    /* GET /issues/ — stub                                                */
+    /* GET /issues/                                                       */
     /* ------------------------------------------------------------------ */
-    .get("/", async () => {
-      return { issues: [], total: 0 };
+    .get("/", ({ set }: any) => {
+      set.status = 400;
+      return { error: "Missing companyId in path. Use /api/companies/{companyId}/issues." };
     })
 
     /* ------------------------------------------------------------------ */
@@ -334,6 +376,23 @@ export function issueRoutes(db: Db, _storage?: any) {
           return { error: "Comment not found" };
         }
         return comment;
+      },
+      { params: t.Object({ id: t.String(), commentId: t.String() }) },
+    )
+
+    /* DELETE /issues/:id/comments/:commentId                             */
+    /* ------------------------------------------------------------------ */
+    .delete(
+      "/:id/comments/:commentId",
+      async (ctx: any) => {
+        const id = await normalizeIssueIdentifier(ctx.params.id);
+        const issue = await svc.getById(id);
+        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+        const actor: Actor = ctx.actor;
+        assertCompanyAccess(actor, issue.companyId);
+        const result = await deleteCommentForBoardActor(actor, ctx.params.commentId, { issueId: issue.id });
+        ctx.set.status = result.status;
+        return result.body;
       },
       { params: t.Object({ id: t.String(), commentId: t.String() }) },
     )
@@ -853,6 +912,17 @@ export function issueRoutes(db: Db, _storage?: any) {
         if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
         const actor: Actor = ctx.actor;
         assertCompanyAccess(actor, issue.companyId);
+        const agentId = typeof ctx.body?.agentId === "string" ? ctx.body.agentId.trim() : "";
+        const expectedStatuses = Array.isArray(ctx.body?.expectedStatuses) ? ctx.body.expectedStatuses : [];
+
+        if (!agentId) {
+          ctx.set.status = 400;
+          return { error: "agentId is required" };
+        }
+        if (expectedStatuses.length === 0) {
+          ctx.set.status = 400;
+          return { error: "expectedStatuses is required" };
+        }
 
         if (issue.projectId) {
           const project = await projectsSvc.getById(issue.projectId);
@@ -867,7 +937,7 @@ export function issueRoutes(db: Db, _storage?: any) {
           }
         }
 
-        if (actor.type === "agent" && actor.agentId !== ctx.body.agentId) {
+        if (actor.type === "agent" && actor.agentId !== agentId) {
           ctx.set.status = 403;
           return { error: "Agent can only checkout as itself" };
         }
@@ -878,10 +948,10 @@ export function issueRoutes(db: Db, _storage?: any) {
           return { error: "Agent run id required" };
         }
 
-        const updated = await svc.checkout(id, ctx.body.agentId, ctx.body.expectedStatuses, checkoutRunId);
+        const updated = await svc.checkout(id, agentId, expectedStatuses, checkoutRunId);
         const actorInfo = getActorInfo(actor);
 
-        await logActivity(db, {
+        void logActivity(db, {
           companyId: issue.companyId,
           actorType: actorInfo.actorType,
           actorId: actorInfo.actorId,
@@ -890,19 +960,21 @@ export function issueRoutes(db: Db, _storage?: any) {
           action: "issue.checked_out",
           entityType: "issue",
           entityId: issue.id,
-          details: { agentId: ctx.body.agentId },
+          details: { agentId },
+        }).catch((err: unknown) => {
+          logger.warn({ err, issueId: issue.id }, "failed to log issue checkout");
         });
 
         if (
           shouldWakeAssigneeOnCheckout({
             actorType: actor.type,
             actorAgentId: actor.type === "agent" ? actor.agentId ?? null : null,
-            checkoutAgentId: ctx.body.agentId,
+            checkoutAgentId: agentId,
             checkoutRunId,
           })
         ) {
           void heartbeat
-            .wakeup(ctx.body.agentId, {
+            .wakeup(agentId, {
               source: "assignment",
               triggerDetail: "system",
               reason: "issue_checked_out",

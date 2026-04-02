@@ -3,7 +3,6 @@
   import { goto } from "$app/navigation";
   import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
-  import { companyStore } from "$stores/company.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea, Input, Label } from "$components/ui/index.js";
@@ -13,7 +12,6 @@
   import CommentThread from "$lib/components/comment-thread.svelte";
   import IssueWorkspaceCard from "$lib/components/issue-workspace-card.svelte";
   import ScrollToBottom from "$lib/components/scroll-to-bottom.svelte";
-  import { onMount } from "svelte";
   import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag, PanelRightOpen, PanelRightClose, ChevronRight, User, Calendar, Clock } from "lucide-svelte";
 
   // ---------------------------------------------------------------------------
@@ -28,6 +26,7 @@
     priority?: string | null;
     assigneeAgentId?: string | null;
     assigneeUserId?: string | null;
+    executionRunId?: string | null;
     projectId?: string | null;
     goalId?: string | null;
     parentId?: string | null;
@@ -215,7 +214,7 @@
   // Derived
   // ---------------------------------------------------------------------------
   let issueId = $derived($page.params.issueId);
-  let companyId = $derived(companyStore.selectedCompanyId);
+  let companyId = $derived(issue?.companyId ?? null);
   let isCheckedOut = $derived(!!issue?.checkedOutBy);
   let prefix = $derived($page.params.companyPrefix);
 
@@ -373,11 +372,18 @@
     return String(n);
   }
 
-  async function submitComment(body: string) {
+  async function submitComment(
+    body: string,
+    options?: { reopen?: boolean; interrupt?: boolean },
+  ) {
     if (!issueId || !body.trim()) return;
     const res = await api(`/api/issues/${issueId}/comments`, {
       method: "POST",
-      body: JSON.stringify({ body: body.trim() }),
+      body: JSON.stringify({
+        body: body.trim(),
+        ...(options?.reopen === undefined ? {} : { reopen: options.reopen }),
+        ...(options?.interrupt === undefined ? {} : { interrupt: options.interrupt }),
+      }),
     });
     if (!res.ok) throw new Error(await res.text());
     toastStore.push({ title: "Comment added", tone: "success" });
@@ -458,9 +464,24 @@
 
   async function checkoutIssue() {
     if (!issueId) return;
+    const agentId = issue?.assigneeAgentId?.trim() ?? "";
+    if (!agentId) {
+      toastStore.push({
+        title: "Select an assignee first",
+        body: "Checkout requires an assigned agent so the backend can claim the issue on behalf of that agent.",
+        tone: "error",
+      });
+      return;
+    }
     checkingOut = true;
     try {
-      const res = await api(`/api/issues/${issueId}/checkout`, { method: "POST" });
+      const res = await api(`/api/issues/${issueId}/checkout`, {
+        method: "POST",
+        body: JSON.stringify({
+          agentId,
+          expectedStatuses: ["todo", "backlog", "blocked"],
+        }),
+      });
       if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Issue checked out", tone: "success" });
       await loadIssue();
@@ -600,7 +621,7 @@
       if (editWpUrl.trim()) body.url = editWpUrl.trim();
       else body.url = null;
 
-      const res = await api(`/api/issues/${issueId}/work-products/${editingWpId}`, {
+      const res = await api(`/api/work-products/${editingWpId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       });
@@ -618,7 +639,7 @@
   async function deleteWorkProduct(wpId: string) {
     if (!issueId) return;
     try {
-      const res = await api(`/api/issues/${issueId}/work-products/${wpId}`, { method: "DELETE" });
+      const res = await api(`/api/work-products/${wpId}`, { method: "DELETE" });
       if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Work product removed", tone: "success" });
       await loadIssue();
@@ -846,16 +867,32 @@
   // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
-  onMount(() => {
-    loadIssue();
-    loadComments();
-    loadDocuments();
-    loadAttachments();
-    loadAgents();
-    loadSubIssues();
-    loadActivity();
-    loadRuns();
-    loadApprovals();
+  $effect(() => {
+    if (!issueId) return;
+
+    issue = null;
+    comments = [];
+    documents = [];
+    attachments = [];
+    activityEntries = [];
+    runs = [];
+    linkedApprovals = [];
+    loading = true;
+    notFound = false;
+
+    void loadIssue();
+    void loadComments();
+    void loadDocuments();
+    void loadAttachments();
+    void loadActivity();
+    void loadRuns();
+    void loadApprovals();
+  });
+
+  $effect(() => {
+    if (!issueId || !companyId) return;
+    void loadAgents();
+    void loadSubIssues();
   });
 </script>
 
@@ -935,7 +972,7 @@
             {checkingOut ? "Releasing..." : "Release"}
           </Button>
         {:else}
-          <Button variant="outline" size="sm" onclick={checkoutIssue} disabled={checkingOut}>
+          <Button variant="outline" size="sm" onclick={checkoutIssue} disabled={checkingOut || !issue?.assigneeAgentId}>
             <GitBranchPlus class="size-3.5 mr-1" />
             {checkingOut ? "Checking out..." : "Checkout"}
           </Button>
@@ -1162,6 +1199,8 @@
                 {comments}
                 onSubmit={submitComment}
                 onDelete={deleteComment}
+                allowInterrupt={Boolean(issue?.executionRunId)}
+                activeRunLabel={issue?.executionRunId ? issue.executionRunId.slice(0, 8) : null}
               />
             </div>
           </TabsContent>

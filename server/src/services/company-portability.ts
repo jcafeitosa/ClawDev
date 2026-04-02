@@ -58,6 +58,7 @@ import { validateCron } from "./cron.js";
 import { issueService } from "./issues.js";
 import { projectService } from "./projects.js";
 import { routineService } from "./routines.js";
+import { normalizeRuntimeConfigForAdapterType } from "./runtime-config.js";
 
 /** Build OrgNode tree from manifest agent list (slug + reportsToSlug). */
 function buildOrgTreeFromManifest(agents: CompanyPortabilityManifest["agents"]): OrgNode[] {
@@ -3039,7 +3040,10 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           },
         ) as Record<string, unknown>;
         const portableRuntimeConfig = pruneDefaultLikeValue(
-          normalizePortableConfig(agent.runtimeConfig),
+          normalizeRuntimeConfigForAdapterType(
+            agent.adapterType,
+            normalizePortableConfig(agent.runtimeConfig),
+          ),
           {
             dropFalseBooleans: true,
             defaultRules: RUNTIME_DEFAULT_RULES,
@@ -3915,7 +3919,10 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           reportsTo: null,
           adapterType: effectiveAdapterType,
           adapterConfig: adapterConfigWithSkills,
-          runtimeConfig: disableImportedTimerHeartbeat(manifestAgent.runtimeConfig),
+          runtimeConfig: normalizeRuntimeConfigForAdapterType(
+            effectiveAdapterType,
+            disableImportedTimerHeartbeat(manifestAgent.runtimeConfig),
+          ),
           budgetMonthlyCents: manifestAgent.budgetMonthlyCents,
           permissions: manifestAgent.permissions,
           metadata: manifestAgent.metadata,

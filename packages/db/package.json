@@ -44,6 +44,7 @@
     "seed": "tsx src/seed.ts"
   },
   "dependencies": {
+    "@electric-sql/pglite": "0.3.15",
     "@clawdev/shared": "workspace:*",
     "drizzle-orm": "^0.38.4",
     "embedded-postgres": "18.1.0-beta.16",

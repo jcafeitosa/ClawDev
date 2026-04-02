@@ -106,35 +106,39 @@ function parseEnvFile(contents) {
 
 async function findAvailablePort(preferredPort, reserved = new Set()) {
   const startPort = Number.isFinite(preferredPort) && preferredPort > 0 ? Math.trunc(preferredPort) : 0;
-  if (startPort > 0) {
-    for (let port = startPort; port < startPort + 100; port += 1) {
-      if (reserved.has(port)) continue;
-      const available = await new Promise((resolve) => {
-        const server = net.createServer();
-        server.unref();
-        server.once("error", () => resolve(false));
-        server.listen(port, "127.0.0.1", () => {
-          server.close(() => resolve(true));
+  try {
+    if (startPort > 0) {
+      for (let port = startPort; port < startPort + 100; port += 1) {
+        if (reserved.has(port)) continue;
+        const available = await new Promise((resolve) => {
+          const server = net.createServer();
+          server.unref();
+          server.once("error", () => resolve(false));
+          server.listen(port, "127.0.0.1", () => {
+            server.close(() => resolve(true));
+          });
         });
-      });
-      if (available) return port;
-    }
-  }
-
-  return await new Promise((resolve, reject) => {
-    const server = net.createServer();
-    server.unref();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (!address || typeof address === "string") {
-        server.close(() => reject(new Error("Failed to allocate a port.")));
-        return;
+        if (available) return port;
       }
-      const port = address.port;
-      server.close(() => resolve(port));
+    }
+
+    return await new Promise((resolve, reject) => {
+      const server = net.createServer();
+      server.unref();
+      server.once("error", reject);
+      server.listen(0, "127.0.0.1", () => {
+        const address = server.address();
+        if (!address || typeof address === "string") {
+          server.close(() => reject(new Error("Failed to allocate a port.")));
+          return;
+        }
+        const port = address.port;
+        server.close(() => resolve(port));
+      });
     });
-  });
+  } catch {
+    return startPort > 0 ? startPort : 0;
+  }
 }
 
 function isLoopbackHost(hostname) {

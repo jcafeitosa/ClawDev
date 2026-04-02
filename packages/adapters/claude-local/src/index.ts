@@ -18,7 +18,7 @@ Adapter: claude_local
 
 Core fields:
 - cwd (string, optional): working directory for the agent process (created if missing when possible)
-- model (string, optional): model alias ("opus", "sonnet", "haiku") or full name ("claude-opus-4-6")
+- model (string, optional): model alias ("opus", "sonnet", "haiku") or full name ("claude-opus-4-6"); omit or leave unset to use Claude's default selection. Do not pass "auto".
 - effort (string, optional): reasoning effort -- "low", "medium", "high", or "max"
 - chrome (boolean, optional): enable Claude in Chrome integration
 - promptTemplate (string, optional): prompt template with {{agent.id}}, {{agent.name}} etc.

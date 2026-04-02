@@ -1,116 +1,79 @@
 /**
  * Inbox routes — Elysia.
  *
- * Provides a company-scoped inbox: unread issues assigned to the current
- * user or requiring attention (pending approvals, failed runs, join requests).
- *
- * The frontend uses these for sidebar badges and the Inbox page.
+ * Provides company-scoped inbox badge totals. The page-level inbox UI
+ * composes its own feed from dedicated endpoints, while the sidebar relies
+ * on this route for the aggregate count.
  */
 
 import { Elysia } from "elysia";
 import type { Db } from "@clawdev/db";
-import { agents, approvals, heartbeatRuns, issues, joinRequests } from "@clawdev/db";
-import { and, desc, eq, inArray, ne } from "drizzle-orm";
+import { joinRequests } from "@clawdev/db";
+import { and, eq, sql } from "drizzle-orm";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
+import { accessService, dashboardService, issueService, sidebarBadgeService } from "../services/index.js";
+
+const INBOX_ISSUE_STATUSES = "backlog,todo,in_progress,in_review,blocked,done";
 
 export function inboxRoutes(db: Db) {
+  const access = accessService(db);
+  const dashboard = dashboardService(db);
+  const issues = issueService(db);
+  const badges = sidebarBadgeService(db);
+
   return new Elysia()
 
     // ── GET /companies/:id/inbox ────────────────────────────────────
-    // Returns issues that need attention (not done/cancelled) plus
-    // pending approvals and failed runs, aggregated into one list.
     .get(
       "/companies/:companyId/inbox",
       async (ctx: any) => {
-        const { params, query } = ctx;
+        const { params } = ctx;
         const actor = ctx.actor as Actor;
         assertCompanyAccess(actor, params.companyId);
 
-        const limit = Math.min(Number(query.limit) || 50, 200);
-        const status = query.status as string | undefined; // e.g. "unread"
-
-        // If limit=0 the frontend just wants a count
-        if (Number(query.limit) === 0) {
-          const openIssues = await db
-            .select({ id: issues.id })
-            .from(issues)
-            .where(
-              and(
-                eq(issues.companyId, params.companyId),
-                ne(issues.status, "done"),
-                ne(issues.status, "cancelled"),
-              ),
-            );
-
-          const pendingApprovals = await db
-            .select({ id: approvals.id })
-            .from(approvals)
-            .where(
-              and(
-                eq(approvals.companyId, params.companyId),
-                eq(approvals.status, "pending"),
-              ),
-            );
-
-          return {
-            count: openIssues.length + pendingApprovals.length,
-          };
+        let canApproveJoins = false;
+        if (actor.type === "board") {
+          canApproveJoins =
+            actor.source === "local_implicit" ||
+            Boolean(actor.isInstanceAdmin) ||
+            Boolean(actor.userId && (await access.canUser(params.companyId, actor.userId, "joins:approve")));
+        } else if (actor.type === "agent" && actor.agentId) {
+          canApproveJoins = await access.hasPermission(params.companyId, "agent", actor.agentId, "joins:approve");
         }
 
-        const issueRows = await db
-          .select({
-            id: issues.id,
-            identifier: issues.identifier,
-            title: issues.title,
-            status: issues.status,
-            priority: issues.priority,
-            createdAt: issues.createdAt,
-            updatedAt: issues.updatedAt,
-          })
-          .from(issues)
-          .where(
-            and(
-              eq(issues.companyId, params.companyId),
-              ne(issues.status, "done"),
-              ne(issues.status, "cancelled"),
-            ),
-          )
-          .orderBy(desc(issues.updatedAt))
-          .limit(limit);
+        const joinRequestCount = canApproveJoins
+          ? await db
+              .select({ count: sql<number>`count(*)` })
+              .from(joinRequests)
+              .where(and(eq(joinRequests.companyId, params.companyId), eq(joinRequests.status, "pending_approval")))
+              .then((rows) => Number(rows[0]?.count ?? 0))
+          : 0;
 
+        const unreadTouchedIssues =
+          actor.type === "board" && actor.userId
+            ? await issues.countUnreadTouchedByUser(params.companyId, actor.userId, INBOX_ISSUE_STATUSES)
+            : 0;
+
+        const inboxBadges = await badges.get(params.companyId, {
+          joinRequests: joinRequestCount,
+          unreadTouchedIssues,
+        });
+        const summary = await dashboard.summary(params.companyId);
+        const alerts = Number(summary.agents.error > 0 && inboxBadges.failedRuns === 0) +
+          Number(summary.costs.monthBudgetCents > 0 && summary.costs.monthUtilizationPercent >= 80);
+
+        const total = inboxBadges.inbox + alerts;
         return {
-          items: issueRows.map((r) => ({ ...r, itemType: "issue" as const })),
-          total: issueRows.length,
+          total,
+          count: total,
+          inbox: total,
+          approvals: inboxBadges.approvals,
+          failedRuns: inboxBadges.failedRuns,
+          joinRequests: inboxBadges.joinRequests,
+          unreadTouchedIssues,
+          alerts,
         };
-      },
-      { params: companyIdParam },
-    )
-
-    // ── GET /companies/:id/join-requests ────────────────────────────
-    .get(
-      "/companies/:companyId/join-requests",
-      async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-
-        const status = (query.status as string) ?? "pending_approval";
-        const limit = Math.min(Number(query.limit) || 50, 200);
-
-        const rows = await db
-          .select()
-          .from(joinRequests)
-          .where(
-            and(
-              eq(joinRequests.companyId, params.companyId),
-              eq(joinRequests.status, status),
-            ),
-          )
-          .orderBy(desc(joinRequests.createdAt))
-          .limit(limit);
-
-        return { joinRequests: rows, total: rows.length };
       },
       { params: companyIdParam },
     );

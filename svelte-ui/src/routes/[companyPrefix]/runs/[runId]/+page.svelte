@@ -9,9 +9,12 @@
   import TimeAgo from '$lib/components/time-ago.svelte';
   import PageSkeleton from '$lib/components/page-skeleton.svelte';
   import MarkdownBody from '$lib/components/markdown-body.svelte';
+  import { goto } from '$app/navigation';
   import {
     Bot, Terminal, ChevronRight, ChevronDown, XCircle,
     Check, Wrench, CircleAlert, User, TerminalSquare,
+    RotateCcw, Plus, Play, Pause, CheckCircle2, Clock, Timer, Loader2, Slash,
+    ExternalLink,
   } from 'lucide-svelte';
 
   // ============================================================
@@ -429,7 +432,12 @@
   // ============================================================
   let runId = $derived($page.params.runId);
   let prefix = $derived($page.params.companyPrefix);
-  let companyId = $derived(companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id ?? '');
+  let routeCompanyId = $derived.by(() => {
+    const requestedPrefix = prefix?.trim().toUpperCase();
+    if (!requestedPrefix) return null;
+    return companyStore.companies.find((company) => String(company.issuePrefix ?? "").toUpperCase() === requestedPrefix)?.id ?? null;
+  });
+  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id ?? '');
   let isLive = $derived(run?.status === 'started' || run?.status === 'running');
 
   let transcriptEntries = $derived.by(() => logText ? buildTranscriptFromLog(logText) : []);
@@ -539,6 +547,82 @@
   }
 
   // ============================================================
+  // Sidebar: runs list for this agent
+  // ============================================================
+  let agentRuns = $state<any[]>([]);
+  let agentRunsLoading = $state(true);
+
+  async function loadAgentRuns() {
+    if (!companyId || !run?.agentId) { agentRunsLoading = false; return; }
+    try {
+      const res = await api(`/api/companies/${companyId}/heartbeat-runs?agentId=${run.agentId}&limit=20`);
+      if (res.ok) {
+        const data = await res.json();
+        agentRuns = Array.isArray(data) ? data : data.runs ?? data.data ?? [];
+      }
+    } catch { /* ignore */ }
+    agentRunsLoading = false;
+  }
+
+  // ============================================================
+  // Retry failed run
+  // ============================================================
+  let retrying = $state(false);
+  async function retryRun() {
+    if (!run || retrying) return;
+    retrying = true;
+    try {
+      const payload: Record<string, unknown> = { source: 'on_demand', triggerDetail: 'manual', reason: 'retry_failed_run' };
+      const ctx = run.contextSnapshot as Record<string, unknown> | null;
+      if (ctx) {
+        const inner: Record<string, unknown> = {};
+        if (typeof ctx.issueId === 'string' && ctx.issueId) inner.issueId = ctx.issueId;
+        if (typeof ctx.taskId === 'string' && ctx.taskId) inner.taskId = ctx.taskId;
+        if (typeof ctx.taskKey === 'string' && ctx.taskKey) inner.taskKey = ctx.taskKey;
+        if (Object.keys(inner).length > 0) payload.payload = inner;
+      }
+      const res = await api(`/api/agents/${run.agentId}/wakeup`, { method: 'POST', body: JSON.stringify(payload) });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const result = await res.json();
+      if (result?.id) {
+        goto(`/${prefix}/runs/${result.id}`);
+      } else {
+        toastStore.push({ title: 'Retry was skipped', tone: 'warn' });
+      }
+    } catch (err: any) {
+      toastStore.push({ title: err.message ?? 'Failed to retry run', tone: 'error' });
+    } finally {
+      retrying = false;
+    }
+  }
+
+  // ============================================================
+  // Invocation source badge helpers
+  // ============================================================
+  function sourceLabel(src: string | null | undefined): string {
+    if (!src) return '';
+    const map: Record<string, string> = { timer: 'Timer', assignment: 'Assignment', on_demand: 'On-demand', automation: 'Automation' };
+    return map[src] ?? humanize(src);
+  }
+  function sourceColor(src: string | null | undefined): string {
+    if (!src) return 'bg-gray-500/10 text-gray-500';
+    const map: Record<string, string> = {
+      timer: 'bg-blue-500/10 text-blue-500', assignment: 'bg-violet-500/10 text-violet-500',
+      on_demand: 'bg-cyan-500/10 text-cyan-500', automation: 'bg-gray-500/10 text-gray-500',
+    };
+    return map[src] ?? 'bg-gray-500/10 text-gray-500';
+  }
+
+  // Sidebar run status icon helper
+  function runStatusIcon(status: string) {
+    if (status === 'succeeded') return { icon: CheckCircle2, color: 'text-emerald-500' };
+    if (status === 'failed' || status === 'timed_out') return { icon: XCircle, color: 'text-red-500' };
+    if (status === 'running' || status === 'queued') return { icon: Loader2, color: 'text-cyan-500 animate-spin' };
+    if (status === 'cancelled') return { icon: Slash, color: 'text-gray-500' };
+    return { icon: Clock, color: 'text-yellow-500' };
+  }
+
+  // ============================================================
   // Scroll
   // ============================================================
   function scrollToBottom() {
@@ -584,8 +668,13 @@
   // ============================================================
   let dataLoaded = false;
   onMount(() => {
-    breadcrumbStore.set([{ label: 'Runs', href: `/${$page.params.companyPrefix}/runs` }, { label: runId ?? '' }]);
-    if (companyId) { dataLoaded = true; loadAll(); }
+    breadcrumbStore.set([
+      { label: 'Agents', href: `/${$page.params.companyPrefix}/agents` },
+      ...(run?.agentName ? [{ label: run.agentName, href: `/${$page.params.companyPrefix}/agents/${run.agentId}` }] : []),
+      { label: 'Runs', href: `/${$page.params.companyPrefix}/runs` },
+      { label: run?.identifier ?? runId?.slice(0, 8) ?? '' },
+    ]);
+    if (companyId) { dataLoaded = true; loadAll().then(() => loadAgentRuns()); }
   });
 
   $effect(() => {
@@ -807,24 +896,127 @@
   {/if}
 {/snippet}
 
-<div class="p-6 space-y-4">
+<div class="flex min-h-screen">
+  <!-- ====================================================== -->
+  <!-- LEFT SIDEBAR: Runs list (matching Paperclip)            -->
+  <!-- ====================================================== -->
+  {#if !loading && run?.agentId}
+    <aside class="hidden lg:block w-72 shrink-0 border-r border-border overflow-y-auto">
+      <div class="p-3">
+        <a href="/{prefix}/runs" class="text-xs text-muted-foreground hover:text-foreground transition-colors">
+          &larr; All runs
+        </a>
+      </div>
+      <div class="divide-y divide-border">
+        {#each agentRuns as r (r.id)}
+          {@const si = runStatusIcon(r.status)}
+          {@const StatusIcon = si.icon}
+          {@const isSelected = r.id === runId}
+          {@const usage = r.usageJson as Record<string, unknown> | null}
+          {@const totalTokens = (usage?.totalTokens ?? usage?.inputTokens) as number | undefined}
+          {@const costCents = usage?.costCents as number | undefined}
+          <a
+            href="/{prefix}/runs/{r.id}"
+            class="flex items-start gap-2 px-3 py-2.5 text-xs no-underline transition-colors border-b border-border last:border-b-0
+              {isSelected ? 'bg-accent/40' : 'hover:bg-accent/20'}"
+          >
+            <StatusIcon class="h-3.5 w-3.5 shrink-0 mt-0.5 {si.color}" />
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-1.5 flex-wrap">
+                <span class="font-mono text-xs text-muted-foreground">{r.identifier?.slice(0, 8) ?? r.id.slice(0, 8)}</span>
+                {#if sourceLabel(r.invocationSource)}
+                  <span class="inline-flex items-center rounded-full px-1.5 py-0.5 text-[10px] font-medium {sourceColor(r.invocationSource)}">
+                    {sourceLabel(r.invocationSource)}
+                  </span>
+                {/if}
+                <span class="text-[11px] text-muted-foreground ml-auto shrink-0">
+                  <TimeAgo date={r.createdAt ?? r.startedAt} class="!text-[11px]" />
+                </span>
+              </div>
+              {#if r.error || r.summary || r.resultJson}
+                <p class="mt-0.5 truncate text-muted-foreground text-[10px] pl-[22px]">
+                  {(r.error ?? r.summary ?? (r.resultJson ? JSON.stringify(r.resultJson).slice(0, 60) : '')).slice(0, 60)}
+                </p>
+              {/if}
+              {#if totalTokens || costCents}
+                <div class="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground pl-[22px]">
+                  {#if totalTokens}<span>{formatTokens(totalTokens)} tok</span>{/if}
+                  {#if costCents != null && costCents > 0}<span>${(costCents / 100).toFixed(3)}</span>{/if}
+                </div>
+              {/if}
+            </div>
+          </a>
+        {/each}
+      </div>
+    </aside>
+  {/if}
+
+  <!-- ====================================================== -->
+  <!-- MAIN CONTENT                                            -->
+  <!-- ====================================================== -->
+  <div class="flex-1 min-w-0 p-6 space-y-4">
   {#if loading}
     <PageSkeleton showSidebar={false} />
   {:else if !run}
     <p class="text-destructive">Run not found.</p>
   {:else}
 
-    <!-- Breadcrumb -->
-    {#if run.agentName || run.agentId}
-      <div class="flex items-center gap-1.5 text-sm text-muted-foreground">
-        <Bot class="h-3.5 w-3.5" />
-        {#if run.agentId}
-          <a href="/{prefix}/agents/{run.agentId}" class="hover:text-foreground transition-colors">{run.agentName ?? run.agentId.slice(0, 8)}</a>
-          <span class="text-muted-foreground/50">/</span>
-        {/if}
-        <span class="font-mono text-xs text-foreground">{run.identifier ?? runId?.slice(0, 8) ?? run.id.slice(0, 8)}</span>
+    <!-- Agent Header (matching Paperclip: icon 48px, name text-2xl bold, 3 action buttons) -->
+    <div class="flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <button class="flex h-12 w-12 items-center justify-center rounded-lg bg-accent hover:bg-accent/80 transition-colors" title="Agent icon">
+          <Bot class="h-6 w-6 text-muted-foreground" />
+        </button>
+        <div>
+          <h2 class="text-2xl font-bold text-foreground">{run.agentName ?? 'Agent'}</h2>
+          {#if run.agentId}
+            <a href="/{prefix}/agents/{run.agentId}" class="text-xs text-muted-foreground hover:text-foreground transition-colors">
+              {run.agentName ?? run.agentId.slice(0, 8)}
+            </a>
+          {/if}
+        </div>
       </div>
-    {/if}
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Assign Task (matching Paperclip) -->
+        <a
+          href="/{prefix}/issues/new?assigneeAgentId={run.agentId}"
+          class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+        >
+          <Plus class="h-3.5 w-3.5" />
+          Assign Task
+        </a>
+        <!-- Run Heartbeat (matching Paperclip) -->
+        <button
+          class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+          onclick={async () => {
+            try {
+              const res = await api(`/api/agents/${run!.agentId}/wakeup`, { method: 'POST', body: JSON.stringify({ source: 'on_demand', triggerDetail: 'manual' }) });
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              const result = await res.json();
+              if (result?.id) goto(`/${prefix}/runs/${result.id}`);
+              else toastStore.push({ title: 'Run was skipped', tone: 'warn' });
+            } catch (err) { toastStore.push({ title: 'Failed to run heartbeat', tone: 'error' }); }
+          }}
+        >
+          <Play class="h-3.5 w-3.5" />
+          Run Heartbeat
+        </button>
+        <!-- Pause (matching Paperclip) -->
+        {#if run.status === 'running' || run.status === 'queued'}
+          <button
+            class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
+            onclick={cancelRun}
+          >
+            <Pause class="h-3.5 w-3.5" />
+            Pause
+          </button>
+        {/if}
+        <!-- Status badge (matching Paperclip: agent status) -->
+        {#if run.status}
+          <StatusBadge status={run.status} />
+        {/if}
+      </div>
+    </div>
 
     <!-- ====================================================== -->
     <!-- Summary Card                                            -->
@@ -835,9 +1027,24 @@
         <div class="flex-1 p-4 space-y-3">
           <div class="flex items-center gap-2 flex-wrap">
             <StatusBadge status={run.status ?? 'unknown'} />
+            {#if sourceLabel(run.invocationSource)}
+              <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold {sourceColor(run.invocationSource)}">
+                {sourceLabel(run.invocationSource)}
+              </span>
+            {/if}
             {#if run.status === 'running' || run.status === 'queued'}
               <button class="text-destructive text-xs h-6 px-2 rounded-md hover:bg-destructive/10 transition-colors" onclick={cancelRun}>
                 Cancel
+              </button>
+            {/if}
+            {#if run.status === 'failed' || run.status === 'timed_out'}
+              <button
+                class="inline-flex items-center gap-1 text-xs h-6 px-2 rounded-md hover:bg-accent/60 transition-colors text-muted-foreground hover:text-foreground"
+                onclick={retryRun}
+                disabled={retrying}
+              >
+                <RotateCcw class="h-3 w-3 {retrying ? 'animate-spin' : ''}" />
+                Retry
               </button>
             {/if}
           </div>
@@ -1156,4 +1363,5 @@
     </div>
 
   {/if}
+  </div>
 </div>

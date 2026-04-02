@@ -28,7 +28,7 @@
     loading = true;
     error = null;
     try {
-      const res = await api('/api/access/admin/users');
+      const res = await api('/api/admin/users');
       if (!res.ok) {
         if (res.status === 403) {
           error = 'You do not have permission to manage instance users. Instance admin access is required.';
@@ -64,8 +64,8 @@
 
     try {
       const endpoint = action === 'promote'
-        ? `/api/access/admin/users/${userId}/promote-instance-admin`
-        : `/api/access/admin/users/${userId}/demote-instance-admin`;
+        ? `/api/admin/users/${userId}/promote-instance-admin`
+        : `/api/admin/users/${userId}/demote-instance-admin`;
       const res = await api(endpoint, { method: 'POST' });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));

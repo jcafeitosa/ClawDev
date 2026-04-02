@@ -1,28 +1,66 @@
 <script lang="ts">
   import { api } from '$lib/api';
 
-  let settings = $state<Record<string, boolean>>({});
+  let settings = $state({
+    enableIsolatedWorkspaces: false,
+    autoRestartDevServerWhenIdle: false,
+  });
   let loading = $state(true);
   let saving = $state(false);
+  let error = $state<string | null>(null);
 
   const features = [
-    { key: 'worktrees', label: 'Git Worktrees', desc: 'Enable workspace isolation via git worktrees' },
-    { key: 'plugins', label: 'Plugin System', desc: 'Enable the plugin runtime and UI' },
-    { key: 'routines', label: 'Routines', desc: 'Enable scheduled agent routines' },
-    { key: 'budgets', label: 'Budget Policies', desc: 'Enable cost budgets and enforcement' },
-    { key: 'approvals', label: 'Approval Workflows', desc: 'Require human approval for agent actions' },
-    { key: 'autoRestartDevServerWhenIdle', label: 'Auto-restart Dev Server', desc: 'Restart dev server when idle' },
+    {
+      key: 'enableIsolatedWorkspaces' as const,
+      label: 'Enable Isolated Workspaces',
+      desc: 'Show execution workspace controls in project configuration and allow isolated workspace behavior.',
+    },
+    {
+      key: 'autoRestartDevServerWhenIdle' as const,
+      label: 'Auto-Restart Dev Server When Idle',
+      desc: 'Restart the dev server automatically when all queued and running local runs finish.',
+    },
   ];
 
   $effect(() => {
-    api('/api/instance-settings/experimental').then(r => r.json()).then(d => { settings = d ?? {}; }).finally(() => { loading = false; });
+    api('/api/instance/settings/experimental')
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        settings = {
+          enableIsolatedWorkspaces: d?.enableIsolatedWorkspaces === true,
+          autoRestartDevServerWhenIdle: d?.autoRestartDevServerWhenIdle === true,
+        };
+      })
+      .catch((err: unknown) => {
+        error = err instanceof Error ? err.message : 'Failed to load experimental settings';
+      })
+      .finally(() => {
+        loading = false;
+      });
   });
 
-  async function toggle(key: string) {
-    settings = { ...settings, [key]: !settings[key] };
+  async function toggle(key: keyof typeof settings) {
+    const next = { ...settings, [key]: !settings[key] };
+    settings = next;
     saving = true;
-    await api('/api/instance-settings/experimental', { method: 'PATCH', body: JSON.stringify(settings) });
-    saving = false;
+    error = null;
+    try {
+      const res = await api('/api/instance/settings/experimental', {
+        method: 'PATCH',
+        body: JSON.stringify({ [key]: next[key] }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to update experimental settings';
+    } finally {
+      saving = false;
+    }
   }
 </script>
 
@@ -36,13 +74,26 @@
   </div>
   <h1 class="text-xl font-bold text-zinc-900 dark:text-zinc-50">Experimental Features</h1>
   {#if loading}
-    <div class="space-y-4">{#each Array(5) as _}<div class="h-16 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800"></div>{/each}</div>
+    <div class="space-y-4">{#each Array(2) as _}<div class="h-16 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800"></div>{/each}</div>
   {:else}
     <div class="space-y-3">
+      {#if error}
+        <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          {error}
+        </div>
+      {/if}
       {#each features as f}
         <div class="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <div><p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{f.label}</p><p class="text-xs text-zinc-500">{f.desc}</p></div>
-          <button onclick={() => toggle(f.key)} aria-label="Toggle {f.label}" class="relative h-6 w-11 rounded-full transition-colors {settings[f.key] ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}">
+          <div>
+            <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{f.label}</p>
+            <p class="text-xs text-zinc-500">{f.desc}</p>
+          </div>
+          <button
+            onclick={() => toggle(f.key)}
+            aria-label="Toggle {f.label}"
+            disabled={saving}
+            class="relative h-6 w-11 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 {settings[f.key] ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}"
+          >
             <span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform {settings[f.key] ? 'translate-x-5' : ''}"></span>
           </button>
         </div>

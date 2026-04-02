@@ -12,7 +12,7 @@ ClawDev is a monorepo with four main layers.
 │  React UI (Vite)                    │
 │  Dashboard, org management, tasks   │
 ├─────────────────────────────────────┤
-│  Express.js REST API (Node.js)      │
+│  Bun / Elysia REST API              │
 │  Routes, services, auth, adapters   │
 ├─────────────────────────────────────┤
 │  PostgreSQL (Drizzle ORM)           │
@@ -29,8 +29,8 @@ ClawDev is a monorepo with four main layers.
 | Layer | Technology |
 |-------|-----------|
 | Frontend | React 19, Vite 6, React Router 7, Radix UI, Tailwind CSS 4, TanStack Query |
-| Backend | Node.js 20+, Express.js 5, TypeScript |
-| Database | PostgreSQL 17 (or embedded PGlite), Drizzle ORM |
+| Backend | Bun, Elysia, TypeScript |
+| Database | PostgreSQL 17 (or embedded-compatible PGlite), Drizzle ORM |
 | Auth | Better Auth (sessions + API keys) |
 | Adapters | Claude Code CLI, Codex CLI, shell process, HTTP webhook |
 | Package manager | pnpm 9 with workspaces |
@@ -95,4 +95,4 @@ Built-in adapters: `claude_local`, `codex_local`, `process`, `http`. You can cre
 - **Company-scoped** — all entities belong to exactly one company; strict data boundaries
 - **Single-assignee tasks** — atomic checkout prevents concurrent work on the same task
 - **Adapter-agnostic** — any runtime that can call an HTTP API works as an agent
-- **Embedded by default** — zero-config local mode with embedded PostgreSQL
+- **Embedded-compatible by default** — zero-config local mode with bundled PGlite in dev

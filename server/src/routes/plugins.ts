@@ -10,6 +10,9 @@
  */
 
 import { randomUUID } from "node:crypto";
+import { existsSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { pluginLogs, pluginWebhookDeliveries } from "@clawdev/db";
@@ -28,11 +31,58 @@ import type { PluginWorkerManager } from "../services/plugin-worker-manager.js";
 import type { PluginStreamBus } from "../services/plugin-stream-bus.js";
 import type { PluginToolDispatcher } from "../services/plugin-tool-dispatcher.js";
 import { companyIdParam } from "../middleware/index.js";
-import { assertBoard, type Actor } from "../middleware/authz.js";
+import { assertBoard, assertCompanyAccess, type Actor } from "../middleware/authz.js";
 
 /** UUID v4 regex for plugin ID route resolution. */
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+interface AvailablePluginExample {
+  packageName: string;
+  pluginKey: string;
+  displayName: string;
+  description: string;
+  localPath: string;
+  tag: "example";
+}
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const REPO_ROOT = path.resolve(__dirname, "../../..");
+
+const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
+  {
+    packageName: "@clawdev/plugin-hello-world-example",
+    pluginKey: "clawdev.hello-world-example",
+    displayName: "Hello World Widget (Example)",
+    description: "Reference UI plugin that adds a simple Hello World widget to the ClawDev dashboard.",
+    localPath: "packages/plugins/examples/plugin-hello-world-example",
+    tag: "example",
+  },
+  {
+    packageName: "@clawdev/plugin-file-browser-example",
+    pluginKey: "clawdev-file-browser-example",
+    displayName: "File Browser (Example)",
+    description: "Example plugin that adds a Files link in project navigation plus a project detail file browser.",
+    localPath: "packages/plugins/examples/plugin-file-browser-example",
+    tag: "example",
+  },
+  {
+    packageName: "@clawdev/plugin-kitchen-sink-example",
+    pluginKey: "clawdev-kitchen-sink-example",
+    displayName: "Kitchen Sink (Example)",
+    description: "Reference plugin that demonstrates the current ClawDev plugin API surface, bridge flows, UI extension surfaces, jobs, webhooks, tools, streams, and trusted local workspace/process demos.",
+    localPath: "packages/plugins/examples/plugin-kitchen-sink-example",
+    tag: "example",
+  },
+];
+
+function listBundledPluginExamples(): AvailablePluginExample[] {
+  return BUNDLED_PLUGIN_EXAMPLES.flatMap((plugin) => {
+    const absoluteLocalPath = path.resolve(REPO_ROOT, plugin.localPath);
+    if (!existsSync(absoluteLocalPath)) return [];
+    return [{ ...plugin, localPath: absoluteLocalPath }];
+  });
+}
 
 export interface PluginRouteDeps {
   db: Db;
@@ -105,7 +155,41 @@ export function pluginRoutes(deps: PluginRouteDeps) {
       return plugins;
     })
 
+    // First-party examples
+    .get("/examples", async ({ ...ctx }: any) => {
+      assertBoard(ctx.actor);
+      return listBundledPluginExamples();
+    })
+
     // UI slot contributions for all ready plugins
+    .get("/ui-contributions", async ({ ...ctx }: any) => {
+      assertBoard(ctx.actor);
+      const plugins = await registry.listByStatus("ready");
+
+      const contributions = plugins
+        .map((plugin) => {
+          const manifest = (plugin as any).manifestJson;
+          if (!manifest) return null;
+
+          const uiMetadata = getPluginUiContributionMetadata(manifest);
+          if (!uiMetadata) return null;
+
+          return {
+            pluginId: plugin.id,
+            pluginKey: (plugin as any).pluginKey,
+            displayName: manifest.displayName,
+            version: (plugin as any).version,
+            updatedAt: plugin.updatedAt?.toISOString?.() ?? plugin.updatedAt,
+            uiEntryFile: uiMetadata.uiEntryFile,
+            slots: uiMetadata.slots,
+            launchers: uiMetadata.launchers,
+          };
+        })
+        .filter((item): item is NonNullable<typeof item> => item !== null);
+
+      return contributions;
+    })
+
     .get("/ui/slots", async ({ ...ctx }: any) => {
       assertBoard(ctx.actor);
       const plugins = await registry.listByStatus("ready");
@@ -173,6 +257,8 @@ export function pluginRoutes(deps: PluginRouteDeps) {
           set.status = 400;
           return { error: '"runContext" must include agentId, runId, companyId, and projectId' };
         }
+
+        assertCompanyAccess(ctx.actor, runContext.companyId);
 
         const registeredTool = toolDispatcher.getTool(tool);
         if (!registeredTool) {
@@ -251,6 +337,23 @@ export function pluginRoutes(deps: PluginRouteDeps) {
         return { success: true };
       },
       { params: pluginIdParam },
+    )
+
+    .delete(
+      "/:pluginId",
+      async ({ params, query, ...ctx }: any) => {
+        assertBoard(ctx.actor);
+        const purge = query.purge === "true";
+        await lifecycle.unload(params.pluginId, purge);
+        publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: params.pluginId } });
+        return { success: true };
+      },
+      {
+        params: pluginIdParam,
+        query: t.Object({
+          purge: t.Optional(t.String()),
+        }),
+      },
     )
 
     // Enable plugin
@@ -529,6 +632,10 @@ export function pluginRoutes(deps: PluginRouteDeps) {
           return { error: '"key" is required and must be a string' };
         }
 
+        if (body.companyId) {
+          assertCompanyAccess(ctx.actor, body.companyId);
+        }
+
         try {
           const result = await workerManager.call(plugin.id, "getData", {
             key: body.key,
@@ -568,6 +675,10 @@ export function pluginRoutes(deps: PluginRouteDeps) {
           return { error: '"key" is required and must be a string' };
         }
 
+        if (body.companyId) {
+          assertCompanyAccess(ctx.actor, body.companyId);
+        }
+
         try {
           const result = await workerManager.call(plugin.id, "performAction", {
             key: body.key,
@@ -600,6 +711,10 @@ export function pluginRoutes(deps: PluginRouteDeps) {
         if (plugin.status !== "ready") {
           set.status = 502;
           return { code: "WORKER_UNAVAILABLE", message: `Plugin is not ready (current status: ${plugin.status})` };
+        }
+
+        if (body?.companyId) {
+          assertCompanyAccess(ctx.actor, body.companyId);
         }
 
         try {
@@ -636,6 +751,10 @@ export function pluginRoutes(deps: PluginRouteDeps) {
           return { code: "WORKER_UNAVAILABLE", message: `Plugin is not ready (current status: ${plugin.status})` };
         }
 
+        if (body?.companyId) {
+          assertCompanyAccess(ctx.actor, body.companyId);
+        }
+
         try {
           const result = await workerManager.call(plugin.id, "performAction", {
             key: params.key,
@@ -650,6 +769,89 @@ export function pluginRoutes(deps: PluginRouteDeps) {
         }
       },
       { params: t.Object({ pluginId: t.String(), key: t.String() }) },
+    )
+
+    // SSE stream bridge route
+    .get(
+      "/:pluginId/bridge/stream/:channel",
+      async ({ params, query, set, ...ctx }: any) => {
+        assertBoard(ctx.actor);
+        if (!streamBus) {
+          set.status = 501;
+          return { error: "Plugin stream bridge is not enabled" };
+        }
+
+        const companyId = query?.companyId as string | undefined;
+        if (!companyId) {
+          set.status = 400;
+          return { error: '"companyId" query parameter is required' };
+        }
+
+        const plugin = await resolvePlugin(registry, params.pluginId);
+        if (!plugin) {
+          set.status = 404;
+          return { error: "Plugin not found" };
+        }
+
+        assertCompanyAccess(ctx.actor, companyId);
+
+        const encoder = new TextEncoder();
+        let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+        let unsubscribed = false;
+        let unsubscribe = () => {};
+        const safeUnsubscribe = () => {
+          if (unsubscribed) return;
+          unsubscribed = true;
+          try {
+            unsubscribe();
+          } finally {
+            try {
+              controllerRef?.close();
+            } catch {
+              // ignore
+            }
+          }
+        };
+
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            controllerRef = controller;
+            controller.enqueue(encoder.encode(":ok\n\n"));
+            unsubscribe = streamBus.subscribe(
+              plugin.id,
+              params.channel,
+              companyId,
+              (event, eventType) => {
+                if (unsubscribed) return;
+                try {
+                  if (eventType !== "message") {
+                    controller.enqueue(encoder.encode(`event: ${eventType}\n`));
+                  }
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
+                  if (eventType === "close") {
+                    safeUnsubscribe();
+                  }
+                } catch {
+                  safeUnsubscribe();
+                }
+              },
+            );
+          },
+          cancel() {
+            safeUnsubscribe();
+          },
+        });
+
+        return new Response(stream, {
+          headers: {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache",
+            connection: "keep-alive",
+            "x-accel-buffering": "no",
+          },
+        });
+      },
+      { params: t.Object({ pluginId: t.String(), channel: t.String() }), query: t.Object({ companyId: t.String() }) },
     )
 
     // Plugin jobs

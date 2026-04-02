@@ -6,13 +6,14 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { companySkillService, agentService, logActivity } from "../services/index.js";
+import { accessService, companySkillService, agentService, logActivity } from "../services/index.js";
 import { companyIdParam } from "../middleware/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 
 export function companySkillRoutes(db: Db) {
   const svc = companySkillService(db);
   const agents = agentService(db);
+  const access = accessService(db);
 
   function canCreateAgents(agent: { permissions: Record<string, unknown> | null | undefined }) {
     if (!agent.permissions || typeof agent.permissions !== "object") return false;
@@ -22,6 +23,7 @@ export function companySkillRoutes(db: Db) {
   async function checkCanMutateCompanySkills(actor: Actor, companyId: string, ctx: any): Promise<string | null> {
     if (actor.type === "board") {
       if (actor.source === "local_implicit" || actor.isInstanceAdmin) return null;
+      if (actor.userId && await access.canUser(companyId, actor.userId, "agents:create")) return null;
       ctx.set.status = 403;
       return "Missing permission: agents:create";
     }
@@ -37,7 +39,7 @@ export function companySkillRoutes(db: Db) {
       return "Agent key cannot access another company";
     }
 
-    if (canCreateAgents(actorAgent)) {
+    if (await access.hasPermission(companyId, "agent", actorAgent.id, "agents:create") || canCreateAgents(actorAgent)) {
       return null;
     }
 
@@ -49,6 +51,18 @@ export function companySkillRoutes(db: Db) {
     // List skills for a company
     .get(
       "/companies/:companyId/skills",
+      async ({ params, ...ctx }: any) => {
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+        const skills = await svc.list(params.companyId);
+        return skills;
+      },
+      { params: companyIdParam },
+    )
+
+    // Backward-compatible alias used by the ClawDev agent UI.
+    .get(
+      "/companies/:companyId/company-skills",
       async ({ params, ...ctx }: any) => {
         const actor = ctx.actor as Actor;
         assertCompanyAccess(actor, params.companyId);
@@ -70,6 +84,74 @@ export function companySkillRoutes(db: Db) {
         return skill;
       },
       { params: t.Object({ id: t.String() }) },
+    )
+
+    // Company-scoped detail route used by the original Paperclip UI.
+    .get(
+      "/companies/:companyId/skills/:skillId",
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        const { companyId, skillId } = ctx.params;
+        assertCompanyAccess(actor, companyId);
+        const skill = await svc.getById(skillId);
+        if (!skill || skill.companyId !== companyId) {
+          ctx.set.status = 404;
+          return { error: "Not found" };
+        }
+        return await svc.detail(companyId, skillId);
+      },
+      { params: t.Object({ companyId: t.String(), skillId: t.String() }) },
+    )
+
+    // Check whether a company skill has an upstream update available.
+    .get(
+      "/companies/:companyId/skills/:skillId/update-status",
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        const { companyId, skillId } = ctx.params;
+        assertCompanyAccess(actor, companyId);
+        const result = await svc.updateStatus(companyId, skillId);
+        if (!result) { ctx.set.status = 404; return { error: "Skill not found" }; }
+        return result;
+      },
+      { params: t.Object({ companyId: t.String(), skillId: t.String() }) },
+    )
+
+    // Company-scoped delete route used by the ClawDev Svelte UI.
+    .delete(
+      "/companies/:companyId/skills/:skillId",
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        const { companyId, skillId } = ctx.params;
+        assertCompanyAccess(actor, companyId);
+        const deniedMsg = await checkCanMutateCompanySkills(actor, companyId, ctx);
+        if (deniedMsg) return { error: deniedMsg };
+        const skill = await svc.getById(skillId);
+        if (!skill || skill.companyId !== companyId) {
+          ctx.set.status = 404;
+          return { error: "Not found" };
+        }
+        const deleted = await svc.deleteSkill(companyId, skillId);
+        if (!deleted) {
+          ctx.set.status = 404;
+          return { error: "Not found" };
+        }
+
+        const actorInfo = getActorInfo(actor);
+        await logActivity(db, {
+          companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          action: "company.skill_deleted",
+          entityType: "company_skill",
+          entityId: skillId,
+          details: { slug: deleted.slug, name: deleted.name },
+        });
+
+        return deleted;
+      },
+      { params: t.Object({ companyId: t.String(), skillId: t.String() }) },
     )
 
     // Create skill
@@ -95,7 +177,7 @@ export function companySkillRoutes(db: Db) {
           action: "company.skill_created",
           entityType: "company_skill",
           entityId: skill.id,
-          details: { name: body.name },
+          details: { slug: skill.slug, name: skill.name },
         });
 
         return skill;
@@ -131,7 +213,12 @@ export function companySkillRoutes(db: Db) {
           action: "company.skill_imported",
           entityType: "company_skill",
           entityId: params.companyId,
-          details: { source },
+          details: {
+            source,
+            importedCount: result.imported.length,
+            importedSlugs: result.imported.map((skill: any) => skill.slug),
+            warningCount: result.warnings.length,
+          },
         });
 
         set.status = 201;
@@ -166,10 +253,10 @@ export function companySkillRoutes(db: Db) {
             actorType: actorInfo.actorType,
             actorId: actorInfo.actorId,
             agentId: actorInfo.agentId,
-            action: "company.skill_updated",
+            action: "company.skill_file_updated",
             entityType: "company_skill",
             entityId: params.id,
-            details: { name: skill.name },
+            details: { path: "SKILL.md", markdown: updated.markdown },
           });
 
           return updated;
@@ -197,7 +284,11 @@ export function companySkillRoutes(db: Db) {
         assertCompanyAccess(actor, skill.companyId);
         const deniedMsg = await checkCanMutateCompanySkills(actor, skill.companyId, ctx);
         if (deniedMsg) return { error: deniedMsg };
-        await svc.deleteSkill(skill.companyId, ctx.params.id);
+        const deleted = await svc.deleteSkill(skill.companyId, ctx.params.id);
+        if (!deleted) {
+          ctx.set.status = 404;
+          return { error: "Not found" };
+        }
 
         const actorInfo = getActorInfo(actor);
         await logActivity(db, {
@@ -208,10 +299,10 @@ export function companySkillRoutes(db: Db) {
           action: "company.skill_deleted",
           entityType: "company_skill",
           entityId: ctx.params.id,
-          details: { name: skill.name },
+          details: { slug: deleted.slug, name: deleted.name },
         });
 
-        return { success: true };
+        return deleted;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -246,6 +337,20 @@ export function companySkillRoutes(db: Db) {
           String(ctx.body?.path ?? ""),
           String(ctx.body?.content ?? ""),
         );
+        const actorInfo = getActorInfo(actor);
+        await logActivity(db, {
+          companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          action: "company.skill_file_updated",
+          entityType: "company_skill",
+          entityId: skillId,
+          details: {
+            path: result.path,
+            markdown: result.markdown,
+          },
+        });
         return result;
       },
       { params: t.Object({ companyId: t.String(), skillId: t.String() }) },

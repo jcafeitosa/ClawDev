@@ -51,7 +51,7 @@ Public packages are discovered from:
 
 - `packages/`
 - `server/`
-- `ui/`
+- `svelte-ui/`
 - `cli/`
 
 The version rewrite step now uses [`scripts/release-package-map.mjs`](../scripts/release-package-map.mjs), which:
@@ -64,11 +64,11 @@ The version rewrite step now uses [`scripts/release-package-map.mjs`](../scripts
 
 Those rewrites are temporary. The working tree is restored after publish or dry-run.
 
-## `@clawdev/ui` packaging
+## `@clawdev/svelte-ui` packaging
 
-The UI package publishes prebuilt static assets, not the source workspace.
+The Svelte UI package publishes prebuilt static assets, not the source workspace.
 
-The `ui` package uses [`scripts/generate-ui-package-json.mjs`](../scripts/generate-ui-package-json.mjs) during `prepack` to swap in a lean publish manifest that:
+The `svelte-ui` package uses [`scripts/generate-ui-package-json.mjs`](../scripts/generate-ui-package-json.mjs) during `prepack` to swap in a lean publish manifest that:
 
 - keeps the release-managed `name` and `version`
 - publishes only `dist/`

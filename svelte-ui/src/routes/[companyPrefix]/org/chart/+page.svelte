@@ -335,6 +335,7 @@
       <p class="text-sm text-muted-foreground">No agents found. Add agents to see the organization chart.</p>
     </div>
   {:else}
+    <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->
     <div
       class="flex-1 w-full overflow-hidden relative"
       style="cursor: {dragging ? 'grabbing' : 'grab'};"

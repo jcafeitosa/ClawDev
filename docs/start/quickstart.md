@@ -34,7 +34,7 @@ pnpm dev
 
 This starts the API server and UI at [http://localhost:3100](http://localhost:3100).
 
-No external database required — ClawDev uses an embedded PostgreSQL instance by default.
+No external database required — the local dev runner boots a bundled PGlite-backed database by default.
 
 When working from the cloned repo, you can also use:
 

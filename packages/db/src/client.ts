@@ -1,17 +1,29 @@
 import { createHash } from "node:crypto";
 import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
 import { migrate as migratePg } from "drizzle-orm/postgres-js/migrator";
+import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import { readFile, readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import postgres from "postgres";
+import { PGlite } from "@electric-sql/pglite";
 import * as schema from "./schema/index.js";
+import {
+  decodePGliteUrl,
+  getRegisteredPGliteClient,
+  registerPGliteClient,
+} from "./pglite.js";
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL("./migrations", import.meta.url));
 const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
 const MIGRATIONS_JOURNAL_JSON = fileURLToPath(new URL("./migrations/meta/_journal.json", import.meta.url));
 
 function createUtilitySql(url: string) {
-  return postgres(url, { max: 1, onnotice: () => {} });
+  return postgres(url, {
+    max: 1,
+    onnotice: () => {},
+    host: process.env.PGHOST,
+    port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
+  });
 }
 
 function isSafeIdentifier(value: string): boolean {
@@ -45,8 +57,26 @@ export type MigrationState =
       reason: "no-migration-journal-empty-db" | "no-migration-journal-non-empty-db" | "pending-migrations";
     };
 
-export function createDb(url: string) {
-  const sql = postgres(url);
+export type Db = ReturnType<typeof drizzlePg>;
+
+export function createDb(url: string): Db {
+  const pgliteDataDir = decodePGliteUrl(url);
+  if (pgliteDataDir) {
+    let client = getRegisteredPGliteClient(pgliteDataDir);
+    if (!client) {
+      client = new PGlite(pgliteDataDir, {
+        relaxedDurability: true,
+      });
+      registerPGliteClient(pgliteDataDir, client);
+      void client.waitReady.catch(() => undefined);
+    }
+    return drizzlePglite(client, { schema }) as unknown as Db;
+  }
+
+  const sql = postgres(url, {
+    host: process.env.PGHOST,
+    port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
+  });
   return drizzlePg(sql, { schema });
 }
 
@@ -775,5 +805,3 @@ export async function ensurePostgresDatabase(
     await sql.end();
   }
 }
-
-export type Db = ReturnType<typeof createDb>;

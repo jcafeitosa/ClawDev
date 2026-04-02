@@ -5,6 +5,7 @@ import { resolveDefaultAgentWorkspaceDir } from "../home-paths.js";
 import {
   buildExplicitResumeSessionOverride,
   formatRuntimeWorkspaceWarningLog,
+  normalizeHeartbeatRuntimeConfigForExecution,
   prioritizeProjectWorkspaceCandidatesForRun,
   parseSessionCompactionPolicy,
   resolveRuntimeSessionParamsForWorkspace,
@@ -241,6 +242,41 @@ describe("formatRuntimeWorkspaceWarningLog", () => {
       stream: "stdout",
       chunk: "[clawdev] Using fallback workspace\n",
     });
+  });
+});
+
+describe("normalizeHeartbeatRuntimeConfigForExecution", () => {
+  it("removes auto for claude_local before execution", () => {
+    expect(
+      normalizeHeartbeatRuntimeConfigForExecution(
+        "claude_local",
+        { model: "auto", heartbeat: { enabled: true } },
+        undefined,
+        "auto",
+      ),
+    ).toEqual({ heartbeat: { enabled: true } });
+  });
+
+  it("keeps explicit model routing when the router picks a real model", () => {
+    expect(
+      normalizeHeartbeatRuntimeConfigForExecution(
+        "claude_local",
+        { heartbeat: { enabled: true } },
+        undefined,
+        "claude-sonnet-4-6",
+      ),
+    ).toEqual({ heartbeat: { enabled: true }, model: "claude-sonnet-4-6" });
+  });
+
+  it("preserves non-claude adapters", () => {
+    expect(
+      normalizeHeartbeatRuntimeConfigForExecution(
+        "codex_local",
+        { model: "auto", heartbeat: { enabled: true } },
+        undefined,
+        "auto",
+      ),
+    ).toEqual({ model: "auto", heartbeat: { enabled: true } });
   });
 });
 

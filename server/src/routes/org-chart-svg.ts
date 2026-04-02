@@ -434,7 +434,7 @@ function renderEmojiAvatar(cx: number, cy: number, radius: number, bgFill: strin
 }
 
 function defaultRenderCard(ln: LayoutNode, theme: StyleTheme): string {
-  // Overflow placeholder card: just shows "+N more" text, no avatar
+  // Overflow summary card: just shows "+N more" text, no avatar
   if (ln.node.role === "overflow") {
     const cx = ln.x + ln.width / 2;
     const cy = ln.y + ln.height / 2;
@@ -614,14 +614,14 @@ function nodesAtDepth(nodes: OrgNode[], depth: number): OrgNode[] {
 
 /**
  * Estimate how many cards would be shown at the next level if we expand,
- * considering truncation (each parent shows at most MAX_CHILDREN_SHOWN + 1 placeholder).
+ * considering truncation (each parent shows at most MAX_CHILDREN_SHOWN + 1 summary card).
  */
 function estimateNextLevelWidth(parentNodes: OrgNode[]): number {
   let total = 0;
   for (const p of parentNodes) {
     const childCount = (p.reports ?? []).length;
     if (childCount === 0) continue;
-    total += Math.min(childCount, MAX_CHILDREN_SHOWN + 1); // +1 for "and N more" placeholder
+    total += Math.min(childCount, MAX_CHILDREN_SHOWN + 1); // +1 for "and N more" summary card
   }
   return total;
 }
@@ -642,21 +642,21 @@ function collapseToAvatars(node: OrgNode): OrgNode {
 
 /**
  * Truncate a node's children: keep first MAX_CHILDREN_SHOWN, replace rest with
- * a summary "and N more" placeholder node (rendered as a count card).
+ * a summary "and N more" node (rendered as a count card).
  */
 function truncateChildren(node: OrgNode): OrgNode {
   const children = node.reports ?? [];
   if (children.length <= MAX_CHILDREN_SHOWN) return node;
   const kept = children.slice(0, MAX_CHILDREN_SHOWN);
   const hiddenCount = children.length - MAX_CHILDREN_SHOWN;
-  const placeholder: OrgNode = {
+  const moreNode: OrgNode = {
     id: `${node.id}-more`,
     name: `+${hiddenCount} more`,
     role: "overflow",
     status: "active",
     reports: [],
   };
-  return { ...node, reports: [...kept, placeholder] };
+  return { ...node, reports: [...kept, moreNode] };
 }
 
 /**

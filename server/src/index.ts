@@ -1,8 +1,9 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { resolve } from "node:path";
+import { createServer } from "node:net";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
@@ -16,12 +17,13 @@ import {
   reconcilePendingMigrationHistory,
   formatDatabaseBackupResult,
   runDatabaseBackup,
+  openPGliteDatabase,
+  encodePGliteUrl,
   authUsers,
   companies,
   companyMemberships,
   instanceUserRoles,
 } from "@clawdev/db";
-import detectPort from "detect-port";
 import { createElysiaApp } from "./elysia-app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
@@ -59,6 +61,12 @@ type EmbeddedPostgresInstance = {
   stop(): Promise<void>;
 };
 
+type PGliteDatabaseInstance = {
+  db: unknown;
+  dataDir: string;
+  stop(): Promise<void>;
+};
+
 type EmbeddedPostgresCtor = new (opts: {
   databaseDir: string;
   user: string;
@@ -70,6 +78,24 @@ type EmbeddedPostgresCtor = new (opts: {
   onError?: (message: unknown) => void;
 }) => EmbeddedPostgresInstance;
 
+async function detectFreePort(port: number, hostname: string): Promise<number> {
+  for (let candidate = Math.max(1, port); candidate <= 65535 && candidate < port + 20; candidate += 1) {
+    const isFree = await new Promise<boolean>((resolve) => {
+      const server = createServer();
+      let settled = false;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        server.close(() => resolve(value));
+      };
+      server.once("error", () => finish(false));
+      server.listen({ port: candidate, host: hostname }, () => finish(true));
+    });
+    if (isFree) return candidate;
+  }
+  return port;
+}
+
 
 export interface StartedServer {
   host: string;
@@ -79,7 +105,17 @@ export interface StartedServer {
 }
 
 export async function startServer(): Promise<StartedServer> {
+  const repoRoot = resolve(fileURLToPath(new URL("../..", import.meta.url)));
   let config = loadConfig();
+  logger.info(
+    {
+      host: config.host,
+      port: config.port,
+      databaseMode: config.databaseMode,
+      hasDatabaseUrl: Boolean(config.databaseUrl),
+    },
+    "Startup config loaded",
+  );
   if (process.env.CLAWDEV_SECRETS_PROVIDER === undefined) {
     process.env.CLAWDEV_SECRETS_PROVIDER = config.secretsProvider;
   }
@@ -94,7 +130,8 @@ export async function startServer(): Promise<StartedServer> {
     | "skipped"
     | "already applied"
     | "applied (empty database)"
-    | "applied (pending migrations)";
+    | "applied (pending migrations)"
+    | "applied (pglite)";
   
   function formatPendingMigrationSummary(migrations: string[]): string {
     if (migrations.length === 0) return "none";
@@ -178,6 +215,14 @@ export async function startServer(): Promise<StartedServer> {
     return normalized === "127.0.0.1" || normalized === "localhost" || normalized === "::1";
   }
 
+  const usePGliteRuntime = process.env.CLAWDEV_DB_RUNTIME?.trim().toLowerCase() === "pglite";
+
+  function isPortInUseError(err: unknown): boolean {
+    if (!(err instanceof Error)) return false;
+    const anyErr = err as Error & { code?: string; syscall?: string };
+    return anyErr.code === "EADDRINUSE" || anyErr.syscall === "listen";
+  }
+
   function rewriteLocalUrlPort(rawUrl: string | undefined, port: number): string | undefined {
     if (!rawUrl) return undefined;
     try {
@@ -252,21 +297,34 @@ export async function startServer(): Promise<StartedServer> {
   
   let db;
   let embeddedPostgres: EmbeddedPostgresInstance | null = null;
+  let pgliteDatabase: PGliteDatabaseInstance | null = null;
   let embeddedPostgresStartedByThisProcess = false;
   let migrationSummary: MigrationSummary = "skipped";
   let activeDatabaseConnectionString: string;
   let resolvedEmbeddedPostgresPort: number | null = null;
   let startupDbInfo:
     | { mode: "external-postgres"; connectionString: string }
-    | { mode: "embedded-postgres"; dataDir: string; port: number };
+    | { mode: "embedded-postgres"; dataDir: string; port: number }
+    | { mode: "pglite"; dataDir: string };
   if (config.databaseUrl) {
+    logger.info("Startup: using external PostgreSQL");
     migrationSummary = await ensureMigrations(config.databaseUrl, "PostgreSQL");
-  
+
     db = createDb(config.databaseUrl);
     logger.info("Using external PostgreSQL via DATABASE_URL/config");
     activeDatabaseConnectionString = config.databaseUrl;
     startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
+  } else if (usePGliteRuntime) {
+    logger.info("Startup: using PGlite");
+    const pgliteDataDir = resolve(repoRoot, "data", "pglite");
+    pgliteDatabase = await openPGliteDatabase(pgliteDataDir);
+    db = pgliteDatabase.db;
+    activeDatabaseConnectionString = encodePGliteUrl(pgliteDataDir);
+    migrationSummary = "applied (pglite)";
+    startupDbInfo = { mode: "pglite", dataDir: pgliteDataDir };
+    config.databaseBackupEnabled = false;
   } else {
+    logger.info("Startup: using embedded PostgreSQL");
     const moduleName = "embedded-postgres";
     let EmbeddedPostgres: EmbeddedPostgresCtor;
     try {
@@ -328,83 +386,201 @@ export async function startServer(): Promise<StartedServer> {
         return false;
       }
     };
-  
-    const getRunningPid = (): number | null => {
+
+    const readPostmasterPid = (): number | null => {
       if (!existsSync(postmasterPidFile)) return null;
       try {
         const pidLine = readFileSync(postmasterPidFile, "utf8").split("\n")[0]?.trim();
         const pid = Number(pidLine);
         if (!Number.isInteger(pid) || pid <= 0) return null;
-        if (!isPidRunning(pid)) return null;
         return pid;
       } catch {
         return null;
       }
     };
-  
-    const runningPid = getRunningPid();
-    if (runningPid) {
-      logger.info(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
-    } else {
-      const configuredAdminConnectionString = `postgres://clawdev:clawdev@127.0.0.1:${configuredPort}/postgres`;
+
+    const getRunningPid = (): number | null => {
+      const pid = readPostmasterPid();
+      if (pid === null) return null;
+      if (!isPidRunning(pid)) return null;
+      return pid;
+    };
+
+    const waitForPidExit = async (pid: number, timeoutMs = 5000): Promise<boolean> => {
+      const deadline = Date.now() + timeoutMs;
+      while (Date.now() < deadline) {
+        if (!isPidRunning(pid)) return true;
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      }
+      return !isPidRunning(pid);
+    };
+
+    const terminateEmbeddedPostgresProcess = async (pid: number): Promise<void> => {
+      logger.warn({ pid, dataDir }, "Terminating stale embedded PostgreSQL process");
       try {
-        const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
-        if (
-          typeof actualDataDir !== "string" ||
-          resolve(actualDataDir) !== resolve(dataDir)
-        ) {
-          throw new Error("reachable postgres does not use the expected embedded data directory");
-        }
-        await ensurePostgresDatabase(configuredAdminConnectionString, "clawdev");
-        logger.warn(
-          `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
-        );
+        process.kill(pid, "SIGTERM");
       } catch {
-        const detectedPort = await detectPort(configuredPort);
-        if (detectedPort !== configuredPort) {
-          logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${configuredPort}, selectedPort=${detectedPort})`);
-        }
-        port = detectedPort;
-        logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
-        embeddedPostgres = new EmbeddedPostgres({
-          databaseDir: dataDir,
-          user: "clawdev",
-          password: "clawdev",
-          port,
-          persistent: true,
-          initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
-          onLog: appendEmbeddedPostgresLog,
-          onError: appendEmbeddedPostgresLog,
-        });
+        // Ignore if the process already exited or we lack permission.
+      }
+      if (await waitForPidExit(pid)) {
+        return;
+      }
+      try {
+        process.kill(pid, "SIGKILL");
+      } catch {
+        // Ignore if the process already exited or we lack permission.
+      }
+      await waitForPidExit(pid, 2000);
+    };
 
-        if (!clusterAlreadyInitialized) {
-          try {
-            await embeddedPostgres.initialise();
-          } catch (err) {
-            logEmbeddedPostgresFailure("initialise", err);
-            throw formatEmbeddedPostgresError(err, {
-              fallbackMessage: `Failed to initialize embedded PostgreSQL cluster in ${dataDir} on port ${port}`,
-              recentLogs: logBuffer.getRecentLogs(),
-            });
-          }
-        } else {
-          logger.info(`Embedded PostgreSQL cluster already exists (${clusterVersionFile}); skipping init`);
+    const cleanupStaleEmbeddedPostgresProcess = async (stalePidHint: number | null = null): Promise<void> => {
+      const pidsToTerminate = new Set<number>();
+      if (typeof stalePidHint === "number" && Number.isInteger(stalePidHint) && stalePidHint > 0) {
+        pidsToTerminate.add(stalePidHint);
+      }
+      const pidFromFile = readPostmasterPid();
+      if (pidFromFile !== null) {
+        pidsToTerminate.add(pidFromFile);
+      }
+      for (const pid of pidsToTerminate) {
+        if (isPidRunning(pid)) {
+          await terminateEmbeddedPostgresProcess(pid);
         }
-
-        if (existsSync(postmasterPidFile)) {
-          logger.warn("Removing stale embedded PostgreSQL lock file");
-          rmSync(postmasterPidFile, { force: true });
-        }
+      }
+      if (existsSync(postmasterPidFile)) {
         try {
-          await embeddedPostgres.start();
+          unlinkSync(postmasterPidFile);
+        } catch {
+          // Ignore if Bun/Postgres already removed it or it vanished between checks.
+        }
+      }
+    };
+
+    const startFreshEmbeddedPostgres = async (reason: string): Promise<number> => {
+      logger.warn(reason);
+      logger.info({ configuredPort, dataDir }, "Startup: starting fresh embedded PostgreSQL");
+      const detectedPort = await detectFreePort(configuredPort, "127.0.0.1");
+      if (detectedPort !== configuredPort) {
+        logger.warn(`Embedded PostgreSQL port is in use; using next free port (requestedPort=${configuredPort}, selectedPort=${detectedPort})`);
+      }
+      port = detectedPort;
+      logger.info(`Using embedded PostgreSQL because no DATABASE_URL set (dataDir=${dataDir}, port=${port})`);
+      embeddedPostgres = new EmbeddedPostgres({
+        databaseDir: dataDir,
+        user: "clawdev",
+        password: "clawdev",
+        port,
+        persistent: true,
+        initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
+        onLog: appendEmbeddedPostgresLog,
+        onError: appendEmbeddedPostgresLog,
+      });
+
+      if (!clusterAlreadyInitialized) {
+        try {
+          await embeddedPostgres.initialise();
         } catch (err) {
-          logEmbeddedPostgresFailure("start", err);
+          logEmbeddedPostgresFailure("initialise", err);
           throw formatEmbeddedPostgresError(err, {
-            fallbackMessage: `Failed to start embedded PostgreSQL on port ${port}`,
+            fallbackMessage: `Failed to initialize embedded PostgreSQL cluster in ${dataDir} on port ${port}`,
             recentLogs: logBuffer.getRecentLogs(),
           });
         }
-        embeddedPostgresStartedByThisProcess = true;
+      } else {
+        logger.info(`Embedded PostgreSQL cluster already exists (${clusterVersionFile}); skipping init`);
+      }
+
+      const stalePidHint = readPostmasterPid();
+      if (existsSync(postmasterPidFile)) {
+        logger.warn("Removing stale embedded PostgreSQL lock file");
+        try {
+          unlinkSync(postmasterPidFile);
+        } catch {
+          // Ignore if Bun/Postgres already removed it or it vanished between checks.
+        }
+      }
+      try {
+        await embeddedPostgres.start();
+      } catch (err) {
+        const errorText = err instanceof Error ? err.message : String(err ?? "");
+        const recentLogs = logBuffer.getRecentLogs().join(" | ");
+        const sharedMemoryStale =
+          /shared memory block.*still in use|could not create shared memory segment|could not attach to shared memory segment/i.test(errorText) ||
+          /shared memory block.*still in use|could not create shared memory segment|could not attach to shared memory segment/i.test(recentLogs);
+        if (sharedMemoryStale) {
+          logger.warn(
+            { err, dataDir, port },
+            "Embedded PostgreSQL start failed because a stale process is still holding shared memory; cleaning it up and retrying",
+          );
+          await cleanupStaleEmbeddedPostgresProcess(stalePidHint);
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+          try {
+            await embeddedPostgres.start();
+          } catch (retryErr) {
+            logEmbeddedPostgresFailure("start", retryErr);
+            throw formatEmbeddedPostgresError(retryErr, {
+              fallbackMessage: `Failed to start embedded PostgreSQL on port ${port} after cleaning up stale processes`,
+              recentLogs: logBuffer.getRecentLogs(),
+            });
+          }
+          embeddedPostgresStartedByThisProcess = true;
+          return port;
+        }
+        logEmbeddedPostgresFailure("start", err);
+        throw formatEmbeddedPostgresError(err, {
+          fallbackMessage: `Failed to start embedded PostgreSQL on port ${port}`,
+          recentLogs: logBuffer.getRecentLogs(),
+        });
+      }
+      embeddedPostgresStartedByThisProcess = true;
+      return port;
+    };
+
+    const verifyExistingEmbeddedPostgres = async (): Promise<void> => {
+      const configuredAdminConnectionString = `postgres://clawdev:clawdev@127.0.0.1:${configuredPort}/postgres`;
+      const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
+      if (
+        typeof actualDataDir !== "string" ||
+        resolve(actualDataDir) !== resolve(dataDir)
+      ) {
+        throw new Error("reachable postgres does not use the expected embedded data directory");
+      }
+      await ensurePostgresDatabase(configuredAdminConnectionString, "clawdev");
+    };
+
+    const runningPid = getRunningPid();
+    if (runningPid) {
+      try {
+        logger.info({ pid: runningPid, port: configuredPort }, "Startup: verifying existing embedded PostgreSQL");
+        await verifyExistingEmbeddedPostgres();
+        logger.info(`Embedded PostgreSQL already running; reusing existing process (pid=${runningPid}, port=${port})`);
+      } catch (err) {
+        logger.warn(
+          { err, pid: runningPid },
+          "Embedded PostgreSQL pid file points to an unavailable server; starting a fresh local cluster",
+        );
+        if (existsSync(postmasterPidFile)) {
+          try {
+            unlinkSync(postmasterPidFile);
+          } catch {
+            // Ignore stale lock cleanup failures and continue startup.
+          }
+        }
+        port = await startFreshEmbeddedPostgres(
+          `Using embedded PostgreSQL because the existing cluster on port ${configuredPort} was unavailable`,
+        );
+      }
+    } else {
+      try {
+        logger.info({ port: configuredPort }, "Startup: probing existing embedded PostgreSQL");
+        await verifyExistingEmbeddedPostgres();
+        logger.warn(
+          `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
+        );
+      } catch (err) {
+        port = await startFreshEmbeddedPostgres(
+          `Using embedded PostgreSQL because no DATABASE_URL set and the configured cluster was not reusable: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
   
@@ -419,10 +595,11 @@ export async function startServer(): Promise<StartedServer> {
     if (shouldAutoApplyFirstRunMigrations) {
       logger.info("Detected first-run embedded PostgreSQL setup; applying pending migrations automatically");
     }
+    logger.info("Startup: ensuring embedded PostgreSQL migrations");
     migrationSummary = await ensureMigrations(embeddedConnectionString, "Embedded PostgreSQL", {
       autoApply: shouldAutoApplyFirstRunMigrations,
     });
-  
+
     db = createDb(embeddedConnectionString);
     logger.info("Embedded PostgreSQL ready");
     activeDatabaseConnectionString = embeddedConnectionString;
@@ -501,7 +678,8 @@ export async function startServer(): Promise<StartedServer> {
   }
   authReady = true;
   
-  const listenPort = await detectPort(config.port);
+  let listenPort = await detectFreePort(config.port, config.host);
+  logger.info({ listenPort, requestedPort: config.port }, "Startup: preparing to listen");
   if (listenPort !== config.port) {
     config.port = listenPort;
   }
@@ -545,7 +723,7 @@ export async function startServer(): Promise<StartedServer> {
   const toolDispatcher = createPluginToolDispatcher({ workerManager, db: db as any });
 
   let jobScheduler: ReturnType<typeof createBullMQJobScheduler> | ReturnType<typeof createPluginJobScheduler>;
-  const redisAvailable = await isRedisAvailable().catch(() => false);
+  const redisAvailable = usePGliteRuntime ? false : await isRedisAvailable().catch(() => false);
 
   if (redisAvailable) {
     logger.info("Redis available — using BullMQ job scheduler");
@@ -773,7 +951,32 @@ export async function startServer(): Promise<StartedServer> {
   }
   
   // Start Elysia server (Bun native HTTP + WebSocket)
-  app.listen({ port: listenPort, hostname: config.host });
+  const listenAttemptLimit = usePGliteRuntime ? 10 : 3;
+  for (let attempt = 1; attempt <= listenAttemptLimit; attempt += 1) {
+    try {
+      app.listen({ port: listenPort, hostname: config.host });
+      break;
+    } catch (err) {
+      if (!isPortInUseError(err) || attempt === listenAttemptLimit) {
+        throw err;
+      }
+      const nextPort = await detectFreePort(listenPort + 1, config.host);
+      if (nextPort !== listenPort) {
+        logger.warn(
+          { attempt, listenPort, nextPort, host: config.host },
+          "Listen failed with EADDRINUSE; switching to a free port and retrying",
+        );
+        listenPort = nextPort;
+        config.port = nextPort;
+      } else {
+        logger.warn(
+          { attempt, listenPort, host: config.host },
+          "Listen failed with EADDRINUSE; retrying after a short delay",
+        );
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+  }
   logger.info(`Server listening on ${config.host}:${listenPort}`);
 
   if (process.env.CLAWDEV_OPEN_ON_LISTEN === "true") {
@@ -846,6 +1049,15 @@ export async function startServer(): Promise<StartedServer> {
         await embeddedPostgres?.stop();
       } catch (err) {
         logger.error({ err }, "Failed to stop embedded PostgreSQL cleanly");
+      }
+    }
+
+    if (pgliteDatabase) {
+      logger.info({ signal }, "Stopping PGlite database");
+      try {
+        await pgliteDatabase.stop();
+      } catch (err) {
+        logger.error({ err }, "Failed to stop PGlite cleanly");
       }
     }
 

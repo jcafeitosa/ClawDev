@@ -11,6 +11,14 @@
     bootstrapStatus: 'ready' | 'bootstrap_pending';
     bootstrapInviteActive: boolean;
     features: Record<string, boolean>;
+    diagnostics?: {
+      routeGroups: Array<{
+        key: string;
+        label: string;
+        modules: string[];
+      }>;
+      counts: Record<string, number>;
+    };
     devServer?: {
       status: string;
       pid?: number;
@@ -61,6 +69,25 @@
       budgets: 'Budget Policies',
       approvals: 'Approval Workflows',
       autoRestartDevServerWhenIdle: 'Auto-restart Dev Server',
+    };
+    return map[key] ?? key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
+  }
+
+  function countLabel(key: string): string {
+    const map: Record<string, string> = {
+      companies: "Companies",
+      agents: "Agents",
+      projects: "Projects",
+      issues: "Issues",
+      routines: "Routines",
+      companySkills: "Company Skills",
+      approvals: "Approvals",
+      plugins: "Plugins",
+      pluginJobs: "Plugin Jobs",
+      pluginWebhooks: "Plugin Webhooks",
+      executionWorkspaces: "Execution Workspaces",
+      workspaceOperations: "Workspace Operations",
+      activeHeartbeatRuns: "Active Heartbeat Runs",
     };
     return map[key] ?? key.replace(/([A-Z])/g, ' $1').replace(/^./, s => s.toUpperCase());
   }
@@ -200,6 +227,45 @@
         {/each}
       </div>
     </div>
+
+    {#if health.diagnostics}
+      <div class="rounded-lg border border-zinc-200 dark:border-zinc-800">
+        <div class="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+          <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            <Activity class="h-4 w-4 text-zinc-400" />
+            Surface Inventory
+          </h2>
+        </div>
+        <div class="grid gap-4 p-5 md:grid-cols-2">
+          <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Route Groups</h3>
+            <div class="mt-3 space-y-3">
+              {#each health.diagnostics.routeGroups as group}
+                <div class="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+                  <div class="flex items-center justify-between gap-3">
+                    <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{group.label}</p>
+                    <span class="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">{group.modules.length} modules</span>
+                  </div>
+                  <p class="mt-2 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{group.modules.join(', ')}</p>
+                </div>
+              {/each}
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
+            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Entity Counts</h3>
+            <div class="mt-3 divide-y divide-zinc-200 overflow-hidden rounded-md border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
+              {#each Object.entries(health.diagnostics.counts) as [key, value]}
+                <div class="flex items-center justify-between px-3 py-2">
+                  <span class="text-sm text-zinc-600 dark:text-zinc-400">{countLabel(key)}</span>
+                  <span class="font-mono text-sm text-zinc-900 dark:text-zinc-100">{value}</span>
+                </div>
+              {/each}
+            </div>
+          </div>
+        </div>
+      </div>
+    {/if}
 
     <!-- Dev Server (if present) -->
     {#if health.devServer}

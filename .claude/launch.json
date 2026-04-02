@@ -7,8 +7,24 @@
       "runtimeArgs": ["--filter", "@clawdev/server", "dev"],
       "port": 3100,
       "env": {
-        "PORT": "3100"
+        "PORT": "3100",
+        "EMBEDDING_PROVIDER": "local",
+        "EMBEDDING_BASE_URL": "http://localhost:8085",
+        "EMBEDDING_MODEL": "Qwen3-Embedding-0.6B",
+        "EMBEDDING_DIMENSIONS": "1024"
       }
+    },
+    {
+      "name": "clawdev-ui",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@clawdev/svelte-ui", "dev", "--", "--port", "5174"],
+      "port": 5174
+    },
+    {
+      "name": "paperclip",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["scripts/start-paperclip.sh"],
+      "port": 3200
     }
   ]
 }

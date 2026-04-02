@@ -4,6 +4,7 @@ export interface Company {
   id: string;
   name: string;
   slug?: string;
+  issuePrefix?: string;
   status?: string;
   createdAt?: string;
   [key: string]: unknown;
@@ -12,22 +13,58 @@ export interface Company {
 const STORAGE_KEY = "clawdev.selectedCompanyId";
 
 let companies = $state<Company[]>([]);
-let selectedCompanyId = $state<string | null>(
+let rawSelectedCompanyId = $state<string | null>(
   typeof window !== "undefined" ? localStorage.getItem(STORAGE_KEY) : null,
 );
 let loading = $state(false);
 let error = $state<Error | null>(null);
 let selectionSource = $state<"bootstrap" | "manual" | "route_sync">("bootstrap");
 
+function resolveCompanyIdFromLocation(list: Company[]): string | null {
+  if (typeof window === "undefined") return null;
+
+  const prefix = window.location.pathname.split("/").filter(Boolean)[0];
+  if (!prefix) return null;
+
+  const normalizedPrefix = prefix.trim().toUpperCase();
+
+  const matchedCompanyId =
+    list.find((c) =>
+      c.id === prefix ||
+      c.slug === prefix ||
+      String(c.issuePrefix ?? "").trim().toUpperCase() === normalizedPrefix,
+    )?.id ?? null;
+  if (matchedCompanyId) return matchedCompanyId;
+
+  // When we land directly on a UUID-prefixed company route before the
+  // company list has loaded, treat the UUID itself as the best available
+  // company context so pages can start fetching immediately.
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(prefix)
+    ? prefix
+    : null;
+}
+
 export const companyStore = {
   get companies() {
     return companies;
   },
   get selectedCompanyId() {
-    return selectedCompanyId;
+    const routeCompanyId = resolveCompanyIdFromLocation(companies);
+    if (routeCompanyId) return routeCompanyId;
+
+    if (!rawSelectedCompanyId) return null;
+    if (companies.length === 0) return null;
+    return companies.some((c) => c.id === rawSelectedCompanyId) ? rawSelectedCompanyId : null;
   },
   get selectedCompany(): Company | null {
-    return companies.find((c) => c.id === selectedCompanyId) ?? null;
+    const selectedId = this.selectedCompanyId;
+    if (!selectedId) return null;
+    return companies.find((c) => c.id === selectedId) ?? {
+      id: selectedId,
+      name: selectedId,
+      slug: selectedId,
+      issuePrefix: selectedId,
+    };
   },
   get loading() {
     return loading;
@@ -41,13 +78,18 @@ export const companyStore = {
 
   setCompanies(list: Company[]) {
     companies = list;
-    // Auto-select first if none selected
-    if (!selectedCompanyId && list.length > 0) {
+    const routeCompanyId = resolveCompanyIdFromLocation(list);
+    if (routeCompanyId) {
+      this.select(routeCompanyId, "route_sync");
+      return;
+    }
+    // Auto-select first if none selected or if the persisted selection is stale.
+    if ((!this.selectedCompanyId || !list.some((c) => c.id === this.selectedCompanyId)) && list.length > 0) {
       this.select(list[0].id, "bootstrap");
     }
   },
   select(companyId: string, source: "bootstrap" | "manual" | "route_sync" = "manual") {
-    selectedCompanyId = companyId;
+    rawSelectedCompanyId = companyId;
     selectionSource = source;
     localStorage.setItem(STORAGE_KEY, companyId);
   },

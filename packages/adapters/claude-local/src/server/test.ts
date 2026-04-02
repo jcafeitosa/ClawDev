@@ -17,6 +17,7 @@ import {
 } from "@clawdev/adapter-utils/server-utils";
 import path from "node:path";
 import { detectClaudeLoginRequired, parseClaudeStreamJson } from "./parse.js";
+import { normalizeClaudeModelArg, sanitizeClaudeExtraArgs } from "./execute.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -128,7 +129,7 @@ export async function testEnvironment(
         hint: "Use the `claude` CLI command to run the automatic login and installation probe.",
       });
     } else {
-      const model = asString(config.model, "").trim();
+      const model = normalizeClaudeModelArg(config.model);
       const effort = asString(config.effort, "").trim();
       const chrome = asBoolean(config.chrome, false);
       const maxTurns = asNumber(config.maxTurnsPerRun, 0);
@@ -138,6 +139,7 @@ export async function testEnvironment(
         if (fromExtraArgs.length > 0) return fromExtraArgs;
         return asStringArray(config.args);
       })();
+      const sanitizedExtraArgs = sanitizeClaudeExtraArgs(extraArgs);
 
       const args = ["--print", "-", "--output-format", "stream-json", "--verbose"];
       if (dangerouslySkipPermissions) args.push("--dangerously-skip-permissions");
@@ -145,7 +147,7 @@ export async function testEnvironment(
       if (model) args.push("--model", model);
       if (effort) args.push("--effort", effort);
       if (maxTurns > 0) args.push("--max-turns", String(maxTurns));
-      if (extraArgs.length > 0) args.push(...extraArgs);
+      if (sanitizedExtraArgs.length > 0) args.push(...sanitizedExtraArgs);
 
       const probe = await runChildProcess(
         `claude-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,

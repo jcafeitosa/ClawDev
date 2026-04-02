@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import net from "node:net";
 import path from "node:path";
 import { createInterface } from "node:readline/promises";
 import { stdin, stdout } from "node:process";
@@ -76,7 +77,34 @@ if (process.env.npm_config_authenticated_private === "true") {
 const env = {
   ...process.env,
   CLAWDEV_UI_DEV_MIDDLEWARE: "true",
+  CLAWDEV_DB_RUNTIME: "pglite",
 };
+const usingPGliteRuntime = env.CLAWDEV_DB_RUNTIME === "pglite";
+if (!env.CLAWDEV_UI_PORT) {
+  env.CLAWDEV_UI_PORT = String(await findFreePort(5175));
+}
+
+async function findFreePort(preferredPort) {
+  for (let candidate = Math.max(1, preferredPort); candidate <= 65535 && candidate < preferredPort + 20; candidate += 1) {
+    const isFree = await new Promise((resolve) => {
+      const server = net.createServer();
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        server.close(() => resolve(value));
+      };
+      server.once("error", () => finish(false));
+      server.listen({ port: candidate, host: "127.0.0.1" }, () => finish(true));
+    });
+    if (isFree) return candidate;
+  }
+  return preferredPort;
+}
+
+if (env.CLAWDEV_DB_RUNTIME === "pglite" && !env.PORT) {
+  env.PORT = String(await findFreePort(3100));
+}
 
 if (mode === "dev") {
   env.CLAWDEV_DEV_SERVER_STATUS_FILE = devServerStatusFilePath;
@@ -280,6 +308,15 @@ async function runPnpm(args, options = {}) {
 }
 
 async function getMigrationStatusPayload() {
+  if (usingPGliteRuntime) {
+    return {
+      source: "pglite",
+      status: "upToDate",
+      tableCount: 0,
+      pendingMigrations: [],
+    };
+  }
+
   const status = await runPnpm(
     ["--filter", "@clawdev/db", "exec", "tsx", "src/migration-status.ts", "--json"],
     { env },
@@ -459,10 +496,11 @@ let svelteChild = null;
 
 function startSvelteDevServer() {
   if (svelteChild) return;
-  console.log("[clawdev] starting SvelteKit dev server on port 5174...");
+  const uiPort = env.CLAWDEV_UI_PORT ?? "5174";
+  console.log(`[clawdev] starting SvelteKit dev server on port ${uiPort}...`);
   svelteChild = spawn(
     pnpmBin,
-    ["--filter", "@clawdev/svelte-ui", "dev", "--", "--port", "5174"],
+    ["--filter", "@clawdev/svelte-ui", "exec", "vite", "dev", "--port", uiPort],
     { stdio: "inherit", env: { ...process.env }, shell: process.platform === "win32" },
   );
   svelteChild.on("exit", () => { svelteChild = null; });
@@ -482,10 +520,9 @@ async function startServerChild() {
   await buildPluginSdk();
   startSvelteDevServer();
 
-  const serverScript = mode === "watch" ? "dev:watch" : "dev";
   child = spawn(
     pnpmBin,
-    ["--filter", "@clawdev/server", serverScript, ...forwardedArgs],
+    ["--filter", "@clawdev/server", "dev", ...forwardedArgs],
     { stdio: "inherit", env, shell: process.platform === "win32" },
   );
 

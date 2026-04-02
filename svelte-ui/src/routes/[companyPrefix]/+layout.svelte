@@ -19,7 +19,6 @@
     themeStore.init();
     sidebarStore.init();
     keyboardShortcutsStore.init();
-    liveEventsStore.init();
     loadCompanies();
   });
 
@@ -31,7 +30,6 @@
 
   onDestroy(() => {
     keyboardShortcutsStore.destroy();
-    liveEventsStore.disconnect();
   });
 
   // Sync company from route param

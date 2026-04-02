@@ -209,6 +209,7 @@
       onkeydown={handleKeydown}
       class="absolute left-0 top-full z-50 mt-2 w-[340px] rounded-xl border border-border bg-[#18181B] shadow-2xl shadow-black/50"
       role="dialog"
+      tabindex="0"
       aria-label="Icon picker"
     >
       <!-- Search -->

@@ -8,6 +8,7 @@
 
 import type { AdapterModel, AdapterModelStatus } from "./types.js";
 import { runChildProcess } from "@clawdev/adapter-utils/server-utils";
+import { normalizeClaudeModelArg } from "@clawdev/adapter-claude-local/server";
 
 const PROBE_TIMEOUT_SEC = 15;
 const PROBE_CONCURRENCY = 3;
@@ -65,7 +66,12 @@ function defaultParseOutput(combined: string, exitCode: number | null): ProbeRes
 export const PROBE_CONFIGS: Record<string, CliProbeConfig> = {
   claude_local: {
     command: "claude",
-    buildArgs: (modelId) => ["-p", "hi", "--model", modelId, "--output-format", "json", "--max-turns", "1"],
+    buildArgs: (modelId) => {
+      const normalizedModel = normalizeClaudeModelArg(modelId);
+      return normalizedModel
+        ? ["-p", "hi", "--model", normalizedModel, "--output-format", "json", "--max-turns", "1"]
+        : ["-p", "hi", "--output-format", "json", "--max-turns", "1"];
+    },
     parseOutput(combined, exitCode) {
       if (combined.includes("\"status\":401") || combined.includes("Unauthorized")) {
         return { status: "auth_required", statusDetail: "Auth required" };

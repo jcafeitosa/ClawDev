@@ -90,7 +90,8 @@
   }
 
   interface ModelPreferences {
-    defaultModel: string;
+    defaultAdapterType: string;
+    defaultModelId: string;
     fallbackChain: string[];
     routingStrategy: string;
     allowCrossProviderFallback: boolean;
@@ -130,7 +131,8 @@
 
   // Routing tab
   let preferences = $state<ModelPreferences>({
-    defaultModel: '',
+    defaultAdapterType: '',
+    defaultModelId: '',
     fallbackChain: [],
     routingStrategy: 'pinned',
     allowCrossProviderFallback: true,
@@ -162,7 +164,16 @@
   let cooldownDuration = $state(5);
   let cooldownApplying = $state(false);
 
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived.by(() => {
+    const requestedPrefix = String($page.params.companyPrefix ?? "").trim().toUpperCase();
+    if (!requestedPrefix) return null;
+    return (
+      companyStore.companies.find(
+        (company) => String(company.issuePrefix ?? "").trim().toUpperCase() === requestedPrefix,
+      )?.id ?? null
+    );
+  });
+  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
   let prefix = $derived($page.params.companyPrefix);
 
   // ── Derived: filtered models ─────────────────────────────────────
@@ -203,6 +214,26 @@
 
   // All available model IDs for dropdown
   let allModelIds = $derived(models.map((m) => m.modelId).filter(Boolean));
+  let routingProviders = $derived([
+    ...new Map(providerSummaries.map((provider) => [provider.adapterType, provider])).values(),
+  ]);
+  let routingModels = $derived.by(() => {
+    const filtered = preferences.defaultAdapterType
+      ? models.filter((model) => model.adapterType === preferences.defaultAdapterType)
+      : models;
+    return [...filtered].sort((a, b) => a.modelId.localeCompare(b.modelId));
+  });
+  $effect(() => {
+    if (!preferences.defaultAdapterType || !preferences.defaultModelId) return;
+    const valid = models.some(
+      (model) =>
+        model.adapterType === preferences.defaultAdapterType &&
+        model.modelId === preferences.defaultModelId,
+    );
+    if (!valid) {
+      preferences.defaultModelId = '';
+    }
+  });
 
   // ── Safe fetch ────────────────────────────────────────────────────
   async function safeFetch<T>(url: string, fallback: T): Promise<T> {
@@ -309,7 +340,8 @@
       const data = await safeFetch<any>(`/api/companies/${companyId}/model-preferences`, null);
       if (data) {
         preferences = {
-          defaultModel: data.defaultModel ?? '',
+          defaultAdapterType: data.defaultAdapterType ?? '',
+          defaultModelId: data.defaultModelId ?? data.defaultModel ?? '',
           fallbackChain: data.fallbackChain ?? [],
           routingStrategy: data.routingStrategy ?? 'pinned',
           allowCrossProviderFallback: data.allowCrossProviderFallback ?? true,
@@ -527,6 +559,8 @@
     fallback: 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400',
     routed: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
     local: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+    performance_optimized: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400',
+    availability_optimized: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   };
 
   const ROUTING_STRATEGIES = [
@@ -1078,16 +1112,35 @@
       {:else}
         <!-- Default Model -->
         <div class="rounded-xl border border-border bg-card p-5">
-          <h3 class="text-sm font-semibold text-foreground mb-3">Default Model</h3>
-          <select
-            bind:value={preferences.defaultModel}
-            class="h-9 w-full max-w-md rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
-          >
-            <option value="">-- Select default model --</option>
-            {#each allModelIds as modelId}
-              <option value={modelId}>{modelId}</option>
-            {/each}
-          </select>
+          <h3 class="text-sm font-semibold text-foreground mb-3">Default Provider & Model</h3>
+          <div class="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label for="default-provider" class="mb-1.5 block text-xs font-medium text-muted-foreground">Provider</label>
+              <select
+                id="default-provider"
+                bind:value={preferences.defaultAdapterType}
+                class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+              >
+                <option value="">-- Use requested provider --</option>
+                {#each routingProviders as provider}
+                  <option value={provider.adapterType}>{provider.displayName}</option>
+                {/each}
+              </select>
+            </div>
+            <div>
+              <label for="default-model" class="mb-1.5 block text-xs font-medium text-muted-foreground">Model</label>
+              <select
+                id="default-model"
+                bind:value={preferences.defaultModelId}
+                class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+              >
+                <option value="">-- Select default model --</option>
+                {#each routingModels as model}
+                  <option value={model.modelId}>{model.label} ({model.modelId})</option>
+                {/each}
+              </select>
+            </div>
+          </div>
         </div>
 
         <!-- Fallback Chain -->
@@ -1186,6 +1239,11 @@
               <p class="text-xs text-muted-foreground">When a model is unavailable, try models from other providers</p>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={preferences.allowCrossProviderFallback}
+              aria-label="Allow cross-provider fallback"
+              title="Allow cross-provider fallback"
               onclick={() => preferences.allowCrossProviderFallback = !preferences.allowCrossProviderFallback}
               class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {preferences.allowCrossProviderFallback ? 'bg-primary' : 'bg-muted'}"
             >
@@ -1201,6 +1259,11 @@
               <p class="text-xs text-muted-foreground">Prioritize models with no usage cost</p>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={preferences.preferFreeModels}
+              aria-label="Prefer free models"
+              title="Prefer free models"
               onclick={() => preferences.preferFreeModels = !preferences.preferFreeModels}
               class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {preferences.preferFreeModels ? 'bg-primary' : 'bg-muted'}"
             >
@@ -1216,6 +1279,11 @@
               <p class="text-xs text-muted-foreground">Prioritize locally-hosted models when available</p>
             </div>
             <button
+              type="button"
+              role="switch"
+              aria-checked={preferences.preferLocalModels}
+              aria-label="Prefer local models"
+              title="Prefer local models"
               onclick={() => preferences.preferLocalModels = !preferences.preferLocalModels}
               class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {preferences.preferLocalModels ? 'bg-primary' : 'bg-muted'}"
             >
@@ -1248,7 +1316,7 @@
     </TabsContent>
 
     <!-- ── Tab 4: Routing Log ──────────────────────────────────────── -->
-    <TabsContent value="routing-log" class="mt-4 space-y-4">
+      <TabsContent value="routing-log" class="mt-4 space-y-4">
       {#if routingLogLoading}
         <div class="space-y-3">
           {#each Array(5) as _}

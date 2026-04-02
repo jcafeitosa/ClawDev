@@ -210,6 +210,7 @@
       onkeydown={handleKeydown}
       class="absolute left-0 top-full z-50 mt-2 w-full min-w-[320px] rounded-xl border border-border bg-[#18181B] shadow-2xl shadow-black/50"
       role="listbox"
+      tabindex="0"
       aria-label="Select manager agent"
     >
       <!-- Search -->

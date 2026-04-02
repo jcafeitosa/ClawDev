@@ -14,7 +14,7 @@
 
 # Open-source orchestration for zero-human companies
 
-ClawDev is a Node.js server and React UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track your agents' work and costs from one dashboard.
+ClawDev is a Bun/Elysia server and Svelte UI that orchestrates a team of AI agents to run a business. Bring your own agents, assign goals, and track your agents' work and costs from one dashboard.
 
 It looks like a task manager — but under the hood it has org charts, budgets, governance, goal alignment, and agent coordination.
 
@@ -119,7 +119,7 @@ pnpm install
 pnpm dev
 ```
 
-This starts the API server at `http://localhost:3100`. An embedded PostgreSQL database is created automatically — no setup required.
+This starts the API server at `http://localhost:3100`. Local dev uses an embedded-compatible runtime automatically, with `DATABASE_URL` still available for external PostgreSQL. No separate DB setup is required.
 
 > **Requirements:** Node.js 20+, pnpm 9.15+
 

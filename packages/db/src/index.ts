@@ -16,6 +16,16 @@ export {
   type Db,
 } from "./client.js";
 export {
+  openPGliteDatabase,
+  encodePGliteUrl,
+  decodePGliteUrl,
+  resolvePGliteDataDir,
+  registerPGliteClient,
+  getRegisteredPGliteClient,
+  unregisterPGliteClient,
+  type PGliteDatabaseHandle,
+} from "./pglite.js";
+export {
   getEmbeddedPostgresTestSupport,
   startEmbeddedPostgresTestDatabase,
   type EmbeddedPostgresTestDatabase,

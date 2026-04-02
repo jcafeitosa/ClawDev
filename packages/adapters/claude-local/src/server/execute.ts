@@ -32,6 +32,36 @@ import { resolveClaudeDesiredSkillNames } from "./skills.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
+export function normalizeClaudeModelArg(model: unknown): string | null {
+  if (typeof model !== "string") return null;
+  const trimmed = model.trim();
+  if (!trimmed || trimmed.toLowerCase() === "auto") return null;
+  return trimmed;
+}
+
+export function sanitizeClaudeExtraArgs(extraArgs: string[]): string[] {
+  const sanitized: string[] = [];
+  for (let i = 0; i < extraArgs.length; i += 1) {
+    const arg = extraArgs[i]!;
+    if (arg === "--model") {
+      const next = extraArgs[i + 1];
+      if (normalizeClaudeModelArg(next) === null) {
+        i += 1;
+        continue;
+      }
+      sanitized.push(arg, next!);
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--model=")) {
+      const value = arg.slice("--model=".length);
+      if (normalizeClaudeModelArg(value) === null) continue;
+    }
+    sanitized.push(arg);
+  }
+  return sanitized;
+}
+
 /**
  * Create a tmpdir with `.claude/skills/` containing symlinks to skills from
  * the repo's `skills/` directory, so `--add-dir` makes Claude Code discover
@@ -302,7 +332,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     config.promptTemplate,
     "You are agent {{agent.id}} ({{agent.name}}). Continue your ClawDev work.",
   );
-  const model = asString(config.model, "");
+  const model = normalizeClaudeModelArg(asString(config.model, ""));
   const effort = asString(config.effort, "");
   const chrome = asBoolean(config.chrome, false);
   const maxTurns = asNumber(config.maxTurnsPerRun, 0);
@@ -372,6 +402,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     graceSec,
     extraArgs,
   } = runtimeConfig;
+  const sanitizedExtraArgs = sanitizeClaudeExtraArgs(extraArgs);
   const effectiveEnv = Object.fromEntries(
     Object.entries({ ...process.env, ...env }).filter(
       (entry): entry is [string, string] => typeof entry[1] === "string",
@@ -494,7 +525,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (disableSlashCommands) args.push("--disable-slash-commands");
     if (jsonSchema) args.push("--json-schema", jsonSchema);
 
-    if (extraArgs.length > 0) args.push(...extraArgs);
+    if (sanitizedExtraArgs.length > 0) args.push(...sanitizedExtraArgs);
     return args;
   };
 
@@ -619,6 +650,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : null;
     const clearSessionForMaxTurns = isClaudeMaxTurnsResult(parsed);
 
+    const effectiveModel = parsedStream.model || asString(parsed.model, "") || model || null;
+
     return {
       exitCode: proc.exitCode,
       signal: proc.signal,
@@ -635,7 +668,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       sessionDisplayId: resolvedSessionId,
       provider: "anthropic",
       biller: "anthropic",
-      model: parsedStream.model || asString(parsed.model, model),
+      model: effectiveModel,
       billingType,
       costUsd: parsedStream.costUsd ?? asNumber(parsed.total_cost_usd, 0),
       resultJson: parsed,

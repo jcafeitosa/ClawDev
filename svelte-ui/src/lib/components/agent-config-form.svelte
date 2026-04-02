@@ -47,6 +47,12 @@
     if (config[key] === undefined) config[key] = fallback;
   }
 
+  function normalizeClaudeModel(model: unknown): string {
+    if (typeof model !== "string") return "claude-sonnet-4-6";
+    const trimmed = model.trim();
+    return trimmed && trimmed !== "auto" ? trimmed : "claude-sonnet-4-6";
+  }
+
   function setField(key: string, value: any): void {
     config[key] = value;
     config = config; // trigger reactivity
@@ -67,7 +73,7 @@
     switch (adapterType) {
       case "claude_local":
         ensure("cwd");
-        ensure("model", "claude-sonnet-4-6");
+        config.model = normalizeClaudeModel(config.model);
         ensure("effort", "medium");
         ensure("maxTurnsPerRun", 25);
         ensure("dangerouslySkipPermissions", false);
@@ -154,7 +160,7 @@
             <select
               id="cfg-model"
               class={selectCls}
-              value={config.model ?? "claude-sonnet-4-6"}
+              value={normalizeClaudeModel(config.model)}
               onchange={(e) => setField("model", e.currentTarget.value)}
             >
               <option value="claude-opus-4-6">Claude Opus 4.6</option>
@@ -163,7 +169,7 @@
             </select>
             <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
-          <p class={helpCls}>The Anthropic model to use for this agent.</p>
+          <p class={helpCls}>The Anthropic model to use for this agent. Claude local does not accept `auto`; the default is Sonnet 4.6.</p>
         </div>
 
         <div>
@@ -246,6 +252,8 @@
             type="button"
             role="switch"
             aria-checked={config.search ?? false}
+            aria-label="Enable web search"
+            title="Enable web search"
             class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.search ? 'bg-[#2563EB]' : 'bg-accent'}"
             onclick={() => toggleField("search")}
           >
@@ -315,6 +323,8 @@
             type="button"
             role="switch"
             aria-checked={config.sandbox ?? false}
+            aria-label="Enable sandbox"
+            title="Enable sandbox"
             class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.sandbox ? 'bg-[#2563EB]' : 'bg-accent'}"
             onclick={() => toggleField("sandbox")}
           >
@@ -587,6 +597,8 @@
               type="button"
               role="switch"
               aria-checked={config.dangerouslySkipPermissions ?? false}
+              aria-label="Skip permissions"
+              title="Skip permissions"
               class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.dangerouslySkipPermissions ? 'bg-amber-500' : 'bg-accent'}"
               onclick={() => toggleField("dangerouslySkipPermissions")}
             >
@@ -609,6 +621,8 @@
               type="button"
               role="switch"
               aria-checked={config.dangerouslyBypassApprovalsAndSandbox ?? false}
+              aria-label="Bypass approvals and sandbox"
+              title="Bypass approvals and sandbox"
               class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.dangerouslyBypassApprovalsAndSandbox ? 'bg-amber-500' : 'bg-accent'}"
               onclick={() => toggleField("dangerouslyBypassApprovalsAndSandbox")}
             >

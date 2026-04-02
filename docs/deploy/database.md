@@ -5,9 +5,9 @@ summary: Embedded PGlite vs Docker Postgres vs hosted
 
 ClawDev uses PostgreSQL via Drizzle ORM. There are three ways to run the database.
 
-## 1. Embedded PostgreSQL (Default)
+## 1. Embedded-compatible local database (Default dev path)
 
-Zero config. If you don't set `DATABASE_URL`, the server starts an embedded PostgreSQL instance automatically.
+Zero config for `pnpm dev`. If you don't set `DATABASE_URL`, the dev runner boots a local PGlite-backed database automatically so the server can run without an external PostgreSQL process.
 
 ```sh
 pnpm dev
@@ -15,14 +15,13 @@ pnpm dev
 
 On first start, the server:
 
-1. Creates `~/.clawdev/instances/default/db/` for storage
-2. Ensures the `clawdev` database exists
-3. Runs migrations automatically
-4. Starts serving requests
+1. Creates a local data directory for storage
+2. Runs migrations automatically
+3. Starts serving requests
 
-Data persists across restarts. To reset: `rm -rf ~/.clawdev/instances/default/db`.
+Data persists across restarts. To reset, remove the local data directory for your instance.
 
-The Docker quickstart also uses embedded PostgreSQL by default.
+If you want the legacy embedded PostgreSQL path directly, start the server with `CLAWDEV_DB_RUNTIME` unset and run the server entrypoint rather than the dev runner.
 
 ## 2. Local PostgreSQL (Docker)
 
@@ -70,7 +69,7 @@ export function createDb(url: string) {
 
 | `DATABASE_URL` | Mode |
 |----------------|------|
-| Not set | Embedded PostgreSQL |
+| Not set | Local PGlite dev database via the dev runner |
 | `postgres://...localhost...` | Local Docker PostgreSQL |
 | `postgres://...supabase.com...` | Hosted Supabase |
 

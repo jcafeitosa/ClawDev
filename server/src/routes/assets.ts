@@ -9,7 +9,8 @@ import { Elysia, t } from "elysia";
 import createDOMPurify from "dompurify";
 import { JSDOM } from "jsdom";
 import type { Db } from "@clawdev/db";
-import { assetService, logActivity } from "../services/index.js";
+import { assetService, companyService, logActivity } from "../services/index.js";
+import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import type { StorageService } from "../storage/types.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 
@@ -97,6 +98,7 @@ function sanitizeSvgBuffer(input: Buffer<ArrayBuffer>): Buffer<ArrayBuffer> | nu
 
 export function assetRoutes(db: Db, storage: StorageService) {
   const svc = assetService(db);
+  const companies = companyService(db);
 
   return new Elysia()
     // Upload image/attachment for a company
@@ -104,6 +106,8 @@ export function assetRoutes(db: Db, storage: StorageService) {
       "/companies/:companyId/assets/images",
       async (ctx: any) => {
         const { companyId } = ctx.params;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, companyId);
         const body = ctx.body;
 
         const file = body.file as File | undefined;
@@ -149,7 +153,6 @@ export function assetRoutes(db: Db, storage: StorageService) {
           body: fileBody,
         });
 
-        const actor = ctx.actor;
         const asset = await svc.create(companyId, {
           provider: stored.provider,
           objectKey: stored.objectKey,
@@ -157,16 +160,16 @@ export function assetRoutes(db: Db, storage: StorageService) {
           byteSize: stored.byteSize,
           sha256: stored.sha256,
           originalFilename: stored.originalFilename,
-          createdByAgentId: actor?.agentId ?? null,
-          createdByUserId: actor?.userId ?? null,
+          createdByAgentId: actor.type === "agent" ? actor.agentId ?? null : null,
+          createdByUserId: actor.type === "board" ? actor.userId ?? null : null,
         });
 
         await logActivity(db, {
           companyId,
-          actorType: actor?.type ?? "unknown",
-          actorId: actor?.userId ?? "unknown",
-          agentId: actor?.agentId ?? null,
-          runId: actor?.runId ?? null,
+          actorType: actor.type === "agent" ? "agent" : "user",
+          actorId: actor.type === "agent" ? actor.agentId ?? "unknown-agent" : actor.userId ?? "unknown",
+          agentId: actor.type === "agent" ? actor.agentId ?? null : null,
+          runId: actor.runId ?? null,
           action: "asset.created",
           entityType: "asset",
           entityId: asset.id,
@@ -201,6 +204,8 @@ export function assetRoutes(db: Db, storage: StorageService) {
       "/companies/:companyId/logo",
       async (ctx: any) => {
         const { companyId } = ctx.params;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, companyId);
         const body = ctx.body;
 
         const file = body.file as File | undefined;
@@ -236,7 +241,6 @@ export function assetRoutes(db: Db, storage: StorageService) {
           return { error: "Image is empty" };
         }
 
-        const actor = ctx.actor;
         const stored = await storage.putFile({
           companyId,
           namespace: "assets/companies",
@@ -252,16 +256,16 @@ export function assetRoutes(db: Db, storage: StorageService) {
           byteSize: stored.byteSize,
           sha256: stored.sha256,
           originalFilename: stored.originalFilename,
-          createdByAgentId: actor?.agentId ?? null,
-          createdByUserId: actor?.userId ?? null,
+          createdByAgentId: actor.type === "agent" ? actor.agentId ?? null : null,
+          createdByUserId: actor.type === "board" ? actor.userId ?? null : null,
         });
 
         await logActivity(db, {
           companyId,
-          actorType: actor?.type ?? "unknown",
-          actorId: actor?.userId ?? "unknown",
-          agentId: actor?.agentId ?? null,
-          runId: actor?.runId ?? null,
+          actorType: actor.type === "agent" ? "agent" : "user",
+          actorId: actor.type === "agent" ? actor.agentId ?? "unknown-agent" : actor.userId ?? "unknown",
+          agentId: actor.type === "agent" ? actor.agentId ?? null : null,
+          runId: actor.runId ?? null,
           action: "asset.created",
           entityType: "asset",
           entityId: asset.id,
@@ -292,15 +296,49 @@ export function assetRoutes(db: Db, storage: StorageService) {
       },
     )
 
+    .delete(
+      "/companies/:companyId/logo",
+      async (ctx: any) => {
+        const { companyId } = ctx.params;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, companyId);
+
+        const company = await companies.update(companyId, { logoAssetId: null });
+        if (!company) {
+          ctx.set.status = 404;
+          return { error: "Company not found" };
+        }
+
+        const actorInfo = getActorInfo(actor);
+        await logActivity(db, {
+          companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          runId: actorInfo.runId,
+          action: "company.branding_updated",
+          entityType: "company",
+          entityId: companyId,
+          details: { logoAssetId: null },
+        });
+
+        return company;
+      },
+      { params: t.Object({ companyId: t.String() }) },
+    )
+
     // Get asset content
     .get(
       "/assets/:assetId/content",
-      async ({ params, set }) => {
+      async (ctx: any) => {
+        const { params, set } = ctx;
         const asset = await svc.getById(params.assetId);
         if (!asset) {
           set.status = 404;
           return { error: "Asset not found" };
         }
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, asset.companyId);
 
         const obj = await storage.getObject(asset.companyId, asset.objectKey);
 

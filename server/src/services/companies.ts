@@ -25,6 +25,10 @@ import {
   invites,
   principalPermissionGrants,
   companyMemberships,
+  companySkills,
+  modelRoutingLog,
+  issueInboxArchives,
+  issueReadStates,
 } from "@clawdev/db";
 import { notFound, unprocessable } from "../errors.js";
 
@@ -266,17 +270,21 @@ export function companyService(db: Db) {
         await tx.delete(approvalComments).where(eq(approvalComments.companyId, id));
         await tx.delete(approvals).where(eq(approvals.companyId, id));
         await tx.delete(companySecrets).where(eq(companySecrets.companyId, id));
+        await tx.delete(companySkills).where(eq(companySkills.companyId, id));
         await tx.delete(joinRequests).where(eq(joinRequests.companyId, id));
         await tx.delete(invites).where(eq(invites.companyId, id));
         await tx.delete(principalPermissionGrants).where(eq(principalPermissionGrants.companyId, id));
         await tx.delete(companyMemberships).where(eq(companyMemberships.companyId, id));
+        await tx.delete(issueReadStates).where(eq(issueReadStates.companyId, id));
+        await tx.delete(issueInboxArchives).where(eq(issueInboxArchives.companyId, id));
         await tx.delete(issues).where(eq(issues.companyId, id));
         await tx.delete(companyLogos).where(eq(companyLogos.companyId, id));
         await tx.delete(assets).where(eq(assets.companyId, id));
         await tx.delete(goals).where(eq(goals.companyId, id));
         await tx.delete(projects).where(eq(projects.companyId, id));
-        await tx.delete(agents).where(eq(agents.companyId, id));
         await tx.delete(activityLog).where(eq(activityLog.companyId, id));
+        await tx.delete(modelRoutingLog).where(eq(modelRoutingLog.companyId, id));
+        await tx.delete(agents).where(eq(agents.companyId, id));
         const rows = await tx
           .delete(companies)
           .where(eq(companies.id, id))

@@ -2,8 +2,9 @@
   import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
   import { companyStore } from '$stores/company.svelte.js';
+  import { dashboardRefreshStore } from '$stores/dashboard-refresh.svelte.js';
   import { api } from '$lib/api';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
 
   import TimeAgo from '$lib/components/time-ago.svelte';
   import ActivityCharts from '$lib/components/charts/activity-charts.svelte';
@@ -14,19 +15,9 @@
     Bot,
     ListTodo,
     DollarSign,
-    Activity,
     CircleDot,
-    AlertCircle,
-    AlertTriangle,
-    Clock,
-    User,
-    GitCommit,
-    MessageSquare,
-    Zap,
-    Wallet,
     ShieldCheck,
-
-    ArrowRight,
+    PauseCircle,
   } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Dashboard' }]));
@@ -44,7 +35,13 @@
   let recentActivityLoading = $state(true);
   let recentIssues = $state<any[]>([]);
 
-  let companyId = $derived(companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
+  let prefix = $derived($page.params.companyPrefix);
+  let routeCompanyId = $derived.by(() => {
+    const requestedPrefix = prefix?.trim().toUpperCase();
+    if (!requestedPrefix) return null;
+    return companyStore.companies.find((company) => String(company.issuePrefix ?? "").toUpperCase() === requestedPrefix)?.id ?? null;
+  });
+  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
   let companyName = $derived(companyStore.selectedCompany?.name ?? 'Company');
 
   function normalizeIssueStatus(raw: string | null | undefined): string {
@@ -57,23 +54,17 @@
   let enabledAgents = $derived(
     agents.filter((a) => a.status !== 'terminated' && a.status !== 'pending_approval').length,
   );
-  let tasksInProgress = $derived(
-    issues.filter((i) => i.status === 'in_progress').length,
-  );
-  let monthSpend = $derived(costSummary?.totalCost ?? costSummary?.total ?? 0);
-  let pendingApprovals = $derived(
-    dashboardApprovals > 0
-      ? dashboardApprovals
-      : issues.filter((i) => i.status === 'pending' || i.status === 'in_review').length,
-  );
   let runningAgents = $derived(
-    agents.filter((a) => a.status === 'active' || a.status === 'running'),
+    agents.filter((a) => a.status === 'active' || a.status === 'running').length,
   );
   let pausedAgents = $derived(
     agents.filter((a) => a.status === 'paused' || a.status === 'disabled' || a.status === 'idle' || a.status === 'enabled').length,
   );
   let errorAgents = $derived(
     agents.filter((a) => a.status === 'error' || a.status === 'failed').length,
+  );
+  let tasksInProgress = $derived(
+    issues.filter((i) => i.status === 'in_progress').length,
   );
   let openIssues = $derived(
     issues.filter((i) => {
@@ -84,64 +75,22 @@
   let blockedIssues = $derived(
     issues.filter((i) => i.status === 'blocked').length,
   );
-  let budgetStatusText = $derived.by(() => {
-    if (!costSummary) return 'No budget data';
-    const limit = costSummary.budget ?? costSummary.limit ?? 0;
-    if (limit <= 0) return 'Unlimited budget';
-    return `${formatCurrency(monthSpend)} of ${formatCurrency(limit)} used`;
-  });
+  let monthSpend = $derived(costSummary?.totalCost ?? costSummary?.total ?? 0);
+  let monthBudgetCents = $derived(costSummary?.budget ?? costSummary?.limit ?? 0);
+  let monthUtilizationPercent = $derived(
+    monthBudgetCents > 0 ? Math.min(Math.round((monthSpend / monthBudgetCents) * 100), 100) : 0,
+  );
+  let pendingApprovals = $derived(
+    dashboardApprovals > 0
+      ? dashboardApprovals
+      : issues.filter((i) => i.status === 'pending' || i.status === 'in_review').length,
+  );
+  let budgetPendingApprovals = $derived(
+    budgetIncidents.filter((inc) => inc.status === 'pending').length,
+  );
   let pendingIncidents = $derived(
     budgetIncidents.filter((inc) => inc.status === 'pending'),
   );
-
-  // ── Widget derived data ──────────────────────────────────────────
-  const STATUS_CONFIG: { key: string; label: string; color: string }[] = [
-    { key: 'backlog', label: 'Backlog', color: '#64748b' },
-    { key: 'todo', label: 'To Do', color: '#2563eb' },
-    { key: 'in_progress', label: 'In Progress', color: '#f59e0b' },
-    { key: 'in_review', label: 'In Review', color: '#8b5cf6' },
-    { key: 'done', label: 'Done', color: '#10b981' },
-    { key: 'blocked', label: 'Blocked', color: '#ef4444' },
-  ];
-
-  let statusCounts = $derived.by(() => {
-    const counts: Record<string, number> = {};
-    for (const s of STATUS_CONFIG) counts[s.key] = 0;
-    for (const issue of issues) {
-      const st = normalizeIssueStatus(issue.status);
-      if (st in counts) counts[st]++;
-      else if (!counts[st]) counts[st] = 1;
-      else counts[st]++;
-    }
-    return counts;
-  });
-
-  let statusSegments = $derived.by(() => {
-    const total = issues.length || 1;
-    return STATUS_CONFIG.map((s) => ({
-      ...s,
-      count: statusCounts[s.key] ?? 0,
-      pct: ((statusCounts[s.key] ?? 0) / total) * 100,
-    })).filter((s) => s.count > 0);
-  });
-
-  let budgetLimit = $derived(costSummary?.budget ?? costSummary?.limit ?? 500);
-  let budgetPct = $derived(budgetLimit > 0 ? Math.min((monthSpend / budgetLimit) * 100, 100) : 0);
-
-  // Board columns for mini kanban
-  let boardColumns = $derived.by(() => {
-    return STATUS_CONFIG.map((s) => {
-      const columnIssues = issues.filter((i) => normalizeIssueStatus(i.status) === s.key);
-      return {
-        ...s,
-        count: columnIssues.length,
-        items: columnIssues.slice(0, 3),
-      };
-    }).filter((col) => col.count > 0);
-  });
-
-  // ── Sidebar badge counts ────────────────────────────────────────────
-  let badgeCounts = $state<Record<string, number>>({});
 
   // ── Data fetching ──────────────────────────────────────────────────
   async function safeFetch<T>(url: string, fallback: T): Promise<T> {
@@ -155,38 +104,24 @@
     }
   }
 
-  function applyNormalized(data: { agents?: any; issues?: any; activity?: any; heartbeatRuns?: any; costs?: any }) {
-    const agentData = data.agents;
-    const issueData = data.issues;
-    const activityData = data.activity;
-    const heartbeatData = data.heartbeatRuns;
-    const costData = data.costs;
-
-    agents = Array.isArray(agentData) ? agentData : (agentData as any)?.agents ?? (agentData as any)?.data ?? [];
-    issues = Array.isArray(issueData) ? issueData : (issueData as any)?.issues ?? (issueData as any)?.data ?? [];
-    activityFeed = Array.isArray(activityData) ? activityData : (activityData as any)?.activities ?? (activityData as any)?.data ?? [];
-    heartbeatRuns = Array.isArray(heartbeatData) ? heartbeatData : (heartbeatData as any)?.runs ?? (heartbeatData as any)?.data ?? [];
-    costSummary = costData;
-  }
-
-  $effect(() => {
+  async function refreshDashboard() {
     if (!companyId) return;
     loading = true;
 
-    // Always fetch agents directly (dashboard endpoint doesn't return them)
-    const agentsPromise = safeFetch(`/api/companies/${companyId}/agents`, []);
+    try {
+      const agentsPromise = safeFetch(`/api/companies/${companyId}/agents`, []);
 
-    // Fetch dashboard summary + individual endpoints in parallel
-    Promise.all([
-      api(`/api/companies/${companyId}/dashboard`)
-        .then((res) => (res.ok ? res.json() : null))
-        .catch(() => null),
-      safeFetch(`/api/companies/${companyId}/issues?limit=10`, []),
-      safeFetch(`/api/companies/${companyId}/activity?limit=15`, []),
-      safeFetch(`/api/companies/${companyId}/heartbeat-runs?limit=50`, []),
-      safeFetch(`/api/companies/${companyId}/costs/summary`, null),
-      agentsPromise,
-    ]).then(([dashData, issueData, activityData, heartbeatData, costData, agentData]) => {
+      const [dashData, issueData, activityData, heartbeatData, costData, agentData] = await Promise.all([
+        api(`/api/companies/${companyId}/dashboard`)
+          .then((res) => (res.ok ? res.json() : null))
+          .catch(() => null),
+        safeFetch(`/api/companies/${companyId}/issues?limit=10`, []),
+        safeFetch(`/api/companies/${companyId}/activity?limit=15`, []),
+        safeFetch(`/api/companies/${companyId}/heartbeat-runs?limit=50`, []),
+        safeFetch(`/api/companies/${companyId}/costs/summary`, null),
+        agentsPromise,
+      ]);
+
       applyNormalized({
         agents: agentData,
         issues: (dashData?.issues?.length ? dashData.issues : issueData),
@@ -195,21 +130,14 @@
         costs: dashData?.costs ?? dashData?.costSummary ?? costData,
       });
       dashboardApprovals = dashData?.pendingApprovals ?? 0;
-    }).finally(() => (loading = false));
+    } finally {
+      loading = false;
+    }
 
-    // Sidebar badges (non-blocking)
-    safeFetch<Record<string, number>>(`/api/companies/${companyId}/sidebar-badges`, {}).then(
-      (data) => {
-        badgeCounts = data ?? {};
-      },
-    );
-
-    // Budget incidents (non-blocking)
     safeFetch<any>(`/api/companies/${companyId}/budgets/overview`, null).then((data) => {
       budgetIncidents = data?.incidents ?? data?.budgetIncidents ?? [];
     });
 
-    // Recent activity for the dedicated section (non-blocking)
     recentActivityLoading = true;
     safeFetch<any>(`/api/companies/${companyId}/activity?limit=10`, []).then((data) => {
       const items = Array.isArray(data) ? data : data?.activities ?? data?.data ?? [];
@@ -217,66 +145,84 @@
       recentActivityLoading = false;
     });
 
-    // Recent issues for the dedicated section (non-blocking)
     safeFetch<any>(`/api/companies/${companyId}/issues?limit=10&sort=createdAt&order=desc`, []).then((data) => {
       const items = Array.isArray(data) ? data : data?.issues ?? data?.data ?? [];
       recentIssues = items.slice(0, 10);
     });
+  }
+
+  function applyNormalized(data: { agents?: any; issues?: any; activity?: any; heartbeatRuns?: any; costs?: any }) {
+    agents = Array.isArray(data.agents) ? data.agents : (data.agents as any)?.agents ?? (data.agents as any)?.data ?? [];
+    issues = Array.isArray(data.issues) ? data.issues : (data.issues as any)?.issues ?? (data.issues as any)?.data ?? [];
+    activityFeed = Array.isArray(data.activity) ? data.activity : (data.activity as any)?.activities ?? (data.activity as any)?.data ?? [];
+    heartbeatRuns = Array.isArray(data.heartbeatRuns) ? data.heartbeatRuns : (data.heartbeatRuns as any)?.runs ?? (data.heartbeatRuns as any)?.data ?? [];
+    costSummary = data.costs;
+  }
+
+  onDestroy(() => {
+    dashboardRefreshStore.disconnect();
+  });
+
+  $effect(() => {
+    if (!companyId) {
+      loading = false;
+      recentActivityLoading = false;
+      dashboardRefreshStore.disconnect();
+      return;
+    }
+
+    dashboardRefreshStore.init(companyId, refreshDashboard);
+
+    return () => {
+      dashboardRefreshStore.disconnect();
+    };
   });
 
   // ── Helpers ────────────────────────────────────────────────────────
-  function formatCurrency(value: number): string {
-    if (value >= 1000) return `$${(value / 1000).toFixed(1)}k`;
+  function formatCents(value: number): string {
+    if (value >= 100000) return `$${(value / 100).toFixed(0)}`;
+    if (value >= 100) return `$${(value / 100).toFixed(2)}`;
     return `$${value.toFixed(2)}`;
   }
 
-  function activityIcon(type: string): typeof Activity {
-    const map: Record<string, typeof Activity> = {
-      issue: AlertCircle,
-      agent: Bot,
-      commit: GitCommit,
-      comment: MessageSquare,
-      run: Zap,
-      user: User,
-    };
-    return map[type] ?? Activity;
-  }
+  const ACTION_VERBS: Record<string, string> = {
+    'issue.created': 'created',
+    'issue.updated': 'updated',
+    'issue.checked_out': 'checked out',
+    'issue.released': 'released',
+    'issue.comment_added': 'commented on',
+    'issue.status_changed': 'changed status on',
+    'issue.document_created': 'created document for',
+    'issue.document_updated': 'updated document on',
+    'agent.created': 'created',
+    'agent.updated': 'updated',
+    'agent.paused': 'paused',
+    'agent.resumed': 'resumed',
+    'agent.terminated': 'terminated',
+    'agent.key_created': 'created API key for',
+    'agent.hire_created': 'requested hire for',
+    'approval.created': 'requested approval',
+    'approval.approved': 'approved',
+    'approval.rejected': 'rejected',
+    'project.created': 'created',
+    'goal.created': 'created',
+    'cost.reported': 'reported cost for',
+    'company.created': 'created company',
+    'company.updated': 'updated company',
+  };
 
-  /** Parse "issue.created" → human-readable verb */
   function parseActionVerb(action: string): string {
     if (!action) return 'performed an action';
-    const verbMap: Record<string, string> = {
-      'issue.created': 'created',
-      'issue.updated': 'updated',
-      'issue.comment_added': 'commented on',
-      'issue.status_changed': 'changed status on',
-      'issue.checked_out': 'checked out',
-      'issue.document_created': 'created document',
-      'issue.document_updated': 'updated document',
-      'issue.approval_linked': 'linked approval to',
-      'agent.created': 'created agent',
-      'agent.hire_created': 'requested hire for',
-      'agent.key_created': 'created API key for',
-      'approval.created': 'requested approval',
-      'company.created': 'created company',
-    };
-    if (verbMap[action]) return verbMap[action];
-    // Fallback: split on dot and humanize
+    if (ACTION_VERBS[action]) return ACTION_VERBS[action];
     const parts = action.split('.');
-    if (parts.length >= 2) {
-      return parts.slice(1).join(' ').replace(/_/g, ' ');
-    }
+    if (parts.length >= 2) return parts.slice(1).join(' ').replace(/_/g, ' ');
     return action.replace(/_/g, ' ');
   }
 
-  /** Determine a human-readable actor name from an activity item */
   function getActorDisplay(item: any): string {
-    // If there's an explicit actor name that isn't a UUID, use it
     const actor = item.actor ?? item.agentName ?? item.userName ?? item.user;
     if (actor && !isUUID(actor)) return actor;
-    // For actorType "user" or local_implicit source, show "Board"
     if (item.actorType === 'user' || item.actorType === 'system' || item.source === 'local_implicit') return 'Board';
-    // Try to find agent by actorId
     if (item.actorId && agents.length > 0) {
       const agent = agents.find((a: any) => a.id === item.actorId);
       if (agent) return agent.name ?? agent.slug ?? 'Agent';
@@ -284,88 +230,81 @@
     return 'Board';
   }
 
-  /** Build a link href for an activity item based on its entity type */
+  function getEntityDisplay(item: any): { label: string; subtitle: string } {
+    const details = item.details ?? {};
+    const identifier = details.identifier ?? item.entityIdentifier ?? '';
+    const title = details.title ?? details.name ?? item.entityName ?? '';
+    if (item.entityName && !isUUID(item.entityName)) {
+      return { label: identifier || '', subtitle: item.entityName };
+    }
+    if (identifier || title) return { label: identifier, subtitle: title };
+    if (item.entityId && !isUUID(item.entityId)) return { label: '', subtitle: item.entityId };
+    return { label: '', subtitle: '' };
+  }
+
   function getActivityHref(item: any): string {
     const details = item.details ?? {};
     const identifier = details.identifier ?? item.entityIdentifier ?? '';
     const entityId = item.entityId ?? '';
     const entityType = item.entityType ?? item.type ?? '';
     const action = item.action ?? '';
-
-    // Approval activities → approvals page
-    if (entityType === 'approval' || action.startsWith('approval.')) {
-      return `/${prefix}/approvals/${entityId}`;
-    }
-    // Issue activities → issue page (prefer identifier over UUID)
+    if (entityType === 'approval' || action.startsWith('approval.')) return `/${prefix}/approvals/${entityId}`;
     if (entityType === 'issue' || action.startsWith('issue.')) {
       if (identifier) return `/${prefix}/issues/${identifier}`;
       if (entityId) return `/${prefix}/issues/${entityId}`;
     }
-    // Agent activities → agent page
-    if (entityType === 'agent' || action.startsWith('agent.')) {
-      return `/${prefix}/agents/${entityId}`;
-    }
-    // Company activities
-    if (entityType === 'company' || action.startsWith('company.')) {
-      return `/${prefix}/settings`;
-    }
-    // Fallback: if we have an identifier, link to issues
+    if (entityType === 'agent' || action.startsWith('agent.')) return `/${prefix}/agents/${entityId}`;
+    if (entityType === 'company' || action.startsWith('company.')) return `/${prefix}/settings`;
     if (identifier) return `/${prefix}/issues/${identifier}`;
     return '';
-  }
-
-  /** Get entity display: prefer details.identifier/name/title over raw entityId */
-  function getEntityDisplay(item: any): { label: string; subtitle: string } {
-    const details = item.details ?? {};
-    const identifier = details.identifier ?? item.entityIdentifier ?? '';
-    const title = details.title ?? details.name ?? item.entityName ?? '';
-    // If entityName is set and isn't a UUID, use it
-    if (item.entityName && !isUUID(item.entityName)) {
-      return { label: identifier || '', subtitle: item.entityName };
-    }
-    if (identifier || title) {
-      return { label: identifier, subtitle: title };
-    }
-    // Fallback: if entityId is a UUID, hide it; otherwise show it
-    if (item.entityId && !isUUID(item.entityId)) {
-      return { label: '', subtitle: item.entityId };
-    }
-    return { label: '', subtitle: '' };
   }
 
   function isUUID(str: string): boolean {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
   }
 
-  /** Get agent initials from name */
   function getInitials(name: string): string {
     if (!name) return '?';
     const parts = name.trim().split(/\s+/);
-    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
     return name.slice(0, 2).toUpperCase();
   }
 
-  /** Lookup agent by ID from loaded agents array */
   function findAgentById(agentId: string | undefined): any | null {
     if (!agentId || agents.length === 0) return null;
     return agents.find((a: any) => a.id === agentId) ?? null;
   }
 
-  // Color palette for agent initials badges
-  const AGENT_COLORS = ['#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ef4444', '#ec4899', '#06b6d4'];
-  function agentColor(name: string): string {
-    let hash = 0;
-    for (let i = 0; i < name.length; i++) hash = name.charCodeAt(i) + ((hash << 5) - hash);
-    return AGENT_COLORS[Math.abs(hash) % AGENT_COLORS.length];
+  // Issue status icon colors (matching Paperclip)
+  const STATUS_COLORS: Record<string, string> = {
+    backlog: '#64748b',
+    todo: '#2563eb',
+    in_progress: '#f59e0b',
+    in_review: '#8b5cf6',
+    done: '#10b981',
+    blocked: '#ef4444',
+    cancelled: '#6b7280',
+  };
+
+  function statusColor(status: string): string {
+    return STATUS_COLORS[normalizeIssueStatus(status)] ?? '#64748b';
   }
 
-  const prefix = $derived($page.params.companyPrefix);
 </script>
 
-<div class="dashboard-root min-h-screen space-y-8 p-6">
-  <!-- ── Active Agents Panel (top) ─────────────────────────────────── -->
-  {#if companyId}
-    <ActiveAgentsPanel companyId={companyId ?? ''} prefix={prefix ?? ''} />
+<div class="space-y-6">
+  {#if !companyId}
+    <div class="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+      <div class="font-medium">Company context is not ready yet.</div>
+      <div class="mt-1 text-amber-100/80">
+        The dashboard is waiting for the active company to load. If this persists, go back to the companies page and re-enter the dashboard.
+      </div>
+      <div class="mt-3">
+        <a href="/companies" class="inline-flex items-center rounded-md border border-amber-400/30 bg-amber-400/15 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-400/25 transition-colors">
+          Open Companies
+        </a>
+      </div>
+    </div>
   {/if}
 
   <!-- ── No agents warning ──────────────────────────────────────────── -->
@@ -384,580 +323,259 @@
     </div>
   {/if}
 
+  <!-- ── Active Agents Panel ─────────────────────────────────────────── -->
+  {#if companyId}
+    <ActiveAgentsPanel companyId={companyId ?? ''} prefix={prefix ?? ''} />
+  {/if}
+
   <!-- ── Budget Incident Alert ──────────────────────────────────────── -->
   {#if pendingIncidents.length > 0}
-    <div class="relative overflow-hidden rounded-xl border border-red-500/30 bg-red-500/[0.08] px-5 py-4">
-      <div class="flex items-start gap-4">
-        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-red-500/20">
-          <AlertTriangle size={20} color="#ef4444" />
+    <div class="flex items-start justify-between gap-3 rounded-xl border border-red-500/20 bg-[linear-gradient(180deg,rgba(255,80,80,0.12),rgba(255,255,255,0.02))] px-4 py-3">
+      <div class="flex items-start gap-2.5">
+        <PauseCircle class="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
+        <div>
+          <p class="text-sm font-medium text-red-50">
+            {pendingIncidents.length} active budget incident{pendingIncidents.length === 1 ? '' : 's'}
+          </p>
+          <p class="text-xs text-red-100/70">
+            {pendingIncidents.length} agents paused — monthly budget exceeded.
+          </p>
         </div>
-        <div class="min-w-0 flex-1">
-          <div class="flex items-center gap-2">
-            <h3 class="text-sm font-semibold text-red-400">Budget Hard Stop Active</h3>
-            {#if pendingIncidents.length > 1}
-              <span class="inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-red-500 px-1.5 text-[10px] font-bold text-white">
-                {pendingIncidents.length}
-              </span>
-            {/if}
-          </div>
-          {#if pendingIncidents.length === 1}
-            <p class="mt-0.5 text-sm text-red-300/80">
-              Agent <span class="font-medium text-red-300">{pendingIncidents[0].agentName ?? pendingIncidents[0].agent?.name ?? 'Unknown'}</span> has been paused — monthly budget exceeded.
-            </p>
-          {:else}
-            <p class="mt-0.5 text-sm text-red-300/80">
-              {pendingIncidents.length} agents have been paused — monthly budgets exceeded.
-            </p>
-          {/if}
-        </div>
-        <a
-          href="/{prefix}/budgets"
-          class="shrink-0 rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-1.5 text-xs font-medium text-red-400 transition-colors hover:bg-red-500/20"
-        >
-          Resolve
-        </a>
       </div>
+      <a href="/{prefix}/costs" class="text-sm underline underline-offset-2 text-red-100">
+        Open budgets
+      </a>
     </div>
   {/if}
 
-  <!-- ── Top Widget Cards (4-column) ────────────────────────────────── -->
-  <div class="grid grid-cols-1 gap-5 md:grid-cols-2 lg:grid-cols-4">
-
-    <!-- Widget 1: Agents Enabled -->
-    <a href="/{prefix}/agents" class="dash-card dash-card--emerald group no-underline block">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10">
-            <Bot size={14} color="#10b981" />
-          </div>
-          <h3 class="dash-section-header !mb-0">Agents Enabled</h3>
-        </div>
-        <span class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted]">
-          View all
-        </span>
-      </div>
-
-      {#if loading}
-        <div class="mt-4 space-y-3">
-          <Skeleton class="h-8 w-16 bg-white/5" />
-          <Skeleton class="h-3 w-24 bg-white/5" />
-          <div class="flex gap-2">
-            {#each Array(4) as _}
-              <Skeleton class="h-3 w-3 rounded-full bg-white/5" />
-            {/each}
-          </div>
-        </div>
-      {:else}
-        <div class="mt-3 flex items-baseline gap-2">
-          <p class="text-3xl font-bold tabular-nums text-[--dash-text]">{enabledAgents}</p>
-          <span class="text-sm text-[--dash-muted]">/ {agents.length}</span>
-          <span class="ml-auto dash-trend dash-trend--up">
-            <svg width="24" height="12" viewBox="0 0 24 12"><polyline points="0,8 6,6 12,4 18,5 24,2" fill="none" stroke="#10b981" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </span>
-        </div>
-        <p class="text-xs text-[--dash-muted]">{runningAgents.length} running, {pausedAgents} paused, {errorAgents} errors</p>
-
-        <!-- Agent status dots -->
-        <div class="mt-4 flex flex-wrap gap-2">
-          {#each agents as agent}
-            {@const isActive = agent.status === 'active' || agent.status === 'running'}
-            <div class="relative" title="{agent.name ?? agent.slug ?? 'Agent'} — {agent.status ?? 'idle'}">
-              <div
-                class="flex h-8 w-8 items-center justify-center rounded-full border transition-colors"
-                style="
-                  background-color: {isActive ? 'rgba(16,185,129,0.12)' : 'rgba(255,255,255,0.03)'};
-                  border-color: {isActive ? 'rgba(16,185,129,0.3)' : 'rgba(255,255,255,0.08)'};
-                "
-              >
-                <Bot size={12} color={isActive ? '#10b981' : '#64748b'} />
+  <!-- ── Metric Cards (Paperclip style: simple, no glassmorphism) ──── -->
+  {#if !loading}
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
+      <!-- Agents Enabled -->
+      <a href="/{prefix}/agents" class="no-underline text-inherit block h-full">
+        <div class="h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">
+                {enabledAgents}
+              </p>
+              <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
+                Agents Enabled
+              </p>
+              <div class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
+                {runningAgents} running, {pausedAgents} paused, {errorAgents} errors
               </div>
-              {#if isActive}
-                <span class="absolute -right-0.5 -top-0.5 flex h-2.5 w-2.5">
-                  <span class="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
-                  <span class="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
-                </span>
-              {/if}
             </div>
-          {/each}
-          {#if agents.length === 0}
-            <p class="text-xs text-[--dash-muted]">No agents registered</p>
-          {/if}
-        </div>
-      {/if}
-    </a>
-
-    <!-- Widget 2: Tasks In Progress -->
-    <a href="/{prefix}/issues" class="dash-card dash-card--blue group no-underline block">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-[--dash-primary]/10">
-            <ListTodo size={14} color="var(--dash-primary)" />
-          </div>
-          <h3 class="dash-section-header !mb-0">Tasks In Progress</h3>
-        </div>
-        <span class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted]">
-          View all
-        </span>
-      </div>
-
-      {#if loading}
-        <div class="mt-4 space-y-3">
-          <Skeleton class="h-8 w-16 bg-white/5" />
-          <Skeleton class="h-3 w-full bg-white/5" />
-          <div class="flex gap-4">
-            <Skeleton class="h-3 w-20 bg-white/5" />
-            <Skeleton class="h-3 w-20 bg-white/5" />
+            <Bot class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
           </div>
         </div>
-      {:else}
-        <div class="mt-3 flex items-baseline gap-2">
-          <p class="text-3xl font-bold tabular-nums text-[--dash-text]">{tasksInProgress}</p>
-          <span class="ml-auto dash-trend">
-            <svg width="24" height="12" viewBox="0 0 24 12"><polyline points="0,6 6,7 12,5 18,4 24,3" fill="none" stroke="#2563eb" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </span>
-        </div>
-        <p class="text-xs text-[--dash-muted]">{openIssues} open, {blockedIssues} blocked</p>
+      </a>
 
-        <!-- Stacked bar chart -->
-        <div class="mt-4 flex h-2.5 w-full overflow-hidden rounded-full bg-white/5">
-          {#each statusSegments as seg}
-            <div
-              class="h-full transition-all duration-500"
-              style="width: {seg.pct}%; background-color: {seg.color};"
-              title="{seg.label}: {seg.count}"
-            ></div>
-          {/each}
-        </div>
-
-        <!-- Status legend -->
-        <div class="mt-3 flex flex-wrap gap-x-4 gap-y-1">
-          {#each statusSegments as seg}
-            <div class="flex items-center gap-1.5">
-              <span class="h-2 w-2 rounded-full" style="background-color: {seg.color};"></span>
-              <span class="text-[11px] text-[--dash-muted]">{seg.label}</span>
-              <span class="text-[11px] font-semibold text-[--dash-text]">{seg.count}</span>
+      <!-- Tasks In Progress -->
+      <a href="/{prefix}/issues" class="no-underline text-inherit block h-full">
+        <div class="h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">
+                {tasksInProgress}
+              </p>
+              <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
+                Tasks In Progress
+              </p>
+              <div class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
+                {openIssues} open, {blockedIssues} blocked
+              </div>
             </div>
-          {/each}
-        </div>
-      {/if}
-    </a>
-
-    <!-- Widget 3: Month Spend -->
-    <a href="/{prefix}/costs" class="dash-card dash-card--amber group no-underline block">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-amber-500/10">
-            <Wallet size={14} color="#f59e0b" />
+            <CircleDot class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
           </div>
-          <h3 class="dash-section-header !mb-0">Month Spend</h3>
         </div>
-        <span class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted]">
-          View all
-        </span>
-      </div>
+      </a>
 
-      {#if loading}
-        <div class="mt-4 space-y-3">
-          <Skeleton class="h-8 w-24 bg-white/5" />
-          <Skeleton class="h-2.5 w-full bg-white/5" />
-          <Skeleton class="h-3 w-32 bg-white/5" />
-        </div>
-      {:else}
-        <div class="mt-3 flex items-baseline gap-2">
-          <p class="text-3xl font-bold tabular-nums text-[--dash-text]">{formatCurrency(monthSpend)}</p>
-          <span class="ml-auto dash-trend">
-            <svg width="24" height="12" viewBox="0 0 24 12"><polyline points="0,9 6,7 12,6 18,5 24,4" fill="none" stroke="#f59e0b" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          </span>
-        </div>
-        <p class="text-xs text-[--dash-muted]">{budgetStatusText}</p>
-
-        <!-- Budget utilization bar -->
-        <div class="mt-4">
-          <div class="mb-1.5 flex items-center justify-between">
-            <span class="text-[11px] text-[--dash-muted]">Budget utilization</span>
-            <span class="text-[11px] font-semibold text-[--dash-text]">{budgetPct.toFixed(0)}%</span>
-          </div>
-          <div class="h-2.5 w-full overflow-hidden rounded-full bg-white/5">
-            <div
-              class="h-full rounded-full transition-all duration-700"
-              style="width: {budgetPct}%; background: {budgetPct > 90 ? '#ef4444' : budgetPct > 70 ? '#f59e0b' : '#10b981'};"
-            ></div>
-          </div>
-          <p class="mt-1.5 text-[11px] text-[--dash-muted]">
-            {formatCurrency(monthSpend)} of {formatCurrency(budgetLimit)} budget
-          </p>
-        </div>
-      {/if}
-    </a>
-
-    <!-- Widget 4: Pending Approvals -->
-    <a href="/{prefix}/approvals" class="dash-card dash-card--purple group no-underline block">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-2">
-          <div class="flex h-7 w-7 items-center justify-center rounded-lg bg-purple-500/10">
-            <ShieldCheck size={14} color="#8b5cf6" />
-          </div>
-          <h3 class="dash-section-header !mb-0">Pending Approvals</h3>
-        </div>
-        <span class="opacity-0 transition-opacity group-hover:opacity-60 text-xs text-[--dash-muted]">
-          View all
-        </span>
-      </div>
-
-      {#if loading}
-        <div class="mt-4 space-y-3">
-          <Skeleton class="h-8 w-16 bg-white/5" />
-          <Skeleton class="h-3 w-24 bg-white/5" />
-        </div>
-      {:else}
-        <div class="mt-3">
-          <p class="text-3xl font-bold tabular-nums text-[--dash-text]">{pendingApprovals}</p>
-          <p class="text-xs text-[--dash-muted]">Awaiting board review</p>
-        </div>
-
-        <!-- Approval status indicator -->
-        <div class="mt-4">
-          {#if pendingApprovals > 0}
-            <span
-              class="inline-flex items-center gap-1.5 rounded-lg border border-purple-500/20 bg-purple-500/[0.08] px-3 py-1.5 text-xs font-medium text-purple-400 transition-colors hover:bg-purple-500/[0.15]"
-            >
-              <ShieldCheck size={12} />
-              Review now
-              <ArrowRight size={10} />
-            </span>
-          {:else}
-            <div class="flex items-center gap-1.5 text-[11px] text-[--dash-muted]">
-              <span class="h-2 w-2 rounded-full bg-emerald-500"></span>
-              All clear — no pending approvals
+      <!-- Month Spend -->
+      <a href="/{prefix}/costs" class="no-underline text-inherit block h-full">
+        <div class="h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">
+                {formatCents(monthSpend)}
+              </p>
+              <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
+                Month Spend
+              </p>
+              <div class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
+                {#if monthBudgetCents > 0}
+                  {monthUtilizationPercent}% of {formatCents(monthBudgetCents)} budget
+                {:else}
+                  Unlimited budget
+                {/if}
+              </div>
             </div>
-          {/if}
+            <DollarSign class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
+          </div>
         </div>
-      {/if}
-    </a>
-  </div>
+      </a>
+
+      <!-- Pending Approvals -->
+      <a href="/{prefix}/approvals" class="no-underline text-inherit block h-full">
+        <div class="h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex-1 min-w-0">
+              <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">
+                {pendingApprovals + budgetPendingApprovals}
+              </p>
+              <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
+                Pending Approvals
+              </p>
+              <div class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
+                {#if budgetPendingApprovals > 0}
+                  {budgetPendingApprovals} budget overrides awaiting board review
+                {:else}
+                  Awaiting board review
+                {/if}
+              </div>
+            </div>
+            <ShieldCheck class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
+          </div>
+        </div>
+      </a>
+    </div>
+  {:else}
+    <!-- Loading skeleton for metric cards -->
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
+      {#each Array(4) as _}
+        <div class="px-4 py-4 sm:px-5 sm:py-5 rounded-lg">
+          <Skeleton class="h-8 w-16" />
+          <Skeleton class="h-4 w-24 mt-2" />
+          <Skeleton class="h-3 w-32 mt-2" />
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <!-- ── Activity Charts ────────────────────────────────────────────── -->
   {#if companyId}
     <ActivityCharts {companyId} />
   {/if}
 
-  <!-- ── Recent Activity & Recent Tasks (2-column) ────────────────── -->
-  <div class="grid grid-cols-1 gap-5 lg:grid-cols-2">
-
+  <!-- ── Recent Activity & Recent Tasks (Paperclip style) ──────────── -->
+  <div class="grid md:grid-cols-2 gap-4">
     <!-- Recent Activity -->
-    <div class="dash-card !p-0">
-      <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--dash-border);">
-        <div class="flex items-center gap-2">
-          <Activity size={14} color="var(--dash-primary)" />
-          <h3 class="dash-section-header !mb-0">Recent Activity</h3>
-        </div>
-        <a href="/{prefix}/activity" class="dash-view-all group/va">
-          View all <span class="dash-view-all-arrow">&rarr;</span>
-        </a>
-      </div>
-      <div class="px-5 py-3">
+    {#if recentActivity.length > 0 || recentActivityLoading}
+      <div class="min-w-0">
+        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+          Recent Activity
+        </h3>
         {#if recentActivityLoading}
-          <div class="space-y-3 py-2">
+          <div class="border border-border divide-y divide-border overflow-hidden">
             {#each Array(5) as _}
-              <div class="flex items-center gap-3">
-                <Skeleton class="h-7 w-7 shrink-0 rounded-full bg-white/5" />
-                <div class="flex-1 space-y-1.5">
-                  <Skeleton class="h-3 w-3/4 bg-white/5" />
-                  <Skeleton class="h-2 w-1/4 bg-white/5" />
-                </div>
+              <div class="px-4 py-2 flex items-center gap-3">
+                <Skeleton class="h-5 w-5 rounded-full shrink-0" />
+                <Skeleton class="h-3 w-3/4" />
               </div>
             {/each}
           </div>
-        {:else if recentActivity.length === 0}
-          <div class="flex flex-col items-center justify-center py-10">
-            <Clock size={28} class="mb-2 opacity-30" color="var(--dash-muted)" />
-            <p class="text-xs text-[--dash-muted]">No recent activity</p>
-          </div>
         {:else}
-          <div class="divide-y divide-white/[0.04]">
+          <div class="border border-border divide-y divide-border overflow-hidden">
             {#each recentActivity as item}
-              {@const IconComp = activityIcon(item.type ?? item.entityType ?? 'activity')}
               {@const actorDisplay = getActorDisplay(item)}
               {@const verb = parseActionVerb(item.action ?? item.description ?? item.message ?? '')}
               {@const entity = getEntityDisplay(item)}
-              {@const actionType = item.action ?? ''}
-              {@const activityBorderColor = actionType.includes('created') ? '#10b981' : actionType.includes('updated') || actionType.includes('changed') ? '#2563eb' : actionType.includes('deleted') ? '#ef4444' : 'transparent'}
               {@const activityHref = getActivityHref(item)}
               <a
                 href={activityHref || `/${prefix}/activity`}
-                class="dash-activity-item flex items-start gap-3 py-2.5 no-underline"
-                style="--activity-border-color: {activityBorderColor};"
+                class="px-4 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit block"
               >
-                <div
-                  class="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full"
-                  style="background-color: rgba(255,255,255,0.06);"
-                >
-                  {#if item.agentAvatar ?? item.actorAvatar}
-                    <img
-                      src={item.agentAvatar ?? item.actorAvatar}
-                      alt={actorDisplay}
-                      class="h-7 w-7 rounded-full object-cover"
-                    />
-                  {:else}
-                    <IconComp size={13} color="var(--dash-muted)" />
-                  {/if}
-                </div>
-                <div class="min-w-0 flex-1">
-                  <p class="text-xs leading-snug text-[--dash-text]">
-                    <span class="font-semibold text-[--dash-primary]">{actorDisplay}</span>
-                    {' '}<span class="text-[--dash-muted]">{verb}</span>
-                    {#if entity.label || entity.subtitle}
-                      {' '}<strong class="font-semibold text-[--dash-text]">{entity.label}{#if entity.label && entity.subtitle} &mdash; {/if}{entity.subtitle}</strong>
+                <div class="flex gap-3">
+                  <p class="flex-1 min-w-0 truncate">
+                    <span class="text-sm font-medium">{actorDisplay}</span>
+                    <span class="text-muted-foreground ml-1">{verb}</span>
+                    {#if entity.label}
+                      <span class="font-medium ml-1">{entity.label}</span>
+                    {/if}
+                    {#if entity.subtitle}
+                      <span class="text-muted-foreground ml-1">— {entity.subtitle}</span>
                     {/if}
                   </p>
-                  <TimeAgo date={item.createdAt ?? item.timestamp ?? item.date} class="text-[10px] text-[--dash-muted]" />
+                  <span class="text-xs text-muted-foreground shrink-0 pt-0.5">
+                    <TimeAgo date={item.createdAt ?? item.timestamp ?? item.date} />
+                  </span>
                 </div>
               </a>
             {/each}
           </div>
         {/if}
       </div>
-    </div>
+    {/if}
 
     <!-- Recent Tasks -->
-    <div class="dash-card !p-0">
-      <div class="flex items-center justify-between border-b px-5 py-4" style="border-color: var(--dash-border);">
-        <div class="flex items-center gap-2">
-          <ListTodo size={14} color="var(--dash-primary)" />
-          <h3 class="dash-section-header !mb-0">Recent Tasks</h3>
+    <div class="min-w-0">
+      <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+        Recent Tasks
+      </h3>
+      {#if loading}
+        <div class="border border-border divide-y divide-border overflow-hidden">
+          {#each Array(5) as _}
+            <div class="px-4 py-3 flex items-center gap-3">
+              <Skeleton class="h-4 w-4 rounded-full shrink-0" />
+              <Skeleton class="h-3 w-16" />
+              <Skeleton class="h-3 w-3/4" />
+            </div>
+          {/each}
         </div>
-        <a href="/{prefix}/issues" class="dash-view-all group/va">
-          View all <span class="dash-view-all-arrow">&rarr;</span>
-        </a>
-      </div>
-      <div class="px-5 py-3">
-        {#if loading}
-          <div class="space-y-3 py-2">
-            {#each Array(5) as _}
-              <div class="flex items-center gap-3">
-                <Skeleton class="h-2.5 w-2.5 shrink-0 rounded-full bg-white/5" />
-                <Skeleton class="h-3 w-16 bg-white/5" />
-                <div class="flex-1">
-                  <Skeleton class="h-3 w-3/4 bg-white/5" />
-                </div>
-              </div>
-            {/each}
-          </div>
-        {:else if recentIssues.length === 0}
-          <div class="flex flex-col items-center justify-center py-10">
-            <CircleDot size={28} class="mb-2 opacity-30" color="var(--dash-muted)" />
-            <p class="text-xs text-[--dash-muted]">No issues yet</p>
-            <a href="/{prefix}/issues?new=true" class="mt-1.5 text-[11px] font-medium text-[--dash-primary] hover:underline">
-              Create first issue
-            </a>
-          </div>
-        {:else}
-          <div class="divide-y divide-white/[0.04]">
-            {#each recentIssues as issue}
-              {@const normalizedStatus = normalizeIssueStatus(issue.status)}
-              {@const statusColor = STATUS_CONFIG.find((s) => s.key === normalizedStatus)?.color ?? '#64748b'}
-              {@const identifier = issue.identifier ?? issue.slug ?? (issue.number ? `#${issue.number}` : '')}
-              {@const assignedAgent = findAgentById(issue.assigneeAgentId) ?? (issue.agentName ? { name: issue.agentName } : null)}
-              {@const agentName = assignedAgent?.name ?? issue.assigneeName ?? issue.agent?.name ?? ''}
-              <a
-                href="/{prefix}/issues/{issue.id}"
-                class="flex items-center gap-2 py-2.5 transition-colors hover:bg-accent/25 -mx-2 px-2 rounded"
-              >
-                <!-- Status dot -->
+      {:else if recentIssues.length === 0}
+        <div class="border border-border p-4">
+          <p class="text-sm text-muted-foreground">No tasks yet.</p>
+        </div>
+      {:else}
+        <div class="border border-border divide-y divide-border overflow-hidden">
+          {#each recentIssues.slice(0, 10) as issue}
+            {@const normalizedStatus = normalizeIssueStatus(issue.status)}
+            {@const color = statusColor(issue.status)}
+            {@const identifier = issue.identifier ?? issue.slug ?? (issue.number ? `#${issue.number}` : '')}
+            {@const assignedAgent = findAgentById(issue.assigneeAgentId)}
+            {@const agentName = assignedAgent?.name ?? issue.assigneeName ?? issue.agentName ?? ''}
+            <a
+              href="/{prefix}/issues/{issue.identifier ?? issue.id}"
+              class="px-4 py-3 text-sm cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit block"
+            >
+              <div class="flex items-start gap-2 sm:items-center sm:gap-3">
+                <!-- Status icon (Paperclip style: circle with border) -->
                 <span
-                  class="h-2.5 w-2.5 shrink-0 rounded-full"
-                  style="background-color: {statusColor};"
-                  title={normalizedStatus}
+                  class="shrink-0 inline-flex h-4 w-4 rounded-full border-2"
+                  style="border-color: {color};{normalizedStatus === 'done' ? ` background-color: ${color};` : ''}"
                 ></span>
 
-                <!-- Identifier -->
-                {#if identifier}
-                  <span class="shrink-0 font-mono text-[10px] font-semibold text-[--dash-muted]">
-                    {identifier}
+                <span class="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
+                  <span class="line-clamp-2 text-sm sm:order-2 sm:flex-1 sm:min-w-0 sm:line-clamp-none sm:truncate">
+                    {issue.title ?? issue.name ?? 'Untitled'}
                   </span>
-                {/if}
-
-                <!-- Agent initials badge + name -->
-                {#if agentName}
-                  <div
-                    class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[8px] font-bold text-white ring-1 ring-white/10"
-                    style="background-color: {agentColor(agentName)};"
-                    title={agentName}
-                  >
-                    {getInitials(agentName)}
-                  </div>
-                  <span class="shrink-0 rounded-md bg-white/5 px-1.5 py-0.5 text-[10px] font-semibold text-[--dash-muted] max-w-[70px] truncate">
-                    {agentName}
+                  <span class="flex items-center gap-2 sm:order-1 sm:shrink-0">
+                    {#if identifier}
+                      <span class="text-xs font-mono text-muted-foreground">
+                        {identifier}
+                      </span>
+                    {/if}
+                    {#if agentName}
+                      <span class="hidden sm:inline-flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <span
+                          class="inline-flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold text-white"
+                          style="background-color: {color};"
+                        >
+                          {getInitials(agentName)}
+                        </span>
+                        {agentName}
+                      </span>
+                    {/if}
+                    <span class="text-xs text-muted-foreground shrink-0 sm:order-last">
+                      <TimeAgo date={issue.updatedAt ?? issue.createdAt} />
+                    </span>
                   </span>
-                {:else if issue.assigneeAvatar ?? issue.agentAvatar}
-                  <img
-                    src={issue.assigneeAvatar ?? issue.agentAvatar}
-                    alt="Agent"
-                    class="h-5 w-5 shrink-0 rounded-full object-cover"
-                  />
-                {:else}
-                  <div class="flex h-5 w-5 shrink-0 items-center justify-center rounded-full" style="background-color: rgba(255,255,255,0.06);">
-                    <Bot size={10} color="var(--dash-muted)" />
-                  </div>
-                {/if}
-
-                <!-- Time ago -->
-                <TimeAgo date={issue.createdAt ?? issue.updatedAt} class="shrink-0 !text-[10px] !text-[--dash-muted]" />
-
-                <!-- Title -->
-                <span class="min-w-0 flex-1 truncate text-xs text-[--dash-text]">
-                  {issue.title ?? issue.name ?? 'Untitled'}
                 </span>
-              </a>
-            {/each}
-          </div>
-        {/if}
-      </div>
+              </div>
+            </a>
+          {/each}
+        </div>
+      {/if}
     </div>
   </div>
-
 </div>
-
-<style>
-  .dashboard-root {
-    --dash-bg: #0B0B10;
-    --dash-card: rgba(18, 18, 24, 0.8);
-    --dash-card-solid: #121218;
-    --dash-border: rgba(255, 255, 255, 0.08);
-    --dash-primary: #2563EB;
-    --dash-text: #F8FAFC;
-    --dash-muted: #94A3B8;
-
-    background-color: var(--dash-bg);
-  }
-
-  :global(:root:not(.dark)) .dashboard-root {
-    --dash-bg: #F9FAFB;
-    --dash-card: rgba(255, 255, 255, 0.85);
-    --dash-card-solid: #FFFFFF;
-    --dash-border: rgba(0, 0, 0, 0.08);
-    --dash-primary: #2563EB;
-    --dash-text: #111827;
-    --dash-muted: #6B7280;
-  }
-
-  /* ── Glassmorphism Card Base ─────────────────────────────────────── */
-  .dash-card {
-    background-color: var(--dash-card);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid var(--dash-border);
-    border-radius: 0.85rem;
-    padding: 1.25rem;
-    transition: all 0.2s ease;
-    position: relative;
-    overflow: hidden;
-  }
-  .dash-card:hover {
-    transform: scale(1.02);
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.15);
-    border-color: rgba(255, 255, 255, 0.14);
-  }
-  :global(:root:not(.dark)) .dash-card:hover {
-    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.08);
-    border-color: rgba(0, 0, 0, 0.12);
-  }
-
-  /* ── Accent gradient top lines per card variant ──────────────────── */
-  .dash-card--blue::before,
-  .dash-card--emerald::before,
-  .dash-card--amber::before,
-  .dash-card--purple::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    border-radius: 0.85rem 0.85rem 0 0;
-  }
-  .dash-card--blue::before {
-    background: linear-gradient(90deg, #2563eb, #3b82f6, transparent);
-  }
-  .dash-card--emerald::before {
-    background: linear-gradient(90deg, #10b981, #34d399, transparent);
-  }
-  .dash-card--amber::before {
-    background: linear-gradient(90deg, #f59e0b, #fbbf24, transparent);
-  }
-  .dash-card--purple::before {
-    background: linear-gradient(90deg, #8b5cf6, #a78bfa, transparent);
-  }
-
-  /* Hover border glow per variant */
-  .dash-card--blue:hover {
-    border-color: rgba(37, 99, 235, 0.3);
-    box-shadow: 0 4px 24px rgba(37, 99, 235, 0.08);
-  }
-  .dash-card--emerald:hover {
-    border-color: rgba(16, 185, 129, 0.3);
-    box-shadow: 0 4px 24px rgba(16, 185, 129, 0.08);
-  }
-  .dash-card--amber:hover {
-    border-color: rgba(245, 158, 11, 0.3);
-    box-shadow: 0 4px 24px rgba(245, 158, 11, 0.08);
-  }
-  .dash-card--purple:hover {
-    border-color: rgba(139, 92, 246, 0.3);
-    box-shadow: 0 4px 24px rgba(139, 92, 246, 0.08);
-  }
-
-  /* ── Section Headers ─────────────────────────────────────────────── */
-  .dash-section-header {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--dash-muted);
-    margin-bottom: 0;
-  }
-
-  /* ── Sparkline trend indicators ──────────────────────────────────── */
-  .dash-trend {
-    display: inline-flex;
-    align-items: center;
-    opacity: 0.7;
-  }
-
-  /* ── View All link with arrow animation ──────────────────────────── */
-  .dash-view-all {
-    font-size: 0.69rem;
-    font-weight: 500;
-    color: var(--dash-primary);
-    text-decoration: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    transition: color 0.15s ease;
-  }
-  .dash-view-all:hover {
-    text-decoration: underline;
-  }
-  .dash-view-all-arrow {
-    display: inline-block;
-    transition: transform 0.2s ease;
-  }
-  .dash-view-all:hover .dash-view-all-arrow {
-    transform: translateX(3px);
-  }
-
-  /* ── Activity items left border ──────────────────────────────────── */
-  .dash-activity-item {
-    border-left: 2px solid var(--activity-border-color, transparent);
-    padding-left: 0.5rem;
-    margin-left: -0.5rem;
-    border-radius: 0 0.25rem 0.25rem 0;
-    transition: background-color 0.15s ease;
-  }
-  .dash-activity-item:hover {
-    background-color: rgba(255, 255, 255, 0.02);
-  }
-  :global(:root:not(.dark)) .dash-activity-item:hover {
-    background-color: rgba(0, 0, 0, 0.02);
-  }
-</style>

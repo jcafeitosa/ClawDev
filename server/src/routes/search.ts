@@ -12,6 +12,7 @@ import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { embeddingService, type EmbeddingProviderConfig } from "../services/embedding-service.js";
 import { companyIdParam } from "../middleware/index.js";
+import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
 
 export function searchRoutes(db: Db, embeddingConfig: EmbeddingProviderConfig = null) {
   const embeddings = embeddingService(db, embeddingConfig);
@@ -20,7 +21,10 @@ export function searchRoutes(db: Db, embeddingConfig: EmbeddingProviderConfig = 
     // Command palette semantic search
     .get(
       "/companies/:companyId/semantic",
-      async ({ params, query }) => {
+      async (ctx: any) => {
+        const { params, query } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const q = query.q as string;
         if (!q || q.trim().length === 0) return { results: [] };
         const results = await embeddings.commandPaletteSearch(params.companyId, q);
@@ -32,7 +36,10 @@ export function searchRoutes(db: Db, embeddingConfig: EmbeddingProviderConfig = 
     // Find similar issues (duplicate detection)
     .post(
       "/companies/:companyId/similar-issues",
-      async ({ params, body }) => {
+      async (ctx: any) => {
+        const { params, body } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const results = await embeddings.findSimilarIssues(
           params.companyId,
           body.content,

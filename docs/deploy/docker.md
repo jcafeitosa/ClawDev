@@ -41,7 +41,7 @@ docker run --name clawdev \
 
 All data is persisted under the bind mount (`./data/docker-clawdev`):
 
-- Embedded PostgreSQL data
+- Local database data
 - Uploaded assets
 - Local secrets key
 - Agent workspace data

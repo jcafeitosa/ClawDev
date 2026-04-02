@@ -16,6 +16,7 @@ import { isUuidLike, normalizeAgentUrlKey } from "@clawdev/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
+import { normalizeRuntimeConfigForAdapterType } from "./runtime-config.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -77,10 +78,7 @@ function buildConfigSnapshot(
     typeof row.adapterConfig === "object" && row.adapterConfig !== null && !Array.isArray(row.adapterConfig)
       ? sanitizeRecord(row.adapterConfig as Record<string, unknown>)
       : {};
-  const runtimeConfig =
-    typeof row.runtimeConfig === "object" && row.runtimeConfig !== null && !Array.isArray(row.runtimeConfig)
-      ? sanitizeRecord(row.runtimeConfig as Record<string, unknown>)
-      : {};
+  const runtimeConfig = normalizeRuntimeConfigForAdapterType(row.adapterType, row.runtimeConfig);
   const metadata =
     typeof row.metadata === "object" && row.metadata !== null && !Array.isArray(row.metadata)
       ? sanitizeRecord(row.metadata as Record<string, unknown>)
@@ -145,7 +143,7 @@ function configPatchFromSnapshot(snapshot: unknown): Partial<typeof agents.$infe
         : null,
     adapterType: snapshot.adapterType,
     adapterConfig: isPlainRecord(snapshot.adapterConfig) ? snapshot.adapterConfig : {},
-    runtimeConfig: isPlainRecord(snapshot.runtimeConfig) ? snapshot.runtimeConfig : {},
+    runtimeConfig: normalizeRuntimeConfigForAdapterType(snapshot.adapterType, snapshot.runtimeConfig),
     budgetMonthlyCents: Math.max(0, Math.floor(snapshot.budgetMonthlyCents)),
     metadata: isPlainRecord(snapshot.metadata) || snapshot.metadata === null ? snapshot.metadata : null,
   };

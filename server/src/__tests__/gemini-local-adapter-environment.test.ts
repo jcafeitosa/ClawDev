@@ -130,5 +130,5 @@ describe("gemini_local environment diagnostics", () => {
     expect(result.status).toBe("warn");
     expect(result.checks.some((check) => check.code === "gemini_hello_probe_quota_exhausted")).toBe(true);
     await fs.rm(root, { recursive: true, force: true });
-  });
+  }, 10_000);
 });

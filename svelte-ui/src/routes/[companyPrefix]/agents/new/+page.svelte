@@ -68,7 +68,16 @@
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
-  let companyId = $derived(companyStore.selectedCompanyId);
+  let routeCompanyId = $derived.by(() => {
+    const requestedPrefix = String($page.params.companyPrefix ?? '').trim().toUpperCase();
+    if (!requestedPrefix) return null;
+    return (
+      companyStore.companies.find(
+        (company) => String(company.issuePrefix ?? '').trim().toUpperCase() === requestedPrefix,
+      )?.id ?? null
+    );
+  });
+  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
   let isFirstAgent = $derived(agentsLoaded && existingAgents.length === 0);
 
   // ---------------------------------------------------------------------------
@@ -206,7 +215,7 @@
         <!-- Name + Icon row -->
         <div class="flex items-start gap-4">
           <div>
-            <label class={labelCls}>Icon</label>
+            <div class={labelCls}>Icon</div>
             <div class="mt-1.5">
               <AgentIconPicker value={icon} onSelect={(name) => icon = name} />
             </div>
@@ -260,7 +269,7 @@
 
         <!-- Reports To -->
         <div>
-          <label class={labelCls}>Reports To</label>
+          <div class={labelCls}>Reports To</div>
           <div class="mt-1.5">
             {#if companyId}
               <ReportsToPicker

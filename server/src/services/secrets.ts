@@ -118,7 +118,7 @@ export function secretService(db: Db) {
           );
         }
         if (binding.value === REDACTED_SENTINEL) {
-          throw unprocessable(`Refusing to persist redacted placeholder for key: ${key}`);
+          throw unprocessable(`Refusing to persist redacted value for key: ${key}`);
         }
         normalized[key] = binding;
         continue;

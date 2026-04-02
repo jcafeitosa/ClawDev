@@ -215,6 +215,7 @@
     onclick={handleBackdropClick}
     onkeydown={handleKeydown}
     role="dialog"
+    tabindex="0"
     aria-modal="true"
     aria-label="Create new issue"
   >

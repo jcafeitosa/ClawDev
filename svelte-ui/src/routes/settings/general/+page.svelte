@@ -1,23 +1,51 @@
 <script lang="ts">
   import { api } from '$lib/api';
 
-  let instanceName = $state('');
-  let publicUrl = $state('');
+  let censorUsernameInLogs = $state(false);
   let loading = $state(true);
   let saving = $state(false);
   let saved = $state(false);
+  let error = $state<string | null>(null);
 
   $effect(() => {
-    api('/api/instance-settings').then(r => r.json()).then(d => { instanceName = d.instanceName ?? ''; publicUrl = d.publicUrl ?? ''; }).finally(() => { loading = false; });
+    api('/api/instance/settings/general')
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
+      .then((d) => {
+        censorUsernameInLogs = d?.censorUsernameInLogs === true;
+      })
+      .catch((err: unknown) => {
+        error = err instanceof Error ? err.message : 'Failed to load general settings';
+      })
+      .finally(() => {
+        loading = false;
+      });
   });
 
   async function save() {
     saving = true;
     saved = false;
-    await api('/api/instance-settings', { method: 'PATCH', body: JSON.stringify({ instanceName, publicUrl }) });
-    saving = false;
-    saved = true;
-    setTimeout(() => { saved = false; }, 2000);
+    error = null;
+    try {
+      const res = await api('/api/instance/settings/general', {
+        method: 'PATCH',
+        body: JSON.stringify({ censorUsernameInLogs }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error ?? `HTTP ${res.status}`);
+      }
+      saved = true;
+      setTimeout(() => {
+        saved = false;
+      }, 2000);
+    } catch (err) {
+      error = err instanceof Error ? err.message : 'Failed to save general settings';
+    } finally {
+      saving = false;
+    }
   }
 </script>
 
@@ -31,14 +59,43 @@
   </div>
   <h1 class="text-xl font-bold text-zinc-900 dark:text-zinc-50">General Settings</h1>
   {#if loading}
-    <div class="space-y-4">{#each Array(2) as _}<div class="h-12 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800"></div>{/each}</div>
+    <div class="space-y-4">{#each Array(1) as _}<div class="h-20 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800"></div>{/each}</div>
   {:else}
     <div class="space-y-4">
-      <label class="block"><span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Instance Name</span>
-        <input bind:value={instanceName} class="mt-1 w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900" /></label>
-      <label class="block"><span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Public URL</span>
-        <input bind:value={publicUrl} class="mt-1 w-full rounded-lg border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900" /></label>
-      <button onclick={save} disabled={saving} class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50">{saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}</button>
+      {#if error}
+        <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
+          {error}
+        </div>
+      {/if}
+      <div class="rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
+        <div class="flex items-start justify-between gap-4">
+          <div class="space-y-1.5">
+            <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Censor username in logs</p>
+            <p class="text-sm text-zinc-500 dark:text-zinc-400">
+              Hide the username segment in home-directory paths and similar operator-visible log output.
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-label="Toggle username log censoring"
+            disabled={saving}
+            onclick={() => (censorUsernameInLogs = !censorUsernameInLogs)}
+            class="relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 {censorUsernameInLogs ? 'bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}"
+          >
+            <span class="inline-block h-3.5 w-3.5 rounded-full bg-white transition-transform {censorUsernameInLogs ? 'translate-x-4.5' : 'translate-x-0.5'}"></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-3">
+        <button
+          onclick={save}
+          disabled={saving}
+          class="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}
+        </button>
+      </div>
     </div>
   {/if}
 </div>

@@ -6,6 +6,8 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
+import { heartbeatRuns } from "@clawdev/db";
+import { eq } from "drizzle-orm";
 import { companyIdParam, paginationQuery } from "../middleware/index.js";
 import { assertBoard, assertCompanyAccess, type Actor } from "../middleware/authz.js";
 import { activityService } from "../services/activity.js";
@@ -13,6 +15,17 @@ import { issueService } from "../services/index.js";
 import { sanitizeRecord } from "../redaction.js";
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+async function resolveIssuesForRun(db: Db, activity: ReturnType<typeof activityService>, actor: Actor, runId: string) {
+  const run = await db
+    .select({ companyId: heartbeatRuns.companyId })
+    .from(heartbeatRuns)
+    .where(eq(heartbeatRuns.id, runId))
+    .then((rows) => rows[0] ?? null);
+  if (!run) return [];
+  assertCompanyAccess(actor, run.companyId);
+  return activity.issuesForRun(runId);
+}
 
 export function activityRoutes(db: Db) {
   const activity = activityService(db);
@@ -124,10 +137,13 @@ export function activityRoutes(db: Db) {
     // ── Issues for a run ────────────────────────────────────────────
     .get(
       "/runs/:runId/issues",
-      async (ctx: any) => {
-        const { params } = ctx;
-        return activity.issuesForRun(params.runId);
-      },
+      async (ctx: any) => resolveIssuesForRun(db, activity, ctx.actor as Actor, ctx.params.runId),
+      { params: t.Object({ runId: t.String() }) },
+    )
+
+    .get(
+      "/heartbeat-runs/:runId/issues",
+      async (ctx: any) => resolveIssuesForRun(db, activity, ctx.actor as Actor, ctx.params.runId),
       { params: t.Object({ runId: t.String() }) },
     );
 }

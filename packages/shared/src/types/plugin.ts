@@ -12,7 +12,7 @@ import type {
 } from "../constants.js";
 
 // ---------------------------------------------------------------------------
-// JSON Schema placeholder – plugins declare config schemas as JSON Schema
+// JSON Schema helper – plugins declare config schemas as JSON Schema
 // ---------------------------------------------------------------------------
 
 /**

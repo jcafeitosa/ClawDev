@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { isClaudeMaxTurnsResult } from "@clawdev/adapter-claude-local/server";
+import {
+  isClaudeMaxTurnsResult,
+  normalizeClaudeModelArg,
+} from "@clawdev/adapter-claude-local/server";
 
 describe("claude_local max-turn detection", () => {
   it("detects max-turn exhaustion by subtype", () => {
@@ -26,5 +29,11 @@ describe("claude_local max-turn detection", () => {
         stop_reason: "end_turn",
       }),
     ).toBe(false);
+  });
+
+  it("normalizes auto model selection to null for Claude local", () => {
+    expect(normalizeClaudeModelArg("auto")).toBeNull();
+    expect(normalizeClaudeModelArg(" AUTO ")).toBeNull();
+    expect(normalizeClaudeModelArg("claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
   });
 });

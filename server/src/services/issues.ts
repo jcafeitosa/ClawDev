@@ -26,6 +26,7 @@ import { conflict, notFound, unprocessable } from "../errors.js";
 import {
   defaultIssueExecutionWorkspaceSettingsForProject,
   gateProjectExecutionWorkspacePolicy,
+  issueExecutionWorkspaceModeForPersistedWorkspace,
   parseProjectExecutionWorkspacePolicy,
 } from "./execution-workspace-policy.js";
 import { instanceSettingsService } from "./instance-settings.js";
@@ -104,6 +105,33 @@ type IssueUserContextInput = {
   updatedAt: Date | string;
 };
 type ProjectGoalReader = Pick<Db, "select">;
+type DbReader = Pick<Db, "select">;
+type IssueCreateInput = Omit<typeof issues.$inferInsert, "companyId"> & {
+  labelIds?: string[];
+  inheritExecutionWorkspaceFromIssueId?: string | null;
+};
+
+async function getWorkspaceInheritanceIssue(
+  db: DbReader,
+  companyId: string,
+  issueId: string,
+) {
+  const issue = await db
+    .select({
+      id: issues.id,
+      projectId: issues.projectId,
+      projectWorkspaceId: issues.projectWorkspaceId,
+      executionWorkspaceId: issues.executionWorkspaceId,
+      executionWorkspaceSettings: issues.executionWorkspaceSettings,
+    })
+    .from(issues)
+    .where(and(eq(issues.id, issueId), eq(issues.companyId, companyId)))
+    .then((rows) => rows[0] ?? null);
+  if (!issue) {
+    throw notFound("Workspace inheritance issue not found");
+  }
+  return issue;
+}
 
 function sameRunLock(checkoutRunId: string | null, actorRunId: string | null) {
   if (actorRunId) return checkoutRunId === actorRunId;
@@ -851,9 +879,9 @@ export function issueService(db: Db) {
 
     create: async (
       companyId: string,
-      data: Omit<typeof issues.$inferInsert, "companyId"> & { labelIds?: string[] },
+      data: IssueCreateInput,
     ) => {
-      const { labelIds: inputLabelIds, ...issueData } = data;
+      const { labelIds: inputLabelIds, inheritExecutionWorkspaceFromIssueId, ...issueData } = data;
       const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;
       if (!isolatedWorkspacesEnabled) {
         delete issueData.executionWorkspaceId;
@@ -881,8 +909,44 @@ export function issueService(db: Db) {
       return db.transaction(async (tx) => {
         const defaultCompanyGoal = await getDefaultCompanyGoal(tx, companyId);
         const projectGoalId = await getProjectDefaultGoalId(tx, companyId, issueData.projectId);
+        let projectWorkspaceId = issueData.projectWorkspaceId ?? null;
+        let executionWorkspaceId = issueData.executionWorkspaceId ?? null;
+        let executionWorkspacePreference = issueData.executionWorkspacePreference ?? null;
         let executionWorkspaceSettings =
           (issueData.executionWorkspaceSettings as Record<string, unknown> | null | undefined) ?? null;
+        const workspaceInheritanceIssueId = inheritExecutionWorkspaceFromIssueId ?? issueData.parentId ?? null;
+        const hasExplicitExecutionWorkspaceOverride =
+          issueData.executionWorkspaceId !== undefined ||
+          issueData.executionWorkspacePreference !== undefined ||
+          issueData.executionWorkspaceSettings !== undefined;
+        if (workspaceInheritanceIssueId) {
+          const workspaceSource = await getWorkspaceInheritanceIssue(tx, companyId, workspaceInheritanceIssueId);
+          if (projectWorkspaceId == null && workspaceSource.projectWorkspaceId) {
+            projectWorkspaceId = workspaceSource.projectWorkspaceId;
+          }
+          if (
+            isolatedWorkspacesEnabled &&
+            !hasExplicitExecutionWorkspaceOverride &&
+            workspaceSource.executionWorkspaceId
+          ) {
+            const sourceWorkspace = await tx
+              .select({
+                id: executionWorkspaces.id,
+                mode: executionWorkspaces.mode,
+              })
+              .from(executionWorkspaces)
+              .where(eq(executionWorkspaces.id, workspaceSource.executionWorkspaceId))
+              .then((rows) => rows[0] ?? null);
+            if (sourceWorkspace) {
+              executionWorkspaceId = sourceWorkspace.id;
+              executionWorkspacePreference = "reuse_existing";
+              executionWorkspaceSettings = {
+                ...((workspaceSource.executionWorkspaceSettings as Record<string, unknown> | null | undefined) ?? {}),
+                mode: issueExecutionWorkspaceModeForPersistedWorkspace(sourceWorkspace.mode),
+              };
+            }
+          }
+        }
         if (executionWorkspaceSettings == null && issueData.projectId) {
           const project = await tx
             .select({ executionWorkspacePolicy: projects.executionWorkspacePolicy })
@@ -897,7 +961,6 @@ export function issueService(db: Db) {
               ),
             ) as Record<string, unknown> | null;
         }
-        let projectWorkspaceId = issueData.projectWorkspaceId ?? null;
         if (!projectWorkspaceId && issueData.projectId) {
           const project = await tx
             .select({
@@ -936,6 +999,8 @@ export function issueService(db: Db) {
             defaultGoalId: defaultCompanyGoal?.id ?? null,
           }),
           ...(projectWorkspaceId ? { projectWorkspaceId } : {}),
+          ...(executionWorkspaceId ? { executionWorkspaceId } : {}),
+          ...(executionWorkspacePreference ? { executionWorkspacePreference } : {}),
           ...(executionWorkspaceSettings ? { executionWorkspaceSettings } : {}),
           companyId,
           issueNumber,
@@ -968,7 +1033,9 @@ export function issueService(db: Db) {
         .then((rows) => rows[0] ?? null);
       if (!existing) return null;
 
-      const { labelIds: nextLabelIds, ...issueData } = data;
+      const { labelIds: nextLabelIds, inheritExecutionWorkspaceFromIssueId: _ignoredWorkspaceInheritanceIssueId, ...issueData } = data as typeof data & {
+        inheritExecutionWorkspaceFromIssueId?: string | null;
+      };
       const isolatedWorkspacesEnabled = (await instanceSettings.getExperimental()).enableIsolatedWorkspaces;
       if (!isolatedWorkspacesEnabled) {
         delete issueData.executionWorkspaceId;
@@ -1448,6 +1515,38 @@ export function issueService(db: Db) {
           const comment = rows[0] ?? null;
           return comment ? redactIssueComment(comment, censorUsernameInLogs) : null;
         })),
+
+    removeComment: async (commentId: string) => {
+      const issue = await db
+        .select({
+          id: issues.id,
+          companyId: issues.companyId,
+        })
+        .from(issues)
+        .innerJoin(issueComments, eq(issueComments.issueId, issues.id))
+        .where(eq(issueComments.id, commentId))
+        .then((rows) => rows[0] ?? null);
+
+      if (!issue) return null;
+
+      const currentUserRedactionOptions = {
+        enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
+      };
+      const removed = await db
+        .delete(issueComments)
+        .where(eq(issueComments.id, commentId))
+        .returning()
+        .then((rows) => rows[0] ?? null);
+
+      if (!removed) return null;
+
+      await db
+        .update(issues)
+        .set({ updatedAt: new Date() })
+        .where(eq(issues.id, issue.id));
+
+      return redactIssueComment(removed, currentUserRedactionOptions.enabled);
+    },
 
     addComment: async (issueId: string, body: string, actor: { agentId?: string; userId?: string }) => {
       const issue = await db

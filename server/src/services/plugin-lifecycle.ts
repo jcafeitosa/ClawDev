@@ -179,8 +179,8 @@ export interface PluginLifecycleManager {
 
   /**
    * Upgrade a plugin to a newer version.
-   * This is a placeholder that handles the lifecycle state transition.
-   * The actual package installation is handled by plugin-loader.
+   * This handles the lifecycle state transition while plugin-loader performs
+   * the package installation work.
    *
    * If the upgrade adds new capabilities, transitions to `upgrade_pending`.
    * Otherwise, transitions to `ready` directly.

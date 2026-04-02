@@ -26,7 +26,7 @@
   // Step 1: Company
   let companyName = $state("");
   let companyMission = $state("");
-  let createdCompany = $state<{ id: string; slug: string; name: string } | null>(null);
+  let createdCompany = $state<{ id: string; slug?: string; issuePrefix?: string; name: string } | null>(null);
 
   // Step 2: Agent
   let agentName = $state("");
@@ -36,6 +36,14 @@
   // Step 3: Task
   let taskTitle = $state("");
   let taskDescription = $state("");
+  let adminNameId = "setup-admin-name";
+  let adminEmailId = "setup-admin-email";
+  let adminPasswordId = "setup-admin-password";
+  let companyNameId = "setup-company-name";
+  let companyMissionId = "setup-company-mission";
+  let agentNameId = "setup-agent-name";
+  let taskTitleId = "setup-task-title";
+  let taskDescriptionId = "setup-task-description";
 
   const ADAPTER_OPTIONS = [
     { value: "claude_local", label: "Claude (Local)" },
@@ -139,6 +147,7 @@
   }
 
   async function handleCompanyStep() {
+    if (loading || createdCompany) return;
     error = null;
     loading = true;
     try {
@@ -170,7 +179,7 @@
   }
 
   async function handleAgentStep() {
-    if (!createdCompany) return;
+    if (!createdCompany || loading || createdAgent) return;
     error = null;
     loading = true;
     try {
@@ -201,7 +210,7 @@
   }
 
   async function handleTaskStep() {
-    if (!createdCompany) return;
+    if (!createdCompany || loading) return;
     error = null;
     loading = true;
     try {
@@ -236,9 +245,13 @@
     currentStep = 4;
   }
 
+  function companyPrefix(): string {
+    return createdCompany?.slug ?? createdCompany?.issuePrefix ?? createdCompany?.id ?? "";
+  }
+
   function goToDashboard() {
     if (createdCompany) {
-      goto(`/${createdCompany.slug ?? createdCompany.id}/dashboard`, { replaceState: true });
+      goto(`/${companyPrefix()}/dashboard`, { replaceState: true });
     } else {
       goto("/", { replaceState: true });
     }
@@ -246,7 +259,7 @@
 
   function handleClose() {
     if (createdCompany) {
-      goto(`/${createdCompany.slug ?? createdCompany.id}/dashboard`, { replaceState: true });
+      goto(`/${companyPrefix()}/dashboard`, { replaceState: true });
     } else {
       goto("/", { replaceState: true });
     }
@@ -317,16 +330,16 @@
             <div class="space-y-4">
               <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Admin Account</div>
               <div class="group">
-                <label class="text-xs mb-1 block transition-colors {adminName.trim() ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Name</label>
-                <input class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900" placeholder="Your name" bind:value={adminName} autocomplete="name" />
+                <label for={adminNameId} class="text-xs mb-1 block transition-colors {adminName.trim() ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Name</label>
+                <input id={adminNameId} class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900" placeholder="Your name" bind:value={adminName} autocomplete="name" />
               </div>
               <div class="group">
-                <label class="text-xs mb-1 block transition-colors {adminEmail.trim() ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Email</label>
-                <input class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900" type="email" placeholder="admin@example.com" bind:value={adminEmail} autocomplete="email" />
+                <label for={adminEmailId} class="text-xs mb-1 block transition-colors {adminEmail.trim() ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Email</label>
+                <input id={adminEmailId} class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900" type="email" placeholder="admin@example.com" bind:value={adminEmail} autocomplete="email" />
               </div>
               <div class="group">
-                <label class="text-xs mb-1 block transition-colors {adminPassword.length > 0 ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Password</label>
-                <input class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900" type="password" placeholder="Minimum 8 characters" bind:value={adminPassword} minlength="8" autocomplete="new-password" />
+                <label for={adminPasswordId} class="text-xs mb-1 block transition-colors {adminPassword.length > 0 ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Password</label>
+                <input id={adminPasswordId} class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900" type="password" placeholder="Minimum 8 characters" bind:value={adminPassword} minlength="8" autocomplete="new-password" />
               </div>
               <div class="h-px bg-gray-100 my-2"></div>
               <div class="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Company Details</div>
@@ -334,17 +347,18 @@
           {/if}
 
           <div class="group">
-            <label class="text-xs mb-1 block transition-colors {companyName.trim() ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Company name</label>
+            <label for={companyNameId} class="text-xs mb-1 block transition-colors {companyName.trim() ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Company name</label>
             <input
+              id={companyNameId}
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900"
               placeholder="Acme Corp"
               bind:value={companyName}
-              autofocus
             />
           </div>
           <div class="group">
-            <label class="text-xs mb-1 block transition-colors {companyMission.trim() ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Mission / goal (optional)</label>
+            <label for={companyMissionId} class="text-xs mb-1 block transition-colors {companyMission.trim() ? 'text-gray-900' : 'text-gray-400 group-focus-within:text-gray-900'}">Mission / goal (optional)</label>
             <textarea
+              id={companyMissionId}
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[60px] text-gray-900"
               placeholder="What is this company trying to achieve?"
               bind:value={companyMission}
@@ -366,17 +380,17 @@
           </div>
 
           <div>
-            <label class="text-xs text-gray-400 mb-1 block">Agent name</label>
+            <label for={agentNameId} class="text-xs text-gray-400 mb-1 block">Agent name</label>
             <input
+              id={agentNameId}
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900"
               placeholder="CEO"
               bind:value={agentName}
-              autofocus
             />
           </div>
 
           <div>
-            <label class="text-xs text-gray-400 mb-2 block">Adapter type</label>
+            <div class="text-xs text-gray-400 mb-2 block">Adapter type</div>
             <div class="grid grid-cols-2 gap-2">
               {#each ADAPTER_OPTIONS as opt}
                 <button
@@ -394,7 +408,7 @@
           </div>
 
           <div>
-            <label class="text-xs text-gray-400 mb-1 block">Role</label>
+            <div class="text-xs text-gray-400 mb-1 block">Role</div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-md text-xs font-medium text-gray-900">
               <Bot class="h-3.5 w-3.5" />
               CEO
@@ -419,18 +433,19 @@
           </div>
 
           <div>
-            <label class="text-xs text-gray-400 mb-1 block">Task title</label>
+            <label for={taskTitleId} class="text-xs text-gray-400 mb-1 block">Task title</label>
             <input
+              id={taskTitleId}
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900"
               placeholder="Set up the project repository"
               bind:value={taskTitle}
-              autofocus
             />
           </div>
 
           <div>
-            <label class="text-xs text-gray-400 mb-1 block">Description (optional)</label>
+            <label for={taskDescriptionId} class="text-xs text-gray-400 mb-1 block">Description (optional)</label>
             <textarea
+              id={taskDescriptionId}
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[80px] text-gray-900"
               placeholder="Describe what needs to be done..."
               bind:value={taskDescription}

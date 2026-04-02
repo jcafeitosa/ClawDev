@@ -792,6 +792,7 @@
           </div>
           <div class="mt-3 group">
             <label
+              for="onboarding-company-name"
               class="text-xs mb-1 block transition-colors {companyName.trim()
                 ? 'text-gray-900'
                 : 'text-gray-400 group-focus-within:text-gray-900'}"
@@ -799,14 +800,15 @@
               Company name
             </label>
             <input
+              id="onboarding-company-name"
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900"
               placeholder="Acme Corp"
               bind:value={companyName}
-              autofocus
             />
           </div>
           <div class="group">
             <label
+              for="onboarding-company-goal"
               class="text-xs mb-1 block transition-colors {companyGoal.trim()
                 ? 'text-gray-900'
                 : 'text-gray-400 group-focus-within:text-gray-900'}"
@@ -814,6 +816,7 @@
               Mission / goal (optional)
             </label>
             <textarea
+              id="onboarding-company-goal"
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[60px] text-gray-900"
               placeholder="What is this company trying to achieve?"
               bind:value={companyGoal}
@@ -837,18 +840,18 @@
 
           <!-- Agent name -->
           <div>
-            <label class="text-xs text-gray-400 mb-1 block">Agent name</label>
+            <label for="onboarding-agent-name" class="text-xs text-gray-400 mb-1 block">Agent name</label>
             <input
+              id="onboarding-agent-name"
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900"
               placeholder="CEO"
               bind:value={agentName}
-              autofocus
             />
           </div>
 
           <!-- Adapter type radio cards -->
           <div>
-            <label class="text-xs text-gray-400 mb-2 block">Adapter type</label>
+            <div class="text-xs text-gray-400 mb-2 block">Adapter type</div>
             <div class="grid grid-cols-2 gap-2">
               {#each primaryAdapters as opt}
                 <button
@@ -914,9 +917,10 @@
           {#if isLocalAdapter}
             <div class="space-y-3">
               <div>
-                <label class="text-xs text-gray-400 mb-1 block">Model</label>
+                <label for="onboarding-model" class="text-xs text-gray-400 mb-1 block">Model</label>
                 <div class="relative">
                   <button
+                    id="onboarding-model"
                     class="inline-flex items-center gap-1.5 rounded-md border border-gray-300 px-2.5 py-1.5 text-sm hover:bg-gray-50 transition-colors w-full justify-between cursor-pointer text-gray-900"
                     onclick={() => {
                       modelOpen = !modelOpen;
@@ -942,10 +946,10 @@
                       onclick={(e) => e.stopPropagation()}
                     >
                       <input
+                        id="onboarding-model-search"
                         class="w-full px-2 py-1.5 text-xs bg-transparent outline-none border-b border-gray-200 mb-1 placeholder:text-gray-300 text-gray-900"
                         placeholder="Search models..."
                         bind:value={modelSearch}
-                        autofocus
                       />
                       {#if adapterType !== 'opencode_local'}
                         <button
@@ -1097,10 +1101,11 @@
           <!-- HTTP / OpenClaw Gateway URL field -->
           {#if adapterType === 'http' || adapterType === 'openclaw_gateway'}
             <div>
-              <label class="text-xs text-gray-400 mb-1 block">
+              <label for="onboarding-adapter-url" class="text-xs text-gray-400 mb-1 block">
                 {adapterType === 'openclaw_gateway' ? 'Gateway URL' : 'Webhook URL'}
               </label>
               <input
+                id="onboarding-adapter-url"
                 class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm font-mono outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900"
                 placeholder={adapterType === 'openclaw_gateway'
                   ? 'ws://127.0.0.1:18789'
@@ -1128,18 +1133,19 @@
             </div>
           </div>
           <div>
-            <label class="text-xs text-gray-400 mb-1 block">Task title</label>
+            <label for="onboarding-task-title" class="text-xs text-gray-400 mb-1 block">Task title</label>
             <input
+              id="onboarding-task-title"
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 text-gray-900"
               placeholder="e.g. Research competitor pricing"
               bind:value={taskTitle}
-              autofocus
             />
           </div>
           <div>
-            <label class="text-xs text-gray-400 mb-1 block">Description (optional)</label>
+            <label for="onboarding-task-description" class="text-xs text-gray-400 mb-1 block">Description (optional)</label>
             <textarea
               bind:this={textareaEl}
+              id="onboarding-task-description"
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[120px] max-h-[300px] overflow-y-auto text-gray-900"
               placeholder="Add more detail about what the agent should do..."
               bind:value={taskDescription}

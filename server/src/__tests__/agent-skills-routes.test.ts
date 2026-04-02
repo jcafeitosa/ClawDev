@@ -481,7 +481,7 @@ describe("agent skill routes", () => {
           adapterConfig: expect.objectContaining({
             instructionsBundleMode: "managed",
             instructionsEntryFile: "AGENTS.md",
-            instructionsFilePath: "/tmp/11111111-1111-4111-8111-111111111111/instructions/AGENTS.md",
+            instructionsFilePath: expect.stringMatching(/^\/tmp\/[0-9a-f-]+\/instructions\/AGENTS\.md$/),
           }),
         }),
       }),

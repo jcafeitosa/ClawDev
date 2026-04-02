@@ -190,7 +190,6 @@
             id="company-name"
             bind:value={newName}
             placeholder="e.g. Acme AI Corp"
-            autofocus
           />
         </div>
         <div class="companies-form-actions">
@@ -227,7 +226,7 @@
       <div class="companies-grid">
         {#each companies as c (c.id)}
           {@const s = stats[c.id] ?? {}}
-          <div class="companies-card" role="button" tabindex="0" onclick={() => select(c)} onkeydown={(e) => { if (e.key === 'Enter') select(c); }}>
+          <div class="companies-card" role="button" tabindex="0" onclick={() => renamingId !== c.id && select(c)} onkeydown={(e) => { if (e.key === 'Enter' && renamingId !== c.id) select(c); }}>
             <div class="companies-card-top">
               <div class="companies-card-icon">
                 <Building2 size={18} />
@@ -262,11 +261,11 @@
             </div>
 
             {#if renamingId === c.id}
-              <form class="companies-rename-form" onsubmit={(e) => { e.preventDefault(); saveRename(c.id); }} onclick={(e) => e.stopPropagation()}>
+              <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_click_events_have_key_events -->
+              <form class="companies-rename-form" onsubmit={(e) => { e.preventDefault(); saveRename(c.id); }}>
                 <input
                   class="companies-rename-input"
                   bind:value={renameValue}
-                  autofocus
                   onkeydown={(e) => { if (e.key === 'Escape') cancelRename(); }}
                 />
                 <button type="submit" class="companies-rename-action" disabled={renameSaving} aria-label="Save">
@@ -309,8 +308,16 @@
 
 <!-- Delete confirmation dialog -->
 {#if deleteTarget}
-  <div class="companies-overlay" onclick={() => { deleteTarget = null; }} role="presentation">
-    <div class="companies-dialog" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
+  <div
+    class="companies-overlay"
+    onclick={(e) => {
+      if (e.currentTarget === e.target) {
+        deleteTarget = null;
+      }
+    }}
+    role="presentation"
+  >
+    <div class="companies-dialog" role="dialog" tabindex="0" aria-modal="true">
       <h3 class="companies-dialog-title">Delete Company</h3>
       <p class="companies-dialog-body">
         Are you sure you want to delete <strong>{deleteTarget.name}</strong>? This action cannot be undone. All agents, issues, and data within this company will be permanently removed.

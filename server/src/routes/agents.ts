@@ -21,6 +21,7 @@ import {
   heartbeatRuns,
 } from "@clawdev/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
+import { agentMineInboxQuerySchema } from "@clawdev/shared";
 import {
   agentService,
   agentInstructionsService,
@@ -36,8 +37,9 @@ import {
   secretService,
   syncInstructionsBundleConfigFromFilePath,
   workspaceOperationService,
+  normalizeRuntimeConfigForAdapterType,
 } from "../services/index.js";
-import { findServerAdapter, listAdapterModels } from "../adapters/index.js";
+import { detectAdapterModel, findServerAdapter, listAdapterModels } from "../adapters/index.js";
 // Note: we use inline t.Object({ companyId: t.String() }) instead of companyIdParam
 // because companyIdParam enforces UUID format which some callers don't use.
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo, type Actor } from "../middleware/authz.js";
@@ -56,6 +58,145 @@ const MANAGED_CONFIG_KEYS = [
 
 function isPlain(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+type TranscriptMessage = {
+  timestamp: string;
+  role: "assistant" | "user" | "tool" | "system";
+  text: string;
+  content?: string;
+};
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return isPlain(value) ? value : null;
+}
+
+function parseTranscriptLine(line: string, ts: string): TranscriptMessage[] {
+  let parsed: Record<string, unknown> | null = null;
+  try {
+    parsed = asRecord(JSON.parse(line));
+  } catch {
+    parsed = null;
+  }
+
+  if (!parsed) {
+    return [{ timestamp: ts, role: "system", text: line, content: line }];
+  }
+
+  const type = typeof parsed.type === "string" ? parsed.type : "";
+
+  if (type === "system") {
+    if (parsed.subtype === "init") {
+      const model = typeof parsed.model === "string" ? parsed.model : "unknown";
+      const sessionId = typeof parsed.session_id === "string" ? parsed.session_id : "";
+      return [{
+        timestamp: ts,
+        role: "system",
+        text: `model ${model}${sessionId ? ` • session ${sessionId}` : ""}`,
+        content: `model ${model}${sessionId ? ` • session ${sessionId}` : ""}`,
+      }];
+    }
+    const text = typeof parsed.message === "string"
+      ? parsed.message
+      : typeof parsed.text === "string"
+        ? parsed.text
+        : line;
+    return [{ timestamp: ts, role: "system", text, content: text }];
+  }
+
+  if (type === "result") {
+    const text = typeof parsed.result === "string"
+      ? parsed.result
+      : typeof parsed.message === "string"
+        ? parsed.message
+        : line;
+    return [{ timestamp: ts, role: "system", text, content: text }];
+  }
+
+  if (type === "assistant" || type === "user") {
+    const msg = asRecord(parsed.message) ?? {};
+    const content = Array.isArray(msg.content) ? msg.content : [];
+    const role = type === "assistant" ? "assistant" : "user";
+    const messages: TranscriptMessage[] = [];
+    for (const raw of content) {
+      const block = asRecord(raw);
+      if (!block) continue;
+      const blockType = typeof block.type === "string" ? block.type : "";
+      if (blockType === "text") {
+        const text = typeof block.text === "string" ? block.text : "";
+        if (text) messages.push({ timestamp: ts, role, text, content: text });
+      } else if (blockType === "thinking") {
+        const text = typeof block.thinking === "string" ? block.thinking : "";
+        if (text) messages.push({ timestamp: ts, role: "system", text, content: text });
+      } else if (blockType === "tool_use") {
+        const name = typeof block.name === "string" ? block.name : "tool";
+        messages.push({
+          timestamp: ts,
+          role: "tool",
+          text: `${name} invoked`,
+          content: `${name} invoked`,
+        });
+      } else if (blockType === "tool_result") {
+        const text = typeof block.content === "string" ? block.content : line;
+        messages.push({ timestamp: ts, role: "tool", text, content: text });
+      }
+    }
+    if (messages.length > 0) return messages;
+  }
+
+  const fallback = typeof parsed.message === "string"
+    ? parsed.message
+    : typeof parsed.text === "string"
+      ? parsed.text
+      : line;
+  return [{ timestamp: ts, role: "system", text: fallback, content: fallback }];
+}
+
+function buildTranscriptMessages(content: string): TranscriptMessage[] {
+  const messages: TranscriptMessage[] = [];
+  let stdoutBuf = "";
+
+  for (const rawLine of content.split("\n")) {
+    const trimmed = rawLine.trim();
+    if (!trimmed) continue;
+
+    let chunk: { ts?: unknown; stream?: unknown; chunk?: unknown } | null = null;
+    try {
+      chunk = asRecord(JSON.parse(trimmed)) as { ts?: unknown; stream?: unknown; chunk?: unknown } | null;
+    } catch {
+      chunk = null;
+    }
+
+    if (!chunk || typeof chunk.chunk !== "string") continue;
+
+    const ts = typeof chunk.ts === "string" ? chunk.ts : new Date().toISOString();
+    const stream = chunk.stream === "stderr" ? "stderr" : chunk.stream === "system" ? "system" : "stdout";
+
+    if (stream === "stderr") {
+      messages.push({ timestamp: ts, role: "system", text: chunk.chunk, content: chunk.chunk });
+      continue;
+    }
+
+    if (stream === "system") {
+      messages.push({ timestamp: ts, role: "system", text: chunk.chunk, content: chunk.chunk });
+      continue;
+    }
+
+    const combined = stdoutBuf + chunk.chunk;
+    const parts = combined.split(/\r?\n/);
+    stdoutBuf = parts.pop() ?? "";
+    for (const line of parts) {
+      const t = line.trim();
+      if (t) messages.push(...parseTranscriptLine(t, ts));
+    }
+  }
+
+  const trailing = stdoutBuf.trim();
+  if (trailing) {
+    messages.push(...parseTranscriptLine(trailing, new Date().toISOString()));
+  }
+
+  return messages;
 }
 
 async function loadOnboardingFiles(role: string): Promise<Record<string, string>> {
@@ -96,6 +237,14 @@ export function agentRoutes(db: Db) {
     return {
       enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
     };
+  }
+
+  async function resolveAgentForRequest(agentId: string, companyId?: string | null) {
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId);
+    if (isUuid) return await svc.getById(agentId);
+    if (!companyId) return null;
+    const resolved = await svc.resolveByReference(companyId, agentId);
+    return resolved.agent ?? null;
   }
 
   function toLeanOrgNode(node: Record<string, unknown>): Record<string, unknown> {
@@ -221,7 +370,7 @@ export function agentRoutes(db: Db) {
       "/agents/:id/runtime-state",
       async ({ params, set, ...ctx }: any) => {
         const actor = ctx.actor;
-        const agent = await svc.getById(params.id);
+        const agent = await resolveAgentForRequest(params.id, ctx.query?.companyId as string | undefined);
         if (!agent) { set.status = 404; return { error: "Agent not found" }; }
         assertCompanyAccess(actor, agent.companyId);
 
@@ -244,7 +393,7 @@ export function agentRoutes(db: Db) {
       "/agents/:id/config-revisions",
       async ({ params, set, ...ctx }: any) => {
         const actor = ctx.actor;
-        const agent = await svc.getById(params.id);
+        const agent = await resolveAgentForRequest(params.id, ctx.query?.companyId as string | undefined);
         if (!agent) { set.status = 404; return { error: "Agent not found" }; }
         assertCompanyAccess(actor, agent.companyId);
         return svc.listConfigRevisions(params.id);
@@ -260,7 +409,7 @@ export function agentRoutes(db: Db) {
         const companyId = query.companyId as string | undefined;
         if (!companyId) return { skills: [] };
 
-        const agent = await svc.getById(params.id);
+        const agent = await resolveAgentForRequest(params.id, companyId);
         if (!agent) return { skills: [] };
         assertCompanyAccess(actor, agent.companyId);
 
@@ -306,7 +455,7 @@ export function agentRoutes(db: Db) {
       "/agents/:id/task-sessions",
       async ({ params, set, ...ctx }: any) => {
         const actor = ctx.actor;
-        const agent = await svc.getById(params.id);
+        const agent = await resolveAgentForRequest(params.id, ctx.query?.companyId as string | undefined);
         if (!agent) { set.status = 404; return { error: "Agent not found" }; }
         assertCompanyAccess(actor, agent.companyId);
 
@@ -326,19 +475,16 @@ export function agentRoutes(db: Db) {
       "/agents/:id/heartbeat-runs",
       async ({ params, query, set, ...ctx }: any) => {
         const actor = ctx.actor;
-        const agentRecord = await svc.getById(params.id);
-        if (!agentRecord) { set.status = 404; return { error: "Agent not found" }; }
+        const companyId = query.companyId as string | undefined;
+        const agentRecord = await resolveAgentForRequest(params.id, companyId);
+        if (!agentRecord) {
+          set.status = 404;
+          return { error: "Agent not found" };
+        }
         assertCompanyAccess(actor, agentRecord.companyId);
 
         const limit = Math.min(Number(query.limit) || 20, 100);
-        const companyId = query.companyId as string | undefined;
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(params.id);
-
-        let agentId = params.id;
-        if (!isUuid && companyId) {
-          const resolved = await svc.resolveByReference(companyId, params.id);
-          if (resolved.agent) agentId = resolved.agent.id;
-        }
+        const agentId = agentRecord.id;
 
         const conditions = [eq(heartbeatRuns.agentId, agentId)];
         if (companyId) conditions.push(eq(heartbeatRuns.companyId, companyId));
@@ -374,7 +520,7 @@ export function agentRoutes(db: Db) {
       async ({ params, query, set, ...ctx }: any) => {
         const actor = ctx.actor;
         const companyId = query.companyId as string | undefined;
-        const agent = await svc.getById(params.id);
+        const agent = await resolveAgentForRequest(params.id, companyId);
         if (!agent) {
           set.status = 404;
           return { error: "Agent not found" };
@@ -391,7 +537,7 @@ export function agentRoutes(db: Db) {
       async ({ params, query, set, ...ctx }: any) => {
         const actor = ctx.actor;
         const filePath = query.path as string;
-        const agent = await svc.getById(params.id);
+        const agent = await resolveAgentForRequest(params.id, query.companyId as string | undefined);
         if (!agent) {
           set.status = 404;
           return { error: "Agent not found" };
@@ -407,7 +553,7 @@ export function agentRoutes(db: Db) {
       "/agents/:id/instructions-bundle/file",
       async ({ params, query, body, set, ...ctx }: any) => {
         const actor = ctx.actor;
-        const agent = await svc.getById(params.id);
+        const agent = await resolveAgentForRequest(params.id, query.companyId as string | undefined);
         if (!agent) {
           set.status = 404;
           return { error: "Agent not found" };
@@ -561,15 +707,15 @@ export function agentRoutes(db: Db) {
         }
 
         // Materialize managed instructions for local adapters in approval payload
-        const stubAgent = {
-          id: "11111111-1111-4111-8111-111111111111", // placeholder for materialization
+        const materializationContext = {
+          id: randomUUID(),
           companyId: params.companyId,
           name: String(input.name ?? ""),
           role: String(input.role ?? "engineer"),
           adapterType: String(input.adapterType ?? "process"),
           adapterConfig,
         };
-        const materializedConfig = await materializeForNewAgent(stubAgent, adapterConfig);
+        const materializedConfig = await materializeForNewAgent(materializationContext, adapterConfig);
         if (materializedConfig) {
           adapterConfig = materializedConfig;
         }
@@ -661,8 +807,18 @@ export function agentRoutes(db: Db) {
           );
         }
 
+        if (input.runtimeConfig !== undefined) {
+          patch.runtimeConfig = normalizeRuntimeConfigForAdapterType(
+            input.adapterType && typeof input.adapterType === "string"
+              ? input.adapterType
+              : existing.adapterType,
+            input.runtimeConfig,
+          );
+        }
+
         // Copy other safe fields
         for (const key of ["name", "role", "title", "reportsTo", "capabilities", "runtimeConfig", "metadata", "status"]) {
+          if (key === "runtimeConfig") continue;
           if (input[key] !== undefined) {
             patch[key] = input[key];
           }
@@ -757,31 +913,74 @@ export function agentRoutes(db: Db) {
     // ── Lifecycle: wakeup (manual trigger) ──────────────────────────
     .post(
       "/agents/:id/wakeup",
-      async ({ params, body, set }) => {
-        const companyId = (body as any)?.companyId as string | undefined;
-        if (!companyId) {
-          set.status = 400;
-          return { error: "companyId required" };
-        }
+      async ({ params, body, set, ...ctx }: any) => {
+        const actor = ctx.actor as Actor;
         const agent = await svc.getById(params.id);
         if (!agent) {
           set.status = 404;
           return { error: "Agent not found" };
         }
-        const [req] = await db
-          .insert(agentWakeupRequests)
-          .values({
-            companyId,
-            agentId: params.id,
-            source: "manual",
-            triggerDetail: "Manual wakeup from UI",
-            reason: "User triggered",
-            requestedByActorType: "user",
-          })
-          .returning();
-        return { success: true, wakeupRequestId: req?.id };
+        assertCompanyAccess(actor, agent.companyId);
+
+        if (actor.type === "agent" && actor.agentId !== params.id) {
+          set.status = 403;
+          return { error: "Agent can only invoke itself" };
+        }
+
+        const result = await heartbeats.wakeup(params.id, {
+          source: body?.source ?? "on_demand",
+          triggerDetail: body?.triggerDetail ?? "manual",
+          reason: body?.reason ?? null,
+          payload: body?.payload ?? null,
+          idempotencyKey: body?.idempotencyKey ?? null,
+          requestedByActorType: actor.type === "agent" ? "agent" : "user",
+          requestedByActorId: actor.type === "agent" ? actor.agentId ?? null : actor.userId ?? null,
+          contextSnapshot: {
+            triggeredBy: actor.type,
+            actorId: actor.type === "agent" ? actor.agentId : actor.userId,
+            forceFreshSession: body?.forceFreshSession === true,
+          },
+        });
+
+        if (!result) {
+          set.status = 202;
+          return { status: "skipped" };
+        }
+
+        await logActivity(db, {
+          companyId: agent.companyId,
+          actorType: actor.type === "agent" ? "agent" : "user",
+          actorId: actor.type === "agent" ? actor.agentId ?? "unknown" : actor.userId ?? "board",
+          action: "heartbeat.invoked",
+          entityType: "heartbeat_run",
+          entityId: result.id,
+          details: { agentId: params.id },
+        });
+
+        set.status = 202;
+        return result;
       },
-      { params: t.Object({ id: t.String() }) },
+      {
+        params: t.Object({ id: t.String() }),
+        body: t.Object({
+          source: t.Optional(t.Union([
+            t.Literal("timer"),
+            t.Literal("assignment"),
+            t.Literal("on_demand"),
+            t.Literal("automation"),
+          ])),
+          triggerDetail: t.Optional(t.Union([
+            t.Literal("manual"),
+            t.Literal("ping"),
+            t.Literal("callback"),
+            t.Literal("system"),
+          ])),
+          reason: t.Optional(t.Nullable(t.String())),
+          payload: t.Optional(t.Nullable(t.Record(t.String(), t.Any()))),
+          idempotencyKey: t.Optional(t.Nullable(t.String())),
+          forceFreshSession: t.Optional(t.Boolean()),
+        }),
+      },
     )
 
     // ── Sync agent skills ───────────────────────────────────────────
@@ -859,6 +1058,17 @@ export function agentRoutes(db: Db) {
         const actor = ctx.actor;
         assertCompanyAccess(actor, params.companyId);
         return listAdapterModels(params.type);
+      },
+      { params: t.Object({ companyId: t.String(), type: t.String() }) },
+    )
+
+    // ── Detect adapter model ──────────────────────────────────────
+    .get(
+      "/companies/:companyId/adapters/:type/detect-model",
+      async ({ params, ...ctx }: any) => {
+        const actor = ctx.actor;
+        assertCompanyAccess(actor, params.companyId);
+        return detectAdapterModel(params.type);
       },
       { params: t.Object({ companyId: t.String(), type: t.String() }) },
     )
@@ -1084,6 +1294,25 @@ export function agentRoutes(db: Db) {
           updatedAt: issue.updatedAt,
           activeRun: issue.activeRun,
         }));
+      },
+    )
+
+    .get(
+      "/agents/me/inbox/mine",
+      async ({ set, ...ctx }: any) => {
+        const actor = ctx.actor;
+        if (actor.type !== "agent" || !actor.agentId || !actor.companyId) {
+          set.status = 401;
+          return { error: "Agent authentication required" };
+        }
+
+        const query = agentMineInboxQuerySchema.parse(ctx.query);
+        const issuesSvc = issueService(db);
+        return issuesSvc.list(actor.companyId, {
+          touchedByUserId: query.userId,
+          inboxArchivedByUserId: query.userId,
+          status: query.status,
+        });
       },
     )
 
@@ -1546,7 +1775,13 @@ export function agentRoutes(db: Db) {
           createdAt: heartbeatRuns.createdAt,
           agentId: heartbeatRuns.agentId,
           agentName: agents.name,
+          agentIcon: agents.icon,
+          agentRole: agents.role,
           adapterType: agents.adapterType,
+          stdoutExcerpt: heartbeatRuns.stdoutExcerpt,
+          stderrExcerpt: heartbeatRuns.stderrExcerpt,
+          exitCode: heartbeatRuns.exitCode,
+          error: heartbeatRuns.error,
           issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`.as("issueId"),
         };
 
@@ -1675,6 +1910,37 @@ export function agentRoutes(db: Db) {
           offset: Number.isFinite(offset) ? offset : 0,
           limitBytes: Number.isFinite(limitBytes) ? limitBytes : 256000,
         });
+      },
+      { params: t.Object({ runId: t.String() }) },
+    )
+
+    // ── Heartbeat run transcript preview ──────────────────────────
+    .get(
+      "/heartbeat-runs/:runId/transcript",
+      async ({ params, query, set, ...ctx }: any) => {
+        const actor = ctx.actor;
+        const run = await heartbeats.getRun(params.runId);
+        if (!run) {
+          set.status = 404;
+          return { error: "Heartbeat run not found" };
+        }
+        assertCompanyAccess(actor, run.companyId);
+
+        const offset = Number(query.offset ?? 0);
+        const limitBytes = Number(query.limitBytes ?? 256000);
+        const result = await heartbeats.readLog(params.runId, {
+          offset: Number.isFinite(offset) ? offset : 0,
+          limitBytes: Number.isFinite(limitBytes) ? limitBytes : 256000,
+        });
+
+        return {
+          runId: result.runId,
+          store: result.store,
+          logRef: result.logRef,
+          content: result.content,
+          nextOffset: result.nextOffset,
+          messages: buildTranscriptMessages(result.content),
+        };
       },
       { params: t.Object({ runId: t.String() }) },
     )

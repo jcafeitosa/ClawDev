@@ -4,7 +4,7 @@ import {
   awsSecretsManagerProvider,
   gcpSecretManagerProvider,
   vaultProvider,
-} from "./external-stub-providers.js";
+} from "./external-unavailable-providers.js";
 import type { SecretProviderModule } from "./types.js";
 import { unprocessable } from "../errors.js";
 

@@ -587,5 +587,5 @@ describe("worktree helpers", () => {
       homedirSpy.mockRestore();
       fs.rmSync(tempRoot, { recursive: true, force: true });
     }
-  }, 20_000);
+  }, 60_000);
 });

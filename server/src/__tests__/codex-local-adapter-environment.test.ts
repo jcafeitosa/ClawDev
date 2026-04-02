@@ -4,7 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { testEnvironment } from "@clawdev/adapter-codex-local/server";
 
-const itWindows = process.platform === "win32" ? it : it.skip;
+const isWindows = process.platform === "win32";
 
 describe("codex_local environment diagnostics", () => {
   beforeEach(() => {
@@ -99,26 +99,38 @@ describe("codex_local environment diagnostics", () => {
     }
   });
 
-  itWindows("runs the hello probe when Codex is available via a Windows .cmd wrapper", async () => {
+  it("runs the hello probe when Codex is available via a local wrapper", async () => {
     const root = path.join(
       os.tmpdir(),
       `clawdev-codex-local-probe-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     );
     const binDir = path.join(root, "bin");
     const cwd = path.join(root, "workspace");
-    const fakeCodex = path.join(binDir, "codex.cmd");
-    const script = [
-      "@echo off",
-      "echo {\"type\":\"thread.started\",\"thread_id\":\"test-thread\"}",
-      "echo {\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"hello\"}}",
-      "echo {\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}",
-      "exit /b 0",
-      "",
-    ].join("\r\n");
+    const fakeCodex = path.join(binDir, isWindows ? "codex.cmd" : "codex");
+    const script = isWindows
+      ? [
+          "@echo off",
+          "echo {\"type\":\"thread.started\",\"thread_id\":\"test-thread\"}",
+          "echo {\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"hello\"}}",
+          "echo {\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}",
+          "exit /b 0",
+          "",
+        ].join("\r\n")
+      : [
+          "#!/bin/sh",
+          "printf '%s\\n' '{\"type\":\"thread.started\",\"thread_id\":\"test-thread\"}'",
+          "printf '%s\\n' '{\"type\":\"item.completed\",\"item\":{\"type\":\"agent_message\",\"text\":\"hello\"}}'",
+          "printf '%s\\n' '{\"type\":\"turn.completed\",\"usage\":{\"input_tokens\":1,\"cached_input_tokens\":0,\"output_tokens\":1}}'",
+          "exit 0",
+          "",
+        ].join("\n");
 
     try {
       await fs.mkdir(binDir, { recursive: true });
       await fs.writeFile(fakeCodex, script, "utf8");
+      if (!isWindows) {
+        await fs.chmod(fakeCodex, 0o755);
+      }
 
       const result = await testEnvironment({
         companyId: "company-1",

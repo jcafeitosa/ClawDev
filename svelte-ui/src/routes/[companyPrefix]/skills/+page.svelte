@@ -18,7 +18,6 @@
     id: string;
     name: string;
     description?: string | null;
-    enabled: boolean;
     source?: string | null;
     sourceLabel?: string | null;
     key?: string | null;
@@ -234,21 +233,6 @@
 
   function isDirExpanded(skillId: string, dirPath: string): boolean {
     return expandedDirs[skillId]?.has(dirPath) ?? false;
-  }
-
-  // ---------------------------------------------------------------------------
-  // Toggle skill enabled
-  // ---------------------------------------------------------------------------
-  async function toggle(skill: Skill) {
-    try {
-      await api(`/api/companies/${companyId}/skills/${skill.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ enabled: !skill.enabled }),
-      });
-      skills = skills.map(s => s.id === skill.id ? { ...s, enabled: !s.enabled } : s);
-    } catch (err: any) {
-      toastStore.push({ title: 'Failed to toggle skill', body: err?.message, tone: 'error' });
-    }
   }
 
   // ---------------------------------------------------------------------------
@@ -638,14 +622,6 @@
             {/if}
           </div>
           <div class="flex items-center gap-2">
-            <!-- Toggle switch -->
-            <button
-              onclick={() => toggle(skill)}
-              aria-label="Toggle {skill.name}"
-              class="relative shrink-0 h-6 w-11 rounded-full transition-colors {skill.enabled ? 'bg-green-600' : 'bg-zinc-300 dark:bg-zinc-700'}"
-            >
-              <span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform {skill.enabled ? 'translate-x-5' : ''}"></span>
-            </button>
             {#if !skill.editable && skill.editableReason}
               <span class="text-sm text-zinc-500 dark:text-zinc-400">{skill.editableReason}</span>
             {/if}

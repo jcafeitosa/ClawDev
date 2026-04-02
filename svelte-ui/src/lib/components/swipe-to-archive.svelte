@@ -47,6 +47,7 @@
   ontouchstart={handleTouchStart}
   ontouchmove={handleTouchMove}
   ontouchend={handleTouchEnd}
+  role="group"
 >
   <!-- Archive reveal background -->
   <div

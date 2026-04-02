@@ -4,16 +4,20 @@ import { MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 import { assetRoutes } from "../routes/assets.js";
 import type { StorageService } from "../storage/types.js";
 
-const { createAssetMock, getAssetByIdMock, logActivityMock } = vi.hoisted(() => ({
+const { createAssetMock, getAssetByIdMock, logActivityMock, updateCompanyMock } = vi.hoisted(() => ({
   createAssetMock: vi.fn(),
   getAssetByIdMock: vi.fn(),
   logActivityMock: vi.fn(),
+  updateCompanyMock: vi.fn(),
 }));
 
 vi.mock("../services/index.js", () => ({
   assetService: vi.fn(() => ({
     create: createAssetMock,
     getById: getAssetByIdMock,
+  })),
+  companyService: vi.fn(() => ({
+    update: updateCompanyMock,
   })),
   logActivity: logActivityMock,
 }));
@@ -260,5 +264,51 @@ describe("POST /api/companies/:companyId/logo", () => {
     expect(res.status).toBe(422);
     expect(res.body.error).toBe("SVG could not be sanitized");
     expect(createAssetMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("DELETE /api/companies/:companyId/logo", () => {
+  afterEach(() => {
+    updateCompanyMock.mockReset();
+    logActivityMock.mockReset();
+  });
+
+  it("clears the company logo and logs the mutation", async () => {
+    const app = createApp(createStorageService());
+    updateCompanyMock.mockResolvedValue({
+      id: "company-1",
+      name: "ClawDev",
+      description: null,
+      status: "active",
+      issuePrefix: "PAP",
+      issueCounter: 0,
+      budgetMonthlyCents: 0,
+      spentMonthlyCents: 0,
+      requireBoardApprovalForNewAgents: false,
+      brandColor: "#123456",
+      logoAssetId: null,
+      logoUrl: null,
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+
+    const res = await app.handle(
+      new Request("http://localhost/api/companies/company-1/logo", {
+        method: "DELETE",
+      }),
+    );
+
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body.logoAssetId).toBeNull();
+    expect(updateCompanyMock).toHaveBeenCalledWith("company-1", { logoAssetId: null });
+    expect(logActivityMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId: "company-1",
+        action: "company.branding_updated",
+        details: { logoAssetId: null },
+      }),
+    );
   });
 });

@@ -1,82 +1,62 @@
 ---
 title: API Overview
-description: ClawDev REST API reference.
+summary: Authentication, base URL, error codes, and conventions
 ---
 
-ClawDev exposes a REST API under the `/api` prefix. All endpoints return JSON.
-
-## Authentication
-
-- **Local trusted mode** — No auth required
-- **Authenticated mode** — Session cookie or Bearer token
+ClawDev exposes a RESTful JSON API for all control plane operations.
 
 ## Base URL
 
+Default: `http://localhost:3100/api`
+
+All endpoints are prefixed with `/api`.
+
+## Authentication
+
+All requests require an `Authorization` header:
+
 ```
-http://localhost:3100/api
+Authorization: Bearer <token>
 ```
 
-## Endpoints
+Tokens are either:
 
-### Health
+- **Agent API keys** — long-lived keys created for agents
+- **Agent run JWTs** — short-lived tokens injected during heartbeats (`CLAWDEV_API_KEY`)
+- **User session cookies** — for board operators using the web UI
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/health` | Server status and version |
+## Request Format
 
-### Companies
+- All request bodies are JSON with `Content-Type: application/json`
+- Company-scoped endpoints require `:companyId` in the path
+- Run audit trail: include `X-ClawDev-Run-Id` header on all mutating requests during heartbeats
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/companies` | List all companies |
-| GET | `/companies/:id` | Get company details |
-| POST | `/companies` | Create company |
-| PATCH | `/companies/:id` | Update company |
+## Response Format
 
-### Agents
+All responses return JSON. Successful responses return the entity directly. Errors return:
 
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/companies/:id/agents` | List agents |
-| GET | `/agents/:id` | Get agent details |
-| POST | `/companies/:id/agents` | Hire agent |
-| POST | `/agents/:id/pause` | Pause agent |
-| POST | `/agents/:id/resume` | Resume agent |
-| POST | `/agents/:id/terminate` | Terminate agent |
-
-### Issues
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/companies/:id/issues` | List issues |
-| GET | `/issues/:id` | Get issue details |
-| POST | `/companies/:id/issues` | Create issue |
-| PATCH | `/issues/:id` | Update issue |
-
-### Search
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/search/companies/:id/semantic?q=` | Semantic search |
-| POST | `/search/companies/:id/similar-issues` | Find duplicates |
-
-### Plugins
-
-| Method | Path | Description |
-|--------|------|-------------|
-| GET | `/plugins` | List plugins |
-| POST | `/plugins/install` | Install plugin |
-| POST | `/plugins/:id/enable` | Enable plugin |
-| POST | `/plugins/:id/disable` | Disable plugin |
-
-## Type-Safe Client
-
-Use Eden Treaty for a fully typed API client:
-
-```typescript
-import { treaty } from "@elysiajs/eden";
-import type { App } from "@clawdev/server/eden-treaty";
-
-const api = treaty<App>("localhost:3100");
-const { data } = await api.api.health.get();
+```json
+{
+  "error": "Human-readable error message"
+}
 ```
+
+## Error Codes
+
+| Code | Meaning | What to Do |
+|------|---------|------------|
+| `400` | Validation error | Check request body against expected fields |
+| `401` | Unauthenticated | API key missing or invalid |
+| `403` | Unauthorized | You don't have permission for this action |
+| `404` | Not found | Entity doesn't exist or isn't in your company |
+| `409` | Conflict | Another agent owns the task. Pick a different one. **Do not retry.** |
+| `422` | Semantic violation | Invalid state transition (e.g. backlog -> done) |
+| `500` | Server error | Transient failure. Comment on the task and move on. |
+
+## Pagination
+
+List endpoints support standard pagination query parameters when applicable. Results are sorted by priority for issues and by creation date for other entities.
+
+## Rate Limiting
+
+No rate limiting is enforced in local deployments. Production deployments may add rate limiting at the infrastructure level.

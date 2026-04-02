@@ -144,10 +144,22 @@
 
     if (activeTab === 'budgets' && !budgetsLoaded) {
       budgetsLoading = true;
-      api(`/api/companies/${companyId}/costs/budgets`)
+      api(`/api/companies/${companyId}/budgets/overview`)
         .then((r) => r.json())
         .then((d) => {
-          budgetsData = Array.isArray(d) ? d : d.data ?? d.items ?? d.budgets ?? [];
+          const policies = Array.isArray(d) ? d : d.policies ?? d.data ?? d.items ?? d.budgets ?? [];
+          budgetsData = policies.map((policy: any) => ({
+            ...policy,
+            id: policy.id ?? policy.policyId,
+            name: policy.name ?? policy.label ?? policy.scopeName ?? 'Budget',
+            scope: policy.scope ?? policy.scopeType,
+            type: policy.type ?? policy.scopeType,
+            used: policy.used ?? policy.currentSpend ?? policy.observedAmount ?? 0,
+            limit: policy.limit ?? policy.monthlyLimit ?? policy.total ?? policy.amount ?? 0,
+            currentSpend: policy.currentSpend ?? policy.observedAmount ?? 0,
+            monthlyLimit: policy.monthlyLimit ?? policy.amount ?? 0,
+            total: policy.total ?? policy.amount ?? 0,
+          }));
           budgetsLoaded = true;
         })
         .catch(() => {
@@ -184,7 +196,7 @@
     if (activeTab === 'billers' && !billersLoaded) {
       billersLoading = true;
       Promise.all([
-        api(`/api/companies/${companyId}/costs/billers`)
+        api(`/api/companies/${companyId}/costs/by-biller`)
           .then((r) => r.json())
           .catch(() => []),
         api(`/api/companies/${companyId}/costs/by-project`)

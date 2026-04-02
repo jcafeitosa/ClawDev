@@ -24,10 +24,10 @@ export function resolveServerDevWatchIgnorePaths(serverRoot: string): string[] {
   ]);
 
   for (const relativePath of [
-    "../ui/node_modules",
-    "../ui/node_modules/.vite-temp",
-    "../ui/.vite",
-    "../ui/dist",
+    "../svelte-ui/node_modules",
+    "../svelte-ui/node_modules/.vite-temp",
+    "../svelte-ui/.vite",
+    "../svelte-ui/build",
   ]) {
     addIgnorePath(ignorePaths, path.resolve(serverRoot, relativePath));
   }

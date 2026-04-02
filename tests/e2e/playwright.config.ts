@@ -6,6 +6,7 @@ const BASE_URL = `http://127.0.0.1:${PORT}`;
 export default defineConfig({
   testDir: ".",
   testMatch: "**/*.spec.ts",
+  workers: 1,
   timeout: 60_000,
   retries: 0,
   use: {
@@ -20,16 +21,20 @@ export default defineConfig({
       use: { browserName: "chromium" },
     },
   ],
-  // The webServer directive starts `clawdev run` before tests.
-  // Expects `pnpm clawdev` to be runnable from repo root.
-  webServer: {
-    command: `pnpm clawdev run`,
-    url: `${BASE_URL}/api/health`,
-    reuseExistingServer: !process.env.CI,
-    timeout: 120_000,
-    stdout: "pipe",
-    stderr: "pipe",
-  },
+  // By default the webServer directive starts `pnpm dev` before tests.
+  // Set PLAYWRIGHT_USE_EXTERNAL_SERVER=1 to reuse an already-running dev server.
+  ...(process.env.PLAYWRIGHT_USE_EXTERNAL_SERVER
+    ? {}
+    : {
+        webServer: {
+          command: `pnpm dev`,
+          url: `${BASE_URL}/api/health`,
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+          stdout: "pipe",
+          stderr: "pipe",
+        },
+      }),
   outputDir: "./test-results",
   reporter: [["list"], ["html", { open: "never", outputFolder: "./playwright-report" }]],
 });

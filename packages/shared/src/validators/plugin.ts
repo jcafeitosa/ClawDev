@@ -14,7 +14,7 @@ import {
 } from "../constants.js";
 
 // ---------------------------------------------------------------------------
-// JSON Schema placeholder – a permissive validator for JSON Schema objects
+// JSON Schema helper – a permissive validator for JSON Schema objects
 // ---------------------------------------------------------------------------
 
 /**

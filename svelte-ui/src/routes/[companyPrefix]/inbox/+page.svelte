@@ -52,7 +52,12 @@
   // State
   // ---------------------------------------------------------------------------
   let prefix = $derived($page.params.companyPrefix);
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived.by(() => {
+    const requestedPrefix = prefix?.trim().toUpperCase();
+    if (!requestedPrefix) return null;
+    return companyStore.companies.find((company) => String(company.issuePrefix ?? "").toUpperCase() === requestedPrefix)?.id ?? null;
+  });
+  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
 
   let activeTab = $state<InboxTab>(loadLastInboxTab());
   let allCategoryFilter = $state<InboxCategoryFilter>('everything');
@@ -571,7 +576,7 @@
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const result = await res.json();
       if (result && result.id) {
-        goto(`/${prefix}/agents/${run.agentId}/runs/${result.id}`);
+        goto(`/${prefix}/runs/${result.id}`);
       } else {
         toastStore.push({ title: 'Retry was skipped', tone: 'warn' });
       }
@@ -1107,7 +1112,7 @@
                   </span>
 
                   <a
-                    href="/{prefix}/agents/{run.agentId}/runs/{run.id}"
+                    href="/{prefix}/runs/{run.id}"
                     class="flex min-w-0 flex-1 items-start gap-2 no-underline sm:items-center"
                   >
                     <span class="hidden h-3.5 w-3.5 shrink-0 sm:inline-flex" aria-hidden="true"></span>
@@ -1175,7 +1180,7 @@
               >
                 <span class="hidden h-4 w-4 shrink-0 sm:inline-flex" aria-hidden="true"></span>
                 <a
-                  href="/{prefix}/agents/{run.agentId}/runs/{run.id}"
+                  href="/{prefix}/runs/{run.id}"
                   class="flex min-w-0 flex-1 items-start gap-2 no-underline sm:items-center"
                 >
                   <span class="hidden h-3.5 w-3.5 shrink-0 sm:inline-flex" aria-hidden="true"></span>

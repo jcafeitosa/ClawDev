@@ -2,6 +2,7 @@
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
   import { ExternalLink, ChevronRight } from 'lucide-svelte';
+  import { liveRunTranscriptsStore } from '$stores/live-run-transcripts.svelte.js';
 
   // ---------------------------------------------------------------------------
   // Props
@@ -21,12 +22,14 @@
   let now = $state(Date.now());
   let refreshInterval: ReturnType<typeof setInterval> | undefined;
   let tickInterval: ReturnType<typeof setInterval> | undefined;
+  let fetchInFlight = false;
 
   // ---------------------------------------------------------------------------
   // Data fetching
   // ---------------------------------------------------------------------------
   async function fetchRuns() {
-    if (!companyId) return;
+    if (!companyId || fetchInFlight) return;
+    fetchInFlight = true;
     try {
       const [liveRes, recentRes] = await Promise.all([
         api(`/api/companies/${companyId}/live-runs?minCount=0`),
@@ -62,6 +65,7 @@
       allRuns = [];
     } finally {
       loading = false;
+      fetchInFlight = false;
     }
   }
 
@@ -121,11 +125,11 @@
   }
 
   function getStdout(run: any): string {
-    return cleanExcerpt(run.stdoutExcerpt ?? run.lastTranscriptLine ?? run.lastMessage ?? run.summary);
+    return liveRunTranscriptsStore.stdout(run);
   }
 
   function getStderr(run: any): string {
-    return cleanExcerpt(run.stderrExcerpt);
+    return liveRunTranscriptsStore.stderr(run);
   }
 
   function getResult(run: any): string {
@@ -153,11 +157,17 @@
     fetchRuns();
     refreshInterval = setInterval(fetchRuns, 10_000);
     tickInterval = setInterval(() => { now = Date.now(); }, 1_000);
+    liveRunTranscriptsStore.init(companyId, allRuns);
   });
 
   onDestroy(() => {
     if (refreshInterval) clearInterval(refreshInterval);
     if (tickInterval) clearInterval(tickInterval);
+    liveRunTranscriptsStore.disconnect();
+  });
+
+  $effect(() => {
+    liveRunTranscriptsStore.updateRuns(allRuns);
   });
 </script>
 
@@ -217,7 +227,7 @@
 
               <!-- External link pill -->
               <a
-                href="/{prefix}/agents/{run.agentId}/runs/{run.id}"
+                href="/{prefix}/runs/{run.id}"
                 class="inline-flex shrink-0 items-center gap-1 rounded-full border border-border/70 bg-background/70 px-2 py-1 text-[10px] text-muted-foreground transition-colors hover:text-foreground"
                 title="View run"
               >

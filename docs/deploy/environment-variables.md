@@ -11,7 +11,7 @@ All environment variables that ClawDev uses for server configuration.
 |----------|---------|-------------|
 | `PORT` | `3100` | Server port |
 | `HOST` | `127.0.0.1` | Server host binding |
-| `DATABASE_URL` | (embedded) | PostgreSQL connection string |
+| `DATABASE_URL` | (dev embedded-compatible runtime) | PostgreSQL connection string |
 | `CLAWDEV_HOME` | `~/.clawdev` | Base directory for all ClawDev data |
 | `CLAWDEV_INSTANCE_ID` | `default` | Instance identifier (for multiple local instances) |
 | `CLAWDEV_DEPLOYMENT_MODE` | `local_trusted` | Runtime mode override |

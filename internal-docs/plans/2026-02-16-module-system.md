@@ -638,7 +638,7 @@ Add to `@clawdev/server`:
 5. **Module migration runner** — Extends `db:migrate` to discover and run module migrations
 6. **Emit hooks from core services** — Add `hookBus.emit()` calls to existing CRUD operations
 
-Add to `@clawdev/ui`:
+Add to `@clawdev/svelte-ui`:
 
 7. **Module page loader** — Reads module manifests, generates lazy routes
 8. **Dashboard widget slots** — Render module-contributed widgets on the Dashboard page

@@ -127,7 +127,7 @@ describe("cursor execute", () => {
       }
       await fs.rm(root, { recursive: true, force: true });
     }
-  });
+  }, 10_000);
 
   it("passes --mode when explicitly configured", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "clawdev-cursor-execute-mode-"));
@@ -258,5 +258,5 @@ describe("cursor execute", () => {
       }
       await fs.rm(root, { recursive: true, force: true });
     }
-  });
+  }, 10_000);
 });

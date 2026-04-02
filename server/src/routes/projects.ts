@@ -10,9 +10,11 @@ import { projects } from "@clawdev/db";
 import { eq, desc } from "drizzle-orm";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
-import { projectService, logActivity } from "../services/index.js";
+import { projectService, logActivity, workspaceOperationService } from "../services/index.js";
 import { isUuidLike, deriveProjectUrlKey } from "@clawdev/shared";
 import { conflict } from "../errors.js";
+import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
+import { readProjectWorkspaceRuntimeConfig } from "../services/project-workspace-runtime-config.js";
 
 export function projectRoutes(db: Db) {
   const svc = projectService(db);
@@ -319,6 +321,123 @@ export function projectRoutes(db: Db) {
         return workspace;
       },
       { params: t.Object({ id: t.String(), workspaceId: t.String() }) },
+    )
+
+    .post(
+      "/projects/:id/workspaces/:workspaceId/runtime-services/:action",
+      async (ctx: any) => {
+        const { params, query, set } = ctx;
+        const actor = ctx.actor as Actor;
+        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+        const action = String(params.action ?? "").trim().toLowerCase();
+        if (action !== "start" && action !== "stop" && action !== "restart") {
+          set.status = 404;
+          return { error: "Runtime service action not found" };
+        }
+
+        const project = await svc.getById(resolvedId);
+        if (!project) {
+          set.status = 404;
+          return { error: "Project not found" };
+        }
+        assertCompanyAccess(actor, project.companyId);
+
+        const workspace = project.workspaces.find((entry) => entry.id === params.workspaceId) ?? null;
+        if (!workspace) {
+          set.status = 404;
+          return { error: "Project workspace not found" };
+        }
+
+        const workspaceCwd = workspace.cwd;
+        if (!workspaceCwd) {
+          set.status = 422;
+          return { error: "Project workspace needs a local path before ClawDev can manage local runtime services" };
+        }
+
+        const effectiveRuntimeConfig = workspace.runtimeConfig ?? readProjectWorkspaceRuntimeConfig(workspace.metadata);
+        if ((action === "start" || action === "restart") && !effectiveRuntimeConfig) {
+          set.status = 422;
+          return { error: "Project workspace has no runtime service configuration" };
+        }
+
+        const workspaceOperations = workspaceOperationService(db);
+        const recorder = workspaceOperations.createRecorder({ companyId: project.companyId });
+        let runtimeServiceCount = 0;
+        const stdout: string[] = [];
+        const stderr: string[] = [];
+
+        const operation = await recorder.recordOperation({
+          phase: action === "stop" ? "workspace_teardown" : "workspace_provision",
+          command: `workspace runtime ${action}`,
+          cwd: workspace.cwd,
+          metadata: {
+            action,
+            projectId: project.id,
+            projectWorkspaceId: workspace.id,
+          },
+          run: async () => {
+            const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
+              if (stream === "stdout") stdout.push(chunk);
+              else stderr.push(chunk);
+            };
+
+            if (action === "stop" || action === "restart") {
+              await stopRuntimeServicesForProjectWorkspace({
+                db,
+                projectWorkspaceId: workspace.id,
+              });
+            }
+
+            if (action === "start" || action === "restart") {
+              const startedServices = await startRuntimeServicesForWorkspaceControl({
+                db,
+                actor: {
+                  id: actor.agentId ?? actor.userId ?? "board",
+                  name: actor.type === "board" ? "Board" : "Agent",
+                  companyId: project.companyId,
+                },
+                issue: null,
+                workspace: {
+                  baseCwd: workspaceCwd,
+                  source: workspace.isPrimary ? "project_primary" : "task_session",
+                  projectId: project.id,
+                  workspaceId: workspace.id,
+                  repoUrl: workspace.repoUrl,
+                  repoRef: workspace.repoRef,
+                  strategy: workspace.sourceType === "git_repo" ? "git_worktree" : "project_primary",
+                  cwd: workspaceCwd,
+                  branchName: null,
+                  worktreePath: workspace.sourceType === "git_repo" ? workspaceCwd : null,
+                  warnings: [],
+                  created: false,
+                },
+                config: { workspaceRuntime: effectiveRuntimeConfig },
+                adapterEnv: {},
+                onLog,
+              });
+              runtimeServiceCount = startedServices.length;
+            }
+
+            return {
+              status: "succeeded",
+              stdout: stdout.join(""),
+              stderr: stderr.join(""),
+              system:
+                action === "stop"
+                  ? "Stopped project workspace runtime services.\n"
+                  : action === "restart"
+                    ? "Restarted project workspace runtime services.\n"
+                    : "Started project workspace runtime services.\n",
+              metadata: {
+                runtimeServiceCount,
+              },
+            };
+          },
+        });
+
+        return operation;
+      },
+      { params: t.Object({ id: t.String(), workspaceId: t.String(), action: t.String() }) },
     )
 
     // Delete workspace

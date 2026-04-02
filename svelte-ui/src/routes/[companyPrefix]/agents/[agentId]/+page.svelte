@@ -32,7 +32,16 @@
 
   // Edit form state
   let editMode = $state(false);
-  let editForm = $state({ name: "", title: "", role: "", status: "", systemPrompt: "", icon: "Bot", reportsTo: null as string | null });
+  let editForm = $state({
+    name: "",
+    title: "",
+    role: "",
+    status: "",
+    adapterType: "",
+    systemPrompt: "",
+    icon: "Bot",
+    reportsTo: null as string | null,
+  });
   let editSaving = $state(false);
 
   // API Keys state
@@ -105,13 +114,30 @@
 
   const ROLES = ["general", "ceo", "cto", "engineer", "designer", "marketer", "custom"];
   const STATUSES = ["idle", "waiting", "running", "paused", "error"];
+  const ADAPTER_OPTIONS = [
+    { value: "claude_local", label: "Claude (Local)" },
+    { value: "codex_local", label: "Codex (Local)" },
+    { value: "cursor", label: "Cursor" },
+    { value: "gemini_local", label: "Gemini (Local)" },
+    { value: "opencode_local", label: "OpenCode (Local)" },
+    { value: "pi_local", label: "Pi (Local)" },
+    { value: "openclaw_gateway", label: "OpenClaw Gateway" },
+    { value: "hermes_local", label: "Hermes (Local)" },
+    { value: "process", label: "Process" },
+    { value: "http", label: "HTTP" },
+  ];
 
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
   let agentId = $derived($page.params.agentId);
-  let companyId = $derived(companyStore.selectedCompanyId);
   let prefix = $derived($page.params.companyPrefix);
+  let routeCompanyId = $derived.by(() => {
+    const requestedPrefix = prefix?.trim().toUpperCase();
+    if (!requestedPrefix) return null;
+    return companyStore.companies.find((company) => String(company.issuePrefix ?? "").toUpperCase() === requestedPrefix)?.id ?? null;
+  });
+  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
 
   let budgetFormatted = $derived(agent?.budgetMonthlyCents ? `$${(agent.budgetMonthlyCents / 100).toFixed(2)}` : "No budget");
   let spentFormatted = $derived(agent?.spentMonthlyCents ? `$${(agent.spentMonthlyCents / 100).toFixed(2)}` : "$0.00");
@@ -273,7 +299,8 @@
     try {
       const res = await api(`/api/agents/${agentId}/heartbeat-runs?limit=20${companyId ? `&companyId=${companyId}` : ''}`);
       if (!res.ok) return;
-      heartbeats = await res.json() ?? [];
+      const data = await res.json();
+      heartbeats = Array.isArray(data) ? data : data.runs ?? data.data ?? [];
     } catch { heartbeats = []; }
   }
 
@@ -607,6 +634,7 @@
       title: agent.title ?? "",
       role: agent.role ?? "general",
       status: agent.status ?? "idle",
+      adapterType: agent.adapterType ?? "claude_local",
       systemPrompt: agent.systemPrompt ?? agent.adapterConfig?.systemPrompt ?? "",
       icon: agent.icon ?? "Bot",
       reportsTo: agent.reportsTo ?? null,
@@ -627,6 +655,7 @@
       if (editForm.title !== (agent.title ?? "")) payload.title = editForm.title;
       if (editForm.role !== (agent.role ?? "general")) payload.role = editForm.role;
       if (editForm.status !== (agent.status ?? "idle")) payload.status = editForm.status;
+      if (editForm.adapterType !== (agent.adapterType ?? "")) payload.adapterType = editForm.adapterType;
       if (editForm.systemPrompt !== (agent.systemPrompt ?? agent.adapterConfig?.systemPrompt ?? "")) {
         payload.systemPrompt = editForm.systemPrompt;
       }
@@ -890,7 +919,7 @@
             <!-- Icon + Name row -->
             <div class="sm:col-span-2 flex items-start gap-4">
               <div>
-                <label class="block text-xs text-[#94A3B8] mb-1">Icon</label>
+                <div class="block text-xs text-[#94A3B8] mb-1">Icon</div>
                 <AgentIconPicker value={editForm.icon} onSelect={(name) => editForm.icon = name} />
               </div>
               <div class="flex-1">
@@ -924,9 +953,21 @@
                 {/each}
               </select>
             </div>
+            <div>
+              <label for="edit-adapter" class="block text-xs text-[#94A3B8] mb-1">Provider</label>
+              <select
+                id="edit-adapter"
+                bind:value={editForm.adapterType}
+                class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+              >
+                {#each ADAPTER_OPTIONS as option}
+                  <option value={option.value} class="bg-[#0f172a]">{option.label}</option>
+                {/each}
+              </select>
+            </div>
             <!-- Reports To -->
             <div>
-              <label class="block text-xs text-[#94A3B8] mb-1">Reports To</label>
+              <div class="block text-xs text-[#94A3B8] mb-1">Reports To</div>
               {#if companyId}
                 <ReportsToPicker
                   {companyId}

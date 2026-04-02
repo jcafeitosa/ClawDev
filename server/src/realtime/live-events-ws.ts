@@ -14,7 +14,7 @@
  * - Automatic connection cleanup
  */
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Elysia, t } from "elysia";
 // Bun-native runtime — no adapter needed
 import type { Db } from "@clawdev/db";
@@ -45,7 +45,7 @@ export function liveEventsElysiaWs(
   },
 ) {
   /** Map of WebSocket ID → cleanup function (live event unsubscribe) */
-  const cleanupMap = new Map<string, () => void>();
+  const cleanupMap = new WeakMap<object, () => void>();
 
   return new Elysia()
     .ws("/api/companies/:companyId/events/ws", {
@@ -133,34 +133,45 @@ export function liveEventsElysiaWs(
       },
 
       open(ws) {
-        const companyId = ws.data.params.companyId;
-        const wsId = ws.id ?? crypto.randomUUID();
-
-        log.info({ companyId, wsId }, "WebSocket connected");
-
-        // Subscribe to live events for this company
-        const unsubscribe = subscribeCompanyLiveEvents(companyId, (event) => {
-          try {
-            ws.send(JSON.stringify(event));
-          } catch {
-            // Client may have disconnected
+        try {
+          const companyId = ws.data?.params?.companyId;
+          if (!companyId) {
+            log.warn({ wsId: randomUUID() }, "WebSocket opened without company context");
+            ws.close();
+            return;
           }
-        });
 
-        cleanupMap.set(wsId, unsubscribe);
-        // Store wsId on the ws object for close handler
-        (ws as unknown as Record<string, string>).__wsId = wsId;
+          const wsId = randomUUID();
+          log.info({ companyId, wsId }, "WebSocket connected");
+
+          // Subscribe to live events for this company
+          const unsubscribe = subscribeCompanyLiveEvents(companyId, (event) => {
+            try {
+              ws.send(JSON.stringify(event));
+            } catch {
+              // Client may have disconnected
+            }
+          });
+
+          cleanupMap.set(ws as unknown as object, unsubscribe);
+        } catch (error) {
+          log.warn({ err: error }, "WebSocket open handler failed");
+          try {
+            ws.close();
+          } catch {
+            // ignore
+          }
+        }
       },
 
       close(ws) {
-        const wsId = (ws as unknown as Record<string, string>).__wsId;
-        if (wsId) {
-          const cleanup = cleanupMap.get(wsId);
-          if (cleanup) cleanup();
-          cleanupMap.delete(wsId);
+        const cleanup = cleanupMap.get(ws as unknown as object);
+        if (cleanup) {
+          cleanup();
+          cleanupMap.delete(ws as unknown as object);
         }
 
-        const companyId = ws.data.params.companyId;
+        const companyId = ws.data?.params?.companyId;
         log.info({ companyId }, "WebSocket disconnected");
       },
 

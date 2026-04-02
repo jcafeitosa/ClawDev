@@ -15,7 +15,7 @@ import { createProviderStatusService, getCooldownDuration } from "../services/pr
 import { createModelDiscoveryService } from "../services/model-discovery.js";
 import { createModelRouterService } from "../services/model-router.js";
 import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
-import { assertCompanyAccess, type Actor } from "../middleware/authz.js";
+import { assertCompanyAccess, assertInstanceAdmin, type Actor } from "../middleware/authz.js";
 import { badRequest, notFound } from "../errors.js";
 
 function parseDateParam(value: unknown, label: string): Date | undefined {
@@ -118,7 +118,10 @@ export function modelRoutes(db: Db) {
     // ── Manual enrichment ──────────────────────────────────────────────
     .put(
       "/models/:adapterType/:modelId",
-      async ({ params, body, set }) => {
+      async (ctx: any) => {
+        const { params, body, set } = ctx;
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         try {
           const enriched = await catalog.enrichModel(
             params.adapterType,
@@ -156,7 +159,9 @@ export function modelRoutes(db: Db) {
     // ── Trigger full discovery cycle ───────────────────────────────────
     .post(
       "/models/sync",
-      async () => {
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         const result = await discovery.runDiscoveryCycle();
         return result;
       },
@@ -285,7 +290,10 @@ export function modelRoutes(db: Db) {
     // ── Trigger probe for single adapter ───────────────────────────────
     .post(
       "/providers/:adapterType/probe",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         const result = await discovery.probeAdapter(params.adapterType);
         return result;
       },
@@ -301,7 +309,10 @@ export function modelRoutes(db: Db) {
     // ── Manually place a model into cooldown ──────────────────────────
     .post(
       "/providers/:adapterType/models/:modelId/cooldown",
-      async ({ params, body }) => {
+      async (ctx: any) => {
+        const { params, body } = ctx;
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         const durationMs = body.durationMinutes
           ? body.durationMinutes * 60 * 1000
           : getCooldownDuration(params.adapterType);
@@ -338,7 +349,10 @@ export function modelRoutes(db: Db) {
     // ── Clear cooldown for a specific model ───────────────────────────
     .delete(
       "/providers/:adapterType/models/:modelId/cooldown",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         await providerStatus.updateStatus(
           params.adapterType,
           params.modelId,
@@ -379,7 +393,9 @@ export function modelRoutes(db: Db) {
     // ── Clear all expired cooldowns across all providers ──────────────
     .post(
       "/providers/clear-expired-cooldowns",
-      async () => {
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         const count = await providerStatus.clearExpiredCooldowns();
         return { cleared: count };
       },
@@ -442,6 +458,8 @@ export function modelRoutes(db: Db) {
         }
         if (input.defaultModelId !== undefined) {
           setClauses.defaultModelId = input.defaultModelId;
+        } else if (input.defaultModel !== undefined) {
+          setClauses.defaultModelId = input.defaultModel;
         }
         if (input.fallbackChain !== undefined) {
           setClauses.fallbackChain = input.fallbackChain;
@@ -492,6 +510,7 @@ export function modelRoutes(db: Db) {
         body: t.Object({
           defaultAdapterType: t.Optional(t.Union([t.String(), t.Null()])),
           defaultModelId: t.Optional(t.Union([t.String(), t.Null()])),
+          defaultModel: t.Optional(t.Union([t.String(), t.Null()])),
           fallbackChain: t.Optional(
             t.Array(
               t.Object({

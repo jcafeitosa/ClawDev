@@ -308,5 +308,29 @@ export function routineRoutes(db: Db) {
         return result;
       },
       { params: t.Object({ id: t.String() }) },
+    )
+
+    .post(
+      "/routine-triggers/public/:publicId/fire",
+      async (ctx: any) => {
+        const { params, body, request } = ctx;
+        let rawBody: Buffer | null = null;
+        try {
+          rawBody = Buffer.from(await request.clone().arrayBuffer());
+        } catch {
+          rawBody = null;
+        }
+        const result = await svc.firePublicTrigger(params.publicId as string, {
+          authorizationHeader: request.headers.get("authorization"),
+          signatureHeader: request.headers.get("x-paperclip-signature"),
+          timestampHeader: request.headers.get("x-paperclip-timestamp"),
+          idempotencyKey: request.headers.get("idempotency-key"),
+          rawBody,
+          payload: typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null,
+        });
+        ctx.set.status = 202;
+        return result;
+      },
+      { params: t.Object({ publicId: t.String() }) },
     );
 }

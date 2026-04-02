@@ -184,8 +184,9 @@
 
       <!-- Collision strategy selector -->
       <div class="space-y-2">
-        <label class="text-xs font-medium text-muted-foreground">Collision Strategy</label>
+        <label for="collision-strategy" class="text-xs font-medium text-muted-foreground">Collision Strategy</label>
         <select
+          id="collision-strategy"
           bind:value={collisionStrategy}
           class="w-full appearance-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >

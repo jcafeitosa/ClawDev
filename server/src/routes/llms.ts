@@ -78,21 +78,27 @@ export function llmRoutes(db: Db) {
     })
 
     .get(
-      "/agent-configuration/:adapterType.txt",
+      "/agent-configuration/*",
       async ({ params, set, ...ctx }: any) => {
         await assertLlmAccess(ctx.actor, agentsSvc);
-        const adapter = listServerAdapters().find((entry) => entry.type === params.adapterType);
+        const rawTail = (params as Record<string, string>)["*"] ?? "";
+        const adapterType = rawTail.replace(/\.txt$/, "").trim();
+        if (!adapterType) {
+          set.status = 404;
+          set.headers["content-type"] = "text/plain; charset=utf-8";
+          return "Unknown adapter type";
+        }
+        const adapter = listServerAdapters().find((entry) => entry.type === adapterType);
         if (!adapter) {
           set.status = 404;
           set.headers["content-type"] = "text/plain; charset=utf-8";
-          return `Unknown adapter type: ${params.adapterType}`;
+          return `Unknown adapter type: ${adapterType}`;
         }
         set.headers["content-type"] = "text/plain; charset=utf-8";
         return (
           adapter.agentConfigurationDoc ??
-          `# ${params.adapterType} agent configuration\n\nNo adapter-specific documentation registered.`
+          `# ${adapterType} agent configuration\n\nNo adapter-specific documentation registered.`
         );
       },
-      { params: t.Object({ adapterType: t.String() }) },
     );
 }

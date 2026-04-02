@@ -26,6 +26,19 @@ export function accessService(db: Db) {
     return Boolean(row);
   }
 
+  async function listInstanceAdmins() {
+    return db
+      .select({
+        userId: instanceUserRoles.userId,
+        role: instanceUserRoles.role,
+        createdAt: instanceUserRoles.createdAt,
+        updatedAt: instanceUserRoles.updatedAt,
+      })
+      .from(instanceUserRoles)
+      .where(eq(instanceUserRoles.role, "instance_admin"))
+      .orderBy(sql`${instanceUserRoles.createdAt} desc`);
+  }
+
   async function getMembership(
     companyId: string,
     principalType: PrincipalType,
@@ -410,14 +423,50 @@ export function accessService(db: Db) {
   // CLI Auth
   // -----------------------------------------------------------------------
 
+  function getCliAuthSecret() {
+    return process.env.CLAWDEV_AGENT_JWT_SECRET
+      ?? process.env.BETTER_AUTH_SECRET
+      ?? "clawdev-dev-secret";
+  }
+
   async function generateCliToken() {
-    const token = crypto.randomBytes(32).toString("hex");
-    return { token };
+    const issuedAt = Date.now();
+    const expiresAt = issuedAt + 1000 * 60 * 60;
+    const payload = Buffer.from(JSON.stringify({ issuedAt, expiresAt }), "utf8").toString("base64url");
+    const signature = crypto
+      .createHmac("sha256", getCliAuthSecret())
+      .update(payload)
+      .digest("base64url");
+    return { token: `clawdev-cli.${payload}.${signature}`, expiresAt: new Date(expiresAt).toISOString() };
   }
 
   async function verifyCliToken(token: string) {
-    // Basic verification stub — in production this would check against a persistent store
-    return { valid: !!token, userId: null as string | null };
+    if (!token.startsWith("clawdev-cli.")) {
+      return { valid: false, userId: null as string | null };
+    }
+    const parts = token.split(".");
+    if (parts.length !== 3) {
+      return { valid: false, userId: null as string | null };
+    }
+    const [, payload, signature] = parts;
+    const expected = crypto
+      .createHmac("sha256", getCliAuthSecret())
+      .update(payload)
+      .digest("base64url");
+    if (signature !== expected) {
+      return { valid: false, userId: null as string | null };
+    }
+    try {
+      const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as {
+        expiresAt?: number;
+      };
+      if (typeof decoded.expiresAt !== "number" || decoded.expiresAt < Date.now()) {
+        return { valid: false, userId: null as string | null };
+      }
+      return { valid: true, userId: null as string | null };
+    } catch {
+      return { valid: false, userId: null as string | null };
+    }
   }
 
   return {
@@ -428,6 +477,7 @@ export function accessService(db: Db) {
     ensureMembership,
     listMembers,
     listActiveUserMemberships,
+    listInstanceAdmins,
     copyActiveUserMemberships,
     setMemberPermissions,
     promoteInstanceAdmin,

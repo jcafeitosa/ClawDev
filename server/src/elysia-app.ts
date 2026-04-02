@@ -36,6 +36,7 @@ import {
 import type { DeploymentExposure, DeploymentMode } from "@clawdev/shared";
 import { readPersistedDevServerStatus, toDevServerHealthStatus } from "./dev-server-status.js";
 import { instanceSettingsService } from "./services/instance-settings.js";
+import { buildSystemReport } from "./services/system-report.js";
 import { serverVersion } from "./version.js";
 
 // Middleware
@@ -46,6 +47,7 @@ import { checkBoardMutation } from "./middleware/board-mutation-guard.js";
 // Route modules
 import {
   issueRoutes,
+  commentRoutes,
   companyIssueRoutes,
   companyRoutes,
   projectRoutes,
@@ -58,6 +60,7 @@ import {
   activityRoutes,
   costRoutes,
   dashboardRoutes,
+  documentRoutes,
   routineRoutes,
   approvalRoutes,
   runRoutes,
@@ -170,6 +173,22 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
 
     // -- Health --
     .get("/health", async () => {
+      try {
+        await db.execute(sql`SELECT 1`);
+      } catch {
+        return new Response(
+          JSON.stringify({
+            status: "unhealthy",
+            version: serverVersion,
+            error: "database_unreachable",
+          }),
+          {
+            status: 503,
+            headers: { "content-type": "application/json" },
+          },
+        );
+      }
+
       let bootstrapStatus: "ready" | "bootstrap_pending" = "ready";
       let bootstrapInviteActive = false;
 
@@ -204,6 +223,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
         .from(companies)
         .then((rows) => Number(rows[0]?.count ?? 0));
       const hasCompanies = companyCount > 0;
+      const systemReport = await buildSystemReport(db);
 
       const persistedDevServerStatus = readPersistedDevServerStatus();
       let devServer: ReturnType<typeof toDevServerHealthStatus> | undefined;
@@ -231,14 +251,17 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
         bootstrapInviteActive,
         hasCompanies,
         features: { companyDeletionEnabled },
+        diagnostics: systemReport,
         ...(devServer ? { devServer } : {}),
       };
     })
 
     // -- Route modules --
     .use(companyRoutes(db, storage))
+    .use(runRoutes(db))
     .use(agentRoutes(db))
     .use(issueRoutes(db))
+    .use(commentRoutes(db))
     .use(companyIssueRoutes(db))
     .use(projectRoutes(db))
     .use(goalRoutes(db))
@@ -249,11 +272,11 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     .use(activityRoutes(db))
     .use(costRoutes(db))
     .use(dashboardRoutes(db))
+    .use(documentRoutes(db))
     .use(routineRoutes(db))
     .use(approvalRoutes(db))
     .use(executionWorkspaceRoutes(db))
     .use(sidebarBadgeRoutes(db))
-    .use(runRoutes(db))
     .use(inboxRoutes(db))
     .use(budgetRoutes(db))
     .use(assetRoutes(db, storage))
@@ -307,10 +330,11 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
   const effectiveUiMode: UiMode = opts.uiMode ?? (opts.serveUi !== false ? "static" : "none");
 
   if (effectiveUiMode === "vite-dev") {
-    // Reverse-proxy non-API requests to the SvelteKit dev server (vite dev on port 5174).
+    const uiDevPort = Number(process.env.CLAWDEV_UI_PORT) || 5174;
+    // Reverse-proxy non-API requests to the SvelteKit dev server.
     // The SvelteKit vite.config.ts already proxies /api back to this server,
-    // so the dev loop is: browser -> Elysia(:3100) -> Vite(:5174) for UI requests.
-    const VITE_DEV_ORIGIN = "http://localhost:5174";
+    // so the dev loop is: browser -> Elysia -> Vite for UI requests.
+    const VITE_DEV_ORIGIN = `http://localhost:${uiDevPort}`;
 
     const isUiRequest = (pathname: string) =>
       !pathname.startsWith("/api/") &&
@@ -354,7 +378,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
         return `<html><body style="font-family:system-ui;padding:2rem">
           <h1>Vite dev server not reachable</h1>
           <p>The SvelteKit dev server at <code>${VITE_DEV_ORIGIN}</code> is not running.</p>
-          <p>Start it with: <code>pnpm --filter svelte-ui dev</code></p>
+          <p>Start it with: <code>pnpm --filter @clawdev/svelte-ui dev</code></p>
           <p>The API is still available at <code>/api/*</code>.</p>
         </body></html>`;
       }
@@ -370,7 +394,6 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     const candidates = [
       path.resolve(__dirname, "../ui-dist"),
       path.resolve(__dirname, "../../svelte-ui/build"),
-      path.resolve(__dirname, "../../ui/dist"),
     ];
     const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
     if (uiDist) {

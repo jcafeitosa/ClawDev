@@ -10,7 +10,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Elysia, t } from "elysia";
-import { and, eq, isNull, desc } from "drizzle-orm";
+import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import type { PermissionKey } from "@clawdev/shared";
 import { agentApiKeys, authUsers, invites, joinRequests } from "@clawdev/db";
@@ -22,7 +22,9 @@ import {
   logActivity,
   notifyHireApproved,
 } from "../services/index.js";
+import { assertBoard, assertCompanyAccess, assertInstanceAdmin, type Actor } from "../middleware/authz.js";
 import { companyIdParam } from "../middleware/index.js";
+import { claimBoardOwnership, inspectBoardClaimChallenge } from "../board-claim.js";
 import {
   companyInviteExpiresAt,
   agentJoinGrantsFromDefaults,
@@ -99,6 +101,246 @@ function inviteExpired(invite: { expiresAt: Date }) {
   return invite.expiresAt.getTime() <= Date.now();
 }
 
+function requestBaseUrl(request: Request): string {
+  try {
+    return new URL(request.url).origin;
+  } catch {
+    return "http://localhost:3100";
+  }
+}
+
+function normalizeHostname(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) return null;
+  return trimmed.replace(/^\[(.*)\]$/, "$1");
+}
+
+function isLoopbackHost(hostname: string): boolean {
+  const normalized = normalizeHostname(hostname);
+  if (!normalized) return false;
+  if (normalized === "localhost") return true;
+  return normalized === "127.0.0.1" || normalized === "::1";
+}
+
+function buildOnboardingConnectionCandidates(opts: {
+  baseUrl: string;
+  allowedHostnames: string[];
+}) {
+  const base = new URL(opts.baseUrl);
+  const candidates = new Set<string>([opts.baseUrl]);
+  const port = base.port ? `:${base.port}` : "";
+  for (const rawHost of opts.allowedHostnames) {
+    const host = normalizeHostname(rawHost);
+    if (!host) continue;
+    candidates.add(`${base.protocol}//${host}${port}`);
+  }
+  if (isLoopbackHost(base.hostname)) {
+    candidates.add(`${base.protocol}//host.docker.internal${port}`);
+  }
+  return Array.from(candidates);
+}
+
+function buildOnboardingDiscoveryDiagnostics(opts: {
+  apiBaseUrl: string;
+  deploymentMode: string;
+  deploymentExposure: string;
+  bindHost: string;
+  allowedHostnames: string[];
+}) {
+  return [
+    `apiBaseUrl=${opts.apiBaseUrl}`,
+    `deploymentMode=${opts.deploymentMode}`,
+    `deploymentExposure=${opts.deploymentExposure}`,
+    `bindHost=${opts.bindHost}`,
+    `allowedHostnames=${opts.allowedHostnames.join(",") || "(none)"}`,
+  ];
+}
+
+function createInviteOnboardingProbe(baseUrl: string, token: string) {
+  const textInstructionsPath = `/api/invites/${token}/onboarding.txt`;
+  const testResolutionPath = `/api/invites/${token}/test-resolution`;
+  return {
+    baseUrl,
+    textInstructionsPath,
+    textInstructionsUrl: `${baseUrl}${textInstructionsPath}`,
+    testResolutionPath,
+    testResolutionUrl: `${baseUrl}${testResolutionPath}`,
+  };
+}
+
+function buildInviteOnboardingManifest(
+  req: Request,
+  token: string,
+  invite: typeof invites.$inferSelect,
+) {
+  const baseUrl = requestBaseUrl(req);
+  const deploymentMode = process.env.CLAWDEV_DEPLOYMENT_MODE ?? "local_trusted";
+  const deploymentExposure =
+    process.env.CLAWDEV_DEPLOYMENT_EXPOSURE ?? "private";
+  const bindHost = process.env.CLAWDEV_BIND_HOST ?? "127.0.0.1";
+  const allowedHostnames = (process.env.CLAWDEV_ALLOWED_HOSTNAMES ?? "")
+    .split(",")
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0);
+  const claimPath = "/api/join-requests/{requestId}/claim-api-key";
+  const registrationEndpointPath = `/api/invites/${token}/accept`;
+  const onboarding = createInviteOnboardingProbe(baseUrl, token);
+  const connectionCandidates = buildOnboardingConnectionCandidates({
+    baseUrl,
+    allowedHostnames,
+  });
+
+  return {
+    invite: {
+      id: invite.id,
+      companyId: invite.companyId,
+      inviteType: invite.inviteType,
+      allowedJoinTypes: invite.allowedJoinTypes,
+      expiresAt: invite.expiresAt,
+      onboardingTextPath: onboarding.textInstructionsPath,
+      inviteMessage: extractInviteMessage(invite),
+    },
+    onboarding: {
+      instructions:
+        "Join as an OpenClaw Gateway agent, save your one-time claim secret, wait for board approval, then claim your API key. Set adapterType='openclaw_gateway' and include agentDefaultsPayload.headers.x-openclaw-token.",
+      inviteMessage: extractInviteMessage(invite),
+      recommendedAdapterType: "openclaw_gateway",
+      requiredFields: {
+        requestType: "agent",
+        agentName: "Display name for this agent",
+        adapterType: "Use 'openclaw_gateway' for ClawDev gateway agents",
+        capabilities: "Optional capability summary",
+        agentDefaultsPayload:
+          "Adapter config for ClawDev gateway. MUST include url (ws:// or wss://) and headers.x-openclaw-token. Optional fields: clawdevApiUrl, waitTimeoutMs, sessionKeyStrategy, sessionKey, role, scopes, disableDeviceAuth, devicePrivateKeyPem.",
+      },
+      registrationEndpoint: {
+        method: "POST",
+        path: registrationEndpointPath,
+        url: `${baseUrl}${registrationEndpointPath}`,
+      },
+      claimEndpointTemplate: {
+        method: "POST",
+        path: claimPath,
+        body: {
+          claimSecret: "one-time claim secret returned when the join request is created",
+        },
+      },
+      connectivity: {
+        deploymentMode,
+        deploymentExposure,
+        bindHost,
+        allowedHostnames,
+        connectionCandidates,
+        diagnostics: buildOnboardingDiscoveryDiagnostics({
+          apiBaseUrl: baseUrl,
+          deploymentMode,
+          deploymentExposure,
+          bindHost,
+          allowedHostnames,
+        }),
+        guidance:
+          deploymentMode === "authenticated" && deploymentExposure === "private"
+            ? "If ClawDev runs on another machine, ensure the hostname is reachable and allowed."
+            : "Ensure ClawDev can reach this API base URL for invite, claim, and bootstrap calls.",
+        testResolutionEndpoint: {
+          method: "GET",
+          path: onboarding.testResolutionPath,
+          url: onboarding.testResolutionUrl,
+        },
+      },
+      textInstructions: {
+        path: onboarding.textInstructionsPath,
+        url: onboarding.textInstructionsUrl,
+        contentType: "text/plain",
+      },
+      skill: {
+        name: "clawdev",
+        path: "/api/skills/clawdev",
+        url: `${baseUrl}/api/skills/clawdev`,
+        installPath: "~/.openclaw/skills/clawdev/SKILL.md",
+      },
+    },
+  };
+}
+
+type InviteResolutionProbe = {
+  status: "reachable" | "timeout" | "unreachable";
+  method: "HEAD";
+  durationMs: number;
+  httpStatus: number | null;
+  message: string;
+};
+
+function isAbortError(error: unknown) {
+  return error instanceof Error && error.name === "AbortError";
+}
+
+async function probeInviteResolutionTarget(
+  url: URL,
+  timeoutMs: number,
+): Promise<InviteResolutionProbe> {
+  const startedAt = Date.now();
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "HEAD",
+      redirect: "manual",
+      signal: controller.signal,
+    });
+    const durationMs = Date.now() - startedAt;
+    if (
+      response.ok ||
+      response.status === 401 ||
+      response.status === 403 ||
+      response.status === 404 ||
+      response.status === 405 ||
+      response.status === 422 ||
+      response.status === 500 ||
+      response.status === 501
+    ) {
+      return {
+        status: "reachable",
+        method: "HEAD",
+        durationMs,
+        httpStatus: response.status,
+        message: `Webhook endpoint responded to HEAD with HTTP ${response.status}.`,
+      };
+    }
+    return {
+      status: "unreachable",
+      method: "HEAD",
+      durationMs,
+      httpStatus: response.status,
+      message: `Webhook endpoint probe returned HTTP ${response.status}.`,
+    };
+  } catch (error) {
+    const durationMs = Date.now() - startedAt;
+    if (isAbortError(error)) {
+      return {
+        status: "timeout",
+        method: "HEAD",
+        durationMs,
+        httpStatus: null,
+        message: `Webhook endpoint probe timed out after ${timeoutMs}ms.`,
+      };
+    }
+    return {
+      status: "unreachable",
+      method: "HEAD",
+      durationMs,
+      httpStatus: null,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Webhook endpoint probe failed.",
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function toJoinRequestResponse(row: typeof joinRequests.$inferSelect) {
   const { claimSecretHash: _claimSecretHash, ...safe } = row;
   return safe;
@@ -120,6 +362,11 @@ function mergeInviteDefaults(
   const merged = defaults && typeof defaults === "object" ? { ...defaults } : {};
   if (agentMessage) merged.agentMessage = agentMessage;
   return Object.keys(merged).length ? merged : null;
+}
+
+function assertBoardCompanyAccess(actor: Actor, companyId: string) {
+  assertBoard(actor);
+  assertCompanyAccess(actor, companyId);
 }
 
 // ---------------------------------------------------------------------------
@@ -248,7 +495,10 @@ export function accessRoutes(db: Db) {
 
     .get(
       "/companies/:companyId/members",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertBoardCompanyAccess(actor, params.companyId);
         const members = await svc.listMembers(params.companyId);
         return members;
       },
@@ -259,7 +509,8 @@ export function accessRoutes(db: Db) {
       "/companies/:companyId/members/:memberId/permissions",
       async (ctx: any) => {
         const { params, body, set } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
+        assertBoardCompanyAccess(actor, params.companyId);
         const updated = await svc.setMemberPermissions(
           params.companyId,
           params.memberId,
@@ -293,7 +544,10 @@ export function accessRoutes(db: Db) {
 
     .get(
       "/companies/:companyId/invites",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertBoardCompanyAccess(actor, params.companyId);
         const inviteRows = await svc.listInvites(params.companyId);
         return inviteRows;
       },
@@ -304,7 +558,8 @@ export function accessRoutes(db: Db) {
       "/companies/:companyId/invites",
       async (ctx: any) => {
         const { params, body, set } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
+        assertBoardCompanyAccess(actor, params.companyId);
 
         const allowedJoinTypes = body.allowedJoinTypes ?? "both";
         const agentMessage = body.agentMessage
@@ -384,6 +639,78 @@ export function accessRoutes(db: Db) {
     // ---------------------------------------------------------------
     // Invite lookup / onboarding by token
     // ---------------------------------------------------------------
+
+    .get(
+      "/invites/:token/onboarding",
+      async (ctx: any) => {
+        const { params, set, request } = ctx;
+        const token = params.token.trim();
+        if (!token) { set.status = 404; return { error: "Invite not found" }; }
+        const invite = await db
+          .select()
+          .from(invites)
+          .where(eq(invites.tokenHash, hashToken(token)))
+          .then((rows) => rows[0] ?? null);
+        if (!invite || invite.revokedAt || invite.acceptedAt || inviteExpired(invite)) {
+          set.status = 404;
+          return { error: "Invite not found" };
+        }
+        return buildInviteOnboardingManifest(request as Request, token, invite);
+      },
+      { params: t.Object({ token: t.String() }) },
+    )
+
+    .get(
+      "/invites/:token/test-resolution",
+      async (ctx: any) => {
+        const { params, query, set } = ctx;
+        const token = params.token.trim();
+        if (!token) { set.status = 404; return { error: "Invite not found" }; }
+        const invite = await db
+          .select()
+          .from(invites)
+          .where(eq(invites.tokenHash, hashToken(token)))
+          .then((rows) => rows[0] ?? null);
+        if (!invite || invite.revokedAt || invite.acceptedAt || inviteExpired(invite)) {
+          set.status = 404;
+          return { error: "Invite not found" };
+        }
+
+        const rawUrl = typeof query.url === "string" ? query.url.trim() : "";
+        if (!rawUrl) {
+          set.status = 400;
+          return { error: "url query parameter is required" };
+        }
+        let target: URL;
+        try {
+          target = new URL(rawUrl);
+        } catch {
+          set.status = 400;
+          return { error: "url must be an absolute http(s) URL" };
+        }
+        if (target.protocol !== "http:" && target.protocol !== "https:") {
+          set.status = 400;
+          return { error: "url must use http or https" };
+        }
+
+        const parsedTimeoutMs =
+          typeof query.timeoutMs === "string"
+            ? Number(query.timeoutMs)
+            : NaN;
+        const timeoutMs = Number.isFinite(parsedTimeoutMs)
+          ? Math.max(1000, Math.min(15000, Math.floor(parsedTimeoutMs)))
+          : 5000;
+        const probe = await probeInviteResolutionTarget(target, timeoutMs);
+        return {
+          inviteId: invite.id,
+          testResolutionPath: `/api/invites/${token}/test-resolution`,
+          requestedUrl: target.toString(),
+          timeoutMs,
+          ...probe,
+        };
+      },
+      { params: t.Object({ token: t.String() }) },
+    )
 
     .get(
       "/invites/:token",
@@ -658,7 +985,7 @@ export function accessRoutes(db: Db) {
       "/invites/:token/revoke",
       async (ctx: any) => {
         const { params } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
         // The :token param here is actually the invite ID (for backward compat)
         const inviteId = params.token;
         const invite = await db
@@ -667,6 +994,14 @@ export function accessRoutes(db: Db) {
           .where(eq(invites.id, inviteId))
           .then((rows) => rows[0] ?? null);
         if (!invite) { ctx.set.status = 404; return { error: "Invite not found" }; }
+        if (invite.inviteType === "bootstrap_ceo") {
+          assertInstanceAdmin(actor);
+        } else if (invite.companyId) {
+          assertBoardCompanyAccess(actor, invite.companyId);
+        } else {
+          ctx.set.status = 409;
+          return { error: "Invite is missing company scope" };
+        }
         if (invite.acceptedAt) { ctx.set.status = 409; return { error: "Invite already consumed" }; }
         if (invite.revokedAt) return invite;
 
@@ -698,9 +1033,28 @@ export function accessRoutes(db: Db) {
 
     .post(
       "/invites/:token/accept-by-id",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
         // Accepts an invite by its database ID (backward compat).
         // The :token param is reused so Elysia's router doesn't conflict.
+        const invite = await db
+          .select()
+          .from(invites)
+          .where(eq(invites.id, params.token))
+          .then((rows) => rows[0] ?? null);
+        if (!invite) {
+          ctx.set.status = 404;
+          return { error: "Invite not found" };
+        }
+        if (invite.inviteType === "bootstrap_ceo") {
+          assertInstanceAdmin(actor);
+        } else if (invite.companyId) {
+          assertBoardCompanyAccess(actor, invite.companyId);
+        } else {
+          ctx.set.status = 409;
+          return { error: "Invite is missing company scope" };
+        }
         const result = await svc.acceptInvite(params.token);
         return result;
       },
@@ -717,7 +1071,10 @@ export function accessRoutes(db: Db) {
 
     .get(
       "/companies/:companyId/join-requests",
-      async ({ params, query }) => {
+      async (ctx: any) => {
+        const { params, query } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
         const all = await db
           .select()
           .from(joinRequests)
@@ -737,9 +1094,10 @@ export function accessRoutes(db: Db) {
       "/companies/:companyId/join-requests/:requestId/approve",
       async (ctx: any) => {
         const { params, set } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
         const companyId = params.companyId;
         const requestId = params.requestId;
+        assertBoardCompanyAccess(actor, companyId);
 
         const existing = await db
           .select()
@@ -842,9 +1200,10 @@ export function accessRoutes(db: Db) {
       "/companies/:companyId/join-requests/:requestId/reject",
       async (ctx: any) => {
         const { params, set } = ctx;
-        const actor = ctx.actor ?? {};
+        const actor = ctx.actor as Actor;
         const companyId = params.companyId;
         const requestId = params.requestId;
+        assertBoardCompanyAccess(actor, companyId);
 
         const existing = await db
           .select()
@@ -1116,14 +1475,19 @@ export function accessRoutes(db: Db) {
       "/companies/:companyId/openclaw/invite-prompt",
       async (ctx: any) => {
         const { params, body, set } = ctx;
-        const a = ctx.actor;
-        if (a?.type === "agent") {
+        const a = ctx.actor as Actor;
+        assertCompanyAccess(a, params.companyId);
+        if (a.type === "agent") {
+          if (!a.agentId) {
+            set.status = 403;
+            return { error: "Only CEO agents can create openclaw invite prompts" };
+          }
           const agent = await agents.getById(a.agentId);
           if (!agent || agent.role !== "ceo") {
             set.status = 403;
             return { error: "Only CEO agents can create openclaw invite prompts" };
           }
-        } else if (a?.type === "board") {
+        } else if (a.type === "board") {
           const allowed = await svc.canUser(params.companyId, a.userId, "users:invite");
           if (!allowed) {
             set.status = 403;
@@ -1160,6 +1524,81 @@ export function accessRoutes(db: Db) {
           allowedJoinTypes: row.allowedJoinTypes,
           onboardingTextPath: `/api/invites/${tokenStr}/onboarding.txt`,
         };
+      },
+    )
+
+    // ---------------------------------------------------------------
+    // Board claim
+    // ---------------------------------------------------------------
+
+    .get(
+      "/board-claim/:token",
+      async ({ params, query, set }: any) => {
+        const token = String(params.token ?? "").trim();
+        const code = typeof query?.code === "string" ? query.code.trim() : undefined;
+        if (!token) {
+          set.status = 404;
+          return { error: "Board claim challenge not found" };
+        }
+        const challenge = inspectBoardClaimChallenge(token, code);
+        if (challenge.status === "invalid") {
+          set.status = 404;
+          return { error: "Board claim challenge not found" };
+        }
+        return challenge;
+      },
+      {
+        params: t.Object({ token: t.String() }),
+        query: t.Object({ code: t.Optional(t.String()) }),
+      },
+    )
+
+    .post(
+      "/board-claim/:token/claim",
+      async ({ params, body, set, actor }: any) => {
+        if (actor.type !== "board" || actor.source !== "session" || !actor.userId) {
+          set.status = 401;
+          return { error: "Sign in before claiming board ownership" };
+        }
+
+        const token = String(params.token ?? "").trim();
+        const code = typeof body?.code === "string" ? body.code.trim() : undefined;
+        if (!token) {
+          set.status = 404;
+          return { error: "Board claim challenge not found" };
+        }
+        if (!code) {
+          set.status = 400;
+          return { error: "Claim code is required" };
+        }
+
+        const claimed = await claimBoardOwnership(db, {
+          token,
+          code,
+          userId: actor.userId,
+        });
+
+        if (claimed.status === "invalid") {
+          set.status = 404;
+          return { error: "Board claim challenge not found" };
+        }
+        if (claimed.status === "expired") {
+          set.status = 409;
+          return { error: "Board claim challenge expired. Restart server to generate a new one." };
+        }
+        if (claimed.status === "claimed") {
+          return {
+            claimed: true,
+            userId: claimed.claimedByUserId ?? actor.userId,
+          };
+        }
+
+        set.status = 409;
+        return { error: "Board claim challenge is no longer available" };
+      },
+      {
+        params: t.Object({ token: t.String() }),
+        body: t.Object({ code: t.String() }),
       },
     )
 
@@ -1201,10 +1640,38 @@ export function accessRoutes(db: Db) {
     // Instance admin routes
     // ---------------------------------------------------------------
 
+    .get(
+      "/admin/users",
+      async (ctx: any) => {
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
+        const admins = await svc.listInstanceAdmins();
+        const adminSet = new Set(admins.map((row: { userId: string }) => row.userId));
+
+        return db
+          .select({
+            id: authUsers.id,
+            name: authUsers.name,
+            email: authUsers.email,
+            createdAt: authUsers.createdAt,
+          })
+          .from(authUsers)
+          .orderBy(desc(authUsers.createdAt))
+          .then((rows: Array<{ id: string; name: string; email: string; createdAt: Date }>) =>
+            rows.map((row) => ({
+              ...row,
+              isInstanceAdmin: adminSet.has(row.id),
+            })),
+          );
+      },
+    )
+
     .post(
       "/admin/users/:userId/promote-instance-admin",
       async (ctx: any) => {
         const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         const result = await svc.promoteInstanceAdmin(params.userId);
         ctx.set.status = 201;
         return result;
@@ -1216,6 +1683,8 @@ export function accessRoutes(db: Db) {
       "/admin/users/:userId/demote-instance-admin",
       async (ctx: any) => {
         const { params, set } = ctx;
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         const removed = await svc.demoteInstanceAdmin(params.userId);
         if (!removed) {
           set.status = 404;
@@ -1228,7 +1697,10 @@ export function accessRoutes(db: Db) {
 
     .get(
       "/admin/users/:userId/company-access",
-      async ({ params }) => {
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         const memberships = await svc.listUserCompanyAccess(params.userId);
         return memberships;
       },
@@ -1237,7 +1709,10 @@ export function accessRoutes(db: Db) {
 
     .put(
       "/admin/users/:userId/company-access",
-      async ({ params, body }: any) => {
+      async (ctx: any) => {
+        const { params, body } = ctx;
+        const actor = ctx.actor as Actor;
+        assertInstanceAdmin(actor);
         const memberships = await svc.setUserCompanyAccess(
           params.userId,
           body.companyIds ?? [],

@@ -6,30 +6,48 @@
    */
   import MarkdownBody from "$lib/components/markdown-body.svelte";
   import TimeAgo from "$lib/components/time-ago.svelte";
-  import { Badge, Button, Textarea, Skeleton, Separator } from "$components/ui/index.js";
+  import { Button, Textarea, Skeleton, Separator } from "$components/ui/index.js";
   import { MessageSquare, Trash2, Send } from "lucide-svelte";
 
   interface Props {
     comments: any[];
-    onSubmit: (text: string) => Promise<void>;
+    onSubmit: (text: string, options?: { reopen?: boolean; interrupt?: boolean }) => Promise<void>;
     onDelete?: (commentId: string) => Promise<void>;
     loading?: boolean;
+    allowReopen?: boolean;
+    allowInterrupt?: boolean;
+    activeRunLabel?: string | null;
   }
 
-  let { comments, onSubmit, onDelete, loading = false }: Props = $props();
+  let {
+    comments,
+    onSubmit,
+    onDelete,
+    loading = false,
+    allowReopen = true,
+    allowInterrupt = false,
+    activeRunLabel = null,
+  }: Props = $props();
 
   let newComment = $state("");
   let submitting = $state(false);
   let deletingId = $state<string | null>(null);
   let confirmDeleteId = $state<string | null>(null);
+  let reopenIssue = $state(true);
+  let interruptActiveRun = $state(false);
 
   async function handleSubmit() {
     const text = newComment.trim();
     if (!text || submitting) return;
     submitting = true;
     try {
-      await onSubmit(text);
+      await onSubmit(text, {
+        ...(allowReopen ? { reopen: reopenIssue } : {}),
+        ...(allowInterrupt ? { interrupt: interruptActiveRun } : {}),
+      });
       newComment = "";
+      reopenIssue = true;
+      interruptActiveRun = false;
     } finally {
       submitting = false;
     }
@@ -150,6 +168,30 @@
       class="min-h-[80px] resize-y"
       onkeydown={handleKeydown}
     />
+    {#if allowReopen || allowInterrupt}
+      <div class="flex flex-wrap items-center gap-3 text-xs text-zinc-500 dark:text-zinc-400">
+        {#if allowReopen}
+          <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              bind:checked={reopenIssue}
+              class="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            Re-open issue
+          </label>
+        {/if}
+        {#if allowInterrupt}
+          <label class="inline-flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              bind:checked={interruptActiveRun}
+              class="rounded border-zinc-300 text-zinc-900 focus:ring-zinc-500 dark:border-zinc-700 dark:bg-zinc-900"
+            />
+            Interrupt active run{#if activeRunLabel} ({activeRunLabel}){/if}
+          </label>
+        {/if}
+      </div>
+    {/if}
     <div class="flex items-center justify-between">
       <span class="text-[11px] text-zinc-400">Markdown supported</span>
       <Button

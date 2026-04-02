@@ -2,6 +2,7 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 
 export default defineConfig({
+  site: process.env.DOCS_SITE ?? "https://docs.clawdev.ing",
   integrations: [
     starlight({
       title: "ClawDev",
@@ -12,20 +13,11 @@ export default defineConfig({
       sidebar: [
         {
           label: "Getting Started",
-          items: [
-            { label: "Introduction", slug: "getting-started/introduction" },
-            { label: "Quick Start", slug: "getting-started/quickstart" },
-            { label: "Configuration", slug: "getting-started/configuration" },
-          ],
+          autogenerate: { directory: "getting-started" },
         },
         {
           label: "Guides",
-          items: [
-            { label: "Companies", slug: "guides/companies" },
-            { label: "Agents", slug: "guides/agents" },
-            { label: "Issues & Projects", slug: "guides/issues" },
-            { label: "Plugins", slug: "guides/plugins" },
-          ],
+          autogenerate: { directory: "guides" },
         },
         {
           label: "API Reference",
@@ -33,10 +25,7 @@ export default defineConfig({
         },
         {
           label: "Self-Hosting",
-          items: [
-            { label: "Docker", slug: "self-hosting/docker" },
-            { label: "Environment Variables", slug: "self-hosting/env-vars" },
-          ],
+          autogenerate: { directory: "self-hosting" },
         },
       ],
     }),

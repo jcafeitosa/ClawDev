@@ -22,7 +22,7 @@ This starts:
 - **API server** at `http://localhost:3100`
 - **UI** served by the API server in dev middleware mode (same origin)
 
-No Docker or external database required. ClawDev uses embedded PostgreSQL automatically.
+No Docker or external database required. ClawDev boots a local PGlite-backed database automatically in the dev runner.
 
 ## One-Command Bootstrap
 
@@ -77,7 +77,7 @@ curl http://localhost:3100/api/companies
 To wipe local data and start fresh:
 
 ```sh
-rm -rf ~/.clawdev/instances/default/db
+rm -rf data/pglite
 pnpm dev
 ```
 
@@ -86,7 +86,7 @@ pnpm dev
 | Data | Path |
 |------|------|
 | Config | `~/.clawdev/instances/default/config.json` |
-| Database | `~/.clawdev/instances/default/db` |
+| Database | `data/pglite` |
 | Storage | `~/.clawdev/instances/default/data/storage` |
 | Secrets key | `~/.clawdev/instances/default/secrets/master.key` |
 | Logs | `~/.clawdev/instances/default/logs` |

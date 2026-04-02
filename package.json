@@ -7,7 +7,7 @@
     "dev:watch": "node scripts/dev-runner.mjs watch",
     "dev:once": "node scripts/dev-runner.mjs dev",
     "dev:server": "pnpm --filter @clawdev/server dev",
-    "dev:ui": "pnpm --filter @clawdev/ui dev",
+    "dev:ui": "pnpm --filter @clawdev/svelte-ui dev",
     "dev:svelte": "pnpm --filter @clawdev/svelte-ui dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",

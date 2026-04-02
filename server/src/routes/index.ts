@@ -1,9 +1,11 @@
 export { issueRoutes, companyIssueRoutes } from "./issues.js";
+export { commentRoutes } from "./comments.js";
 export { projectRoutes } from "./projects.js";
 export { goalRoutes } from "./goals.js";
 export { secretRoutes } from "./secrets.js";
 export { pluginRoutes, type PluginRouteDeps } from "./plugins.js";
 export { assetRoutes } from "./assets.js";
+export { documentRoutes } from "./documents.js";
 export { instanceSettingsRoutes } from "./instance-settings.js";
 export { companySkillRoutes } from "./company-skills.js";
 export { agentRoutes } from "./agents.js";

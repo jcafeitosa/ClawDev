@@ -4,7 +4,10 @@ import { companyStore } from "./company.svelte.js";
 import { toastStore, type ToastInput } from "./toast.svelte.js";
 
 export interface LiveEvent {
+  id: number;
+  companyId: string;
   type: string;
+  createdAt: string;
   payload: Record<string, unknown>;
 }
 
@@ -12,7 +15,10 @@ type EventHandler = (event: LiveEvent) => void;
 
 let connected = $state(false);
 let ws: WebSocket | null = null;
+let connectedCompanyId: string | null = null;
+let pendingCompanyId: string | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+let connectTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectDelay = 1000;
 const MAX_RECONNECT_DELAY = 30000;
 const handlers = new Set<EventHandler>();
@@ -30,54 +36,97 @@ function buildWsUrl(companyId: string): string {
   return `${protocol}//${host}/api/companies/${companyId}/events/ws`;
 }
 
+function resetSocketHandlers(target: WebSocket) {
+  target.onopen = null;
+  target.onmessage = null;
+  target.onerror = null;
+  target.onclose = null;
+}
+
+function closeSocketQuietly(target: WebSocket | null) {
+  if (!target) return;
+
+  if (target.readyState === WebSocket.CONNECTING) {
+    // Let the handshake finish and close afterward to avoid the noisy
+    // "WebSocket is closed before the connection is established" browser error.
+    target.onopen = () => {
+      resetSocketHandlers(target);
+      target.close(1000, "provider_unmount");
+    };
+    target.onmessage = null;
+    target.onerror = () => undefined;
+    target.onclose = null;
+    return;
+  }
+
+  resetSocketHandlers(target);
+  if (target.readyState === WebSocket.OPEN) {
+    target.close(1000, "provider_unmount");
+  }
+}
+
 function connect(companyId: string) {
+  if (ws && connectedCompanyId === companyId) return;
+  if (connectTimer && pendingCompanyId === companyId) return;
   disconnect();
-  const url = buildWsUrl(companyId);
-  ws = new WebSocket(url);
+  pendingCompanyId = companyId;
+  const open = () => {
+    const url = buildWsUrl(companyId);
+    pendingCompanyId = null;
+    connectedCompanyId = companyId;
+    ws = new WebSocket(url);
 
-  ws.onopen = () => {
-    connected = true;
-    reconnectDelay = 1000;
-  };
+    ws.onopen = () => {
+      connected = true;
+      reconnectDelay = 1000;
+    };
 
-  ws.onmessage = (event) => {
-    try {
-      const data = JSON.parse(event.data) as LiveEvent;
-      for (const handler of handlers) {
-        handler(data);
+    ws.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data) as LiveEvent;
+        for (const handler of handlers) {
+          handler(data);
+        }
+        processEventToast(data);
+      } catch {
+        // ignore parse errors
       }
-      processEventToast(data);
-    } catch {
-      // ignore parse errors
-    }
+    };
+
+    ws.onclose = () => {
+      connected = false;
+      scheduleReconnect(companyId);
+    };
+
+    ws.onerror = () => {
+      // Let onclose drive reconnects. Closing synchronously here causes
+      // "WebSocket is closed before the connection is established" noise.
+    };
   };
 
-  ws.onclose = () => {
-    connected = false;
-    scheduleReconnect(companyId);
-  };
-
-  ws.onerror = () => {
-    ws?.close();
-  };
+  connectTimer = setTimeout(open, 0);
 }
 
 function disconnect() {
+  if (connectTimer) {
+    clearTimeout(connectTimer);
+    connectTimer = null;
+  }
   if (reconnectTimer) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
   }
-  if (ws) {
-    ws.onclose = null;
-    ws.onerror = null;
-    ws.close();
-    ws = null;
-  }
+  closeSocketQuietly(ws);
+  ws = null;
   connected = false;
+  connectedCompanyId = null;
+  pendingCompanyId = null;
 }
 
 function scheduleReconnect(companyId: string) {
+  if (reconnectTimer) return;
   reconnectTimer = setTimeout(() => {
+    reconnectTimer = null;
     connect(companyId);
   }, reconnectDelay);
   reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
@@ -183,6 +232,7 @@ export const liveEventsStore = {
   },
   /** Reconnect when company changes */
   reconnect(companyId: string) {
+    if (connectedCompanyId === companyId && connected) return;
     connect(companyId);
   },
   disconnect,

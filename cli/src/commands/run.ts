@@ -1,6 +1,8 @@
 import fs from "node:fs";
+import net from "node:net";
 import path from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { fileURLToPath } from "node:url";
+import { spawn, type ChildProcess } from "node:child_process";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
@@ -79,7 +81,11 @@ export async function runCommand(opts: RunOptions): Promise<void> {
   }
 
   p.log.step("Starting ClawDev server...");
-  const startedServer = await importServerEntry();
+  const startedServer = await startServerProcess({
+    config,
+    configPath,
+    forwardedArgs: [],
+  });
 
   if (shouldGenerateBootstrapInviteAfterStart(config)) {
     p.log.step("Generating bootstrap CEO invite");
@@ -89,6 +95,30 @@ export async function runCommand(opts: RunOptions): Promise<void> {
       baseUrl: resolveBootstrapInviteBaseUrl(config, startedServer),
     });
   }
+
+  await startedServer.waitForExit;
+}
+
+type ServerProcessHandle = StartedServer & {
+  waitForExit: Promise<{ code: number; signal: NodeJS.Signals | null }>;
+};
+
+async function findFreePort(preferredPort: number): Promise<number> {
+  for (let candidate = Math.max(1, preferredPort); candidate <= 65535 && candidate < preferredPort + 20; candidate += 1) {
+    const isFree = await new Promise<boolean>((resolve) => {
+      const server = net.createServer();
+      let settled = false;
+      const finish = (value: boolean) => {
+        if (settled) return;
+        settled = true;
+        server.close(() => resolve(value));
+      };
+      server.once("error", () => finish(false));
+      server.listen({ port: candidate, host: "127.0.0.1" }, () => finish(true));
+    });
+    if (isFree) return candidate;
+  }
+  return preferredPort;
 }
 
 function resolveBootstrapInviteBaseUrl(
@@ -107,6 +137,45 @@ function resolveBootstrapInviteBaseUrl(
   }
 
   return startedServer.apiUrl.replace(/\/api$/, "");
+}
+
+function resolvePublicHost(host: string): string {
+  const normalized = host.trim();
+  if (normalized === "0.0.0.0" || normalized === "::") return "localhost";
+  return normalized;
+}
+
+function buildStartedServerInfo(config: ClawDevConfig, listenPort: number): StartedServer {
+  const publicHost = resolvePublicHost(config.server.host);
+  return {
+    host: config.server.host,
+    listenPort,
+    apiUrl: `http://${publicHost}:${listenPort}/api`,
+    databaseUrl:
+      config.database.mode === "postgres"
+        ? (config.database.connectionString ?? "")
+        : `postgres://clawdev:clawdev@127.0.0.1:${config.database.embeddedPostgresPort ?? 54329}/clawdev`,
+  };
+}
+
+async function waitForServerHealth(apiUrl: string, child: ChildProcess): Promise<void> {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 30_000) {
+    if (child.exitCode !== null) {
+      throw new Error(`ClawDev server exited before healthcheck succeeded at ${apiUrl}/api/health.`);
+    }
+
+    try {
+      const response = await fetch(`${apiUrl}/api/health`);
+      if (response.ok) return;
+    } catch {
+      // Server is still booting.
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(`Timed out waiting for ${apiUrl}/api/health.`);
 }
 
 function formatError(err: unknown): string {
@@ -146,27 +215,38 @@ function maybeEnableUiDevMiddleware(entrypoint: string): void {
   }
 }
 
-async function importServerEntry(): Promise<StartedServer> {
+async function startServerProcess(input: {
+  config: ClawDevConfig;
+  configPath: string;
+  forwardedArgs: string[];
+}): Promise<ServerProcessHandle> {
   // Dev mode: try local workspace path (monorepo with tsx)
   const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
-  const devEntry = path.resolve(projectRoot, "server/src/index.ts");
-  if (fs.existsSync(devEntry)) {
-    maybeEnableUiDevMiddleware(devEntry);
-    const mod = await import(pathToFileURL(devEntry).href);
-    return await startServerFromModule(mod, devEntry);
+  const serverEntry = path.resolve(projectRoot, "server/src/index.ts");
+  if (fs.existsSync(serverEntry)) {
+    maybeEnableUiDevMiddleware(serverEntry);
+    return await spawnServerChild({
+      cwd: path.join(projectRoot, "server"),
+      args: ["--filter", "@clawdev/server", "dev", ...input.forwardedArgs],
+      config: input.config,
+    });
   }
 
   // Production mode: import the published @clawdev/server package
   try {
     const mod = await import("@clawdev/server");
-    return await startServerFromModule(mod, "@clawdev/server");
+    const startedServer = await startServerFromModule(mod, "@clawdev/server");
+    return {
+      ...startedServer,
+      waitForExit: new Promise<{ code: number; signal: NodeJS.Signals | null }>(() => undefined),
+    };
   } catch (err) {
     const missingSpecifier = getMissingModuleSpecifier(err);
     const missingServerEntrypoint = !missingSpecifier || missingSpecifier === "@clawdev/server";
     if (isModuleNotFoundError(err) && missingServerEntrypoint) {
       throw new Error(
         `Could not locate a ClawDev server entrypoint.\n` +
-          `Tried: ${devEntry}, @clawdev/server\n` +
+          `Tried: ${serverEntry}, @clawdev/server\n` +
           `${formatError(err)}`,
       );
     }
@@ -175,6 +255,142 @@ async function importServerEntry(): Promise<StartedServer> {
         `${formatError(err)}`,
     );
   }
+}
+
+async function spawnServerChild(input: {
+  cwd: string;
+  args: string[];
+  config: ClawDevConfig;
+}): Promise<ServerProcessHandle> {
+  const pnpmBin = process.platform === "win32" ? "pnpm.cmd" : "pnpm";
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    CLAWDEV_DB_RUNTIME: process.env.CLAWDEV_DB_RUNTIME ?? "pglite",
+  };
+  if (env.CLAWDEV_DB_RUNTIME === "pglite" && !env.PORT) {
+    env.PORT = String(await findFreePort(input.config.server.port));
+  }
+  const child = spawn(pnpmBin, input.args, {
+    cwd: input.cwd,
+    env,
+    stdio: ["ignore", "pipe", "pipe"],
+    shell: process.platform === "win32",
+  });
+
+  let stdoutBuffer = "";
+  let stderrBuffer = "";
+  let resolved = false;
+  let resolvedPort: number | null = null;
+  let resolveReady: ((value: ServerProcessHandle) => void) | null = null;
+  let rejectReady: ((reason: Error) => void) | null = null;
+  const ready = new Promise<ServerProcessHandle>((resolve, reject) => {
+    resolveReady = resolve;
+    rejectReady = reject;
+  });
+  const exitPromise = new Promise<{ code: number; signal: NodeJS.Signals | null }>((resolve, reject) => {
+    child.on("error", reject);
+    child.on("exit", (code, signal) => {
+      if (resolvedPort === null && !resolved) {
+        rejectReady?.(
+          new Error(
+            `ClawDev server exited before reporting a listening port.\n` +
+              `stdout:\n${stdoutBuffer}\n` +
+              `stderr:\n${stderrBuffer}`,
+          ),
+        );
+      }
+      resolve({ code: code ?? 0, signal });
+    });
+  });
+
+  function resolveStart(port: number) {
+    if (resolved) return;
+    resolved = true;
+    resolvedPort = port;
+    void (async () => {
+      try {
+        const startedServer = buildStartedServerInfo(input.config, port);
+        await waitForServerHealth(startedServer.apiUrl, child);
+        resolveReady?.({
+          ...startedServer,
+          waitForExit: exitPromise,
+        });
+      } catch (error) {
+        if (child.exitCode === null) {
+          child.kill("SIGTERM");
+        }
+        rejectReady?.(
+          error instanceof Error
+            ? error
+            : new Error(formatError(error)),
+        );
+      }
+    })();
+  }
+
+  const handleOutput = (chunk: unknown, stream: "stdout" | "stderr") => {
+    const text = String(chunk ?? "");
+    if (text.length === 0) return;
+    if (stream === "stdout") {
+      process.stdout.write(text);
+      stdoutBuffer += text;
+    } else {
+      process.stderr.write(text);
+      stderrBuffer += text;
+    }
+
+    const cleaned = text.replace(/\u001b\[[0-9;]*m/g, "");
+    const match = cleaned.match(/Server listening on\s+.*:(\d+)/);
+    if (match?.[1]) {
+      const port = Number(match[1]);
+      if (Number.isInteger(port) && port > 0) {
+        resolveStart(port);
+      }
+    }
+  };
+
+  child.stdout?.on("data", (chunk) => handleOutput(chunk, "stdout"));
+  child.stderr?.on("data", (chunk) => handleOutput(chunk, "stderr"));
+
+  child.on("error", (error) => {
+    if (!resolved) {
+      rejectReady?.(
+        new Error(
+          `Failed to start ClawDev server child process: ${formatError(error)}`,
+        ),
+      );
+    }
+  });
+
+  const signalHandler = (signal: NodeJS.Signals) => {
+    if (!child.killed) {
+      child.kill(signal);
+    }
+  };
+  process.once("SIGINT", signalHandler);
+  process.once("SIGTERM", signalHandler);
+
+  const cleanup = () => {
+    process.removeListener("SIGINT", signalHandler);
+    process.removeListener("SIGTERM", signalHandler);
+  };
+
+  exitPromise.finally(cleanup).catch(() => undefined);
+
+  const timeout = setTimeout(() => {
+    if (!resolved && child.exitCode === null) {
+      const parsed = stdoutBuffer.match(/Server listening on\s+.*:(\d+)/);
+      if (parsed?.[1]) {
+        const port = Number(parsed[1]);
+        if (Number.isInteger(port) && port > 0) {
+          resolveStart(port);
+        }
+      }
+    }
+  }, 250);
+  timeout.unref?.();
+
+  return await ready;
 }
 
 function shouldGenerateBootstrapInviteAfterStart(config: ClawDevConfig): boolean {

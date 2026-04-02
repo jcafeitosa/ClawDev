@@ -38,7 +38,7 @@
   ],
   "scripts": {
     "dev": "bun run src/index.ts",
-    "dev:node": "tsx src/index.ts",
+    "dev:node": "node --import tsx src/index.ts",
     "dev:watch": "cross-env CLAWDEV_MIGRATION_PROMPT=never CLAWDEV_MIGRATION_AUTO_APPLY=true bun run ./scripts/dev-watch.ts",
     "prepare:ui-dist": "bash ../scripts/prepare-server-ui-dist.sh",
     "build": "tsc && mkdir -p dist/onboarding-assets && cp -R src/onboarding-assets/. dist/onboarding-assets/",

@@ -35,7 +35,7 @@ At minimum that includes:
 
 - `clawdev`
 - `@clawdev/server`
-- `@clawdev/ui`
+- `@clawdev/svelte-ui`
 - public packages under `packages/`
 
 ### 2.1. In npm, open each package settings page

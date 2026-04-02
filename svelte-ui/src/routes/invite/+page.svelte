@@ -127,7 +127,7 @@
         <p class="invite-success-subtitle">Your agent has been added to the company. Save the API key below — it will only be shown once.</p>
 
         <div class="invite-key-box">
-          <label class="invite-key-label">API Key</label>
+          <div class="invite-key-label">API Key</div>
           <div class="invite-key-row">
             <code class="invite-key-value">{agentResult.apiKey}</code>
             <button class="invite-key-copy" onclick={copyKey} aria-label="Copy API key">

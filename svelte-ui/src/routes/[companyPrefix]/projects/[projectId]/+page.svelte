@@ -772,24 +772,27 @@
                       {#if editingWorkspaceId === ws.id}
                         <div class="space-y-3">
                           <div>
-                            <label class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+                            <label for={`workspace-name-${ws.id}`} class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
                             <input
+                              id={`workspace-name-${ws.id}`}
                               type="text"
                               bind:value={editWsName}
                               class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             />
                           </div>
                           <div>
-                            <label class="block text-xs font-medium text-zinc-400 mb-1">CWD</label>
+                            <label for={`workspace-cwd-${ws.id}`} class="block text-xs font-medium text-zinc-400 mb-1">CWD</label>
                             <input
+                              id={`workspace-cwd-${ws.id}`}
                               type="text"
                               bind:value={editWsCwd}
                               class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm font-mono text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             />
                           </div>
                           <div>
-                            <label class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
+                            <label for={`workspace-repo-${ws.id}`} class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
                             <input
+                              id={`workspace-repo-${ws.id}`}
                               type="text"
                               bind:value={editWsRepoUrl}
                               class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -873,8 +876,9 @@
                 </CardHeader>
                 <CardContent class="space-y-4">
                   <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Description</label>
+                    <label for="project-description" class="block text-xs font-medium text-zinc-400 mb-1">Description</label>
                     <textarea
+                      id="project-description"
                       bind:value={settingsDescription}
                       rows="3"
                       class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -882,8 +886,9 @@
                   </div>
                   <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+                      <label for="project-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
                       <select
+                        id="project-status"
                         bind:value={settingsStatus}
                         class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       >
@@ -893,8 +898,9 @@
                       </select>
                     </div>
                     <div>
-                      <label class="block text-xs font-medium text-zinc-400 mb-1">Target Date</label>
+                      <label for="project-target-date" class="block text-xs font-medium text-zinc-400 mb-1">Target Date</label>
                       <input
+                        id="project-target-date"
                         type="date"
                         bind:value={settingsTargetDate}
                         class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -908,10 +914,11 @@
                 <CardHeader>
                   <CardTitle class="text-base">Codebase</CardTitle>
                 </CardHeader>
-                <CardContent class="space-y-3">
+              <CardContent class="space-y-3">
                   <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
+                    <label for="project-repo-url" class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
                     <input
+                      id="project-repo-url"
                       type="text"
                       bind:value={settingsRepoUrl}
                       placeholder="https://github.com/org/repo"
@@ -919,8 +926,9 @@
                     />
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Local Folder</label>
+                    <label for="project-local-folder" class="block text-xs font-medium text-zinc-400 mb-1">Local Folder</label>
                     <input
+                      id="project-local-folder"
                       type="text"
                       bind:value={settingsLocalFolder}
                       placeholder="/absolute/path/to/workspace"
@@ -954,6 +962,7 @@
                   {/if}
                   <div class="flex gap-2">
                     <select
+                      id="project-goal-select"
                       bind:value={settingsGoalToAdd}
                       class="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     >
@@ -975,12 +984,13 @@
                 </CardHeader>
                 <CardContent class="space-y-3">
                   <label class="flex items-center gap-2 text-sm">
-                    <input type="checkbox" bind:checked={policyEnabled} />
+                    <input id="project-policy-enabled" type="checkbox" bind:checked={policyEnabled} />
                     Enable isolated execution workspaces
                   </label>
                   <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Default Mode</label>
+                    <label for="project-policy-default-mode" class="block text-xs font-medium text-zinc-400 mb-1">Default Mode</label>
                     <select
+                      id="project-policy-default-mode"
                       bind:value={policyDefaultMode}
                       class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     >
@@ -991,25 +1001,25 @@
                   </div>
                   <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label class="block text-xs font-medium text-zinc-400 mb-1">Base Ref</label>
-                      <input type="text" bind:value={policyBaseRef} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                      <label for="project-policy-base-ref" class="block text-xs font-medium text-zinc-400 mb-1">Base Ref</label>
+                      <input id="project-policy-base-ref" type="text" bind:value={policyBaseRef} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
                     <div>
-                      <label class="block text-xs font-medium text-zinc-400 mb-1">Branch Template</label>
-                      <input type="text" bind:value={policyBranchTemplate} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                      <label for="project-policy-branch-template" class="block text-xs font-medium text-zinc-400 mb-1">Branch Template</label>
+                      <input id="project-policy-branch-template" type="text" bind:value={policyBranchTemplate} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
                     <div>
-                      <label class="block text-xs font-medium text-zinc-400 mb-1">Worktree Parent Dir</label>
-                      <input type="text" bind:value={policyWorktreeParentDir} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                      <label for="project-policy-worktree-parent-dir" class="block text-xs font-medium text-zinc-400 mb-1">Worktree Parent Dir</label>
+                      <input id="project-policy-worktree-parent-dir" type="text" bind:value={policyWorktreeParentDir} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Provision Command</label>
-                    <input type="text" bind:value={policyProvisionCommand} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    <label for="project-policy-provision-command" class="block text-xs font-medium text-zinc-400 mb-1">Provision Command</label>
+                    <input id="project-policy-provision-command" type="text" bind:value={policyProvisionCommand} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label class="block text-xs font-medium text-zinc-400 mb-1">Teardown Command</label>
-                    <input type="text" bind:value={policyTeardownCommand} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    <label for="project-policy-teardown-command" class="block text-xs font-medium text-zinc-400 mb-1">Teardown Command</label>
+                    <input id="project-policy-teardown-command" type="text" bind:value={policyTeardownCommand} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                   </div>
                   <div class="flex items-center gap-2">
                     <Button size="sm" onclick={saveSettings} disabled={savingSettings}>

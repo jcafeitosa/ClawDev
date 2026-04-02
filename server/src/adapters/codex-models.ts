@@ -342,22 +342,29 @@ export async function listCodexModels(): Promise<AdapterModel[]> {
     const cachedSlugs = new Set(
       cacheEntries.filter((e) => e.visibility !== "hide").map((e) => e.slug.trim()),
     );
-    const modelsToProbe = cachedSlugs.size > 0
-      ? final.filter((m) => cachedSlugs.has(m.id)).map((m) => m.id)
-      : final.slice(0, 5).map((m) => m.id); // Fallback: probe first 5 as sample
 
+    // Only probe when we have local cache entries that tell us which models
+    // this account is supposed to support. Probing the full API list is slow
+    // and adds little value when the caller already has a valid OpenAI key.
+    if (cachedSlugs.size === 0) {
+      cached = {
+        keyFingerprint,
+        expiresAt: now + OPENAI_MODELS_CACHE_TTL_MS,
+        models: final,
+      };
+      return final;
+    }
+
+    const modelsToProbe = final.filter((m) => cachedSlugs.has(m.id)).map((m) => m.id);
     const probeResults = await probeCodexModels(modelsToProbe);
     const probedFinal = final.map((m) => {
       const probe = probeResults.get(m.id);
       if (probe) {
         return { ...m, status: probe.status, statusDetail: probe.statusDetail, probedAt: new Date().toISOString() };
       }
-      // Models not probed: if they're in the cache, assume available;
-      // if they're only from API and not in cache, mark as unavailable
-      if (cachedSlugs.size > 0 && !cachedSlugs.has(m.id)) {
-        return { ...m, status: "unavailable" as AdapterModelStatus, statusDetail: "Model not available on this account", probedAt: new Date().toISOString() };
-      }
-      return m;
+      return cachedSlugs.has(m.id)
+        ? m
+        : { ...m, status: "unavailable" as AdapterModelStatus, statusDetail: "Model not available on this account", probedAt: new Date().toISOString() };
     });
 
     cached = {

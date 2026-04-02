@@ -452,7 +452,13 @@ async function isPortAvailable(port: number): Promise<boolean> {
   return await new Promise<boolean>((resolve) => {
     const server = createServer();
     server.unref();
-    server.once("error", () => resolve(false));
+    server.once("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EPERM" || err.code === "EACCES") {
+        resolve(true);
+        return;
+      }
+      resolve(false);
+    });
     server.listen(port, "127.0.0.1", () => {
       server.close(() => resolve(true));
     });
@@ -461,8 +467,11 @@ async function isPortAvailable(port: number): Promise<boolean> {
 
 async function findAvailablePort(preferredPort: number, reserved = new Set<number>()): Promise<number> {
   let port = Math.max(1, Math.trunc(preferredPort));
-  while (reserved.has(port) || !(await isPortAvailable(port))) {
+  while (port < 65536 && (reserved.has(port) || !(await isPortAvailable(port)))) {
     port += 1;
+  }
+  if (port >= 65536) {
+    throw new Error(`No available ports found starting at ${preferredPort}.`);
   }
   return port;
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
@@ -245,8 +246,17 @@
 {#snippet agentRowContent(agent: Agent)}
   {@const liveInfo = liveRunByAgent.get(agent.id)}
   {@const subtitle = `${roleLabel(agent.role)}${agent.title ? ` - ${agent.title}` : ''}`}
-  <a
-    href="/{$page.params.companyPrefix}/agents/{agent.urlKey ?? agent.id}"
+  {@const agentHref = `/{$page.params.companyPrefix}/agents/{agent.urlKey ?? agent.id}`}
+  <div
+    role="link"
+    tabindex="0"
+    onclick={() => goto(agentHref)}
+    onkeydown={(e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        goto(agentHref);
+      }
+    }}
     class="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left no-underline text-inherit"
   >
     <!-- Status dot -->
@@ -266,7 +276,7 @@
       <span class="sm:hidden">
         {#if liveInfo}
           <a
-            href="/{$page.params.companyPrefix}/agents/{agent.urlKey ?? agent.id}/runs/{liveInfo.runId}"
+            href="/{$page.params.companyPrefix}/runs/{liveInfo.runId}"
             onclick={(e) => e.stopPropagation()}
             class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
           >
@@ -287,7 +297,7 @@
       <div class="hidden sm:flex items-center gap-3">
         {#if liveInfo}
           <a
-            href="/{$page.params.companyPrefix}/agents/{agent.urlKey ?? agent.id}/runs/{liveInfo.runId}"
+            href="/{$page.params.companyPrefix}/runs/{liveInfo.runId}"
             onclick={(e) => e.stopPropagation()}
             class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
           >
@@ -311,7 +321,7 @@
         </span>
       </div>
     </div>
-  </a>
+  </div>
 {/snippet}
 
 {#snippet treeNodes(nodes: TreeNode[], depth: number)}

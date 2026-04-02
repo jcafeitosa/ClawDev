@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { INBOX_MINE_ISSUE_STATUS_FILTER } from "@clawdev/shared";
 import { HttpError } from "../errors.js";
 import { agentRoutes } from "../routes/agents.js";
 
@@ -34,6 +35,7 @@ const baseAgent = {
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
   create: vi.fn(),
+  update: vi.fn(),
   updatePermissions: vi.fn(),
   getChainOfCommand: vi.fn(),
   resolveByReference: vi.fn(),
@@ -60,6 +62,7 @@ const mockBudgetService = vi.hoisted(() => ({
 const mockHeartbeatService = vi.hoisted(() => ({
   listTaskSessions: vi.fn(),
   resetRuntimeSession: vi.fn(),
+  wakeup: vi.fn(),
 }));
 
 const mockIssueApprovalService = vi.hoisted(() => ({
@@ -78,6 +81,12 @@ const mockSecretService = vi.hoisted(() => ({
 const mockAgentInstructionsService = vi.hoisted(() => ({
   materializeManagedBundle: vi.fn(),
 }));
+const mockListAdapterModels = vi.hoisted(() => vi.fn(async () => [
+  { id: "gpt-5", label: "GPT-5" },
+]));
+const mockFindServerAdapter = vi.hoisted(() => vi.fn(() => ({
+  testEnvironment: vi.fn(async () => ({ ok: true })),
+})));
 const mockCompanySkillService = vi.hoisted(() => ({
   listRuntimeSkillEntries: vi.fn(),
   resolveRequestedSkillKeys: vi.fn(),
@@ -97,6 +106,7 @@ vi.mock("../services/index.js", () => ({
   issueService: () => mockIssueService,
   logActivity: mockLogActivity,
   secretService: () => mockSecretService,
+  normalizeRuntimeConfigForAdapterType: vi.fn((_adapterType, runtimeConfig) => runtimeConfig),
   syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
   workspaceOperationService: () => mockWorkspaceOperationService,
   instanceSettingsService: () => ({ getGeneral: vi.fn(async () => ({ censorUsernameInLogs: false })) }),
@@ -116,8 +126,20 @@ vi.mock("../routes/org-chart-svg.js", () => ({
   ORG_CHART_STYLES: ["warmth"],
 }));
 
+vi.mock("../adapters/index.js", () => ({
+  listAdapterModels: mockListAdapterModels,
+  findServerAdapter: mockFindServerAdapter,
+  listServerAdapters: vi.fn(() => []),
+}));
+
 vi.mock("@clawdev/adapter-claude-local/server", () => ({
+  execute: vi.fn(),
   runClaudeLogin: vi.fn(async () => ({ success: true })),
+  listClaudeSkills: vi.fn(async () => []),
+  syncClaudeSkills: vi.fn(async () => []),
+  testEnvironment: vi.fn(async () => ({ ok: true })),
+  sessionCodec: { parse: vi.fn(), serialize: vi.fn() },
+  getQuotaWindows: vi.fn(async () => []),
 }));
 
 function createDbStub() {
@@ -167,6 +189,7 @@ describe("agent permission routes", () => {
     mockAgentService.getChainOfCommand.mockResolvedValue([]);
     mockAgentService.resolveByReference.mockResolvedValue({ ambiguous: false, agent: baseAgent });
     mockAgentService.create.mockResolvedValue(baseAgent);
+    mockAgentService.update.mockResolvedValue(baseAgent);
     mockAgentService.updatePermissions.mockResolvedValue(baseAgent);
     mockAccessService.getMembership.mockResolvedValue({
       id: "membership-1",
@@ -301,5 +324,193 @@ describe("agent permission routes", () => {
     );
     expect(res.body.access.canAssignTasks).toBe(true);
     expect(res.body.access.taskAssignSource).toBe("agent_creator");
+  });
+
+  it("allows changing an agent provider through the edit route", async () => {
+    mockAgentService.update.mockResolvedValue({
+      ...baseAgent,
+      adapterType: "codex_local",
+      runtimeConfig: { model: "gpt-5.3-codex" },
+    });
+
+    const app = createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    const res = await req(app, "PATCH", `/api/agents/${agentId}`, {
+      adapterType: "codex_local",
+      runtimeConfig: { model: "gpt-5.3-codex" },
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockAgentService.update).toHaveBeenCalledWith(
+      agentId,
+      expect.objectContaining({
+        adapterType: "codex_local",
+        runtimeConfig: { model: "gpt-5.3-codex" },
+      }),
+      expect.objectContaining({
+        recordRevision: expect.objectContaining({
+          source: "api",
+        }),
+      }),
+    );
+    expect(res.body.adapterType).toBe("codex_local");
+  });
+
+  it("exposes the agent inbox mine route", async () => {
+    mockIssueService.list.mockResolvedValue([
+      {
+        id: "issue-1",
+        identifier: "PAP-910",
+        title: "Inbox follow-up",
+        status: "todo",
+      },
+    ]);
+
+    const app = createApp({
+      type: "agent",
+      agentId,
+      companyId,
+      runId: "run-1",
+      source: "agent_key",
+    });
+
+    const res = await req(app, "GET", "/api/agents/me/inbox/mine?userId=board-user");
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.list).toHaveBeenCalledWith(companyId, {
+      touchedByUserId: "board-user",
+      inboxArchivedByUserId: "board-user",
+      status: INBOX_MINE_ISSUE_STATUS_FILTER,
+    });
+    expect(res.body).toEqual([
+      {
+        id: "issue-1",
+        identifier: "PAP-910",
+        title: "Inbox follow-up",
+        status: "todo",
+      },
+    ]);
+  });
+
+  it("exposes the agent inbox-lite route", async () => {
+    mockIssueService.list.mockResolvedValue([
+      {
+        id: "issue-1",
+        identifier: "PAP-911",
+        title: "Inbox lite follow-up",
+        status: "todo",
+        priority: "high",
+        projectId: null,
+        goalId: null,
+        parentId: null,
+        updatedAt: new Date("2026-03-19T00:00:00.000Z"),
+        activeRun: null,
+      },
+    ]);
+
+    const app = createApp({
+      type: "agent",
+      agentId,
+      companyId,
+      runId: "run-1",
+      source: "agent_key",
+    });
+
+    const res = await req(app, "GET", "/api/agents/me/inbox-lite");
+
+    expect(res.status).toBe(200);
+    expect(mockIssueService.list).toHaveBeenCalledWith(companyId, {
+      assigneeAgentId: agentId,
+      status: "todo,in_progress,blocked",
+    });
+    expect(res.body).toEqual([
+      {
+        id: "issue-1",
+        identifier: "PAP-911",
+        title: "Inbox lite follow-up",
+        status: "todo",
+        priority: "high",
+        projectId: null,
+        goalId: null,
+        parentId: null,
+        updatedAt: new Date("2026-03-19T00:00:00.000Z").toISOString(),
+        activeRun: null,
+      },
+    ]);
+  });
+
+  it("lists adapter models and tests adapter environments for onboarding", async () => {
+    const app = createApp({
+      type: "board",
+      userId: "board-user",
+      companyIds: [companyId],
+      source: "local_implicit",
+      isInstanceAdmin: true,
+    });
+
+    const modelsRes = await req(app, "GET", `/api/companies/${companyId}/adapters/codex_local/models`);
+    expect(modelsRes.status).toBe(200);
+    expect(mockListAdapterModels).toHaveBeenCalledWith("codex_local");
+    expect(modelsRes.body).toEqual([{ id: "gpt-5", label: "GPT-5" }]);
+
+    const envRes = await req(app, "POST", `/api/companies/${companyId}/adapters/codex_local/test-environment`, {
+      adapterConfig: { apiKey: "secret" },
+    });
+    expect(envRes.status).toBe(200);
+    expect(mockFindServerAdapter).toHaveBeenCalledWith("codex_local");
+    expect(envRes.body).toEqual({ ok: true });
+  });
+
+  it("wakes up an agent without requiring companyId in the body", async () => {
+    mockHeartbeatService.wakeup.mockResolvedValue({
+      id: "run-1",
+      companyId,
+      agentId,
+      status: "queued",
+    });
+
+    const app = createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    const res = await req(app, "POST", `/api/agents/${agentId}/wakeup`, {
+      source: "on_demand",
+      triggerDetail: "manual",
+      reason: "manual",
+      payload: { source: "dashboard" },
+      forceFreshSession: true,
+    });
+
+    expect(res.status).toBe(202);
+    expect(mockHeartbeatService.wakeup).toHaveBeenCalledWith(agentId, {
+      source: "on_demand",
+      triggerDetail: "manual",
+      reason: "manual",
+      payload: { source: "dashboard" },
+      idempotencyKey: null,
+      requestedByActorType: "user",
+      requestedByActorId: "board-user",
+      contextSnapshot: {
+        triggeredBy: "board",
+        actorId: "board-user",
+        forceFreshSession: true,
+      },
+    });
+    expect(res.body).toEqual({
+      id: "run-1",
+      companyId,
+      agentId,
+      status: "queued",
+    });
   });
 });

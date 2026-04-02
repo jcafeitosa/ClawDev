@@ -1,6 +1,11 @@
 import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
-import { companyModelPreferences, modelRoutingLog, modelCatalog } from "@clawdev/db";
+import {
+  companyModelPreferences,
+  modelRoutingLog,
+  modelCatalog,
+  providerModelStatus,
+} from "@clawdev/db";
 import type { createProviderStatusService } from "./provider-status.js";
 
 // ---------------------------------------------------------------------------
@@ -10,7 +15,14 @@ import type { createProviderStatusService } from "./provider-status.js";
 export interface ModelResolution {
   adapterType: string;
   modelId: string;
-  resolution: "pinned" | "default" | "fallback" | "routed" | "local_preferred";
+  resolution:
+    | "pinned"
+    | "default"
+    | "fallback"
+    | "routed"
+    | "local_preferred"
+    | "performance_optimized"
+    | "availability_optimized";
   fallbackDepth: number;
   reason: string;
 }
@@ -81,48 +93,134 @@ export function createModelRouterService(
     return null;
   }
 
-  /**
-   * Cost-optimized routing: pick the cheapest available model from the catalog.
-   */
-  async function cheapestAvailable(
-    adapterType?: string,
-  ): Promise<ModelResolution | null> {
-    const availableModels = await providerStatus.getAvailableModels(adapterType);
-    if (availableModels.length === 0) return null;
+  type CandidateModel = {
+    adapterType: string;
+    modelId: string;
+    inputPriceMicro: number | null;
+    avgLatencyMs: number | null;
+    consecutiveFailures: number;
+    isFree: boolean;
+    isLocal: boolean;
+  };
 
-    // Build a set for quick lookup
-    const availableSet = new Set(
-      availableModels.map((m) => `${m.adapterType}::${m.modelId}`),
-    );
-
-    const conditions = adapterType
-      ? [eq(modelCatalog.adapterType, adapterType)]
-      : [];
-
+  async function loadAvailableCandidates(adapterType?: string): Promise<CandidateModel[]> {
+    const catalogConditions = adapterType ? [eq(modelCatalog.adapterType, adapterType)] : [];
     const catalogRows = await db
       .select({
         adapterType: modelCatalog.adapterType,
         modelId: modelCatalog.modelId,
         inputPriceMicro: modelCatalog.inputPriceMicro,
+        isFree: modelCatalog.isFree,
+        isLocal: modelCatalog.isLocal,
       })
       .from(modelCatalog)
-      .where(conditions.length > 0 ? and(...conditions) : undefined)
-      .orderBy(modelCatalog.inputPriceMicro);
+      .where(catalogConditions.length > 0 ? and(...catalogConditions) : undefined);
 
+    const statusConditions = adapterType ? [eq(providerModelStatus.adapterType, adapterType)] : [];
+    const statusRows = await db
+      .select({
+        adapterType: providerModelStatus.adapterType,
+        modelId: providerModelStatus.modelId,
+        avgLatencyMs: providerModelStatus.avgLatencyMs,
+        consecutiveFailures: providerModelStatus.consecutiveFailures,
+      })
+      .from(providerModelStatus)
+      .where(statusConditions.length > 0 ? and(...statusConditions) : undefined);
+
+    const statusMap = new Map(
+      statusRows.map((row) => [`${row.adapterType}::${row.modelId}`, row] as const),
+    );
+
+    const candidates: CandidateModel[] = [];
     for (const row of catalogRows) {
-      const key = `${row.adapterType}::${row.modelId}`;
-      if (availableSet.has(key)) {
-        return {
-          adapterType: row.adapterType,
-          modelId: row.modelId,
-          resolution: "routed",
-          fallbackDepth: 0,
-          reason: `cost_optimized: cheapest available at ${row.inputPriceMicro} micro/input`,
-        };
+      if (!(await providerStatus.isAvailable(row.adapterType, row.modelId))) {
+        continue;
       }
+      const status = statusMap.get(`${row.adapterType}::${row.modelId}`);
+      candidates.push({
+        adapterType: row.adapterType,
+        modelId: row.modelId,
+        inputPriceMicro: row.inputPriceMicro ?? null,
+        avgLatencyMs: status?.avgLatencyMs ?? null,
+        consecutiveFailures: status?.consecutiveFailures ?? 0,
+        isFree: Boolean(row.isFree),
+        isLocal: Boolean(row.isLocal),
+      });
     }
 
-    return null;
+    return candidates;
+  }
+
+  function chooseCheapest(candidates: CandidateModel[], preferFreeModels: boolean): CandidateModel | null {
+    const pool = preferFreeModels ? candidates.filter((candidate) => candidate.isFree) : candidates;
+    const effective = pool.length > 0 ? pool : candidates;
+    if (effective.length === 0) return null;
+    return [...effective].sort((a, b) => {
+      const priceA = a.inputPriceMicro ?? Number.MAX_SAFE_INTEGER;
+      const priceB = b.inputPriceMicro ?? Number.MAX_SAFE_INTEGER;
+      if (priceA !== priceB) return priceA - priceB;
+      const failuresA = a.consecutiveFailures ?? 0;
+      const failuresB = b.consecutiveFailures ?? 0;
+      if (failuresA !== failuresB) return failuresA - failuresB;
+      const latencyA = a.avgLatencyMs ?? Number.MAX_SAFE_INTEGER;
+      const latencyB = b.avgLatencyMs ?? Number.MAX_SAFE_INTEGER;
+      if (latencyA !== latencyB) return latencyA - latencyB;
+      return a.modelId.localeCompare(b.modelId);
+    })[0]!;
+  }
+
+  function chooseFastest(candidates: CandidateModel[]): CandidateModel | null {
+    if (candidates.length === 0) return null;
+    return [...candidates].sort((a, b) => {
+      const latencyA = a.avgLatencyMs ?? Number.MAX_SAFE_INTEGER;
+      const latencyB = b.avgLatencyMs ?? Number.MAX_SAFE_INTEGER;
+      if (latencyA !== latencyB) return latencyA - latencyB;
+      const priceA = a.inputPriceMicro ?? Number.MAX_SAFE_INTEGER;
+      const priceB = b.inputPriceMicro ?? Number.MAX_SAFE_INTEGER;
+      if (priceA !== priceB) return priceA - priceB;
+      const failuresA = a.consecutiveFailures ?? 0;
+      const failuresB = b.consecutiveFailures ?? 0;
+      if (failuresA !== failuresB) return failuresA - failuresB;
+      return a.modelId.localeCompare(b.modelId);
+    })[0]!;
+  }
+
+  function chooseMostAvailable(candidates: CandidateModel[]): CandidateModel | null {
+    if (candidates.length === 0) return null;
+    return [...candidates].sort((a, b) => {
+      const failuresA = a.consecutiveFailures ?? 0;
+      const failuresB = b.consecutiveFailures ?? 0;
+      if (failuresA !== failuresB) return failuresA - failuresB;
+      const latencyA = a.avgLatencyMs ?? Number.MAX_SAFE_INTEGER;
+      const latencyB = b.avgLatencyMs ?? Number.MAX_SAFE_INTEGER;
+      if (latencyA !== latencyB) return latencyA - latencyB;
+      const priceA = a.inputPriceMicro ?? Number.MAX_SAFE_INTEGER;
+      const priceB = b.inputPriceMicro ?? Number.MAX_SAFE_INTEGER;
+      if (priceA !== priceB) return priceA - priceB;
+      return a.modelId.localeCompare(b.modelId);
+    })[0]!;
+  }
+
+  /**
+   * Cost-optimized routing: pick the cheapest available model from the catalog.
+   */
+  async function cheapestAvailable(
+    adapterType?: string,
+    preferFreeModels = false,
+  ): Promise<ModelResolution | null> {
+    const candidates = await loadAvailableCandidates(adapterType);
+    const selected = chooseCheapest(candidates, preferFreeModels);
+    if (!selected) return null;
+
+    return {
+      adapterType: selected.adapterType,
+      modelId: selected.modelId,
+      resolution: "routed",
+      fallbackDepth: 0,
+      reason: preferFreeModels
+        ? "prefer_free_models: cheapest available free model selected"
+        : `cost_optimized: cheapest available at ${selected.inputPriceMicro ?? "unknown"} micro/input`,
+    };
   }
 
   /**
@@ -132,40 +230,47 @@ export function createModelRouterService(
   async function localPreferred(
     adapterType?: string,
   ): Promise<ModelResolution | null> {
-    const availableModels = await providerStatus.getAvailableModels(adapterType);
-    const availableSet = new Set(
-      availableModels.map((m) => `${m.adapterType}::${m.modelId}`),
-    );
+    const candidates = await loadAvailableCandidates(adapterType);
+    const localCandidates = candidates.filter((candidate) => candidate.isLocal);
+    const selected = chooseCheapest(localCandidates.length > 0 ? localCandidates : candidates, false);
+    if (!selected) return null;
+    return {
+      adapterType: selected.adapterType,
+      modelId: selected.modelId,
+      resolution: "local_preferred",
+      fallbackDepth: 0,
+      reason: selected.isLocal ? "local model available" : "no local model available; cost optimized fallback",
+    };
+  }
 
-    const localConditions = [eq(modelCatalog.isLocal, true)];
-    if (adapterType) {
-      localConditions.push(eq(modelCatalog.adapterType, adapterType));
-    }
+  async function fastestAvailable(
+    adapterType?: string,
+  ): Promise<ModelResolution | null> {
+    const candidates = await loadAvailableCandidates(adapterType);
+    const selected = chooseFastest(candidates);
+    if (!selected) return null;
+    return {
+      adapterType: selected.adapterType,
+      modelId: selected.modelId,
+      resolution: "performance_optimized",
+      fallbackDepth: 0,
+      reason: `performance_optimized: fastest available at ${selected.avgLatencyMs ?? "unknown"} ms`,
+    };
+  }
 
-    const localRows = await db
-      .select({
-        adapterType: modelCatalog.adapterType,
-        modelId: modelCatalog.modelId,
-      })
-      .from(modelCatalog)
-      .where(and(...localConditions))
-      .orderBy(modelCatalog.inputPriceMicro);
-
-    for (const row of localRows) {
-      const key = `${row.adapterType}::${row.modelId}`;
-      if (availableSet.has(key)) {
-        return {
-          adapterType: row.adapterType,
-          modelId: row.modelId,
-          resolution: "local_preferred",
-          fallbackDepth: 0,
-          reason: "local model available",
-        };
-      }
-    }
-
-    // Fall through to cost-optimized
-    return cheapestAvailable(adapterType);
+  async function mostAvailable(
+    adapterType?: string,
+  ): Promise<ModelResolution | null> {
+    const candidates = await loadAvailableCandidates(adapterType);
+    const selected = chooseMostAvailable(candidates);
+    if (!selected) return null;
+    return {
+      adapterType: selected.adapterType,
+      modelId: selected.modelId,
+      resolution: "availability_optimized",
+      fallbackDepth: 0,
+      reason: `availability_optimized: lowest failure rate (${selected.consecutiveFailures} failures)`,
+    };
   }
 
   // -----------------------------------------------------------------------
@@ -210,7 +315,31 @@ export function createModelRouterService(
       const prefs = await loadPreferences(companyId);
 
       if (!prefs) {
-        // No routing configured — pass through the request as-is
+        if (requestedModelId && requestedModelId !== "auto") {
+          const available = await providerStatus.isAvailable(
+            requestedAdapterType,
+            requestedModelId,
+          );
+          if (available) {
+            return {
+              adapterType: requestedAdapterType,
+              modelId: requestedModelId,
+              resolution: "pinned",
+              fallbackDepth: 0,
+              reason: "requested model is available",
+            };
+          }
+        }
+
+        const fallback = await cheapestAvailable(undefined, false);
+        if (fallback) {
+          return {
+            ...fallback,
+            reason: "no routing configured; selected best available model across providers",
+          };
+        }
+
+        // No routing configured and no catalog candidates — pass through the request as-is
         return {
           adapterType: requestedAdapterType,
           modelId: requestedModelId ?? "auto",
@@ -221,12 +350,14 @@ export function createModelRouterService(
       }
 
       const strategy = prefs.routingStrategy;
-      const primaryAdapterType =
-        requestedAdapterType || prefs.defaultAdapterType || requestedAdapterType;
+      const primaryAdapterType = prefs.defaultAdapterType ?? requestedAdapterType;
+      const routingAdapterType = prefs.defaultAdapterType ?? undefined;
       const primaryModelId =
         requestedModelId && requestedModelId !== "auto"
           ? requestedModelId
           : prefs.defaultModelId ?? undefined;
+      const preferLocalModels = Boolean(prefs.preferLocalModels);
+      const preferFreeModels = Boolean(prefs.preferFreeModels);
 
       // ---- Step 3: strategy dispatch ----
 
@@ -270,17 +401,21 @@ export function createModelRouterService(
         }
 
         // Nothing in chain was available
-        return {
-          adapterType: primaryAdapterType,
-          modelId: primaryModelId ?? "auto",
-          resolution: "pinned",
-          fallbackDepth: 0,
-          reason: "all fallback options exhausted; using primary as last resort",
-        };
-      }
+          return {
+            adapterType: primaryAdapterType,
+            modelId: primaryModelId ?? "auto",
+            resolution: "pinned",
+            fallbackDepth: 0,
+            reason: "all fallback options exhausted; using primary as last resort",
+          };
+        }
 
       if (strategy === "cost_optimized") {
-        const result = await cheapestAvailable(primaryAdapterType);
+        if (preferLocalModels) {
+          const localResult = await localPreferred(routingAdapterType);
+          if (localResult) return localResult;
+        }
+        const result = await cheapestAvailable(routingAdapterType, preferFreeModels);
         if (result) return result;
 
         return {
@@ -292,8 +427,42 @@ export function createModelRouterService(
         };
       }
 
+      if (strategy === "performance_optimized") {
+        if (preferLocalModels) {
+          const localResult = await localPreferred(routingAdapterType);
+          if (localResult) return localResult;
+        }
+        const result = await fastestAvailable(routingAdapterType);
+        if (result) return result;
+
+        return {
+          adapterType: primaryAdapterType,
+          modelId: primaryModelId ?? "auto",
+          resolution: "performance_optimized",
+          fallbackDepth: 0,
+          reason: "no available models found in catalog for performance_optimized strategy",
+        };
+      }
+
+      if (strategy === "availability_optimized") {
+        if (preferLocalModels) {
+          const localResult = await localPreferred(routingAdapterType);
+          if (localResult) return localResult;
+        }
+        const result = await mostAvailable(routingAdapterType);
+        if (result) return result;
+
+        return {
+          adapterType: primaryAdapterType,
+          modelId: primaryModelId ?? "auto",
+          resolution: "availability_optimized",
+          fallbackDepth: 0,
+          reason: "no available models found in catalog for availability_optimized strategy",
+        };
+      }
+
       if (strategy === "local_preferred") {
-        const result = await localPreferred(primaryAdapterType);
+        const result = await localPreferred(routingAdapterType);
         if (result) return result;
 
         return {

@@ -16,6 +16,10 @@ const mockIssueService = vi.hoisted(() => ({
   getByIdentifier: vi.fn(),
 }));
 
+const mockDb = vi.hoisted(() => ({
+  select: vi.fn(),
+}));
+
 vi.mock("../services/activity.js", () => ({
   activityService: () => mockActivityService,
 }));
@@ -25,6 +29,13 @@ vi.mock("../services/index.js", () => ({
 }));
 
 function createApp() {
+  mockDb.select.mockReturnValue({
+    from: vi.fn().mockReturnValue({
+      where: vi.fn().mockReturnValue({
+        then: vi.fn().mockResolvedValue([{ companyId: "company-1" }]),
+      }),
+    }),
+  });
   return new Elysia({ prefix: "/api" })
     .onError(({ error, set }) => {
       if (error instanceof HttpError) {
@@ -39,11 +50,11 @@ function createApp() {
         type: "board",
         userId: "user-1",
         companyIds: ["company-1"],
-        source: "session",
-        isInstanceAdmin: false,
+        source: "local_implicit",
+        isInstanceAdmin: true,
       },
     }))
-    .use(activityRoutes({} as any));
+    .use(activityRoutes(mockDb as any));
 }
 
 async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
@@ -79,5 +90,20 @@ describe("activity routes", () => {
     expect(mockIssueService.getById).not.toHaveBeenCalled();
     expect(mockActivityService.runsForIssue).toHaveBeenCalledWith("company-1", "issue-uuid-1");
     expect(res.body).toEqual([{ runId: "run-1" }]);
+  });
+
+  it("supports the heartbeat-runs alias for run issue lookup", async () => {
+    mockActivityService.issuesForRun.mockResolvedValue([
+      {
+        issueId: "issue-1",
+        identifier: "PAP-1",
+      },
+    ]);
+
+    const res = await req(createApp(), "GET", "/api/heartbeat-runs/run-1/issues");
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual([{ issueId: "issue-1", identifier: "PAP-1" }]);
+    expect(mockActivityService.issuesForRun).toHaveBeenCalledWith("run-1");
   });
 });

@@ -1346,6 +1346,31 @@ export async function ensureRuntimeServicesForRun(input: {
   return refs;
 }
 
+export async function startRuntimeServicesForWorkspaceControl(input: {
+  db?: Db;
+  invocationId?: string;
+  actor: ExecutionWorkspaceAgentRef;
+  issue: ExecutionWorkspaceIssueRef | null;
+  workspace: RealizedExecutionWorkspace;
+  executionWorkspaceId?: string | null;
+  config: Record<string, unknown>;
+  adapterEnv: Record<string, string>;
+  onLog?: (stream: "stdout" | "stderr", chunk: string) => Promise<void>;
+}): Promise<RuntimeServiceRef[]> {
+  const runId = input.invocationId ?? randomUUID();
+  return await ensureRuntimeServicesForRun({
+    db: input.db,
+    runId,
+    agent: input.actor,
+    issue: input.issue,
+    workspace: input.workspace,
+    executionWorkspaceId: input.executionWorkspaceId,
+    config: input.config,
+    adapterEnv: input.adapterEnv,
+    onLog: input.onLog,
+  });
+}
+
 export async function releaseRuntimeServicesForRun(runId: string) {
   const acquired = runtimeServiceLeasesByRun.get(runId) ?? [];
   runtimeServiceLeasesByRun.delete(runId);
@@ -1363,6 +1388,39 @@ export async function releaseRuntimeServicesForRun(runId: string) {
       }
       scheduleIdleStop(record);
     }
+  }
+}
+
+export async function stopRuntimeServicesForProjectWorkspace(input: {
+  db?: Db;
+  projectWorkspaceId: string;
+}) {
+  const matchingServiceIds = Array.from(runtimeServicesById.values())
+    .filter((record) => record.projectWorkspaceId === input.projectWorkspaceId && record.scopeType === "project_workspace")
+    .map((record) => record.id);
+
+  for (const serviceId of matchingServiceIds) {
+    await stopRuntimeService(serviceId);
+  }
+
+  if (input.db) {
+    const now = new Date();
+    await input.db
+      .update(workspaceRuntimeServices)
+      .set({
+        status: "stopped",
+        healthStatus: "unknown",
+        stoppedAt: now,
+        lastUsedAt: now,
+        updatedAt: now,
+      })
+      .where(
+        and(
+          eq(workspaceRuntimeServices.projectWorkspaceId, input.projectWorkspaceId),
+          eq(workspaceRuntimeServices.scopeType, "project_workspace"),
+          inArray(workspaceRuntimeServices.status, ["starting", "running"]),
+        ),
+      );
   }
 }
 
