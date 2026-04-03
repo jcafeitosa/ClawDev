@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { dashboardRefreshStore } from '$stores/dashboard-refresh.svelte.js';
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
@@ -36,13 +36,10 @@
   let recentIssues = $state<any[]>([]);
 
   let prefix = $derived($page.params.companyPrefix);
-  let routeCompanyId = $derived.by(() => {
-    const requestedPrefix = prefix?.trim().toUpperCase();
-    if (!requestedPrefix) return null;
-    return companyStore.companies.find((company) => String(company.issuePrefix ?? "").toUpperCase() === requestedPrefix)?.id ?? null;
-  });
-  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
-  let companyName = $derived(companyStore.selectedCompany?.name ?? 'Company');
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix(prefix));
+  let companyId = $derived(routeCompanyId);
+  let currentCompany = $derived(companyStore.companies.find((company) => company.id === companyId) ?? null);
+  let companyName = $derived(currentCompany?.name ?? 'Company');
 
   function normalizeIssueStatus(raw: string | null | undefined): string {
     if (!raw) return 'todo';

@@ -140,6 +140,26 @@ pnpm db:migrate       # Apply migrations
 
 <br/>
 
+## How We Build
+
+ClawDev uses **Spec-Driven Development (SDD)** for meaningful changes.
+
+The default sequence is:
+
+1. write or update the spec / product intent
+2. write an architecture plan or ADR for important design decisions
+3. break the work into tasks
+4. implement the change
+5. verify with typecheck, tests, build, and smoke checks
+
+The canonical process doc lives at [`internal-docs/spec/spec-driven-development.md`](internal-docs/spec/spec-driven-development.md).
+The build contract for V1 lives in [`internal-docs/SPEC-implementation.md`](internal-docs/SPEC-implementation.md).
+Reusable plan template: [`internal-docs/plans/spec-driven-development-template.md`](internal-docs/plans/spec-driven-development-template.md).
+Create a full SDD bundle with `pnpm clawdev sdd new <slug> --title "Human readable title"`.
+Short aliases: `pnpm sdd:init`, `pnpm sdd:init:yes`, `pnpm sdd:new -- <slug>`, `pnpm plan:new -- <slug>`, `pnpm spec:new -- <slug>`, and `pnpm adr:new -- <slug>`. Use `pnpm clawdev sdd init --yes` or `pnpm sdd:init:yes` when you want the interactive scaffold but do not want the final confirmation prompt.
+
+<br/>
+
 ## Roadmap
 
 - Plugin system

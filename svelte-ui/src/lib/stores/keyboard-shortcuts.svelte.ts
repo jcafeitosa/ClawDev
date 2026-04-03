@@ -1,6 +1,8 @@
 /** Keyboard shortcuts store — global key bindings for the workspace */
 
+import { goto } from "$app/navigation";
 import { dialogStore } from "./dialog.svelte.js";
+import { companyStore, resolveCompanyIdFromPrefix } from "./company.svelte.js";
 import { sidebarStore } from "./sidebar.svelte.js";
 
 interface ShortcutDef {
@@ -37,6 +39,20 @@ const shortcuts: ShortcutDef[] = [
     description: "Create new issue",
     key: "c",
     action: () => dialogStore.openNewIssue(),
+  },
+  {
+    label: "o",
+    description: "Open onboarding",
+    key: "o",
+    action: () => {
+      const prefix = typeof window !== "undefined" ? window.location.pathname.split("/").filter(Boolean)[0] ?? "" : "";
+      const companyId = resolveCompanyIdFromPrefix(prefix) ?? companyStore.selectedCompanyId ?? null;
+      if (companyId && prefix) {
+        void goto(`/${prefix}/onboarding?companyId=${companyId}&companyPrefix=${prefix}&step=2`);
+        return;
+      }
+      void goto("/setup");
+    },
   },
   {
     label: "[",

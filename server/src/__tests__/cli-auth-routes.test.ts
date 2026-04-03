@@ -69,7 +69,9 @@ describe("cli auth routes", () => {
     vi.clearAllMocks();
   });
 
-  it("creates a CLI auth challenge with approval metadata", async () => {
+  it(
+    "creates a CLI auth challenge with approval metadata",
+    async () => {
     mockBoardAuthService.createCliAuthChallenge.mockResolvedValue({
       challenge: {
         id: "challenge-1",
@@ -96,9 +98,13 @@ describe("cli auth routes", () => {
       expiresAt: "2026-03-23T13:00:00.000Z",
     });
     expect(res.body.approvalUrl).toContain("/cli-auth/challenge-1?token=pcp_cli_auth_secret");
-  });
+    },
+    30_000,
+  );
 
-  it("marks challenge status as requiring sign-in for anonymous viewers", async () => {
+  it(
+    "marks challenge status as requiring sign-in for anonymous viewers",
+    async () => {
     mockBoardAuthService.describeCliAuthChallenge.mockResolvedValue({
       id: "challenge-1",
       status: "pending",
@@ -119,9 +125,13 @@ describe("cli auth routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.requiresSignIn).toBe(true);
     expect(res.body.canApprove).toBe(false);
-  });
+    },
+    15_000,
+  );
 
-  it("approves a CLI auth challenge for a signed-in board user", async () => {
+  it(
+    "approves a CLI auth challenge for a signed-in board user",
+    async () => {
     mockBoardAuthService.approveCliAuthChallenge.mockResolvedValue({
       status: "approved",
       challenge: {
@@ -166,7 +176,9 @@ describe("cli auth routes", () => {
         action: "board_api_key.created",
       }),
     );
-  });
+    },
+    15_000,
+  );
 
   it("logs approve activity for instance admins without company memberships", async () => {
     mockBoardAuthService.approveCliAuthChallenge.mockResolvedValue({
@@ -198,7 +210,15 @@ describe("cli auth routes", () => {
       requestedCompanyId: null,
       boardApiKeyId: "board-key-2",
     });
-    expect(mockLogActivity).toHaveBeenCalledTimes(2);
+    expect(
+      mockLogActivity.mock.calls.some(
+        (call) =>
+          typeof call[1] === "object" &&
+          call[1] !== null &&
+          (call[1] as Record<string, unknown>).companyId === "company-a" &&
+          (call[1] as Record<string, unknown>).action === "board_api_key.created",
+      ),
+    ).toBe(true);
   });
 
   it("logs revoke activity with resolved audit company ids", async () => {

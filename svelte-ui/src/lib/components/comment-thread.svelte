@@ -7,6 +7,9 @@
   import MarkdownBody from "$lib/components/markdown-body.svelte";
   import TimeAgo from "$lib/components/time-ago.svelte";
   import { Button, Textarea, Skeleton, Separator } from "$components/ui/index.js";
+  import { PluginLauncherOutlet } from "$lib/components/plugins/index.js";
+  import type { PluginHostContext } from "$lib/components/plugins/plugin-runtime.js";
+  import type { PluginLauncherPlacementZone } from "@clawdev/shared";
   import { MessageSquare, Trash2, Send } from "lucide-svelte";
 
   interface Props {
@@ -17,6 +20,8 @@
     allowReopen?: boolean;
     allowInterrupt?: boolean;
     activeRunLabel?: string | null;
+    pluginHostContext?: PluginHostContext | null;
+    pluginLauncherZones?: PluginLauncherPlacementZone[];
   }
 
   let {
@@ -27,6 +32,8 @@
     allowReopen = true,
     allowInterrupt = false,
     activeRunLabel = null,
+    pluginHostContext = null,
+    pluginLauncherZones = ["commentAnnotation", "commentContextMenuItem"],
   }: Props = $props();
 
   let newComment = $state("");
@@ -93,7 +100,12 @@
   function authorId(comment: any): string {
     return (comment.agentId ?? comment.userId ?? "unknown").slice(0, 8);
   }
+
 </script>
+
+{#snippet noCommentLaunchers()}
+  <div class="text-xs text-zinc-500 dark:text-zinc-400">No comment launchers installed.</div>
+{/snippet}
 
 <div class="space-y-4">
   <!-- Comments list -->
@@ -153,6 +165,21 @@
           <div class="text-sm">
             <MarkdownBody content={comment.body} />
           </div>
+          {#if pluginHostContext}
+            <div class="mt-3 rounded-md border border-zinc-200 bg-zinc-50 p-3 dark:border-zinc-800 dark:bg-zinc-950">
+              <PluginLauncherOutlet
+                placementZones={pluginLauncherZones}
+                context={{
+                  ...pluginHostContext,
+                  entityId: comment.id,
+                  entityType: "comment",
+                  parentEntityId: pluginHostContext.entityId ?? null,
+                }}
+                itemClassName="flex flex-wrap gap-2"
+                fallback={noCommentLaunchers}
+              />
+            </div>
+          {/if}
         </div>
       {/each}
     </div>

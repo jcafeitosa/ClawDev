@@ -9,7 +9,9 @@
    * 4. Full keyboard navigation (arrows, enter, escape)
    */
   import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import { companyStore } from "$stores/company.svelte.js";
+  import { resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { api } from "$lib/api";
   import {
     Search,
@@ -25,6 +27,7 @@
     Activity,
     Inbox,
     DollarSign,
+    FileText,
     Settings,
     Users,
     KeyRound,
@@ -47,18 +50,29 @@
   let selectedIndex = $state(0);
   let searchingIssues = $state(false);
   let searchingAgents = $state(false);
+  let searchingDocuments = $state(false);
   let issueResults = $state<Array<{ id: string; identifier: string; title: string }>>([]);
   let agentResults = $state<Array<{ id: string; name: string; description?: string }>>([]);
+  let documentResults = $state<Array<{ id: string; title: string; format: string; issueId?: string | null; issueIdentifier?: string | null }>>([]);
   let inputEl = $state<HTMLInputElement | null>(null);
   let listEl = $state<HTMLDivElement | null>(null);
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
-  const prefix = $derived(
-    companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? "",
-  );
-  const companyId = $derived(
-    companyStore.selectedCompany?.id ?? companyStore.selectedCompanyId ?? "",
-  );
+  const routePrefix = $derived($page.params.companyPrefix ?? "");
+  const routeCompany = $derived.by(() => {
+    if (!routePrefix) return null;
+    const normalized = routePrefix.trim().toUpperCase();
+    return (
+      companyStore.companies.find(
+        (company) =>
+          company.id === routePrefix ||
+          company.slug === routePrefix ||
+          String(company.issuePrefix ?? "").trim().toUpperCase() === normalized,
+      ) ?? null
+    );
+  });
+  const prefix = $derived(routePrefix || (routeCompany?.slug ?? companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? ""));
+  const companyId = $derived(resolveCompanyIdFromPrefix(routePrefix) ?? routeCompany?.id ?? companyStore.selectedCompanyId ?? "");
 
   // ---------------------------------------------------------------------------
   // Navigation Commands (static)
@@ -84,6 +98,7 @@
     { id: "nav-runs", label: "Runs", icon: Zap, href: "runs" },
     { id: "nav-activity", label: "Activity", icon: Activity, href: "activity" },
     { id: "nav-inbox", label: "Inbox", icon: Inbox, href: "inbox" },
+    { id: "nav-documents", label: "Documents", icon: FolderKanban, href: "documents" },
     { id: "nav-costs", label: "Costs", icon: DollarSign, href: "costs" },
     { id: "nav-budgets", label: "Budgets", icon: Wallet, href: "budgets" },
     { id: "nav-settings", label: "Settings", icon: Settings, href: "settings" },
@@ -93,6 +108,7 @@
     { id: "nav-skills", label: "Skills", icon: Zap, href: "skills" },
     { id: "nav-workspaces", label: "Workspaces", icon: Building2, href: "workspaces" },
     { id: "nav-plugins", label: "Plugins", icon: Puzzle, href: "plugins" },
+    { id: "nav-heartbeats", label: "Heartbeats", icon: Activity, href: "settings/heartbeats" },
     { id: "nav-export", label: "Export", icon: Download, href: "export" },
     { id: "nav-import", label: "Import", icon: Upload, href: "import" },
     { id: "nav-org-chart", label: "Org Chart", icon: Building2, href: "org/chart" },
@@ -100,6 +116,11 @@
 
   const instanceCommands: NavCommand[] = [
     { id: "nav-instance-settings", label: "Instance Settings", description: "Global server configuration", icon: Globe, href: "__instance__settings/general" },
+    { id: "nav-instance-settings-status", label: "Instance Status", description: "Health and diagnostics", icon: Activity, href: "__instance__settings/status" },
+    { id: "nav-instance-settings-plugins", label: "Instance Plugins", description: "Plugin runtime and enablement", icon: Puzzle, href: "__instance__settings/plugins" },
+    { id: "nav-instance-settings-heartbeats", label: "Instance Heartbeats", description: "Scheduler and wakeup controls", icon: RotateCcw, href: "__instance__settings/heartbeats" },
+    { id: "nav-instance-settings-experimental", label: "Experimental", description: "Early feature flags", icon: Zap, href: "__instance__settings/experimental" },
+    { id: "nav-instance-settings-api-keys", label: "API Keys", description: "Board and automation keys", icon: KeyRound, href: "__instance__settings/api-keys" },
   ];
 
   // ---------------------------------------------------------------------------
@@ -141,8 +162,12 @@
 
   // Flat list of all actionable items for keyboard navigation
   interface FlatItem {
-    kind: "nav" | "instance" | "issue" | "agent";
-    data: NavCommand | { id: string; identifier: string; title: string } | { id: string; name: string; description?: string };
+    kind: "nav" | "instance" | "issue" | "agent" | "document";
+    data:
+      | NavCommand
+      | { id: string; identifier: string; title: string }
+      | { id: string; name: string; description?: string }
+      | { id: string; title: string; format: string; issueId?: string | null };
   }
 
   const flatItems = $derived.by((): FlatItem[] => {
@@ -151,10 +176,11 @@
     for (const cmd of filteredInstance) items.push({ kind: "instance", data: cmd });
     for (const issue of issueResults) items.push({ kind: "issue", data: issue });
     for (const agent of agentResults) items.push({ kind: "agent", data: agent });
+    for (const document of documentResults) items.push({ kind: "document", data: document });
     return items;
   });
 
-  const isSearching = $derived(searchingIssues || searchingAgents);
+  const isSearching = $derived(searchingIssues || searchingAgents || searchingDocuments);
 
   // ---------------------------------------------------------------------------
   // Debounced API search
@@ -166,8 +192,10 @@
     if (q.length < 3) {
       issueResults = [];
       agentResults = [];
+      documentResults = [];
       searchingIssues = false;
       searchingAgents = false;
+      searchingDocuments = false;
       return;
     }
 
@@ -175,10 +203,12 @@
 
     searchingIssues = true;
     searchingAgents = true;
+    searchingDocuments = true;
 
     debounceTimer = setTimeout(() => {
       fetchIssues(q);
       fetchAgents(q);
+      fetchDocuments(q);
     }, 300);
   });
 
@@ -238,6 +268,31 @@
     }
   }
 
+  async function fetchDocuments(q: string) {
+    try {
+      const res = await api(`/api/companies/${companyId}/documents?q=${encodeURIComponent(q)}`);
+      if (!res.ok) {
+        documentResults = [];
+        return;
+      }
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : data.documents ?? data.data ?? [];
+      documentResults = list
+        .slice(0, 5)
+        .map((document: Record<string, unknown>) => ({
+          id: String(document.id ?? ""),
+          title: String(document.title ?? "Untitled document"),
+          format: String(document.format ?? "markdown"),
+          issueId: document.issueId ? String(document.issueId) : null,
+          issueIdentifier: document.issueIdentifier ? String(document.issueIdentifier) : null,
+        }));
+    } catch {
+      documentResults = [];
+    } finally {
+      searchingDocuments = false;
+    }
+  }
+
   // ---------------------------------------------------------------------------
   // Reset selected index when results change
   // ---------------------------------------------------------------------------
@@ -271,6 +326,11 @@
       case "agent": {
         const agent = item.data as { id: string; name: string };
         goto(`/${prefix}/agents/${agent.id}`);
+        break;
+      }
+      case "document": {
+        const document = item.data as { id: string; title: string };
+        goto(`/${prefix}/documents?q=${encodeURIComponent(document.title)}&doc=${document.id}`);
         break;
       }
     }
@@ -490,6 +550,36 @@
               {#if agent.description}
                 <span class="max-w-[180px] truncate text-xs text-zinc-500">{agent.description}</span>
               {/if}
+              <ArrowRight class="size-3 shrink-0 text-zinc-600" />
+            </button>
+          {/each}
+        {/if}
+
+        <!-- Documents section -->
+        {#if documentResults.length > 0}
+          <div class="mt-2 border-t border-white/5 px-2 pb-1 pt-3">
+            <span class="text-[11px] font-medium uppercase tracking-wider text-zinc-500">
+              Documents
+            </span>
+          </div>
+          {#each documentResults as document, i}
+            {@const globalIdx = filteredNav.length + filteredInstance.length + issueResults.length + agentResults.length + i}
+            <button
+              data-index={globalIdx}
+              class="flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left text-sm transition-colors {selectedIndex === globalIdx ? 'bg-white/10 text-zinc-100' : 'text-zinc-300 hover:bg-white/5'}"
+              onmouseenter={() => (selectedIndex = globalIdx)}
+              onclick={() => executeItem(flatItems[globalIdx])}
+            >
+              <FileText class="size-4 shrink-0 text-zinc-400" />
+              <span class="flex-1 truncate">{document.title}</span>
+              {#if document.issueId}
+                <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-zinc-500">
+                  {document.issueIdentifier ?? "linked"}
+                </span>
+              {/if}
+              <span class="rounded bg-white/5 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.2em] text-zinc-500">
+                {document.format}
+              </span>
               <ArrowRight class="size-3 shrink-0 text-zinc-600" />
             </button>
           {/each}

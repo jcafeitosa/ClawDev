@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
@@ -52,12 +52,8 @@
   // State
   // ---------------------------------------------------------------------------
   let prefix = $derived($page.params.companyPrefix);
-  let routeCompanyId = $derived.by(() => {
-    const requestedPrefix = prefix?.trim().toUpperCase();
-    if (!requestedPrefix) return null;
-    return companyStore.companies.find((company) => String(company.issuePrefix ?? "").toUpperCase() === requestedPrefix)?.id ?? null;
-  });
-  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix(prefix));
+  let companyId = $derived(routeCompanyId);
 
   let activeTab = $state<InboxTab>(loadLastInboxTab());
   let allCategoryFilter = $state<InboxCategoryFilter>('everything');

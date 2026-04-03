@@ -1,15 +1,13 @@
 /** Live run transcript store — keeps dashboard run previews in sync with live events and log polling. */
 
 import { api } from "$lib/api";
+import {
+  buildTranscriptFromLog,
+  normalizeTranscript,
+  type TranscriptBlock,
+  type TranscriptEntry,
+} from "$lib/transcript/run-transcript";
 import { liveEventsStore, type LiveEvent } from "./live-events.svelte.js";
-
-type TranscriptStream = "stdout" | "stderr" | "system";
-
-interface TranscriptChunk {
-  ts: string;
-  stream: TranscriptStream;
-  chunk: string;
-}
 
 interface RunLike {
   id: string;
@@ -29,7 +27,8 @@ let runs: RunLike[] = [];
 let active = false;
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 let transcriptOffsetByRun = new Map<string, number>();
-let chunksByRun = $state(new Map<string, TranscriptChunk[]>());
+let entriesByRun = $state(new Map<string, TranscriptEntry[]>());
+let seenEntryKeysByRun = new Map<string, Set<string>>();
 let liveEventsUnsubscribe: (() => void) | null = null;
 
 function isTerminalStatus(status: string | null | undefined): boolean {
@@ -45,12 +44,45 @@ function cleanExcerpt(raw: string | null | undefined, maxLines = 5): string {
   return lines.slice(-maxLines).join("\n");
 }
 
-function appendLiveChunk(runId: string, chunk: TranscriptChunk) {
-  const next = new Map(chunksByRun);
+function makeEntryKey(entry: TranscriptEntry): string {
+  switch (entry.kind) {
+    case "assistant":
+    case "user":
+    case "thinking":
+    case "stderr":
+    case "stdout":
+    case "system":
+      return `${entry.kind}:${entry.ts}:${entry.text}`;
+    case "tool_call":
+      return `${entry.kind}:${entry.ts}:${entry.toolUseId ?? ""}:${entry.name}:${JSON.stringify(entry.input ?? null)}`;
+    case "tool_result":
+      return `${entry.kind}:${entry.ts}:${entry.toolUseId}:${entry.content}:${entry.isError ? "1" : "0"}`;
+    case "init":
+      return `${entry.kind}:${entry.ts}:${entry.model}:${entry.sessionId}`;
+    case "result":
+      return `${entry.kind}:${entry.ts}:${entry.text}:${entry.subtype}:${entry.isError ? "1" : "0"}`;
+  }
+}
+
+function appendEntries(runId: string, nextEntries: TranscriptEntry[]) {
+  if (nextEntries.length === 0) return;
+  const next = new Map(entriesByRun);
   const existing = [...(next.get(runId) ?? [])];
-  existing.push(chunk);
-  next.set(runId, existing.slice(-120));
-  chunksByRun = next;
+  const seen = seenEntryKeysByRun.get(runId) ?? new Set<string>();
+  let changed = false;
+
+  for (const entry of nextEntries) {
+    const key = makeEntryKey(entry);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    existing.push(entry);
+    changed = true;
+  }
+
+  if (!changed) return;
+  seenEntryKeysByRun.set(runId, seen);
+  next.set(runId, existing.slice(-220));
+  entriesByRun = next;
 }
 
 async function readRunTranscript(run: RunLike) {
@@ -59,17 +91,13 @@ async function readRunTranscript(run: RunLike) {
     const res = await api(`/api/heartbeat-runs/${run.id}/transcript?offset=${offset}&limitBytes=${LIMIT_BYTES}`);
     if (!res.ok) return;
     const data = await res.json();
-    const content = typeof data?.content === "string" ? data.content : "";
-    if (content) {
-      const lines = content.split("\n").map((line: string) => line.trim()).filter(Boolean);
-      for (const line of lines) {
-        appendLiveChunk(run.id, { ts: new Date().toISOString(), stream: "stdout", chunk: line });
-      }
-    }
+    const parsedEntries = buildTranscriptFromLog(typeof data?.content === "string" ? data.content : "");
+    appendEntries(run.id, parsedEntries);
+
     if (Number.isFinite(data?.nextOffset)) {
       transcriptOffsetByRun.set(run.id, Number(data.nextOffset));
-    } else if (content.length > 0) {
-      transcriptOffsetByRun.set(run.id, offset + content.length);
+    } else if (typeof data?.content === "string" && data.content.length > 0) {
+      transcriptOffsetByRun.set(run.id, offset + data.content.length);
     }
   } catch {
     // Ignore transient read failures while runs are booting.
@@ -83,14 +111,24 @@ async function refreshTranscripts() {
 }
 
 function pruneState(knownRunIds: Set<string>) {
-  const nextChunks = new Map<string, TranscriptChunk[]>();
-  for (const [runId, chunks] of chunksByRun) {
+  const nextEntries = new Map<string, TranscriptEntry[]>();
+  for (const [runId, entries] of entriesByRun) {
     if (knownRunIds.has(runId)) {
-      nextChunks.set(runId, chunks);
+      nextEntries.set(runId, entries);
     }
   }
-  if (nextChunks.size !== chunksByRun.size) {
-    chunksByRun = nextChunks;
+  if (nextEntries.size !== entriesByRun.size) {
+    entriesByRun = nextEntries;
+  }
+
+  for (const [runId, seen] of seenEntryKeysByRun) {
+    if (!knownRunIds.has(runId)) {
+      seenEntryKeysByRun.delete(runId);
+      continue;
+    }
+    if ((entriesByRun.get(runId) ?? []).length === 0) {
+      seen.clear();
+    }
   }
 
   for (const runId of transcriptOffsetByRun.keys()) {
@@ -100,51 +138,76 @@ function pruneState(knownRunIds: Set<string>) {
   }
 }
 
-function syncEvent(event: LiveEvent) {
+function appendLiveEventEntry(runId: string, event: LiveEvent) {
   const payload = event.payload ?? {};
-  const runId = typeof payload.runId === "string" && payload.runId.trim() ? payload.runId : null;
-  if (!runId) return;
 
   if (event.type === "heartbeat.run.log") {
     const chunk = typeof payload.chunk === "string" ? payload.chunk : "";
     if (!chunk) return;
-    appendLiveChunk(runId, {
-      ts: typeof payload.ts === "string" ? payload.ts : event.createdAt,
-      stream: payload.stream === "stderr" ? "stderr" : payload.stream === "system" ? "system" : "stdout",
-      chunk,
-    });
+    appendEntries(runId, [{ kind: "stdout", ts: typeof payload.ts === "string" ? payload.ts : event.createdAt, text: chunk }]);
     return;
   }
 
   if (event.type === "heartbeat.run.event") {
     const message = typeof payload.message === "string" && payload.message.trim()
       ? payload.message
-      : typeof payload.eventType === "string"
+      : typeof payload.eventType === "string" && payload.eventType.trim()
         ? payload.eventType
         : "";
     if (!message) return;
-    appendLiveChunk(runId, {
-      ts: event.createdAt,
-      stream: payload.level === "error" ? "stderr" : "system",
-      chunk: message,
-    });
+    appendEntries(runId, [{ kind: "system", ts: event.createdAt, text: message }]);
     return;
   }
 
   if (event.type === "heartbeat.run.status") {
     const status = typeof payload.status === "string" ? payload.status : "";
     if (!status) return;
-    appendLiveChunk(runId, {
-      ts: event.createdAt,
-      stream: status === "failed" || status === "timed_out" || status === "cancelled" ? "stderr" : "system",
-      chunk: `run ${status}`,
-    });
+    appendEntries(runId, [{ kind: "system", ts: event.createdAt, text: `run ${status}` }]);
   }
 }
 
+function syncEvent(event: LiveEvent) {
+  const payload = event.payload ?? {};
+  const runId = typeof payload.runId === "string" && payload.runId.trim() ? payload.runId : null;
+  if (!runId) return;
+
+  appendLiveEventEntry(runId, event);
+}
+
+function flattenBlocksToText(blocks: TranscriptBlock[]): string {
+  return blocks
+    .map((block) => {
+      switch (block.type) {
+        case "message":
+        case "thinking":
+        case "stdout":
+          return block.text;
+        case "tool":
+          return block.result ?? "";
+        case "tool_group":
+          return block.items.map((item) => item.result ?? item.name).join("\n");
+        case "command_group":
+          return block.items.map((item) => item.result ?? "").join("\n");
+        case "stderr_group":
+          return block.lines.map((line) => line.text).join("\n");
+        case "activity":
+          return block.name;
+        case "event":
+          return block.text;
+      }
+    })
+    .filter((text) => text.trim().length > 0)
+    .join("\n");
+}
+
+function blocksForRun(run: RunLike): TranscriptBlock[] {
+  const entries = entriesByRun.get(run.id) ?? [];
+  return normalizeTranscript(entries, !isTerminalStatus(run.status));
+}
+
 export const liveRunTranscriptsStore = {
-  get chunksByRun() {
-    return chunksByRun;
+  get entriesByRun() {
+    return entriesByRun;
   },
   init(nextCompanyId: string | null, nextRuns: RunLike[]) {
     companyId = nextCompanyId;
@@ -191,17 +254,52 @@ export const liveRunTranscriptsStore = {
     companyId = null;
     runs = [];
   },
+  blocks(run: RunLike): TranscriptBlock[] {
+    return blocksForRun(run);
+  },
+  messages(run: RunLike) {
+    return blocksForRun(run).flatMap((block) => {
+      if (block.type === "message") {
+        return [{ timestamp: block.ts, role: block.role, text: block.text, content: block.text }];
+      }
+      if (block.type === "thinking") {
+        return [{ timestamp: block.ts, role: "system", text: block.text, content: block.text }];
+      }
+      if (block.type === "tool") {
+        return [{ timestamp: block.ts, role: "tool", text: block.result ?? block.name, content: block.result ?? block.name }];
+      }
+      if (block.type === "tool_group") {
+        return block.items.map((item) => ({ timestamp: item.ts, role: "tool", text: item.result ?? item.name, content: item.result ?? item.name }));
+      }
+      if (block.type === "command_group") {
+        return block.items.map((item) => ({ timestamp: item.ts, role: "tool", text: item.result ?? "command", content: item.result ?? "command" }));
+      }
+      if (block.type === "stderr_group") {
+        return block.lines.map((line) => ({ timestamp: line.ts, role: "system", text: line.text, content: line.text }));
+      }
+      if (block.type === "stdout") {
+        return [{ timestamp: block.ts, role: "system", text: block.text, content: block.text }];
+      }
+      if (block.type === "activity" || block.type === "event") {
+        return [{ timestamp: block.ts, role: "system", text: block.type === "activity" ? block.name : block.text, content: block.type === "activity" ? block.name : block.text }];
+      }
+      return [];
+    });
+  },
   stdout(run: RunLike): string {
-    const live = (chunksByRun.get(run.id) ?? [])
-      .filter((entry) => entry.stream === "stdout" || entry.stream === "system")
-      .map((entry) => entry.chunk)
-      .join("\n");
+    const blocks = blocksForRun(run);
+    const live = flattenBlocksToText(blocks);
     return cleanExcerpt([run.stdoutExcerpt, live, run.lastTranscriptLine, run.lastMessage, run.summary].filter(Boolean).join("\n"));
   },
   stderr(run: RunLike): string {
-    const live = (chunksByRun.get(run.id) ?? [])
-      .filter((entry) => entry.stream === "stderr")
-      .map((entry) => entry.chunk)
+    const blocks = blocksForRun(run);
+    const live = blocks
+      .filter((entry) => entry.type === "stderr_group" || (entry.type === "event" && entry.tone === "error"))
+      .flatMap((entry) => {
+        if (entry.type === "stderr_group") return entry.lines.map((line) => line.text);
+        if (entry.type === "event") return [entry.text];
+        return [];
+      })
       .join("\n");
     return cleanExcerpt([run.stderrExcerpt, live].filter(Boolean).join("\n"));
   },

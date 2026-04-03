@@ -7,6 +7,7 @@ import {
   providerModelStatus,
 } from "@clawdev/db";
 import type { createProviderStatusService } from "./provider-status.js";
+import { listAdapterModels, listServerAdapters } from "../adapters/registry.js";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -151,6 +152,47 @@ export function createModelRouterService(
     return candidates;
   }
 
+  async function resolveAdapterFallbackOrder(
+    primaryAdapterType: string,
+  ): Promise<string[]> {
+    const allAdapters = listServerAdapters().map((adapter) => adapter.type);
+    const ordered = [primaryAdapterType, ...allAdapters];
+    const seen = new Set<string>();
+    return ordered.filter((adapterType) => {
+      if (seen.has(adapterType)) return false;
+      seen.add(adapterType);
+      return true;
+    });
+  }
+
+  async function resolveFirstAvailableAdapterModel(
+    primaryAdapterType: string,
+    allowCrossProvider = true,
+  ): Promise<ModelResolution | null> {
+    const adapterOrder = await resolveAdapterFallbackOrder(primaryAdapterType);
+    const effectiveOrder = allowCrossProvider ? adapterOrder : [primaryAdapterType];
+
+    for (let adapterIndex = 0; adapterIndex < effectiveOrder.length; adapterIndex += 1) {
+      const adapterType = effectiveOrder[adapterIndex]!;
+      const adapterModels = await listAdapterModels(adapterType);
+      for (const model of adapterModels) {
+        if (!(await providerStatus.isAvailable(adapterType, model.id))) continue;
+        return {
+          adapterType,
+          modelId: model.id,
+          resolution: adapterIndex === 0 ? "default" : "routed",
+          fallbackDepth: adapterIndex,
+          reason:
+            adapterIndex === 0
+              ? `adapter default model ${model.id} selected`
+              : `fallback to adapter ${adapterType} default model ${model.id}`,
+        };
+      }
+    }
+
+    return null;
+  }
+
   function chooseCheapest(candidates: CandidateModel[], preferFreeModels: boolean): CandidateModel | null {
     const pool = preferFreeModels ? candidates.filter((candidate) => candidate.isFree) : candidates;
     const effective = pool.length > 0 ? pool : candidates;
@@ -292,7 +334,9 @@ export function createModelRouterService(
       agentId: string,
       requestedAdapterType: string,
       requestedModelId?: string,
+      options: { lockAdapterType?: boolean } = {},
     ): Promise<ModelResolution> {
+      const lockAdapterType = Boolean(options.lockAdapterType);
       // ---- Step 1: explicit model pin ----
       if (requestedModelId && requestedModelId !== "auto") {
         const available = await providerStatus.isAvailable(
@@ -331,7 +375,9 @@ export function createModelRouterService(
           }
         }
 
-        const fallback = await cheapestAvailable(undefined, false);
+        const fallback = lockAdapterType
+          ? await cheapestAvailable(requestedAdapterType, false)
+          : await cheapestAvailable(undefined, false);
         if (fallback) {
           return {
             ...fallback,
@@ -339,25 +385,30 @@ export function createModelRouterService(
           };
         }
 
-        // No routing configured and no catalog candidates — pass through the request as-is
-        return {
-          adapterType: requestedAdapterType,
-          modelId: requestedModelId ?? "auto",
-          resolution: "pinned",
-          fallbackDepth: 0,
-          reason: "no routing configured",
-        };
+        const adapterFallback = await resolveFirstAvailableAdapterModel(
+          requestedAdapterType,
+          !lockAdapterType,
+        );
+        if (adapterFallback) {
+          return {
+            ...adapterFallback,
+            reason: "no routing configured; selected adapter default model",
+          };
+        }
+
+        throw new Error(`No available model found for adapter "${requestedAdapterType}"`);
       }
 
       const strategy = prefs.routingStrategy;
-      const primaryAdapterType = prefs.defaultAdapterType ?? requestedAdapterType;
-      const routingAdapterType = prefs.defaultAdapterType ?? undefined;
+      const primaryAdapterType = lockAdapterType ? requestedAdapterType : prefs.defaultAdapterType ?? requestedAdapterType;
+      const routingAdapterType = lockAdapterType ? requestedAdapterType : prefs.defaultAdapterType ?? undefined;
       const primaryModelId =
         requestedModelId && requestedModelId !== "auto"
           ? requestedModelId
           : prefs.defaultModelId ?? undefined;
       const preferLocalModels = Boolean(prefs.preferLocalModels);
       const preferFreeModels = Boolean(prefs.preferFreeModels);
+      const allowCrossProviderFallback = lockAdapterType ? false : prefs.allowCrossProviderFallback;
 
       // ---- Step 3: strategy dispatch ----
 
@@ -387,7 +438,7 @@ export function createModelRouterService(
         const fallbackResult = await walkFallbackChain(
           chain,
           primaryAdapterType,
-          prefs.allowCrossProviderFallback,
+          allowCrossProviderFallback,
         );
 
         if (fallbackResult) {
@@ -401,13 +452,15 @@ export function createModelRouterService(
         }
 
         // Nothing in chain was available
+        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        if (adapterFallback) {
           return {
-            adapterType: primaryAdapterType,
-            modelId: primaryModelId ?? "auto",
-            resolution: "pinned",
-            fallbackDepth: 0,
-            reason: "all fallback options exhausted; using primary as last resort",
+            ...adapterFallback,
+            reason: "all fallback options exhausted; selected adapter default model",
           };
+        }
+
+        throw new Error(`No available fallback model found for adapter "${primaryAdapterType}"`);
         }
 
       if (strategy === "cost_optimized") {
@@ -418,13 +471,15 @@ export function createModelRouterService(
         const result = await cheapestAvailable(routingAdapterType, preferFreeModels);
         if (result) return result;
 
-        return {
-          adapterType: primaryAdapterType,
-          modelId: primaryModelId ?? "auto",
-          resolution: "routed",
-          fallbackDepth: 0,
-          reason: "no available models found in catalog for cost_optimized strategy",
-        };
+        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        if (adapterFallback) {
+          return {
+            ...adapterFallback,
+            reason: "no available models found in catalog for cost_optimized strategy; selected adapter default model",
+          };
+        }
+
+        throw new Error(`No available fallback model found for adapter "${primaryAdapterType}"`);
       }
 
       if (strategy === "performance_optimized") {
@@ -435,13 +490,15 @@ export function createModelRouterService(
         const result = await fastestAvailable(routingAdapterType);
         if (result) return result;
 
-        return {
-          adapterType: primaryAdapterType,
-          modelId: primaryModelId ?? "auto",
-          resolution: "performance_optimized",
-          fallbackDepth: 0,
-          reason: "no available models found in catalog for performance_optimized strategy",
-        };
+        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        if (adapterFallback) {
+          return {
+            ...adapterFallback,
+            reason: "no available models found in catalog for performance_optimized strategy; selected adapter default model",
+          };
+        }
+
+        throw new Error(`No available fallback model found for adapter "${primaryAdapterType}"`);
       }
 
       if (strategy === "availability_optimized") {
@@ -452,36 +509,42 @@ export function createModelRouterService(
         const result = await mostAvailable(routingAdapterType);
         if (result) return result;
 
-        return {
-          adapterType: primaryAdapterType,
-          modelId: primaryModelId ?? "auto",
-          resolution: "availability_optimized",
-          fallbackDepth: 0,
-          reason: "no available models found in catalog for availability_optimized strategy",
-        };
+        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        if (adapterFallback) {
+          return {
+            ...adapterFallback,
+            reason: "no available models found in catalog for availability_optimized strategy; selected adapter default model",
+          };
+        }
+
+        throw new Error(`No available fallback model found for adapter "${primaryAdapterType}"`);
       }
 
       if (strategy === "local_preferred") {
         const result = await localPreferred(routingAdapterType);
         if (result) return result;
 
-        return {
-          adapterType: primaryAdapterType,
-          modelId: primaryModelId ?? "auto",
-          resolution: "local_preferred",
-          fallbackDepth: 0,
-          reason: "no local or cost-optimized models available",
-        };
+        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        if (adapterFallback) {
+          return {
+            ...adapterFallback,
+            reason: "no local or cost-optimized models available; selected adapter default model",
+          };
+        }
+
+        throw new Error(`No available fallback model found for adapter "${primaryAdapterType}"`);
       }
 
       // Unknown strategy — pass through
-      return {
-        adapterType: requestedAdapterType,
-        modelId: requestedModelId ?? "auto",
-        resolution: "pinned",
-        fallbackDepth: 0,
-        reason: `unknown routing strategy "${strategy}"; falling through`,
-      };
+      const adapterFallback = await resolveFirstAvailableAdapterModel(requestedAdapterType, !lockAdapterType);
+      if (adapterFallback) {
+        return {
+          ...adapterFallback,
+          reason: `unknown routing strategy "${strategy}"; selected adapter default model`,
+        };
+      }
+
+      throw new Error(`No available fallback model found for adapter "${requestedAdapterType}"`);
     },
 
     /**

@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
@@ -16,7 +17,8 @@
   let exportProgress = $state(0);
   let exportDone = $state(false);
 
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
 
   function toggle(s: string) {
     const n = new Set(selected);
@@ -74,7 +76,7 @@
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${companyStore.selectedCompany?.name ?? 'company'}-export.zip`;
+      a.download = `${companyStore.companies.find((company) => company.id === companyId)?.name ?? 'company'}-export.zip`;
       a.click();
       URL.revokeObjectURL(url);
 

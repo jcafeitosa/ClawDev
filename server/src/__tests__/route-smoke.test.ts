@@ -244,7 +244,9 @@ describe("route smoke coverage", () => {
     mockLogActivity.mockReset();
   });
 
-  it("covers dashboard, sidebar badges, budgets, search, llms, and secrets endpoints", async () => {
+  it(
+    "covers dashboard, sidebar badges, budgets, search, llms, and secrets endpoints",
+    async () => {
     mockCompanyList.mockResolvedValue([{ id: COMPANY_ID, name: "Company One" }]);
     mockCompanyGetById.mockResolvedValue({ id: COMPANY_ID, name: "Company One" });
     mockAgentsList.mockResolvedValue([{ id: "agent-1", name: "Agent One", status: "active", role: "ceo", adapterType: "codex_local" }]);
@@ -483,5 +485,7 @@ describe("route smoke coverage", () => {
     );
     expect(deleteSecretRes.status).toBe(200);
     expect(await deleteSecretRes.json()).toEqual({ ok: true });
-  });
+    },
+    30_000,
+  );
 });

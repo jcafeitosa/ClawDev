@@ -45,6 +45,20 @@ ClawDev is not:
 
 If you want to be maximally effective with agents, you need to
 
+# spec-driven development
+
+New product or platform work should use the SDD flow:
+
+1. spec / PRD
+2. architecture plan / ADR
+3. task breakdown
+4. implementation
+5. verification
+
+Use the template at `internal-docs/plans/spec-driven-development-template.md` when starting a new plan.
+Use `pnpm clawdev sdd new <slug> --title "Human readable title"` when you want the full dated bundle scaffold (`spec.md`, `adr.md`, `tasks.md`, and `plan.md`).
+Use `pnpm clawdev sdd init` when you want the CLI to prompt for the bundle title and slug before scaffolding it. Add `--yes` or use `pnpm sdd:init:yes` to skip the final confirmation prompt.
+
 # quickstart
 
 # faq

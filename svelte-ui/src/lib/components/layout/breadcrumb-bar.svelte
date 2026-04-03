@@ -1,10 +1,24 @@
 <script lang="ts">
+  import { page } from "$app/stores";
+  import { PluginLauncherOutlet, PluginSlotOutlet } from "$lib/components/plugins/index.js";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
+  import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { sidebarStore } from "$stores/sidebar.svelte.js";
   import { Menu } from "lucide-svelte";
   import { cn } from "$utils/index.js";
 
   const crumbs = $derived(breadcrumbStore.items);
+  const companyPrefix = $derived($page.params.companyPrefix ?? "");
+  const companyId = $derived(resolveCompanyIdFromPrefix(companyPrefix) ?? companyStore.selectedCompanyId ?? null);
+  const pluginHostContext = $derived({
+    companyId,
+    companyPrefix: companyPrefix || null,
+    projectId: null,
+    entityId: null,
+    entityType: null,
+    parentEntityId: null,
+    userId: null,
+  });
 </script>
 
 <header
@@ -39,4 +53,19 @@
       {/each}
     </nav>
   {/if}
+
+  <div class="ml-auto flex items-center gap-2">
+    <PluginSlotOutlet
+      slotTypes={["globalToolbar"]}
+      context={pluginHostContext}
+      class="flex items-center gap-2"
+      itemClassName="inline-flex items-center"
+    />
+    <PluginLauncherOutlet
+      placementZones={["globalToolbarButton", "toolbarButton"]}
+      context={pluginHostContext}
+      class="flex items-center gap-2"
+      itemClassName="inline-flex items-center"
+    />
+  </div>
 </header>

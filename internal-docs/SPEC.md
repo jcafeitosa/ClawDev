@@ -2,6 +2,8 @@
 
 Target specification for the ClawDev control plane. Living document — updated incrementally during spec interviews.
 
+Any substantial change to ClawDev should be traced through the Spec-Driven Development workflow in `internal-docs/spec/spec-driven-development.md` so the product intent, architecture decisions, and implementation tasks stay aligned.
+
 ---
 
 ## 1. Company Model [DRAFT]
@@ -194,11 +196,12 @@ Agent configuration includes an **adapter** that defines how ClawDev invokes the
 | `http` | Send an HTTP request | `POST https://openclaw.example.com/hook/{id}` |
 | `claude_local` | Local Claude Code process | Claude Code heartbeat worker |
 | `codex_local` | Local Codex process | Codex CLI heartbeat worker |
+| `copilot_local` | Local GitHub Copilot process | GitHub Copilot CLI heartbeat worker |
+| `gemini_local` | Local Gemini process | Gemini CLI heartbeat worker |
 | `opencode_local` | Local OpenCode process | OpenCode heartbeat worker |
 | `pi_local` | Local Pi process | Pi CLI heartbeat worker |
 | `cursor` | Cursor API/CLI bridge | Cursor-integrated heartbeat worker |
 | `openclaw_gateway` | OpenClaw gateway API | Managed OpenClaw agent via gateway |
-| `hermes_local` | Local Hermes process | Hermes agent heartbeat worker |
 
 The `process` and `http` adapters ship as generic defaults. Additional built-in adapters cover common local coding runtimes (see list above), and new adapter types can be registered via the plugin system (see Plugin / Extension Architecture).
 

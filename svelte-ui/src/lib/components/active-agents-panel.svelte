@@ -1,8 +1,9 @@
 <script lang="ts">
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
-  import { ExternalLink, ChevronRight } from 'lucide-svelte';
+  import { ExternalLink } from 'lucide-svelte';
   import { liveRunTranscriptsStore } from '$stores/live-run-transcripts.svelte.js';
+  import RunTranscriptPreview from '$lib/components/run-transcript-preview.svelte';
 
   // ---------------------------------------------------------------------------
   // Props
@@ -115,31 +116,6 @@
     return !!(getIssueIdentifier(run) || getIssueTitle(run));
   }
 
-  function cleanExcerpt(raw: string | null | undefined, maxLines = 5): string {
-    if (!raw) return '';
-    const lines = String(raw)
-      .split('\n')
-      .map(l => l.replace(/^\[clawdev\]\s*/i, '').trim())
-      .filter(l => l.length > 0 && !/^\/?Users\//.test(l) && !/^Injected\s/i.test(l) && !/^Using ClawDev-managed/i.test(l) && !/^seeded from/i.test(l));
-    return lines.slice(-maxLines).join('\n');
-  }
-
-  function getStdout(run: any): string {
-    return liveRunTranscriptsStore.stdout(run);
-  }
-
-  function getStderr(run: any): string {
-    return liveRunTranscriptsStore.stderr(run);
-  }
-
-  function getResult(run: any): string {
-    if (!run.result && !run.error) return '';
-    return run.error ?? run.result ?? '';
-  }
-
-  // Track expanded stdout sections
-  let expandedStdout = $state<Set<string>>(new Set());
-
   function statusText(run: any): string {
     if (isActive(run)) return 'Live now';
     if (isFailed(run)) return `Failed ${formatTimeAgo(run.finishedAt ?? run.completedAt ?? run.updatedAt)}`;
@@ -186,9 +162,7 @@
         {@const initials = getInitials(name)}
         {@const issueId = getIssueIdentifier(run)}
         {@const issueTitle = getIssueTitle(run)}
-        {@const stdout = getStdout(run)}
-        {@const stderr = getStderr(run)}
-        {@const result = getResult(run)}
+        {@const transcript = liveRunTranscriptsStore.blocks(run)}
 
         <div
           class="flex h-[320px] flex-col overflow-hidden rounded-xl border shadow-sm {active
@@ -248,68 +222,14 @@
             {/if}
           </div>
 
-          <!-- STDOUT / STDERR / RESULT sections (matches Paperclip) -->
-          <div class="min-h-0 flex-1 overflow-y-auto">
-            <!-- STDOUT -->
-            <div class="border-b border-border/40">
-              <button
-                type="button"
-                class="flex w-full items-center gap-1 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground hover:bg-accent/30 transition-colors"
-                onclick={() => {
-                  const next = new Set(expandedStdout);
-                  if (next.has(run.id)) next.delete(run.id);
-                  else next.add(run.id);
-                  expandedStdout = next;
-                }}
-              >
-                <span class="font-mono">stdout</span>
-                <ChevronRight size={10} class="transition-transform {expandedStdout.has(run.id) ? 'rotate-90' : ''}" />
-              </button>
-              {#if expandedStdout.has(run.id)}
-                <div class="px-3 pb-2">
-                  {#if stdout}
-                    <pre class="m-0 whitespace-pre-wrap font-mono text-[10px] leading-4 text-muted-foreground">{stdout}</pre>
-                  {:else if active}
-                    <p class="text-[10px] italic text-muted-foreground/60">Waiting for output...</p>
-                  {:else}
-                    <p class="text-[10px] italic text-muted-foreground/60">No transcript captured.</p>
-                  {/if}
-                </div>
-              {/if}
-            </div>
-
-            <!-- STDERR (only if present) -->
-            {#if stderr}
-              <div class="border-b border-border/40">
-                <div class="px-3 py-1.5">
-                  <span class="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">stderr</span>
-                </div>
-                <div class="px-3 pb-2">
-                  <div class="rounded border border-red-500/20 bg-red-500/[0.06] px-2 py-1.5">
-                    <pre class="m-0 whitespace-pre-wrap font-mono text-[10px] leading-4 text-red-400">{stderr}</pre>
-                  </div>
-                </div>
-              </div>
-            {/if}
-
-            <!-- RESULT (only if present) -->
-            {#if result}
-              <div>
-                <div class="px-3 py-1.5">
-                  <span class="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">result</span>
-                </div>
-                <div class="px-3 pb-2">
-                  <pre class="m-0 whitespace-pre-wrap font-mono text-[10px] leading-4 text-muted-foreground">{result}</pre>
-                </div>
-              </div>
-            {/if}
-
-            <!-- Fallback if nothing at all -->
-            {#if !stdout && !stderr && !result && !active}
-              <div class="p-3">
-                <p class="text-[10px] italic text-muted-foreground/60">No transcript captured.</p>
-              </div>
-            {/if}
+          <!-- Transcript preview (Paperclip-style) -->
+          <div class="min-h-0 flex-1 overflow-y-auto p-3">
+            <RunTranscriptPreview
+              blocks={transcript}
+              live={active}
+              limit={8}
+              emptyMessage={active ? 'Waiting for transcript...' : 'No transcript captured.'}
+            />
           </div>
         </div>
       {/each}

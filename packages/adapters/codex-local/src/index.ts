@@ -1,36 +1,36 @@
 export const type = "codex_local";
 export const label = "Codex (local)";
-export const DEFAULT_CODEX_LOCAL_MODEL = "gpt-5.4";
+export const DEFAULT_CODEX_LOCAL_MODEL = "gpt-5.4-mini";
 export const DEFAULT_CODEX_LOCAL_BYPASS_APPROVALS_AND_SANDBOX = true;
 
 export const models = [
   // priority 1 — recommended default
-  { id: "gpt-5.4", label: "gpt-5.4", provider: "openai" },
-  // priority 3
   { id: "gpt-5.4-mini", label: "gpt-5.4-mini", provider: "openai" },
-  // priority 5
+  // priority 2
+  { id: "gpt-5.4", label: "gpt-5.4", provider: "openai" },
+  // priority 4
   { id: "gpt-5.3-codex", label: "gpt-5.3-codex", provider: "openai" },
-  // priority 8
+  // priority 5
   { id: "gpt-5.2-codex", label: "gpt-5.2-codex", provider: "openai" },
-  // priority 9
+  // priority 6
   { id: "gpt-5.2", label: "gpt-5.2", provider: "openai" },
-  // priority 10
+  // priority 7
   { id: "gpt-5.1-codex-max", label: "gpt-5.1-codex-max", provider: "openai" },
-  // priority 11 (hidden in cache)
+  // priority 8 (hidden in cache)
   { id: "gpt-5.1-codex", label: "gpt-5.1-codex", provider: "openai" },
-  // priority 12 (hidden in cache)
+  // priority 9 (hidden in cache)
   { id: "gpt-5.1", label: "gpt-5.1", provider: "openai" },
-  // priority 15 (hidden in cache)
+  // priority 10 (hidden in cache)
   { id: "gpt-5-codex", label: "gpt-5-codex", provider: "openai" },
-  // priority 16 (hidden in cache)
+  // priority 11 (hidden in cache)
   { id: "gpt-5", label: "gpt-5", provider: "openai" },
-  // priority 17 (hidden in cache)
+  // priority 12 (hidden in cache)
   { id: "gpt-oss-120b", label: "gpt-oss-120b", provider: "openai" },
-  // priority 18 (hidden in cache)
+  // priority 13 (hidden in cache)
   { id: "gpt-oss-20b", label: "gpt-oss-20b", provider: "openai" },
-  // priority 19
+  // priority 14
   { id: "gpt-5.1-codex-mini", label: "gpt-5.1-codex-mini", provider: "openai" },
-  // priority 20 (hidden in cache)
+  // priority 15 (hidden in cache)
   { id: "gpt-5-codex-mini", label: "gpt-5-codex-mini", provider: "openai" },
   // not in cache — kept for backward compatibility
   { id: "gpt-5.3-codex-spark", label: "gpt-5.3-codex-spark", provider: "openai" },

@@ -44,6 +44,21 @@ function resolveCompanyIdFromLocation(list: Company[]): string | null {
     : null;
 }
 
+export function resolveCompanyIdFromPrefix(prefix: string | null | undefined): string | null {
+  const normalizedPrefix = String(prefix ?? "").trim();
+  if (!normalizedPrefix) return null;
+
+  const upperPrefix = normalizedPrefix.toUpperCase();
+  return (
+    companies.find(
+      (company) =>
+        company.id === normalizedPrefix ||
+        company.slug === normalizedPrefix ||
+        String(company.issuePrefix ?? "").trim().toUpperCase() === upperPrefix,
+    )?.id ?? (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedPrefix) ? normalizedPrefix : null)
+  );
+}
+
 export const companyStore = {
   get companies() {
     return companies;

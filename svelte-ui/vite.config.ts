@@ -8,8 +8,30 @@ export default defineConfig({
     rollupOptions: {
       output: {
         manualChunks(id) {
-          if (id.includes('node_modules') && id.includes('echarts')) {
-            return 'echarts';
+          if (id.includes("node_modules")) {
+            if (id.includes("/echarts/core")) {
+              return "echarts-core";
+            }
+
+            if (id.includes("/echarts/charts")) {
+              return "echarts-charts";
+            }
+
+            if (id.includes("/echarts/components")) {
+              return "echarts-components";
+            }
+
+            if (id.includes("/echarts/renderers")) {
+              return "echarts-renderers";
+            }
+
+            if (id.includes("/react-dom")) {
+              return "react-dom";
+            }
+
+            if (id.includes("/react")) {
+              return "react";
+            }
           }
 
           return undefined;

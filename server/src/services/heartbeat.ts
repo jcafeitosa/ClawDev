@@ -2572,6 +2572,7 @@ export function heartbeatService(db: Db) {
           agent.id,
           agent.adapterType,
           requestedModel,
+          { lockAdapterType: true },
         );
         modelResolution = resolution;
 
@@ -2632,6 +2633,7 @@ export function heartbeatService(db: Db) {
             agent.id,
             agent.adapterType,
             undefined, // let router pick best available
+            { lockAdapterType: true },
           );
 
           if (fallback.modelId && fallback.modelId !== currentModel) {

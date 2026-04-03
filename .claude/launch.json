@@ -25,6 +25,15 @@
       "runtimeExecutable": "bash",
       "runtimeArgs": ["scripts/start-paperclip.sh"],
       "port": 3200
+    },
+    {
+      "name": "chrome-devtools",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["scripts/start-chrome-devtools-browser.mjs"],
+      "port": 9222,
+      "env": {
+        "CHROME_DEBUG_PORT": "9222"
+      }
     }
   ]
 }

@@ -16,7 +16,10 @@ import { isUuidLike, normalizeAgentUrlKey } from "@clawdev/shared";
 import { conflict, notFound, unprocessable } from "../errors.js";
 import { normalizeAgentPermissions } from "./agent-permissions.js";
 import { REDACTED_EVENT_VALUE, sanitizeRecord } from "../redaction.js";
-import { normalizeRuntimeConfigForAdapterType } from "./runtime-config.js";
+import {
+  normalizeAdapterConfigForAdapterType,
+  normalizeRuntimeConfigForAdapterType,
+} from "./runtime-config.js";
 
 function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
@@ -74,10 +77,7 @@ function jsonEqual(left: unknown, right: unknown): boolean {
 function buildConfigSnapshot(
   row: Pick<typeof agents.$inferSelect, ConfigRevisionField>,
 ): AgentConfigSnapshot {
-  const adapterConfig =
-    typeof row.adapterConfig === "object" && row.adapterConfig !== null && !Array.isArray(row.adapterConfig)
-      ? sanitizeRecord(row.adapterConfig as Record<string, unknown>)
-      : {};
+  const adapterConfig = normalizeAdapterConfigForAdapterType(row.adapterType, row.adapterConfig);
   const runtimeConfig = normalizeRuntimeConfigForAdapterType(row.adapterType, row.runtimeConfig);
   const metadata =
     typeof row.metadata === "object" && row.metadata !== null && !Array.isArray(row.metadata)
@@ -200,6 +200,8 @@ export function agentService(db: Db) {
   function normalizeAgentRow(row: typeof agents.$inferSelect) {
     return withUrlKey({
       ...row,
+      adapterConfig: normalizeAdapterConfigForAdapterType(row.adapterType, row.adapterConfig),
+      runtimeConfig: normalizeRuntimeConfigForAdapterType(row.adapterType, row.runtimeConfig),
       permissions: normalizeAgentPermissions(row.permissions, row.role),
     });
   }
@@ -333,6 +335,24 @@ export function agentService(db: Db) {
       const role = (data.role ?? existing.role) as string;
       normalizedPatch.permissions = normalizeAgentPermissions(data.permissions, role);
     }
+    if (data.adapterConfig !== undefined) {
+      normalizedPatch.adapterConfig = normalizeAdapterConfigForAdapterType(
+        data.adapterType ?? existing.adapterType,
+        data.adapterConfig,
+      );
+    }
+    if (data.adapterType !== undefined && normalizedPatch.adapterConfig !== undefined) {
+      normalizedPatch.adapterConfig = normalizeAdapterConfigForAdapterType(
+        data.adapterType,
+        normalizedPatch.adapterConfig,
+      );
+    }
+    if (data.adapterType !== undefined && normalizedPatch.adapterConfig === undefined) {
+      normalizedPatch.adapterConfig = normalizeAdapterConfigForAdapterType(
+        data.adapterType,
+        existing.adapterConfig,
+      );
+    }
 
     const shouldRecordRevision = Boolean(options?.recordRevision) && hasConfigPatchFields(normalizedPatch);
     const beforeConfig = shouldRecordRevision ? buildConfigSnapshot(existing) : null;
@@ -390,13 +410,24 @@ export function agentService(db: Db) {
         .where(eq(agents.companyId, companyId));
       const uniqueName = deduplicateAgentName(data.name, existingAgents);
 
-      const role = data.role ?? "general";
-      const normalizedPermissions = normalizeAgentPermissions(data.permissions, role);
-      const created = await db
-        .insert(agents)
-        .values({ ...data, name: uniqueName, companyId, role, permissions: normalizedPermissions })
-        .returning()
-        .then((rows) => rows[0]);
+    const role = data.role ?? "general";
+    const normalizedPermissions = normalizeAgentPermissions(data.permissions, role);
+    const normalizedAdapterConfig = normalizeAdapterConfigForAdapterType(
+      data.adapterType ?? "process",
+      data.adapterConfig,
+    );
+    const created = await db
+      .insert(agents)
+        .values({
+          ...data,
+          name: uniqueName,
+          companyId,
+          role,
+          permissions: normalizedPermissions,
+          adapterConfig: normalizedAdapterConfig,
+        })
+      .returning()
+      .then((rows) => rows[0]);
 
       return normalizeAgentRow(created);
     },

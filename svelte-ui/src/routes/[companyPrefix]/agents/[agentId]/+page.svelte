@@ -3,17 +3,22 @@
   import { goto } from "$app/navigation";
   import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
-  import { companyStore } from "$stores/company.svelte.js";
+  import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
+  import { PluginLauncherOutlet } from "$lib/components/plugins/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "$components/ui/index.js";
+  import { ActivityChart } from "$lib/components/charts/index.js";
   import { onMount } from "svelte";
   import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check, FolderOpen, Loader2, ExternalLink, BookOpen, MoreHorizontal, AlertCircle, Activity, ClipboardList, StopCircle } from "lucide-svelte";
   import { openNewIssueDialog } from '$lib/components/new-issue-dialog.svelte';
   import AgentIconPicker from '$lib/components/agent-icon-picker.svelte';
   import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
+  import { AGENT_ADAPTER_OPTIONS } from '$lib/constants/agent-adapters';
   import MarkdownBody from '$lib/components/markdown-body.svelte';
   import InlineEditor from '$lib/components/inline-editor.svelte';
+  import RunTranscriptPreview from '$lib/components/run-transcript-preview.svelte';
+  import { buildTranscriptFromLog, normalizeTranscript } from '$lib/transcript/run-transcript';
 
   // ---------------------------------------------------------------------------
   // State
@@ -25,6 +30,15 @@
   let loading = $state(true);
   let notFound = $state(false);
   let activeTab = $state("overview");
+  let selectedRunId = $state<string | null>(null);
+  let selectedRunDetail = $state<Record<string, any> | null>(null);
+  let selectedRunLogText = $state("");
+  let selectedRunIssues = $state<any[]>([]);
+  let selectedRunWorkspaceOps = $state<any[]>([]);
+  let selectedRunLoading = $state(false);
+  let selectedRunError = $state<string | null>(null);
+  let selectedRunAction = $state<"cancel" | "retry" | null>(null);
+  let selectedRunLastLoadedId = $state<string | null>(null);
 
   // Action state
   let actionLoading = $state<string | null>(null);
@@ -114,30 +128,14 @@
 
   const ROLES = ["general", "ceo", "cto", "engineer", "designer", "marketer", "custom"];
   const STATUSES = ["idle", "waiting", "running", "paused", "error"];
-  const ADAPTER_OPTIONS = [
-    { value: "claude_local", label: "Claude (Local)" },
-    { value: "codex_local", label: "Codex (Local)" },
-    { value: "cursor", label: "Cursor" },
-    { value: "gemini_local", label: "Gemini (Local)" },
-    { value: "opencode_local", label: "OpenCode (Local)" },
-    { value: "pi_local", label: "Pi (Local)" },
-    { value: "openclaw_gateway", label: "OpenClaw Gateway" },
-    { value: "hermes_local", label: "Hermes (Local)" },
-    { value: "process", label: "Process" },
-    { value: "http", label: "HTTP" },
-  ];
-
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
   let agentId = $derived($page.params.agentId);
   let prefix = $derived($page.params.companyPrefix);
-  let routeCompanyId = $derived.by(() => {
-    const requestedPrefix = prefix?.trim().toUpperCase();
-    if (!requestedPrefix) return null;
-    return companyStore.companies.find((company) => String(company.issuePrefix ?? "").toUpperCase() === requestedPrefix)?.id ?? null;
-  });
-  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix(prefix));
+  let companyId = $derived(routeCompanyId);
+  let agentIsUuid = $derived(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId ?? ""));
 
   let budgetFormatted = $derived(agent?.budgetMonthlyCents ? `$${(agent.budgetMonthlyCents / 100).toFixed(2)}` : "No budget");
   let spentFormatted = $derived(agent?.spentMonthlyCents ? `$${(agent.spentMonthlyCents / 100).toFixed(2)}` : "$0.00");
@@ -156,7 +154,6 @@
     agent?.adapterType === "codex_local" ||
     agent?.adapterType === "opencode_local" ||
     agent?.adapterType === "pi_local" ||
-    agent?.adapterType === "hermes_local" ||
     agent?.adapterType === "cursor"
   );
   let currentMode = $derived(bundleDraftMode ?? instructionsBundle?.mode ?? "managed");
@@ -231,7 +228,30 @@
   );
 
   // Overview derived
-  let latestRun = $derived(heartbeats.length > 0 ? heartbeats[0] : null);
+  let sortedHeartbeats = $derived.by(() =>
+    [...heartbeats].sort(
+      (a, b) =>
+        new Date((b.startedAt ?? b.createdAt ?? 0) as string | number | Date).getTime() -
+        new Date((a.startedAt ?? a.createdAt ?? 0) as string | number | Date).getTime(),
+    ),
+  );
+  let latestRun = $derived(sortedHeartbeats.length > 0 ? sortedHeartbeats[0] : null);
+  let selectedRun = $derived.by(() => {
+    if (selectedRunId) return sortedHeartbeats.find((run) => run.id === selectedRunId) ?? null;
+    return sortedHeartbeats[0] ?? null;
+  });
+  let selectedRunBlocks = $derived.by(() =>
+    normalizeTranscript(
+      buildTranscriptFromLog(selectedRunLogText),
+      Boolean(selectedRun && (selectedRun.status === "running" || selectedRun.status === "queued")),
+    ),
+  );
+  let latestRunBlocks = $derived.by(() =>
+    normalizeTranscript(
+      buildTranscriptFromLog(selectedRunId ? "" : selectedRunLogText),
+      Boolean(latestRun && (latestRun.status === "running" || latestRun.status === "queued")),
+    ),
+  );
   let recentIssues = $derived(issues.slice(0, 5));
   let runSuccessCount = $derived(heartbeats.filter(r => r.status === 'completed' || r.status === 'success').length);
   let runFailCount = $derived(heartbeats.filter(r => r.status === 'error' || r.status === 'failed').length);
@@ -251,6 +271,31 @@
       counts[p] = (counts[p] ?? 0) + 1;
     }
     return counts;
+  });
+  let agentActivitySeries = $derived.by(() => {
+    const days = Array.from({ length: 14 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (13 - i));
+      return d.toISOString().slice(0, 10);
+    });
+    const activity = days.map((date) => ({ date, runs: 0, issues: 0 }));
+    const index = new Map(activity.map((item) => [item.date, item]));
+
+    for (const run of heartbeats) {
+      const date = String(run.createdAt ?? run.startedAt ?? run.finishedAt ?? "").slice(0, 10);
+      const bucket = index.get(date);
+      if (!bucket) continue;
+      bucket.runs += 1;
+    }
+
+    for (const issue of issues) {
+      const date = String(issue.createdAt ?? issue.updatedAt ?? "").slice(0, 10);
+      const bucket = index.get(date);
+      if (!bucket) continue;
+      bucket.issues += 1;
+    }
+
+    return activity;
   });
   let hasError = $derived(agent?.status === 'error');
 
@@ -513,10 +558,65 @@
     finally { costsSummaryLoading = false; }
   }
 
-  onMount(() => {
+  async function loadSelectedRunDetail(runId: string) {
+    if (!companyId || !runId) return;
+    selectedRunLoading = true;
+    selectedRunError = null;
+    try {
+      const res = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}`);
+      if (!res.ok) {
+        selectedRunDetail = null;
+        selectedRunLogText = "";
+        selectedRunError = `Failed to load run (${res.status})`;
+        return;
+      }
+
+      const data = await res.json();
+      selectedRunDetail = data.run ?? data;
+
+      const logRes = await api(`/api/companies/${companyId}/heartbeat-runs/${runId}/log?limitBytes=600000`);
+      if (logRes.ok) {
+        const logData = await logRes.json();
+        selectedRunLogText = typeof logData.content === "string" ? logData.content : "";
+      } else {
+        selectedRunLogText = "";
+      }
+
+      const [issuesRes, workspaceRes] = await Promise.all([
+        api(`/api/companies/${companyId}/runs/${runId}/issues`),
+        api(`/api/companies/${companyId}/heartbeat-runs/${runId}/workspace-operations`),
+      ]);
+      if (issuesRes.ok) {
+        const issuesData = await issuesRes.json();
+        selectedRunIssues = Array.isArray(issuesData) ? issuesData : [];
+      } else {
+        selectedRunIssues = [];
+      }
+      if (workspaceRes.ok) {
+        const workspaceData = await workspaceRes.json();
+        selectedRunWorkspaceOps = Array.isArray(workspaceData) ? workspaceData : [];
+      } else {
+        selectedRunWorkspaceOps = [];
+      }
+    } catch (err: any) {
+      selectedRunDetail = null;
+      selectedRunLogText = "";
+      selectedRunIssues = [];
+      selectedRunWorkspaceOps = [];
+      selectedRunError = err?.message ?? "Failed to load selected run";
+    } finally {
+      selectedRunLoading = false;
+    }
+  }
+
+  $effect(() => {
+    if (!agentId) return;
+    if (!companyId && !agentIsUuid) return;
     loadAgent();
-    loadHeartbeats();
-    loadSkills();
+    if (companyId) {
+      loadHeartbeats();
+      loadSkills();
+    }
   });
 
   // Load issues and costs after agent is loaded
@@ -549,6 +649,99 @@
       budgetTabDollars = agent.budgetMonthlyCents ? (agent.budgetMonthlyCents / 100).toFixed(2) : '';
     }
   });
+
+  $effect(() => {
+    if (selectedRunId) return;
+    if (!latestRun?.id || !companyId) return;
+    if (selectedRunLastLoadedId === latestRun.id) return;
+    selectedRunLastLoadedId = latestRun.id;
+    void loadSelectedRunDetail(latestRun.id);
+  });
+
+  $effect(() => {
+    if (activeTab !== "runs") return;
+    if (sortedHeartbeats.length === 0) return;
+
+    const nextSelectedRunId = selectedRunId && sortedHeartbeats.some((run) => run.id === selectedRunId)
+      ? selectedRunId
+      : sortedHeartbeats[0]?.id ?? null;
+
+    if (nextSelectedRunId && nextSelectedRunId !== selectedRunId) {
+      selectedRunId = nextSelectedRunId;
+      return;
+    }
+
+    if (!nextSelectedRunId || selectedRunLastLoadedId === nextSelectedRunId) return;
+    selectedRunLastLoadedId = nextSelectedRunId;
+    void loadSelectedRunDetail(nextSelectedRunId);
+  });
+
+  function selectRun(runId: string) {
+    selectedRunId = runId;
+    selectedRunLastLoadedId = null;
+    activeTab = "runs";
+    void loadSelectedRunDetail(runId);
+  }
+
+  async function cancelSelectedRun() {
+    const run = selectedRunDetail;
+    if (!run?.id) return;
+    selectedRunAction = "cancel";
+    try {
+      const companyScopeId = run.companyId ?? companyId;
+      if (!companyScopeId) throw new Error("No company selected");
+      const res = await api(`/api/heartbeat-runs/${run.id}/cancel`, { method: "POST" });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      toastStore.push({ title: "Run cancelled", body: "The selected run was cancelled.", tone: "success" });
+      await loadHeartbeats();
+      await loadSelectedRunDetail(run.id);
+    } catch (err: any) {
+      toastStore.push({ title: "Cancel failed", body: err?.message, tone: "error" });
+    } finally {
+      selectedRunAction = null;
+    }
+  }
+
+  async function retrySelectedRun() {
+    const run = selectedRunDetail;
+    if (!run?.id || !run.agentId) return;
+    selectedRunAction = "retry";
+    try {
+      const payload: Record<string, unknown> = {};
+      const context = run.contextSnapshot && typeof run.contextSnapshot === "object" ? run.contextSnapshot : null;
+      if (context) {
+        const issueId = typeof context.issueId === "string" ? context.issueId : null;
+        const taskId = typeof context.taskId === "string" ? context.taskId : null;
+        const taskKey = typeof context.taskKey === "string" ? context.taskKey : null;
+        if (issueId) payload.issueId = issueId;
+        if (taskId) payload.taskId = taskId;
+        if (taskKey) payload.taskKey = taskKey;
+      }
+      const res = await api(`/api/agents/${run.agentId}/wakeup`, {
+        method: "POST",
+        body: JSON.stringify({
+          source: "on_demand",
+          triggerDetail: "manual",
+          reason: "retry_failed_run",
+          payload,
+        }),
+      });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const data = await res.json();
+      const nextRunId = typeof data?.id === "string" ? data.id : null;
+      toastStore.push({ title: "Retry requested", body: "A new run has been queued.", tone: "success" });
+      await loadHeartbeats();
+      if (nextRunId) {
+        selectedRunId = nextRunId;
+        selectedRunLastLoadedId = null;
+        await loadSelectedRunDetail(nextRunId);
+      }
+    } catch (err: any) {
+      toastStore.push({ title: "Retry failed", body: err?.message, tone: "error" });
+    } finally {
+      selectedRunAction = null;
+    }
+  }
 
   // ---------------------------------------------------------------------------
   // Agent Actions
@@ -804,7 +997,7 @@
   // ---------------------------------------------------------------------------
   const ADAPTER_LABELS: Record<string, string> = {
     claude_local: "Claude (Local)", codex_local: "Codex (Local)", cursor: "Cursor",
-    opencode_local: "OpenCode (Local)", pi_local: "Pi (Local)", hermes_local: "Hermes (Local)",
+    opencode_local: "OpenCode (Local)", pi_local: "Pi (Local)",
     openclaw_gateway: "OpenClaw Gateway", process: "Process", http: "HTTP",
   };
   function adapterLabel(type: string): string { return ADAPTER_LABELS[type] ?? type; }
@@ -855,7 +1048,7 @@
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <Button variant="outline" size="sm" href="/{prefix}/agents">Back</Button>
-        <Button size="sm" onclick={() => openNewIssueDialog({ assigneeAgentId: agent?.id })}>
+        <Button size="sm" onclick={() => openNewIssueDialog({ assigneeAgentId: agent?.id, companyId: companyId ?? undefined })}>
           <Plus size={14} class="mr-1" /> Assign Task
         </Button>
         <Button variant="outline" size="sm" onclick={openEditForm} disabled={editMode}>
@@ -903,6 +1096,30 @@
           </div>
         {/if}
       </div>
+    </div>
+
+    <div class="rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <div class="mb-3">
+        <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Plugin launchers</p>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">Contextual agent actions exposed by installed plugins.</p>
+      </div>
+      {#snippet noAgentLaunchers()}
+        <div class="text-sm text-zinc-500 dark:text-zinc-400">No agent launchers installed.</div>
+      {/snippet}
+      <PluginLauncherOutlet
+        placementZones={["detailTab", "toolbarButton", "globalToolbarButton"]}
+        context={{
+          companyId,
+          companyPrefix: prefix ?? null,
+          projectId: null,
+          entityId: agent?.id ?? agentId,
+          entityType: "agent",
+          parentEntityId: null,
+          userId: null,
+        }}
+        itemClassName="flex flex-wrap gap-2"
+        fallback={noAgentLaunchers}
+      />
     </div>
 
     <!-- Edit Form -->
@@ -960,7 +1177,7 @@
                 bind:value={editForm.adapterType}
                 class="w-full rounded-lg border border-white/[0.08] bg-white/[0.03] px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
               >
-                {#each ADAPTER_OPTIONS as option}
+                {#each AGENT_ADAPTER_OPTIONS as option}
                   <option value={option.value} class="bg-[#0f172a]">{option.label}</option>
                 {/each}
               </select>
@@ -1084,6 +1301,16 @@
                       {#if latestRun.durationMs}
                         <p class="text-xs text-[#94A3B8]">Duration: {(latestRun.durationMs / 1000).toFixed(1)}s</p>
                       {/if}
+                      {#if selectedRunId === null}
+                        <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+                          <RunTranscriptPreview
+                            blocks={latestRunBlocks}
+                            live={latestRun.status === "running" || latestRun.status === "queued"}
+                            limit={6}
+                            emptyMessage="Waiting for transcript..."
+                          />
+                        </div>
+                      {/if}
                     </div>
                   {/if}
                 </CardContent>
@@ -1156,6 +1383,20 @@
                   </CardContent>
                 </Card>
               </div>
+
+              <!-- Activity chart -->
+              <Card>
+                <CardHeader>
+                  <CardTitle>Activity Over Time</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {#if agentActivitySeries.length === 0}
+                    <p class="text-sm text-[#94A3B8]">No activity data available yet.</p>
+                  {:else}
+                    <ActivityChart data={agentActivitySeries} height="260px" />
+                  {/if}
+                </CardContent>
+              </Card>
 
               <!-- Recent Issues -->
               <Card>
@@ -1811,21 +2052,217 @@
               {#if heartbeats.length === 0}
                 <EmptyState title="No recent runs" description="This agent hasn't had any heartbeat runs yet." icon="🏃" />
               {:else}
-                <div class="border border-white/[0.08] rounded-lg divide-y divide-white/[0.06]">
-                  {#each heartbeats as run}
-                    <div class="flex items-center justify-between p-3 text-sm hover:bg-white/[0.03]">
-                      <div class="flex items-center gap-3 min-w-0">
-                        <StatusBadge status={run.status} />
-                        <span class="font-mono text-xs text-[#94A3B8]">{run.id.slice(0, 8)}</span>
-                        {#if run.source}<Badge variant="outline" class="text-xs">{run.source}</Badge>{/if}
-                        {#if run.reason}<span class="text-[#94A3B8] truncate">{run.reason}</span>{/if}
-                      </div>
-                      <div class="flex items-center gap-3 shrink-0">
-                        {#if run.durationMs}<span class="text-xs text-[#94A3B8]">{(run.durationMs / 1000).toFixed(1)}s</span>{/if}
-                        <TimeAgo date={run.startedAt} class="text-xs" />
-                      </div>
-                    </div>
-                  {/each}
+                <div class="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
+                  <div class="border border-white/[0.08] rounded-lg divide-y divide-white/[0.06] overflow-hidden">
+                    {#each sortedHeartbeats as run}
+                      {@const isSelected = (selectedRun?.id ?? latestRun?.id) === run.id}
+                      <button
+                        type="button"
+                        class="w-full flex flex-col gap-1 p-3 text-left text-sm transition-colors {isSelected ? 'bg-white/[0.06]' : 'hover:bg-white/[0.03]'}"
+                        onclick={() => selectRun(run.id)}
+                      >
+                        <div class="flex items-center gap-3 min-w-0">
+                          <StatusBadge status={run.status} />
+                          <span class="font-mono text-xs text-[#94A3B8]">{run.id.slice(0, 8)}</span>
+                          {#if run.source}<Badge variant="outline" class="text-xs">{run.source}</Badge>{/if}
+                          {#if run.reason}<span class="text-[#94A3B8] truncate">{run.reason}</span>{/if}
+                        </div>
+                        <div class="flex items-center justify-between gap-3 pl-8">
+                          <div class="flex items-center gap-2 text-xs text-[#94A3B8]">
+                            {#if run.durationMs}<span>{(run.durationMs / 1000).toFixed(1)}s</span>{/if}
+                          </div>
+                          <TimeAgo date={run.startedAt} class="text-xs" />
+                        </div>
+                      </button>
+                    {/each}
+                  </div>
+
+                  <div class="space-y-4 min-w-0">
+                    {#if selectedRunLoading && !selectedRunDetail}
+                      <PageSkeleton lines={8} />
+                    {:else if !selectedRun}
+                      <EmptyState title="Select a run" description="Choose a run from the list to inspect transcript, errors, and actions." icon="🏃" />
+                    {:else}
+                      <Card>
+                        <CardHeader>
+                          <div class="flex items-center justify-between gap-3">
+                            <CardTitle>Selected Run</CardTitle>
+                            <div class="flex items-center gap-2">
+                              <Button variant="outline" size="sm" href="/{prefix}/runs/{selectedRun.id}">
+                                Open full run
+                              </Button>
+                              {#if (selectedRun.status === "failed" || selectedRun.status === "timed_out") && selectedRunDetail?.agentId}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onclick={retrySelectedRun}
+                                  disabled={selectedRunAction === "retry"}
+                                >
+                                  <RotateCcw size={14} class="mr-1" />
+                                  {selectedRunAction === "retry" ? "Retrying..." : "Retry"}
+                                </Button>
+                              {/if}
+                              {#if (selectedRun.status === "running" || selectedRun.status === "queued") && selectedRunDetail?.id}
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onclick={cancelSelectedRun}
+                                  disabled={selectedRunAction === "cancel"}
+                                >
+                                  <StopCircle size={14} class="mr-1" />
+                                  {selectedRunAction === "cancel" ? "Cancelling..." : "Cancel"}
+                                </Button>
+                              {/if}
+                            </div>
+                          </div>
+                        </CardHeader>
+                        <CardContent class="space-y-4">
+                          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                            <div>
+                              <p class="text-[#94A3B8] text-xs mb-1">Status</p>
+                              <StatusBadge status={selectedRun.status} />
+                            </div>
+                            <div>
+                              <p class="text-[#94A3B8] text-xs mb-1">Run ID</p>
+                              <p class="font-mono text-xs break-all">{selectedRun.id}</p>
+                            </div>
+                            <div>
+                              <p class="text-[#94A3B8] text-xs mb-1">Source</p>
+                              <p class="text-sm">{selectedRun.source ?? selectedRun.trigger ?? "—"}</p>
+                            </div>
+                            <div>
+                              <p class="text-[#94A3B8] text-xs mb-1">Started</p>
+                              <TimeAgo date={selectedRun.startedAt ?? selectedRun.createdAt} class="text-xs" />
+                            </div>
+                          </div>
+
+                          {#if selectedRun.reason}
+                            <div class="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3">
+                              <p class="text-xs text-[#94A3B8] mb-1">Reason</p>
+                              <p class="text-sm">{selectedRun.reason}</p>
+                            </div>
+                          {/if}
+
+                          {#if selectedRun.error}
+                            <div class="rounded-lg border border-red-500/20 bg-red-500/5 p-3">
+                              <p class="text-xs font-medium text-red-300 mb-1">Error</p>
+                              <p class="text-sm text-red-100 break-all">{selectedRun.error}</p>
+                              {#if selectedRun.errorCode}
+                                <p class="text-xs text-red-200/80 mt-1">Code: {selectedRun.errorCode}</p>
+                              {/if}
+                            </div>
+                          {/if}
+
+                          <div class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                            <div class="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3">
+                              <p class="text-[#94A3B8] mb-1">Duration</p>
+                              <p class="font-medium">{selectedRun.durationMs ? `${(selectedRun.durationMs / 1000).toFixed(1)}s` : "—"}</p>
+                            </div>
+                            <div class="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3">
+                              <p class="text-[#94A3B8] mb-1">Exit code</p>
+                              <p class="font-medium">{selectedRun.exitCode ?? "—"}</p>
+                            </div>
+                            <div class="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3">
+                              <p class="text-[#94A3B8] mb-1">Tokens</p>
+                              <p class="font-medium">
+                                {#if selectedRun.usageJson}
+                                  {(((selectedRun.usageJson as any).inputTokens ?? (selectedRun.usageJson as any).input_tokens ?? 0) + ((selectedRun.usageJson as any).outputTokens ?? (selectedRun.usageJson as any).output_tokens ?? 0)).toLocaleString()}
+                                {:else}
+                                  —
+                                {/if}
+                              </p>
+                            </div>
+                            <div class="rounded-lg border border-white/[0.08] bg-white/[0.03] p-3">
+                              <p class="text-[#94A3B8] mb-1">Cost</p>
+                              <p class="font-medium">{selectedRun.usageJson ? formatCents(((selectedRun.usageJson as any).costCents ?? 0) as number) : "—"}</p>
+                            </div>
+                          </div>
+
+                          <div class="grid gap-3 sm:grid-cols-2">
+                            <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3 space-y-2">
+                              <p class="text-xs font-medium text-[#94A3B8]">Session</p>
+                              <div class="space-y-1 text-xs">
+                                <div class="flex items-start justify-between gap-3">
+                                  <span class="text-[#94A3B8]">Before</span>
+                                  <span class="font-mono break-all">{selectedRun.sessionIdBefore ?? "—"}</span>
+                                </div>
+                                <div class="flex items-start justify-between gap-3">
+                                  <span class="text-[#94A3B8]">After</span>
+                                  <span class="font-mono break-all">{selectedRun.sessionIdAfter ?? "—"}</span>
+                                </div>
+                              </div>
+                            </div>
+
+                            <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3 space-y-2">
+                              <p class="text-xs font-medium text-[#94A3B8]">Issues touched</p>
+                              {#if selectedRunIssues.length === 0}
+                                <p class="text-xs text-[#94A3B8]">No issues were recorded for this run.</p>
+                              {:else}
+                                <div class="space-y-1">
+                                  {#each selectedRunIssues.slice(0, 5) as issue}
+                                    <a href="/{prefix}/issues/{issue.identifier ?? issue.issueId}" class="flex items-center justify-between gap-2 rounded-md px-2 py-1 text-xs hover:bg-white/[0.04] transition-colors">
+                                      <div class="min-w-0">
+                                        <p class="truncate">{issue.title ?? issue.identifier ?? issue.issueId}</p>
+                                        <p class="font-mono text-[10px] text-[#94A3B8]">{issue.identifier ?? issue.issueId?.slice?.(0, 8) ?? ""}</p>
+                                      </div>
+                                      {#if issue.status}
+                                        <StatusBadge status={issue.status} />
+                                      {/if}
+                                    </a>
+                                  {/each}
+                                </div>
+                              {/if}
+                            </div>
+                          </div>
+
+                          <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3 space-y-2">
+                            <p class="text-xs font-medium text-[#94A3B8]">Workspace operations</p>
+                            {#if selectedRunWorkspaceOps.length === 0}
+                              <p class="text-xs text-[#94A3B8]">No workspace operations recorded.</p>
+                            {:else}
+                              <div class="space-y-2">
+                                {#each selectedRunWorkspaceOps as op}
+                                  <div class="rounded-md border border-white/[0.06] bg-white/[0.02] px-2.5 py-2 text-xs">
+                                    <div class="flex items-center justify-between gap-2">
+                                      <span class="font-medium capitalize">{String(op.phase ?? op.type ?? "operation").replace(/_/g, " ")}</span>
+                                      <StatusBadge status={op.status ?? "unknown"} />
+                                    </div>
+                                    <div class="mt-1 space-y-0.5 text-[#94A3B8]">
+                                      {#if op.command}
+                                        <p class="font-mono break-all">{op.command}</p>
+                                      {/if}
+                                      {#if op.cwd}
+                                        <p class="font-mono break-all">cwd: {op.cwd}</p>
+                                      {/if}
+                                    </div>
+                                  </div>
+                                {/each}
+                              </div>
+                            {/if}
+                          </div>
+
+                          <div class="rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+                            <div class="flex items-center justify-between gap-3 mb-2">
+                              <p class="text-xs font-medium text-[#94A3B8]">Transcript</p>
+                              {#if selectedRunError}
+                                <span class="text-xs text-red-300">{selectedRunError}</span>
+                              {/if}
+                            </div>
+                            {#if selectedRunLoading && selectedRunBlocks.length === 0}
+                              <PageSkeleton lines={4} />
+                            {:else}
+                              <RunTranscriptPreview
+                                blocks={selectedRunBlocks}
+                                live={selectedRun.status === "running" || selectedRun.status === "queued"}
+                                limit={10}
+                                emptyMessage="No transcript captured for this run."
+                              />
+                            {/if}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    {/if}
+                  </div>
                 </div>
               {/if}
             </div>

@@ -55,6 +55,8 @@
   const tabs = [
     { href: '/settings/general', label: 'General' },
     { href: '/settings/experimental', label: 'Experimental' },
+    { href: '/settings/heartbeats', label: 'Heartbeats' },
+    { href: '/settings/plugins', label: 'Plugins' },
     { href: '/settings/users', label: 'Users' },
     { href: '/settings/status', label: 'Status' },
     { href: '/settings/api-keys', label: 'API Keys' },

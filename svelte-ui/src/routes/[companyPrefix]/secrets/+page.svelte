@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { KeyRound, Plus, RotateCw, Trash2, ShieldAlert, Clock, Tag, Search, X, Eye, EyeOff } from 'lucide-svelte';
@@ -45,7 +45,8 @@
   let confirmDeleteId = $state<string | null>(null);
   let confirmRotateId = $state<string | null>(null);
 
-  let companyId = $derived(companyStore.selectedCompany?.id ?? companyStore.selectedCompanyId);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
 
   // ---------------------------------------------------------------------------

@@ -6,15 +6,17 @@
    */
   let _openFn: ((opts?: { assigneeAgentId?: string }) => void) | null = null;
 
-  export function openNewIssueDialog(opts?: { assigneeAgentId?: string }) {
+  export function openNewIssueDialog(opts?: { assigneeAgentId?: string; companyId?: string }) {
     _openFn?.(opts);
   }
 </script>
 
 <script lang="ts">
-  import { X, Loader2, AlertCircle } from 'lucide-svelte';
+  import { page } from '$app/stores';
+  import { goto } from '$app/navigation';
+  import { X, Loader2, AlertCircle, Tag } from 'lucide-svelte';
   import { api } from '$lib/api';
-  import { companyStore } from '$lib/stores/company.svelte';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$lib/stores/company.svelte';
   import { toastStore } from '$lib/stores/toast.svelte';
 
   interface Agent {
@@ -27,6 +29,12 @@
     id: string;
     name: string;
     prefix?: string;
+  }
+
+  interface Label {
+    id: string;
+    name: string;
+    color: string;
   }
 
   interface CreatedIssue {
@@ -46,10 +54,12 @@
   let priority = $state('medium');
   let assigneeAgentId = $state('');
   let projectId = $state('');
+  let labelIds = $state<string[]>([]);
 
   // Dropdown data
   let agents = $state<Agent[]>([]);
   let projects = $state<Project[]>([]);
+  let labels = $state<Label[]>([]);
   let loadingDropdowns = $state(false);
 
   // Element refs
@@ -57,10 +67,17 @@
   let dialogEl = $state<HTMLDivElement | null>(null);
 
   // Expose the open function to the module-level export
+  let explicitCompanyId = $state<string | null>(null);
+
   _openFn = open;
 
-  function open(opts?: { assigneeAgentId?: string }) {
+  function resolveCompanyId(): string | null {
+    return explicitCompanyId ?? resolveCompanyIdFromPrefix($page.params.companyPrefix ?? "") ?? companyStore.selectedCompanyId ?? null;
+  }
+
+  function open(opts?: { assigneeAgentId?: string; companyId?: string }) {
     resetForm();
+    explicitCompanyId = opts?.companyId ?? null;
     if (opts?.assigneeAgentId) {
       assigneeAgentId = opts.assigneeAgentId;
     }
@@ -82,19 +99,21 @@
     priority = 'medium';
     assigneeAgentId = '';
     projectId = '';
+    labelIds = [];
     errorMessage = '';
     submitting = false;
   }
 
   async function fetchDropdownData() {
-    const companyId = companyStore.selectedCompanyId;
+    const companyId = resolveCompanyId();
     if (!companyId) return;
 
     loadingDropdowns = true;
     try {
-      const [agentsRes, projectsRes] = await Promise.all([
+      const [agentsRes, projectsRes, labelsRes] = await Promise.all([
         api(`/api/companies/${companyId}/agents`),
         api(`/api/companies/${companyId}/projects`),
+        api(`/api/companies/${companyId}/labels`),
       ]);
 
       if (agentsRes.ok) {
@@ -105,11 +124,35 @@
         const data = await projectsRes.json();
         projects = Array.isArray(data) ? data : data.projects ?? data.data ?? [];
       }
+      if (labelsRes.ok) {
+        const data = await labelsRes.json();
+        labels = Array.isArray(data) ? data : data.labels ?? data.data ?? [];
+      }
     } catch {
       // Silently fail — dropdowns will simply be empty
     } finally {
       loadingDropdowns = false;
     }
+  }
+
+  function toggleLabel(labelId: string) {
+    labelIds = labelIds.includes(labelId)
+      ? labelIds.filter((id) => id !== labelId)
+      : [...labelIds, labelId];
+  }
+
+  function labelDotStyle(color: string) {
+    const map: Record<string, string> = {
+      red: "#ef4444",
+      orange: "#f97316",
+      yellow: "#eab308",
+      green: "#22c55e",
+      blue: "#3b82f6",
+      purple: "#a855f7",
+      pink: "#ec4899",
+      zinc: "#71717a",
+    };
+    return `background-color: ${map[color] ?? map.blue};`;
   }
 
   async function handleSubmit() {
@@ -119,7 +162,7 @@
       return;
     }
 
-    const companyId = companyStore.selectedCompanyId;
+    const companyId = resolveCompanyId();
     if (!companyId) {
       errorMessage = 'No company selected.';
       return;
@@ -137,6 +180,7 @@
       if (description.trim()) body.description = description.trim();
       if (assigneeAgentId) body.assigneeAgentId = assigneeAgentId;
       if (projectId) body.projectId = projectId;
+      if (labelIds.length > 0) body.labelIds = labelIds;
 
       const res = await api(`/api/companies/${companyId}/issues`, {
         method: 'POST',
@@ -158,6 +202,7 @@
 
       visible = false;
       resetForm();
+      explicitCompanyId = null;
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred.';
     } finally {
@@ -310,6 +355,41 @@
               {/each}
             </select>
           </div>
+        </div>
+
+        <!-- Labels -->
+        <div>
+          <div class="mb-1.5 flex items-center justify-between gap-2">
+            <span class={labelClasses}>Labels</span>
+            {#if labels.length > 0}
+              <span class="text-[11px] text-muted-foreground">{labelIds.length} selected</span>
+            {/if}
+          </div>
+          {#if loadingDropdowns}
+            <div class="rounded-lg border border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+              Loading labels...
+            </div>
+          {:else if labels.length === 0}
+            <div class="rounded-lg border border-dashed border-border bg-card px-3 py-2 text-xs text-muted-foreground">
+              No labels yet.
+            </div>
+          {:else}
+            <div class="flex flex-wrap gap-2">
+              {#each labels as label}
+                {@const selected = labelIds.includes(label.id)}
+                <button
+                  type="button"
+                  onclick={() => toggleLabel(label.id)}
+                  class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {selected
+                    ? 'border-blue-500/40 bg-blue-500/10 text-blue-200'
+                    : 'border-border bg-card text-muted-foreground hover:border-blue-500/30 hover:text-foreground'}"
+                >
+                  <span class="h-2 w-2 rounded-full" style={labelDotStyle(label.color)}></span>
+                  {label.name}
+                </button>
+              {/each}
+            </div>
+          {/if}
         </div>
 
         <!-- Error -->

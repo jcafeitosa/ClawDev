@@ -11,6 +11,14 @@ Source inputs: `GOAL.md`, `PRODUCT.md`, `SPEC.md`, `DATABASE.md`, current monore
 This document is the concrete, build-ready V1 contract.
 When there is a conflict, `SPEC-implementation.md` controls V1 behavior.
 
+All substantial changes to the repo should follow the SDD workflow documented in [`internal-docs/spec/spec-driven-development.md`](./spec/spec-driven-development.md):
+
+1. spec / PRD
+2. architecture plan / ADR
+3. task breakdown
+4. implementation
+5. verification
+
 ## 2. V1 Outcomes
 
 ClawDev V1 must provide a full control-plane loop for autonomous agents:

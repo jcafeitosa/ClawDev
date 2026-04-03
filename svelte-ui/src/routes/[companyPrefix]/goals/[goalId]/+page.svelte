@@ -3,7 +3,7 @@
   import { goto } from "$app/navigation";
   import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
-  import { companyStore } from "$stores/company.svelte.js";
+  import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
@@ -70,7 +70,8 @@
   // Derived
   // ---------------------------------------------------------------------------
   let goalId = $derived($page.params.goalId);
-  let companyId = $derived(companyStore.selectedCompanyId);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
   let childGoals = $derived(allGoals.filter((g) => g.parentId === goalId));
   let parentGoal = $derived(goal?.parentId ? allGoals.find((g) => g.id === goal!.parentId) ?? null : null);

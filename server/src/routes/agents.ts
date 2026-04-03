@@ -1170,6 +1170,76 @@ export function agentRoutes(db: Db) {
       },
     )
 
+    // ── Update heartbeat scheduling for an agent ───────────────────
+    .patch(
+      "/agents/:id/heartbeat-settings",
+      async ({ params, body, set, ...ctx }: any) => {
+        const actor = ctx.actor;
+        assertInstanceAdmin(actor);
+
+        const agent = await svc.getById(params.id);
+        if (!agent) {
+          set.status = 404;
+          return { error: "Agent not found" };
+        }
+
+        const input = body as { enabled?: boolean };
+        if (typeof input.enabled !== "boolean") {
+          set.status = 422;
+          return { error: "Field 'enabled' is required" };
+        }
+
+        const existingRuntimeConfig = isPlain(agent.runtimeConfig) ? { ...agent.runtimeConfig } : {};
+        const heartbeat = isPlain(existingRuntimeConfig.heartbeat)
+          ? { ...(existingRuntimeConfig.heartbeat as Record<string, unknown>) }
+          : {};
+        heartbeat.enabled = input.enabled;
+        existingRuntimeConfig.heartbeat = heartbeat;
+
+        const normalizedRuntimeConfig = normalizeRuntimeConfigForAdapterType(
+          agent.adapterType,
+          existingRuntimeConfig,
+        );
+
+        const updated = await svc.update(
+          params.id,
+          { runtimeConfig: normalizedRuntimeConfig },
+          {
+            recordRevision: {
+              createdByUserId: actor?.userId ?? null,
+              source: "instance_scheduler_heartbeat_toggle",
+            },
+          },
+        );
+
+        if (!updated) {
+          set.status = 404;
+          return { error: "Agent not found" };
+        }
+
+        await logActivity(db, {
+          companyId: agent.companyId,
+          actorType: "user",
+          actorId: actor?.userId ?? "board",
+          action: input.enabled ? "heartbeat.enabled" : "heartbeat.disabled",
+          entityType: "agent",
+          entityId: agent.id,
+          details: {
+            agentId: agent.id,
+            enabled: input.enabled,
+          },
+        });
+
+        return updated;
+      },
+      {
+        params: t.Object({ id: t.String() }),
+        body: t.Object({
+          enabled: t.Boolean(),
+        }),
+      },
+    )
+
     // ── Org chart (JSON) ───────────────────────────────────────────
     .get(
       "/companies/:companyId/org",

@@ -2,7 +2,7 @@
   import { page } from "$app/stores";
   import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
-  import { companyStore } from "$stores/company.svelte.js";
+  import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge } from "$components/ui/index.js";
@@ -39,7 +39,8 @@
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
-  let companyId = $derived(companyStore.selectedCompanyId);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
 
   let filteredWorkspaces = $derived(

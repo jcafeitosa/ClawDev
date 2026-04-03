@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Tabs, TabsList, TabsTrigger, TabsContent, Skeleton } from '$lib/components/ui/index.js';
@@ -87,7 +88,8 @@
   let quotaWindows = $state<any[]>([]);
   let quotaLoaded = $state(false);
 
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
 
   // ── Computed summary values ────────────────────────────────────────
   let inferenceSpend = $derived(summary?.totalSpend ?? summary?.total ?? 0);

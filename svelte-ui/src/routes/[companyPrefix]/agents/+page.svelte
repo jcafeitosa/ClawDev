@@ -3,7 +3,7 @@
   import { page } from '$app/stores';
   import { browser } from '$app/environment';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
   import { Plus, Bot, List, GitBranch, SlidersHorizontal } from 'lucide-svelte';
@@ -56,7 +56,8 @@
     if (browser) localStorage.setItem('agents-view-mode', viewMode);
   });
 
-  let companyId = $derived(companyStore.selectedCompany?.id ?? companyStore.selectedCompanyId);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
 
   // ---------------------------------------------------------------------------
   // Live run map: agentId -> { runId, liveCount }

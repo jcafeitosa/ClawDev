@@ -4,12 +4,13 @@
   import { ToastViewport } from "$components/layout/index.js";
   import DevBanner from "$components/layout/dev-banner.svelte";
   import MobileBottomNav from "$components/layout/mobile-bottom-nav.svelte";
-  import { NewIssueDialog } from "$components/index.js";
+  import { NewIssueDialog, CommandPalette } from "$components/index.js";
   import { sidebarStore } from "$stores/sidebar.svelte.js";
   import { companyStore } from "$stores/company.svelte.js";
   import { themeStore } from "$stores/theme.svelte.js";
   import { liveEventsStore } from "$stores/live-events.svelte.js";
   import { keyboardShortcutsStore } from "$stores/keyboard-shortcuts.svelte.js";
+  import { resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { page } from "$app/stores";
   import { onMount, onDestroy } from "svelte";
 
@@ -24,7 +25,7 @@
 
   // Reconnect live events when company changes
   $effect(() => {
-    const id = companyStore.selectedCompanyId;
+    const id = resolveCompanyIdFromPrefix($page.params.companyPrefix) ?? companyStore.selectedCompanyId;
     if (id) liveEventsStore.reconnect(id);
   });
 
@@ -83,4 +84,5 @@
 
 <MobileBottomNav companyPrefix={$page.params.companyPrefix ?? ''} />
 <NewIssueDialog />
+<CommandPalette />
 <ToastViewport />

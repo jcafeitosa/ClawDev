@@ -3,8 +3,10 @@
   import { goto } from "$app/navigation";
   import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
-  import { companyStore } from "$stores/company.svelte.js";
+  import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
+  import { pluginUiContributionsStore } from "$stores/plugin-ui-contributions.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
+  import { PluginLauncherOutlet, PluginRenderer } from "$lib/components/plugins/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
   import { Pencil, Trash2, Plus, X } from "lucide-svelte";
@@ -83,6 +85,13 @@
     [key: string]: unknown;
   }
 
+  interface PluginDetailTab {
+    id: string;
+    pluginId: string;
+    label: string;
+    routePath: string | null;
+  }
+
   // ---------------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------------
@@ -97,11 +106,14 @@
   let goals = $state<Goal[]>([]);
   let allGoals = $state<Goal[]>([]);
   let workspaces = $state<Workspace[]>([]);
+  let pluginDetailTabs = $state<PluginDetailTab[]>([]);
   let loading = $state(true);
   let notFound = $state(false);
   let activeTab = $state("issues");
   let workspacesLoading = $state(false);
   let workspacesLoadError = $state<string | null>(null);
+  let pluginTabsLoading = $state(false);
+  let pluginTabsLoadError = $state<string | null>(null);
 
   // Edit form state
   let editing = $state(false);
@@ -149,8 +161,18 @@
   // Derived
   // ---------------------------------------------------------------------------
   let projectId = $derived($page.params.projectId);
-  let companyId = $derived(companyStore.selectedCompanyId);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
+  let projectPluginHostContext = $derived({
+    companyId,
+    companyPrefix: prefix ?? null,
+    projectId: (project?.id ?? projectId) ?? null,
+    entityId: (project?.id ?? projectId) ?? null,
+    entityType: "project",
+    parentEntityId: null,
+    userId: null,
+  });
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -221,9 +243,40 @@
     }
   }
 
+  async function loadPluginDetailTabs() {
+    pluginTabsLoading = true;
+    pluginTabsLoadError = null;
+    try {
+      const contributions = await pluginUiContributionsStore.load();
+      const tabs: PluginDetailTab[] = [];
+      for (const contribution of contributions ?? []) {
+        for (const slot of contribution.slots ?? []) {
+          if (slot.type !== "detailTab") continue;
+          tabs.push({
+            id: slot.id,
+            pluginId: contribution.pluginId,
+            label: slot.displayName ?? contribution.displayName ?? contribution.pluginKey ?? contribution.pluginId,
+            routePath: slot.routePath ?? null,
+          });
+        }
+      }
+      tabs.sort((a, b) => {
+        const labelCmp = a.label.localeCompare(b.label);
+        if (labelCmp !== 0) return labelCmp;
+        return a.id.localeCompare(b.id);
+      });
+      pluginDetailTabs = tabs;
+    } catch (err: any) {
+      pluginDetailTabs = [];
+      pluginTabsLoadError = err?.message ?? "Failed to load plugin tabs";
+    } finally {
+      pluginTabsLoading = false;
+    }
+  }
+
   onMount(async () => {
     await loadProject();
-    await Promise.all([loadIssues(), loadGoals(), loadWorkspaces()]);
+    await Promise.all([loadIssues(), loadGoals(), loadWorkspaces(), loadPluginDetailTabs()]);
   });
 
   $effect(() => {
@@ -617,6 +670,30 @@
       </div>
     </div>
 
+    <div class="mb-6 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <div class="mb-3">
+        <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Plugin launchers</p>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">Contextual actions contributed by installed plugins.</p>
+      </div>
+      {#snippet noProjectLaunchers()}
+        <div class="text-sm text-zinc-500 dark:text-zinc-400">No project launchers installed.</div>
+      {/snippet}
+      <PluginLauncherOutlet
+        placementZones={["projectSidebarItem", "detailTab", "toolbarButton", "contextMenuItem"]}
+        context={{
+          companyId,
+          companyPrefix: prefix ?? null,
+          projectId: (project?.id ?? projectId) ?? null,
+          entityId: (project?.id ?? projectId) ?? null,
+          entityType: "project",
+          parentEntityId: null,
+          userId: null,
+        }}
+        itemClassName="flex flex-wrap gap-2"
+        fallback={noProjectLaunchers}
+      />
+    </div>
+
     <!-- Main content + sidebar -->
     <div class="flex flex-col lg:flex-row gap-6">
       <!-- Main content area -->
@@ -627,6 +704,9 @@
             <TabsTrigger value="goals">Goals ({goals.length})</TabsTrigger>
             <TabsTrigger value="workspaces">Workspaces ({workspaces.length})</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>
+            {#each pluginDetailTabs as tab (tab.id)}
+              <TabsTrigger value={`plugin:${tab.pluginId}:${tab.id}`}>{tab.label}</TabsTrigger>
+            {/each}
           </TabsList>
 
           <TabsContent value="issues">
@@ -1030,6 +1110,23 @@
               </Card>
             </div>
           </TabsContent>
+
+          {#each pluginDetailTabs as tab (tab.id)}
+            <TabsContent value={`plugin:${tab.pluginId}:${tab.id}`}>
+              <div class="mt-4 space-y-3">
+                <div>
+                  <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{tab.label}</p>
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">Plugin-contributed project detail tab.</p>
+                </div>
+                <PluginRenderer
+                  pluginId={tab.pluginId}
+                  view="detailTab"
+                  context={projectPluginHostContext}
+                  routePath={tab.routePath}
+                />
+              </div>
+            </TabsContent>
+          {/each}
         </Tabs>
       </div>
 

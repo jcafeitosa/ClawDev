@@ -1,6 +1,6 @@
 <script lang="ts">
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
@@ -24,11 +24,16 @@
 
   let companyName = $state('');
   let companyDescription = $state('');
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
+  let currentCompany = $derived.by(() => {
+    if (!companyId) return null;
+    return companyStore.companies.find((company) => company.id === companyId) ?? null;
+  });
 
   $effect(() => {
-    companyName = companyStore.selectedCompany?.name ?? '';
-    companyDescription = (companyStore.selectedCompany?.description as string) ?? '';
+    companyName = currentCompany?.name ?? '';
+    companyDescription = (currentCompany?.description as string) ?? '';
   });
 
   async function saveGeneral() {
@@ -56,7 +61,7 @@
 
   // --- Appearance: Logo ---
   let logoUploading = $state(false);
-  let logoPreview = $derived(companyStore.selectedCompany?.logoUrl as string | undefined);
+  let logoPreview = $derived(currentCompany?.logoUrl as string | undefined);
   let logoInput: HTMLInputElement | undefined = $state();
 
   async function uploadLogo(event: Event) {
@@ -111,7 +116,7 @@
   let savingBrandColor = $state(false);
 
   $effect(() => {
-    const existing = companyStore.selectedCompany?.brandColor as string | undefined;
+    const existing = currentCompany?.brandColor as string | undefined;
     if (existing) brandColor = existing;
   });
 
@@ -155,7 +160,7 @@
   let savingHiring = $state(false);
 
   $effect(() => {
-    requireBoardApproval = (companyStore.selectedCompany?.requireBoardApprovalForNewAgents as boolean) ?? false;
+    requireBoardApproval = (currentCompany?.requireBoardApprovalForNewAgents as boolean) ?? false;
   });
 
   let inviteUrl = $derived(
@@ -229,7 +234,7 @@
 
   // --- Danger: Delete ---
   async function deleteCompany() {
-    if (!companyId || confirmText !== companyStore.selectedCompany?.name) return;
+    if (!companyId || confirmText !== currentCompany?.name) return;
     deleting = true;
     try {
       await api(`/api/companies/${companyId}`, { method: 'DELETE' });
@@ -661,7 +666,7 @@
             Are you absolutely sure? This action cannot be undone.
           </p>
           <p class="text-xs text-muted-foreground">
-            Type <span class="font-mono font-medium text-foreground">{companyStore.selectedCompany?.name}</span> to confirm.
+            Type <span class="font-mono font-medium text-foreground">{currentCompany?.name}</span> to confirm.
           </p>
           <input
             bind:value={confirmText}
@@ -671,7 +676,7 @@
           <div class="flex items-center gap-3">
             <button
               onclick={deleteCompany}
-              disabled={deleting || confirmText !== companyStore.selectedCompany?.name}
+              disabled={deleting || confirmText !== currentCompany?.name}
               class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
             >
               <Trash2 class="h-4 w-4" />

@@ -10,9 +10,9 @@
  */
 
 import { Elysia, t } from "elysia";
-import { and, desc, eq } from "drizzle-orm";
+import { and, desc, eq, ilike, or } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
-import { documentRevisions, documents } from "@clawdev/db";
+import { documentRevisions, documents, issueDocuments, issues } from "@clawdev/db";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { badRequest, notFound } from "../errors.js";
 import { logActivity } from "../services/index.js";
@@ -20,6 +20,9 @@ import { logActivity } from "../services/index.js";
 type DocumentRow = {
   id: string;
   companyId: string;
+  issueId?: string | null;
+  issueIdentifier?: string | null;
+  issueTitle?: string | null;
   title: string | null;
   format: string;
   latestBody: string;
@@ -37,6 +40,9 @@ function mapDocumentRow(row: DocumentRow) {
   return {
     id: row.id,
     companyId: row.companyId,
+    issueId: row.issueId ?? null,
+    issueIdentifier: row.issueIdentifier ?? null,
+    issueTitle: row.issueTitle ?? null,
     title: row.title,
     format: row.format,
     body: row.latestBody,
@@ -66,6 +72,9 @@ export function documentRoutes(db: Db) {
       .select({
         id: documents.id,
         companyId: documents.companyId,
+        issueId: issueDocuments.issueId,
+        issueIdentifier: issues.identifier,
+        issueTitle: issues.title,
         title: documents.title,
         format: documents.format,
         latestBody: documents.latestBody,
@@ -79,6 +88,8 @@ export function documentRoutes(db: Db) {
         updatedAt: documents.updatedAt,
       })
       .from(documents)
+      .leftJoin(issueDocuments, eq(issueDocuments.documentId, documents.id))
+      .leftJoin(issues, eq(issues.id, issueDocuments.issueId))
       .where(eq(documents.id, id))
       .limit(1);
     return (rows[0] ?? null) as DocumentRow | null;
@@ -98,11 +109,26 @@ export function documentRoutes(db: Db) {
       async (ctx: any) => {
         const actor: Actor = ctx.actor;
         const { companyId } = ctx.params;
+        const q = typeof ctx.query?.q === "string" ? ctx.query.q.trim() : "";
         assertCompanyAccess(actor, companyId);
+        const filters = [eq(documents.companyId, companyId)];
+        if (q) {
+          const search = `%${q}%`;
+          filters.push(
+            or(
+              ilike(documents.title, search),
+              ilike(documents.format, search),
+              ilike(documents.latestBody, search),
+            )!,
+          );
+        }
         const rows = await db
           .select({
             id: documents.id,
             companyId: documents.companyId,
+            issueId: issueDocuments.issueId,
+            issueIdentifier: issues.identifier,
+            issueTitle: issues.title,
             title: documents.title,
             format: documents.format,
             latestBody: documents.latestBody,
@@ -116,11 +142,16 @@ export function documentRoutes(db: Db) {
             updatedAt: documents.updatedAt,
           })
           .from(documents)
-          .where(eq(documents.companyId, companyId))
+          .leftJoin(issueDocuments, eq(issueDocuments.documentId, documents.id))
+          .leftJoin(issues, eq(issues.id, issueDocuments.issueId))
+          .where(and(...filters))
           .orderBy(desc(documents.updatedAt));
         return rows.map(mapDocumentRow);
       },
-      { params: t.Object({ companyId: t.String() }) },
+      {
+        params: t.Object({ companyId: t.String() }),
+        query: t.Object({ q: t.Optional(t.String()) }),
+      },
     )
 
     .post(
@@ -285,6 +316,36 @@ export function documentRoutes(db: Db) {
         });
 
         return mapDocumentRow(updated);
+      },
+      { params: t.Object({ id: t.String() }) },
+    )
+
+    .delete(
+      "/documents/:id",
+      async (ctx: any) => {
+        const actor: Actor = ctx.actor;
+        const existing = await getDocumentById(ctx.params.id);
+        if (!existing) throw notFound("Document not found");
+        assertCompanyAccess(actor, existing.companyId);
+
+        const actorInfo = getActorInfo(actor);
+        await db.transaction(async (tx) => {
+          await tx.delete(documents).where(eq(documents.id, existing.id));
+        });
+
+        await logActivity(db, {
+          companyId: existing.companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          runId: actorInfo.runId,
+          action: "document.deleted",
+          entityType: "document",
+          entityId: existing.id,
+          details: { title: existing.title, format: existing.format },
+        });
+
+        return mapDocumentRow(existing);
       },
       { params: t.Object({ id: t.String() }) },
     )

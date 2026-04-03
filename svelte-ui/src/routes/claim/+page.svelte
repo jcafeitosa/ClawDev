@@ -12,6 +12,7 @@
   let claimState = $state<ClaimState>('idle');
   let error = $state('');
   let challengeInfo = $state<{ requiresCode?: boolean; status?: string } | null>(null);
+  let nextPath = $derived($page.url.searchParams.get('next') ?? '/');
 
   // Auto-fill token from URL query param
   onMount(() => {
@@ -92,7 +93,7 @@
       }
 
       claimState = 'success';
-      setTimeout(() => goto('/'), 2000);
+      setTimeout(() => goto(nextPath || '/'), 2000);
     } catch (e: unknown) {
       claimState = 'error';
       error = e instanceof Error ? e.message : 'An unexpected error occurred';
@@ -256,7 +257,7 @@
 
     <!-- Footer Link -->
     <p class="claim-footer">
-      Already have access? <a href="/auth" class="claim-footer-link">Sign in</a>
+      Already have access? <a href={`/auth?next=${encodeURIComponent(nextPath || '/')}`} class="claim-footer-link">Sign in</a>
     </p>
   </div>
 </div>

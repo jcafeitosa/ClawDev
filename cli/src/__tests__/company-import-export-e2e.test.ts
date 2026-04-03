@@ -6,10 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import {
-  getEmbeddedPostgresTestSupport,
-  startEmbeddedPostgresTestDatabase,
-} from "./helpers/embedded-postgres.js";
+import { encodePGliteUrl, openPGliteDatabase, type PGliteDatabaseHandle } from "@clawdev/db";
 import { createStoredZipArchive } from "./helpers/zip.js";
 
 const execFileAsync = promisify(execFile);
@@ -33,15 +30,6 @@ async function getAvailablePort(): Promise<number> {
       });
     });
   });
-}
-
-const embeddedPostgresSupport = await getEmbeddedPostgresTestSupport();
-const describeEmbeddedPostgres = embeddedPostgresSupport.supported ? describe : describe.skip;
-
-if (!embeddedPostgresSupport.supported) {
-  console.warn(
-    `Skipping embedded Postgres company import/export e2e tests on this host: ${embeddedPostgresSupport.reason ?? "unsupported environment"}`,
-  );
 }
 
 function writeTestConfig(configPath: string, tempRoot: string, port: number, connectionString: string) {
@@ -230,23 +218,25 @@ async function waitForServer(
   );
 }
 
-describeEmbeddedPostgres("clawdev company import/export e2e", () => {
+describe("clawdev company import/export e2e", () => {
   let tempRoot = "";
   let configPath = "";
   let exportDir = "";
   let apiBase = "";
   let serverProcess: ServerProcess | null = null;
-  let tempDb: Awaited<ReturnType<typeof startEmbeddedPostgresTestDatabase>> | null = null;
+  let tempDb: PGliteDatabaseHandle | null = null;
 
   beforeAll(async () => {
     tempRoot = mkdtempSync(path.join(os.tmpdir(), "clawdev-company-cli-e2e-"));
     configPath = path.join(tempRoot, "config", "config.json");
     exportDir = path.join(tempRoot, "exported-company");
 
-    tempDb = await startEmbeddedPostgresTestDatabase("clawdev-company-cli-db-");
+    const pgliteDataDir = path.join(tempRoot, "db");
+    tempDb = await openPGliteDatabase(pgliteDataDir);
 
     const port = await getAvailablePort();
-    writeTestConfig(configPath, tempRoot, port, tempDb.connectionString);
+    const connectionString = encodePGliteUrl(pgliteDataDir);
+    writeTestConfig(configPath, tempRoot, port, connectionString);
     apiBase = `http://127.0.0.1:${port}`;
 
     const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -256,7 +246,7 @@ describeEmbeddedPostgres("clawdev company import/export e2e", () => {
       ["clawdev", "run", "--config", configPath],
       {
         cwd: repoRoot,
-        env: createServerEnv(configPath, port, tempDb.connectionString),
+        env: createServerEnv(configPath, port, connectionString),
         stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -273,7 +263,16 @@ describeEmbeddedPostgres("clawdev company import/export e2e", () => {
 
   afterAll(async () => {
     await stopServerProcess(serverProcess);
-    await tempDb?.cleanup();
+    if (tempDb) {
+      try {
+        await tempDb.stop();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (!message.includes("Aborted()")) {
+          throw error;
+        }
+      }
+    }
     if (tempRoot) {
       rmSync(tempRoot, { recursive: true, force: true });
     }

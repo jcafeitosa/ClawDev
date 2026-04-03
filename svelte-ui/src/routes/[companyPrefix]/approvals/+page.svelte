@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { ShieldCheck, Check, X, Clock, User, ChevronRight } from 'lucide-svelte';
@@ -28,7 +28,8 @@
   let activeTab = $state<'pending' | 'all'>('pending');
   let actionLoading = $state<string | null>(null);
 
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
 
   $effect(() => {
     if (!companyId) return;
@@ -42,7 +43,9 @@
       .finally(() => (loading = false));
   });
 
-  let pendingApprovals = $derived(approvals.filter((a) => a.status === 'pending'));
+  let pendingApprovals = $derived(
+    approvals.filter((a) => a.status === 'pending' || a.status === 'revision_requested'),
+  );
   let pendingCount = $derived(pendingApprovals.length);
   let displayedApprovals = $derived(activeTab === 'pending' ? pendingApprovals : approvals);
 

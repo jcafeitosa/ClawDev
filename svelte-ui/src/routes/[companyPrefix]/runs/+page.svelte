@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Play, Search, ChevronRight, Timer, Zap, UserCheck, XCircle, CheckCircle2, Loader2, CircleDot } from 'lucide-svelte';
@@ -37,7 +37,8 @@
   let statusFilter = $state<string>('all');
   let searchQuery = $state('');
 
-  let companyId = $derived(companyStore.selectedCompany?.id ?? companyStore.selectedCompanyId);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
 
   // ---------------------------------------------------------------------------

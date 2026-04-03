@@ -1,44 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { ensureCompany } from "./helpers";
-
-async function collectBrowserErrors(page: Parameters<typeof test>[0]["page"]) {
-  const consoleErrors: string[] = [];
-  const pageErrors: string[] = [];
-  const requestFailures: string[] = [];
-  const notFoundResponses: string[] = [];
-
-  page.on("console", (msg) => {
-    if (msg.type() === "error") {
-      const text = msg.text();
-      if (
-        !text.includes("SES Removing unpermitted intrinsics") &&
-        !text.includes("[vite] failed to connect to websocket") &&
-        !text.includes("WebSocket connection to 'ws://127.0.0.1:")
-      ) {
-        consoleErrors.push(text);
-      }
-    }
-  });
-  page.on("pageerror", (error) => {
-    const message = error.message;
-    if (message.includes("SES Removing unpermitted intrinsics")) return;
-    if (message.includes("WebSocket closed without opened.")) return;
-    pageErrors.push(message);
-  });
-  page.on("requestfailed", (request) => {
-    const failure = request.failure()?.errorText ?? "unknown";
-    if (failure !== "net::ERR_ABORTED") {
-      requestFailures.push(`${request.method()} ${request.url()} ${failure}`);
-    }
-  });
-  page.on("response", (response) => {
-    if (response.status() === 404) {
-      notFoundResponses.push(`${response.request().method()} ${response.url()}`);
-    }
-  });
-
-  return { consoleErrors, pageErrors, requestFailures, notFoundResponses };
-}
+import { collectBrowserDiagnostics, ensureCompany } from "./helpers";
 
 async function visitAndSmoke(page: Parameters<typeof test>[0]["page"], url: string) {
   await page.goto(url);
@@ -69,7 +30,7 @@ async function clickFirstNavigableLink(page: Parameters<typeof test>[0]["page"])
 
 test("deep navigation smoke covers the major interactive surfaces", async ({ page }) => {
   const { prefix } = await ensureCompany(page);
-  const errors = await collectBrowserErrors(page);
+  const errors = collectBrowserDiagnostics(page);
 
   const routes = [
     `/${prefix}/dashboard`,

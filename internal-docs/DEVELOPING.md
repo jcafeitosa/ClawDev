@@ -170,6 +170,25 @@ That repo-local env also sets:
 
 The server/UI use those values for worktree-specific branding such as the top banner and dynamically colored favicon.
 
+## Spec-Driven Development Workflow
+
+Use the SDD workflow for meaningful changes:
+
+1. Start with the relevant product or implementation spec.
+2. Add an architecture note or ADR if the change affects contracts, data, runtime behavior, or UI flow.
+3. Break the work into a dated plan under `internal-docs/plans/`.
+4. Implement the change.
+5. Update docs and tests in the same change.
+6. Verify with:
+
+```sh
+pnpm -r typecheck
+pnpm test:run
+pnpm build
+```
+
+If you are changing a user-visible workflow, add a smoke test or browser validation before handoff.
+
 Print shell exports explicitly when needed:
 
 ```sh

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Plus, Search, List, LayoutGrid, Filter, ArrowUpDown, Layers, ChevronRight, X, Check, User } from 'lucide-svelte';
@@ -136,7 +136,8 @@
   let assigneePickerIssueId = $state<string | null>(null);
   let viewState = $state<ViewState>({ ...defaultViewState });
 
-  let companyId = $derived(companyStore.selectedCompany?.id ?? companyStore.selectedCompanyId);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
   let currentPrefix = $derived($page.params.companyPrefix);
   let storageKey = $derived(companyId ? `clawdev:issues-view:${companyId}` : 'clawdev:issues-view');
 

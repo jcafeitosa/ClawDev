@@ -4,7 +4,10 @@
   import { api } from "$lib/api";
   import { goto } from "$app/navigation";
   import { onMount } from "svelte";
+  import { companyStore } from "$stores/company.svelte.js";
   import WebcamPixelGrid from "$lib/components/ui/webcam-pixel-grid/WebcamPixelGrid.svelte";
+  import AgentConfigForm from "$lib/components/agent-config-form.svelte";
+  import { AGENT_ADAPTER_OPTIONS } from "$lib/constants/agent-adapters";
 
   const TOTAL_STEPS = 4;
 
@@ -12,6 +15,8 @@
   let loading = $state(false);
   let error = $state<string | null>(null);
   let ready = $state(false);
+  let routeOnboardingContext = $state(false);
+  let nextPath = $state<string | null>(null);
 
   // Auto-detected state
   let hasSession = $state(false);
@@ -27,11 +32,14 @@
   let companyName = $state("");
   let companyMission = $state("");
   let createdCompany = $state<{ id: string; slug?: string; issuePrefix?: string; name: string } | null>(null);
+  let createdCompanyId = $state<string | null>(null);
+  let createdCompanyPrefix = $state<string | null>(null);
 
   // Step 2: Agent
   let agentName = $state("");
   let adapterType = $state("claude_local");
   let createdAgent = $state<{ id: string; name: string; role: string } | null>(null);
+  let adapterConfig = $state<Record<string, any>>({});
 
   // Step 3: Task
   let taskTitle = $state("");
@@ -44,16 +52,6 @@
   let agentNameId = "setup-agent-name";
   let taskTitleId = "setup-task-title";
   let taskDescriptionId = "setup-task-description";
-
-  const ADAPTER_OPTIONS = [
-    { value: "claude_local", label: "Claude (Local)" },
-    { value: "codex_local", label: "Codex (Local)" },
-    { value: "cursor", label: "Cursor" },
-    { value: "gemini_local", label: "Gemini (Local)" },
-    { value: "opencode_local", label: "OpenCode (Local)" },
-    { value: "pi_local", label: "Pi (Local)" },
-    { value: "openclaw_gateway", label: "OpenClaw Gateway" },
-  ];
 
   const stepMeta: Array<{ label: string }> = [
     { label: "Company" },
@@ -68,12 +66,22 @@
   const session = authClient.useSession();
 
   onMount(async () => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const requestedStep = (() => {
+      const parsed = Number.parseInt(searchParams.get("step") ?? "", 10);
+      return parsed === 2 || parsed === 3 || parsed === 4 ? parsed : 1;
+    })();
+    const requestedCompanyId = searchParams.get("companyId")?.trim() || null;
+    const requestedCompanyPrefix = searchParams.get("companyPrefix")?.trim() || null;
+    nextPath = searchParams.get("next")?.trim() || null;
+
     try {
       const res = await fetch("/api/health");
       const health = await res.json();
 
       // Already has companies — setup is done, go to root
-      if (health.hasCompanies) {
+      const routeAwareOnboardingRequested = Boolean(requestedCompanyId) && requestedStep > 1;
+      if (health.hasCompanies && !routeAwareOnboardingRequested) {
         goto("/", { replaceState: true });
         return;
       }
@@ -92,6 +100,35 @@
     }
 
     publicUrl = window.location.origin;
+
+    if (requestedCompanyId) {
+      routeOnboardingContext = true;
+      createdCompanyId = requestedCompanyId;
+      const matchedCompany = companyStore.companies.find((company) => company.id === requestedCompanyId);
+      createdCompanyPrefix =
+        requestedCompanyPrefix ??
+        matchedCompany?.slug ??
+        matchedCompany?.issuePrefix ??
+        requestedCompanyId;
+      companyStore.select(requestedCompanyId, "route_sync");
+      currentStep = requestedStep > 1 ? requestedStep : 2;
+      completedSteps = new Set(
+        Array.from({ length: Math.max(currentStep - 1, 0) }, (_, index) => index + 1)
+      );
+      createdCompany = matchedCompany
+        ? {
+            id: matchedCompany.id,
+            slug: matchedCompany.slug,
+            issuePrefix: matchedCompany.issuePrefix,
+            name: matchedCompany.name
+          }
+        : {
+            id: requestedCompanyId,
+            slug: createdCompanyPrefix,
+            issuePrefix: createdCompanyPrefix,
+            name: createdCompanyPrefix
+          };
+    }
 
     // Check if we already have a session (authenticated mode)
     if (!hasSession) {
@@ -115,6 +152,9 @@
 
   function goToStep(step: number) {
     // Allow going backwards to completed steps
+    if (routeOnboardingContext && step === 1) {
+      return;
+    }
     if (step < currentStep) {
       currentStep = step;
     }
@@ -169,6 +209,9 @@
       }
       const company = await companyRes.json();
       createdCompany = company;
+      createdCompanyId = company.id;
+      createdCompanyPrefix = company.slug ?? company.issuePrefix ?? company.id;
+      companyStore.select(company.id, "manual");
       markCompleted(1);
       currentStep = 2;
     } catch (err) {
@@ -246,20 +289,22 @@
   }
 
   function companyPrefix(): string {
-    return createdCompany?.slug ?? createdCompany?.issuePrefix ?? createdCompany?.id ?? "";
+    return createdCompanyPrefix ?? createdCompany?.slug ?? createdCompany?.issuePrefix ?? createdCompany?.id ?? "";
   }
 
   function goToDashboard() {
-    if (createdCompany) {
-      goto(`/${companyPrefix()}/dashboard`, { replaceState: true });
+    const target = nextPath || (createdCompany ? `/${companyPrefix()}/dashboard` : "/");
+    if (target) {
+      goto(target, { replaceState: true });
     } else {
       goto("/", { replaceState: true });
     }
   }
 
   function handleClose() {
-    if (createdCompany) {
-      goto(`/${companyPrefix()}/dashboard`, { replaceState: true });
+    const target = nextPath || (createdCompany ? `/${companyPrefix()}/dashboard` : "/");
+    if (target) {
+      goto(target, { replaceState: true });
     } else {
       goto("/", { replaceState: true });
     }
@@ -392,7 +437,7 @@
           <div>
             <div class="text-xs text-gray-400 mb-2 block">Adapter type</div>
             <div class="grid grid-cols-2 gap-2">
-              {#each ADAPTER_OPTIONS as opt}
+              {#each AGENT_ADAPTER_OPTIONS as opt}
                 <button
                   class="flex flex-col items-center gap-1.5 rounded-md border p-3 text-xs transition-colors cursor-pointer
                     {adapterType === opt.value
@@ -414,6 +459,14 @@
               CEO
             </div>
             <p class="text-[10px] text-gray-400 mt-1">The first agent is always the CEO.</p>
+          </div>
+
+          <div class="rounded-lg border border-gray-200 bg-white/80 p-4">
+            <div class="mb-3">
+              <h4 class="text-sm font-medium text-gray-900">Connector settings</h4>
+              <p class="text-xs text-gray-500">Refine the adapter configuration before launching the first agent.</p>
+            </div>
+            <AgentConfigForm {adapterType} companyId={createdCompanyId} bind:config={adapterConfig} mode="create" />
           </div>
         </div>
 

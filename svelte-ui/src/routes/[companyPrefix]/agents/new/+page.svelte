@@ -2,32 +2,20 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import AgentIconPicker from '$lib/components/agent-icon-picker.svelte';
   import AgentConfigForm from '$lib/components/agent-config-form.svelte';
   import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
+  import { AGENT_ADAPTER_OPTIONS } from '$lib/constants/agent-adapters';
   import { Bot, User, Settings, Zap, FileText, ChevronDown } from 'lucide-svelte';
 
   // ---------------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------------
   const ROLES = ['general', 'ceo', 'cto', 'engineer', 'designer', 'marketer', 'custom'];
-
-  const ADAPTER_OPTIONS = [
-    { value: 'claude_local', label: 'Claude (Local)' },
-    { value: 'codex_local', label: 'Codex (Local)' },
-    { value: 'cursor', label: 'Cursor' },
-    { value: 'gemini_local', label: 'Gemini (Local)' },
-    { value: 'opencode_local', label: 'OpenCode (Local)' },
-    { value: 'pi_local', label: 'Pi (Local)' },
-    { value: 'openclaw_gateway', label: 'OpenClaw Gateway' },
-    { value: 'hermes_local', label: 'Hermes (Local)' },
-    { value: 'process', label: 'Process' },
-    { value: 'http', label: 'HTTP' },
-  ];
 
   // ---------------------------------------------------------------------------
   // State — Identity
@@ -68,16 +56,8 @@
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
-  let routeCompanyId = $derived.by(() => {
-    const requestedPrefix = String($page.params.companyPrefix ?? '').trim().toUpperCase();
-    if (!requestedPrefix) return null;
-    return (
-      companyStore.companies.find(
-        (company) => String(company.issuePrefix ?? '').trim().toUpperCase() === requestedPrefix,
-      )?.id ?? null
-    );
-  });
-  let companyId = $derived(routeCompanyId ?? companyStore.selectedCompanyId ?? companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
   let isFirstAgent = $derived(agentsLoaded && existingAgents.length === 0);
 
   // ---------------------------------------------------------------------------
@@ -318,7 +298,7 @@
               bind:value={adapterType}
               class={selectCls}
             >
-              {#each ADAPTER_OPTIONS as a}
+              {#each AGENT_ADAPTER_OPTIONS as a}
                 <option value={a.value} class="bg-[#0f172a]">{a.label}</option>
               {/each}
             </select>
@@ -328,7 +308,7 @@
         </div>
 
         <!-- AgentConfigForm -->
-        <AgentConfigForm {adapterType} bind:config={adapterConfig} mode="create" />
+        <AgentConfigForm {adapterType} companyId={companyId} bind:config={adapterConfig} mode="create" />
       </div>
     </section>
 

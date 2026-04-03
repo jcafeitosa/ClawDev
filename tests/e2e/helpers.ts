@@ -54,3 +54,54 @@ export async function ensureCompany(page: Page) {
     prefix: company.slug ?? company.urlKey ?? company.id,
   };
 }
+
+export type BrowserDiagnostics = {
+  consoleErrors: string[];
+  pageErrors: string[];
+  requestFailures: string[];
+  notFoundResponses: string[];
+};
+
+export function collectBrowserDiagnostics(page: Page): BrowserDiagnostics {
+  const diagnostics: BrowserDiagnostics = {
+    consoleErrors: [],
+    pageErrors: [],
+    requestFailures: [],
+    notFoundResponses: [],
+  };
+
+  page.on("console", (msg) => {
+    if (msg.type() !== "error") return;
+    const text = msg.text();
+    if (
+      text.includes("SES Removing unpermitted intrinsics") ||
+      text.includes("[vite] failed to connect to websocket") ||
+      text.includes("WebSocket connection to 'ws://127.0.0.1:")
+    ) {
+      return;
+    }
+    diagnostics.consoleErrors.push(text);
+  });
+
+  page.on("pageerror", (error) => {
+    const message = error.message;
+    if (message.includes("SES Removing unpermitted intrinsics")) return;
+    if (message.includes("WebSocket closed without opened.")) return;
+    diagnostics.pageErrors.push(message);
+  });
+
+  page.on("requestfailed", (request) => {
+    const failure = request.failure()?.errorText ?? "unknown";
+    if (failure !== "net::ERR_ABORTED") {
+      diagnostics.requestFailures.push(`${request.method()} ${request.url()} ${failure}`);
+    }
+  });
+
+  page.on("response", (response) => {
+    if (response.status() === 404) {
+      diagnostics.notFoundResponses.push(`${response.request().method()} ${response.url()}`);
+    }
+  });
+
+  return diagnostics;
+}

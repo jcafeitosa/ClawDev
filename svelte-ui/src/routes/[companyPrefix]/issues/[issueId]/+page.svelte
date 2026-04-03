@@ -2,8 +2,11 @@
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { api } from "$lib/api";
+  import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
+  import { pluginUiContributionsStore } from "$stores/plugin-ui-contributions.svelte.js";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
+  import { PluginLauncherOutlet, PluginRenderer } from "$lib/components/plugins/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea, Input, Label } from "$components/ui/index.js";
   import InlineEditor from "$lib/components/inline-editor.svelte";
@@ -12,7 +15,8 @@
   import CommentThread from "$lib/components/comment-thread.svelte";
   import IssueWorkspaceCard from "$lib/components/issue-workspace-card.svelte";
   import ScrollToBottom from "$lib/components/scroll-to-bottom.svelte";
-  import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, ExternalLink, Activity, ListTree, Tag, PanelRightOpen, PanelRightClose, ChevronRight, User, Calendar, Clock } from "lucide-svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, BookOpen, ExternalLink, Activity, ListTree, Tag, PanelRightOpen, PanelRightClose, ChevronRight, ChevronDown, User, Calendar, Clock, History as HistoryIcon, Copy, Check } from "lucide-svelte";
 
   // ---------------------------------------------------------------------------
   // Types
@@ -71,9 +75,22 @@
   interface IssueDocument {
     id: string;
     key: string;
+    title?: string | null;
+    format?: string | null;
     content?: string | null;
+    body?: string | null;
+    latestRevisionId?: string | null;
+    latestRevisionNumber?: number | null;
     updatedAt?: string;
     [key: string]: unknown;
+  }
+
+  interface IssueDocumentRevision {
+    id: string;
+    revisionNumber: number;
+    body: string;
+    changeSummary?: string | null;
+    createdAt: string;
   }
 
   interface Agent {
@@ -133,6 +150,20 @@
     [key: string]: unknown;
   }
 
+  interface IssueLabel {
+    id: string;
+    name: string;
+    color?: string | null;
+    [key: string]: unknown;
+  }
+
+  interface PluginDetailTab {
+    id: string;
+    pluginId: string;
+    label: string;
+    routePath: string | null;
+  }
+
   // ---------------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------------
@@ -153,10 +184,13 @@
   let activityEntries = $state<ActivityEntry[]>([]);
   let runs = $state<Run[]>([]);
   let linkedApprovals = $state<Approval[]>([]);
+  let pluginDetailTabs = $state<PluginDetailTab[]>([]);
+  let labels = $state<IssueLabel[]>([]);
   let approvalsOpen = $state(false);
   let loading = $state(true);
   let notFound = $state(false);
   let activeTab = $state("details");
+  let pluginTabsLoadError = $state<string | null>(null);
   // Comment submission/deletion handled by CommentThread component
 
   // -- Inline edit state
@@ -165,6 +199,7 @@
   let editStatus = $state("");
   let editPriority = $state("");
   let editAssigneeAgentId = $state("");
+  let editLabelIds = $state<string[]>([]);
   let savingEdit = $state(false);
 
   // -- Delete confirmation state
@@ -203,8 +238,22 @@
   // -- New document form state
   let showDocForm = $state(false);
   let newDocKey = $state("");
+  let newDocTitle = $state("");
   let newDocContent = $state("");
   let submittingDoc = $state(false);
+  let editingDocKey = $state<string | null>(null);
+  let editingDocContent = $state("");
+  let editingDocTitle = $state("");
+  let editingDocSummary = $state("");
+  let savingDoc = $state(false);
+  let docRevisionKey = $state<string | null>(null);
+  let docRevisions = $state<IssueDocumentRevision[]>([]);
+  let docRevisionsLoading = $state(false);
+  let documentsLoaded = $state(false);
+  let foldedDocumentKeys = $state<string[]>([]);
+  let copiedDocumentKey = $state<string | null>(null);
+  let confirmDeleteDocumentKey = $state<string | null>(null);
+  let copiedDocumentTimer: ReturnType<typeof setTimeout> | null = null;
 
   // -- Properties panel state
   let showPropertiesPanel = $state(true);
@@ -214,9 +263,85 @@
   // Derived
   // ---------------------------------------------------------------------------
   let issueId = $derived($page.params.issueId);
-  let companyId = $derived(issue?.companyId ?? null);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(issue?.companyId ?? routeCompanyId ?? companyStore.selectedCompanyId ?? null);
   let isCheckedOut = $derived(!!issue?.checkedOutBy);
   let prefix = $derived($page.params.companyPrefix);
+  let issuePluginHostContext = $derived({
+    companyId,
+    companyPrefix: prefix ?? null,
+    projectId: issue?.projectId ?? null,
+    entityId: (issue?.id ?? issueId) ?? null,
+    entityType: "issue",
+    parentEntityId: issue?.parentId ?? null,
+    userId: null,
+  });
+
+  const issueDocumentFoldStorageKey = (id: string) => `clawdev:issue-document-folds:${id}`;
+
+  function loadFoldedDocumentKeys(issueId: string): string[] {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = window.localStorage.getItem(issueDocumentFoldStorageKey(issueId));
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed.filter((value): value is string => typeof value === "string") : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function saveFoldedDocumentKeys(issueId: string, keys: string[]) {
+    if (typeof window === "undefined") return;
+    window.localStorage.setItem(issueDocumentFoldStorageKey(issueId), JSON.stringify(keys));
+  }
+
+  function isPlanKey(key: string) {
+    return key.trim().toLowerCase() === "plan";
+  }
+
+  function toggleDocumentFold(key: string) {
+    foldedDocumentKeys = foldedDocumentKeys.includes(key)
+      ? foldedDocumentKeys.filter((entry) => entry !== key)
+      : [...foldedDocumentKeys, key];
+  }
+
+  async function copyDocumentBody(key: string, body: string) {
+    try {
+      await navigator.clipboard.writeText(body);
+      copiedDocumentKey = key;
+      if (copiedDocumentTimer) clearTimeout(copiedDocumentTimer);
+      copiedDocumentTimer = setTimeout(() => {
+        copiedDocumentKey = copiedDocumentKey === key ? null : copiedDocumentKey;
+      }, 1400);
+    } catch {
+      toastStore.push({ title: "Failed to copy document", tone: "error" });
+    }
+  }
+
+  function downloadDocumentFile(key: string, body: string) {
+    const blob = new Blob([body], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${key}.md`;
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  async function deleteDocument(docKey: string) {
+    if (!issueId) return;
+    const res = await api(`/api/issues/${issueId}/documents/${encodeURIComponent(docKey)}`, { method: "DELETE" });
+    if (!res.ok) {
+      toastStore.push({ title: "Failed to delete document", body: await res.text(), tone: "error" });
+      return;
+    }
+    toastStore.push({ title: "Document deleted", tone: "success" });
+    confirmDeleteDocumentKey = null;
+    await loadDocuments();
+  }
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -274,6 +399,22 @@
       documents = res.ok ? ((await res.json()) as IssueDocument[]) ?? [] : [];
     } catch {
       documents = [];
+    } finally {
+      documentsLoaded = true;
+    }
+  }
+
+  async function loadDocumentRevisions(key: string) {
+    if (!issueId) return;
+    docRevisionKey = key;
+    docRevisionsLoading = true;
+    try {
+      const res = await api(`/api/issues/${issueId}/documents/${encodeURIComponent(key)}/revisions`);
+      docRevisions = res.ok ? ((await res.json()) as IssueDocumentRevision[]) ?? [] : [];
+    } catch {
+      docRevisions = [];
+    } finally {
+      docRevisionsLoading = false;
     }
   }
 
@@ -297,6 +438,16 @@
       agentMap = map;
     } catch {
       agents = [];
+    }
+  }
+
+  async function loadLabels() {
+    if (!companyId) return;
+    try {
+      const res = await api(`/api/companies/${companyId}/labels`);
+      labels = res.ok ? ((await res.json()) as IssueLabel[]) ?? [] : [];
+    } catch {
+      labels = [];
     }
   }
 
@@ -342,6 +493,34 @@
       linkedApprovals = res.ok ? ((await res.json()) as Approval[]) ?? [] : [];
     } catch {
       linkedApprovals = [];
+    }
+  }
+
+  async function loadPluginDetailTabs() {
+    pluginTabsLoadError = null;
+    try {
+      const contributions = await pluginUiContributionsStore.load();
+      const tabs: PluginDetailTab[] = [];
+      for (const contribution of contributions ?? []) {
+        for (const slot of contribution.slots ?? []) {
+          if (slot.type !== "detailTab") continue;
+          tabs.push({
+            id: slot.id,
+            pluginId: contribution.pluginId,
+            label: slot.displayName ?? contribution.displayName ?? contribution.pluginKey ?? contribution.pluginId,
+            routePath: slot.routePath ?? null,
+          });
+        }
+      }
+      tabs.sort((left, right) => {
+        const labelCmp = left.label.localeCompare(right.label);
+        if (labelCmp !== 0) return labelCmp;
+        return left.id.localeCompare(right.id);
+      });
+      pluginDetailTabs = tabs;
+    } catch (err: any) {
+      pluginDetailTabs = [];
+      pluginTabsLoadError = err?.message ?? "Failed to load plugin detail tabs";
     }
   }
 
@@ -425,6 +604,7 @@
     editStatus = issue.status;
     editPriority = issue.priority ?? "";
     editAssigneeAgentId = issue.assigneeAgentId ?? "";
+    editLabelIds = issue.labels?.map((label) => label.id) ?? [];
     editing = true;
   }
 
@@ -441,6 +621,13 @@
       if (editStatus !== issue.status) body.status = editStatus;
       if (editPriority !== (issue.priority ?? "")) body.priority = editPriority || null;
       if (editAssigneeAgentId !== (issue.assigneeAgentId ?? "")) body.assigneeAgentId = editAssigneeAgentId || null;
+      const currentLabelIds = issue.labels?.map((label) => label.id) ?? [];
+      const nextLabelIds = [...new Set(editLabelIds)];
+      const labelsChanged =
+        nextLabelIds.length !== currentLabelIds.length ||
+        nextLabelIds.some((id) => !currentLabelIds.includes(id)) ||
+        currentLabelIds.some((id) => !nextLabelIds.includes(id));
+      if (labelsChanged) body.labelIds = nextLabelIds;
 
       if (Object.keys(body).length === 0) {
         editing = false;
@@ -696,13 +883,21 @@
     if (!issueId || !newDocKey.trim()) return;
     submittingDoc = true;
     try {
-      const res = await api(`/api/issues/${issueId}/documents`, {
-        method: "POST",
-        body: JSON.stringify({ key: newDocKey.trim(), content: newDocContent.trim() || null }),
+      const key = newDocKey.trim().toLowerCase();
+      const res = await api(`/api/issues/${issueId}/documents/${encodeURIComponent(key)}`, {
+        method: "PUT",
+      body: JSON.stringify({
+          title: newDocTitle.trim() || null,
+          format: "markdown",
+          body: newDocContent.trim(),
+          changeSummary: "Created from issue page",
+          baseRevisionId: null,
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Document created", tone: "success" });
       newDocKey = "";
+      newDocTitle = "";
       newDocContent = "";
       showDocForm = false;
       await loadDocuments();
@@ -711,6 +906,62 @@
     } finally {
       submittingDoc = false;
     }
+  }
+
+  function beginEditDocument(doc: IssueDocument) {
+    editingDocKey = doc.key;
+    editingDocContent = doc.content ?? doc.body ?? "";
+    editingDocTitle = doc.title ?? "";
+    editingDocSummary = "";
+    foldedDocumentKeys = foldedDocumentKeys.filter((key) => key !== doc.key);
+    showDocForm = false;
+    newDocKey = "";
+    newDocTitle = "";
+    newDocContent = "";
+    docRevisionKey = null;
+    docRevisions = [];
+  }
+
+  function cancelEditDocument() {
+    editingDocKey = null;
+    editingDocContent = "";
+    editingDocTitle = "";
+    editingDocSummary = "";
+  }
+
+  async function saveDocument(doc: IssueDocument) {
+    if (!issueId) return;
+    savingDoc = true;
+    try {
+      const res = await api(`/api/issues/${issueId}/documents/${encodeURIComponent(doc.key)}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          title: editingDocTitle.trim() || null,
+          format: doc.format ?? "markdown",
+          body: editingDocContent.trim(),
+          changeSummary: editingDocSummary.trim() || null,
+          baseRevisionId: doc.latestRevisionId ?? null,
+        }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: "Document saved", tone: "success" });
+      editingDocKey = null;
+      editingDocContent = "";
+      editingDocTitle = "";
+      editingDocSummary = "";
+      await loadDocuments();
+    } catch (err: any) {
+      toastStore.push({ title: "Failed to save document", body: err?.message, tone: "error" });
+    } finally {
+      savingDoc = false;
+    }
+  }
+
+  async function handleDocumentEditorBlur(event: FocusEvent, doc: IssueDocument) {
+    const currentTarget = event.currentTarget as HTMLElement | null;
+    if (currentTarget?.contains(event.relatedTarget as Node | null)) return;
+    if (editingDocKey !== doc.key) return;
+    await saveDocument(doc);
   }
 
   const ACTION_LABELS: Record<string, string> = {
@@ -858,10 +1109,16 @@
   // ---------------------------------------------------------------------------
   // Label color helper
   // ---------------------------------------------------------------------------
-  function labelStyle(color?: string): string {
+  function labelStyle(color?: string | null): string {
     if (!color) return '';
     const c = color.startsWith('#') ? color : `#${color}`;
     return `background-color: ${c}20; color: ${c}; border-color: ${c}40;`;
+  }
+
+  function toggleEditLabel(labelId: string) {
+    editLabelIds = editLabelIds.includes(labelId)
+      ? editLabelIds.filter((id) => id !== labelId)
+      : [...editLabelIds, labelId];
   }
 
   // ---------------------------------------------------------------------------
@@ -877,6 +1134,23 @@
     activityEntries = [];
     runs = [];
     linkedApprovals = [];
+    showDocForm = false;
+    newDocKey = "";
+    newDocTitle = "";
+    newDocContent = "";
+    submittingDoc = false;
+    editingDocKey = null;
+    editingDocContent = "";
+    editingDocTitle = "";
+    editingDocSummary = "";
+    savingDoc = false;
+    docRevisionKey = null;
+    docRevisions = [];
+    docRevisionsLoading = false;
+    documentsLoaded = false;
+    foldedDocumentKeys = loadFoldedDocumentKeys(issueId);
+    copiedDocumentKey = null;
+    confirmDeleteDocumentKey = null;
     loading = true;
     notFound = false;
 
@@ -892,7 +1166,28 @@
   $effect(() => {
     if (!issueId || !companyId) return;
     void loadAgents();
+    void loadLabels();
     void loadSubIssues();
+  });
+
+  $effect(() => {
+    if (!issueId || !documentsLoaded) return;
+    const validKeys = new Set(documents.map((doc) => doc.key));
+    const next = foldedDocumentKeys.filter((key) => validKeys.has(key));
+    if (next.length !== foldedDocumentKeys.length) {
+      foldedDocumentKeys = next;
+    }
+    saveFoldedDocumentKeys(issueId, next);
+  });
+
+  onMount(() => {
+    void loadPluginDetailTabs();
+  });
+
+  onDestroy(() => {
+    if (copiedDocumentTimer) {
+      clearTimeout(copiedDocumentTimer);
+    }
   });
 </script>
 
@@ -1020,6 +1315,30 @@
       <LiveRunWidget {issueId} companyId={companyId} companyPrefix={prefix} />
     {/if}
 
+    <div class="mt-4 mb-6 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+      <div class="mb-3">
+        <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Plugin launchers</p>
+        <p class="text-xs text-zinc-500 dark:text-zinc-400">Contextual issue actions exposed by installed plugins.</p>
+      </div>
+      {#snippet noIssueLaunchers()}
+        <div class="text-sm text-zinc-500 dark:text-zinc-400">No issue launchers installed.</div>
+      {/snippet}
+      <PluginLauncherOutlet
+        placementZones={["detailTab", "taskDetailView", "toolbarButton", "contextMenuItem", "commentContextMenuItem"]}
+        context={{
+          companyId,
+          companyPrefix: prefix ?? null,
+          projectId: issue.projectId ?? null,
+          entityId: issue.id,
+          entityType: "issue",
+          parentEntityId: issue.parentId ?? null,
+          userId: null,
+        }}
+        itemClassName="flex flex-wrap gap-2"
+        fallback={noIssueLaunchers}
+      />
+    </div>
+
     <!-- Inline Edit Form -->
     {#if editing}
       <Card class="mb-6">
@@ -1064,6 +1383,33 @@
                 {/each}
               </select>
             </div>
+            <div class="md:col-span-2">
+              <div class="flex items-center justify-between gap-3 mb-1.5">
+                <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block">Labels</Label>
+                <span class="text-[11px] text-zinc-500 dark:text-zinc-400">{editLabelIds.length} selected</span>
+              </div>
+              {#if labels.length === 0}
+                <p class="text-xs text-zinc-500 dark:text-zinc-400">No labels available.</p>
+              {:else}
+                <div class="flex flex-wrap gap-2">
+                  {#each labels as label}
+                    {@const selected = editLabelIds.includes(label.id)}
+                    <button
+                      type="button"
+                      onclick={() => toggleEditLabel(label.id)}
+                      class={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                        selected
+                          ? 'border-primary/40 bg-primary/10 text-primary'
+                          : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800'
+                      }`}
+                    >
+                      <span class="h-2 w-2 rounded-full" style={labelStyle(label.color)}></span>
+                      {label.name}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
           </div>
           <div class="flex items-center gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
             <Button size="sm" onclick={saveEdit} disabled={savingEdit || !editTitle.trim()}>
@@ -1089,6 +1435,9 @@
             <TabsTrigger value="activity">Activity</TabsTrigger>
             <TabsTrigger value="work-products">Work Products</TabsTrigger>
             <TabsTrigger value="documents">Documents</TabsTrigger>
+            {#each pluginDetailTabs as tab (tab.id)}
+              <TabsTrigger value={`plugin:${tab.pluginId}:${tab.id}`}>{tab.label}</TabsTrigger>
+            {/each}
           </TabsList>
 
           <!-- ============================================================= -->
@@ -1201,6 +1550,7 @@
                 onDelete={deleteComment}
                 allowInterrupt={Boolean(issue?.executionRunId)}
                 activeRunLabel={issue?.executionRunId ? issue.executionRunId.slice(0, 8) : null}
+                pluginHostContext={issuePluginHostContext}
               />
             </div>
           </TabsContent>
@@ -1510,8 +1860,17 @@
           <!-- ============================================================= -->
           <TabsContent value="documents">
             <div class="mt-4 space-y-4">
-              <div class="flex justify-end">
-                <Button variant="outline" size="sm" onclick={() => showDocForm = !showDocForm}>
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="space-y-1">
+                  <p class="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Document workspace</p>
+                  <p class="text-sm text-muted-foreground">Work on issue-scoped documents here or jump to the company library for cross-issue browsing.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <Button variant="outline" size="sm" href="/{prefix}/documents">
+                    <BookOpen class="size-3.5 mr-1" />
+                    Company documents
+                  </Button>
+                  <Button variant="outline" size="sm" onclick={() => showDocForm = !showDocForm}>
                   {#if showDocForm}
                     <X class="size-3.5 mr-1" />
                     Cancel
@@ -1519,7 +1878,8 @@
                     <FileText class="size-3.5 mr-1" />
                     New Document
                   {/if}
-                </Button>
+                  </Button>
+                </div>
               </div>
 
               {#if showDocForm}
@@ -1531,6 +1891,10 @@
                         <Input bind:value={newDocKey} placeholder="e.g. notes, spec, requirements..." />
                       </div>
                       <div>
+                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Title (optional)</Label>
+                        <Input bind:value={newDocTitle} placeholder="Optional display title" />
+                      </div>
+                      <div>
                         <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Content (optional)</Label>
                         <Textarea bind:value={newDocContent} placeholder="Document content (Markdown supported)..." rows={4} />
                       </div>
@@ -1538,7 +1902,7 @@
                         <Button size="sm" onclick={createDocument} disabled={submittingDoc || !newDocKey.trim()}>
                           {submittingDoc ? "Creating..." : "Create"}
                         </Button>
-                        <Button variant="outline" size="sm" onclick={() => { showDocForm = false; newDocKey = ''; newDocContent = ''; }}>
+                        <Button variant="outline" size="sm" onclick={() => { showDocForm = false; newDocKey = ''; newDocTitle = ''; newDocContent = ''; }}>
                           Cancel
                         </Button>
                       </div>
@@ -1553,18 +1917,182 @@
                 <div class="space-y-4">
                   {#each documents as doc}
                     <Card>
-                      <CardHeader>
-                        <CardTitle class="capitalize">{doc.key.replace(/_/g, " ")}</CardTitle>
+                      <CardHeader class="space-y-2">
+                        <div class="flex items-start justify-between gap-3">
+                          <div class="min-w-0">
+                            <div class="flex items-center gap-2">
+                              <Button
+                                variant="ghost"
+                                size="icon-xs"
+                                class="shrink-0"
+                                aria-label={foldedDocumentKeys.includes(doc.key) ? `Expand ${doc.key}` : `Collapse ${doc.key}`}
+                                onclick={() => toggleDocumentFold(doc.key)}
+                              >
+                                {#if foldedDocumentKeys.includes(doc.key)}
+                                  <ChevronRight class="size-3.5" />
+                                {:else}
+                                  <ChevronDown class="size-3.5" />
+                                {/if}
+                              </Button>
+                              <CardTitle class="capitalize">{doc.key.replace(/_/g, " ")}</CardTitle>
+                              {#if isPlanKey(doc.key)}
+                                <Badge variant="outline" class="text-[10px] uppercase tracking-[0.14em]">Plan</Badge>
+                              {/if}
+                            </div>
+                            {#if doc.title}
+                              <p class="text-sm text-muted-foreground">{doc.title}</p>
+                            {/if}
+                          </div>
+                          <div class="flex items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              class={copiedDocumentKey === doc.key ? "text-foreground" : "text-muted-foreground"}
+                              title={copiedDocumentKey === doc.key ? "Copied" : "Copy document"}
+                              onclick={() => void copyDocumentBody(doc.key, doc.content ?? doc.body ?? "")}
+                            >
+                              {#if copiedDocumentKey === doc.key}
+                                <Check class="size-3.5" />
+                              {:else}
+                                <Copy class="size-3.5" />
+                              {/if}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              class="text-muted-foreground"
+                              title="Download document"
+                              onclick={() => downloadDocumentFile(doc.key, doc.content ?? doc.body ?? "")}
+                            >
+                              <Download class="size-3.5" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onclick={() => {
+                                if (editingDocKey === doc.key) {
+                                  cancelEditDocument();
+                                } else {
+                                  beginEditDocument(doc);
+                                }
+                              }}
+                            >
+                              {#if editingDocKey === doc.key}
+                                <X class="size-3.5 mr-1" />
+                                Cancel edit
+                              {:else}
+                                <Pencil class="size-3.5 mr-1" />
+                                Edit
+                              {/if}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onclick={async () => {
+                                if (docRevisionKey === doc.key) {
+                                  docRevisionKey = null;
+                                  docRevisions = [];
+                                } else {
+                                  await loadDocumentRevisions(doc.key);
+                                }
+                              }}
+                            >
+                              <HistoryIcon class="size-3.5 mr-1" />
+                              {docRevisionKey === doc.key ? "Hide revisions" : "Revisions"}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon-xs"
+                              class="text-muted-foreground"
+                              title="Delete document"
+                              onclick={() => { confirmDeleteDocumentKey = doc.key; }}
+                            >
+                              <Trash2 class="size-3.5" />
+                            </Button>
+                          </div>
+                        </div>
                       </CardHeader>
                       <CardContent>
-                        {#if doc.content}
-                          <MarkdownBody content={doc.content} />
+                        {#if foldedDocumentKeys.includes(doc.key)}
+                          <p class="text-sm text-muted-foreground">Document folded. Expand to view or edit.</p>
+                        {:else if editingDocKey === doc.key}
+                          <div class="space-y-3" onblurcapture={(event) => void handleDocumentEditorBlur(event, doc)}>
+                            <div>
+                              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Title</Label>
+                              <Input bind:value={editingDocTitle} placeholder="Optional title" />
+                            </div>
+                            <div>
+                              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Content</Label>
+                              <Textarea bind:value={editingDocContent} placeholder="Markdown content..." rows={6} />
+                            </div>
+                            <div>
+                              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Change summary</Label>
+                              <Input bind:value={editingDocSummary} placeholder="Describe the change" />
+                            </div>
+                            <div class="flex items-center gap-2">
+                              <Button size="sm" onclick={() => saveDocument(doc)} disabled={savingDoc || !editingDocContent.trim()}>
+                                {savingDoc ? "Saving..." : "Save"}
+                              </Button>
+                              <Button variant="outline" size="sm" onclick={cancelEditDocument} disabled={savingDoc}>
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        {:else if doc.content || doc.body}
+                          <MarkdownBody content={doc.content ?? doc.body ?? ""} />
                         {:else}
                           <p class="text-sm text-zinc-500 italic">No content.</p>
                         {/if}
                         {#if doc.updatedAt}
                           <div class="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
                             <TimeAgo date={doc.updatedAt} class="text-xs" />
+                          </div>
+                        {/if}
+                        {#if docRevisionKey === doc.key}
+                          <div class="mt-4 space-y-2 rounded-lg border border-border bg-muted/20 p-3">
+                            <div class="text-xs font-medium uppercase tracking-[0.2em] text-muted-foreground">Revisions</div>
+                            {#if docRevisionsLoading}
+                              <p class="text-sm text-muted-foreground">Loading revisions...</p>
+                            {:else if docRevisions.length === 0}
+                              <p class="text-sm text-muted-foreground">No revisions found.</p>
+                            {:else}
+                              <div class="space-y-2">
+                                {#each docRevisions as revision}
+                                  <div class="rounded-md border border-border bg-background p-3 text-sm">
+                                    <div class="flex items-center justify-between gap-2">
+                                      <span class="font-medium">Revision {revision.revisionNumber}</span>
+                                      <TimeAgo date={revision.createdAt} class="text-xs text-muted-foreground" />
+                                    </div>
+                                    {#if revision.changeSummary}
+                                      <p class="mt-1 text-xs text-muted-foreground">{revision.changeSummary}</p>
+                                    {/if}
+                                  </div>
+                                {/each}
+                              </div>
+                            {/if}
+                          </div>
+                        {/if}
+                        {#if confirmDeleteDocumentKey === doc.key}
+                          <div class="mt-4 flex items-center justify-between gap-3 rounded-md border border-destructive/20 bg-destructive/5 px-4 py-3">
+                            <p class="text-sm text-destructive font-medium">
+                              Delete this document? This cannot be undone.
+                            </p>
+                            <div class="flex items-center gap-2 shrink-0">
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onclick={() => { confirmDeleteDocumentKey = null; }}
+                              >
+                                Cancel
+                              </Button>
+                              <Button
+                                variant="destructive"
+                                size="sm"
+                                onclick={() => void deleteDocument(doc.key)}
+                              >
+                                Delete
+                              </Button>
+                            </div>
                           </div>
                         {/if}
                       </CardContent>
@@ -1574,6 +2102,23 @@
               {/if}
             </div>
           </TabsContent>
+
+          {#each pluginDetailTabs as tab (tab.id)}
+            <TabsContent value={`plugin:${tab.pluginId}:${tab.id}`}>
+              <div class="mt-4 space-y-3">
+                <div>
+                  <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{tab.label}</p>
+                  <p class="text-xs text-zinc-500 dark:text-zinc-400">Plugin-contributed issue detail tab.</p>
+                </div>
+                <PluginRenderer
+                  pluginId={tab.pluginId}
+                  view="detailTab"
+                  context={issuePluginHostContext}
+                  routePath={tab.routePath}
+                />
+              </div>
+            </TabsContent>
+          {/each}
         </Tabs>
 
         <!-- Linked Approvals (collapsible, shown when present) -->

@@ -1,21 +1,23 @@
 import { expect, test } from "@playwright/test";
-import { ensureCompany } from "./helpers";
+import { collectBrowserDiagnostics, ensureCompany } from "./helpers";
 
 test.describe.configure({ mode: "serial" });
 
-test("retrying a failed inbox run does not emit model auto for claude_local", async ({ page }) => {
-  const { company, prefix } = await ensureCompany(page);
-  const pageErrors: string[] = [];
-  const consoleErrors: string[] = [];
+async function resetCompanies(page: Parameters<typeof test>[0]["page"]) {
+  const companiesRes = await page.request.get("/api/companies");
+  expect(companiesRes.ok()).toBe(true);
+  const companies = (await companiesRes.json()) as Array<{ id: string }>;
 
-  page.on("pageerror", (error) => {
-    pageErrors.push(error.message);
-  });
-  page.on("console", (message) => {
-    if (message.type() === "error") {
-      consoleErrors.push(message.text());
-    }
-  });
+  for (const company of companies) {
+    const delRes = await page.request.delete(`/api/companies/${company.id}`);
+    expect(delRes.ok()).toBe(true);
+  }
+}
+
+test("retrying a failed inbox run does not emit model auto for claude_local", async ({ page }) => {
+  await resetCompanies(page);
+  const { company, prefix } = await ensureCompany(page);
+  const diagnostics = collectBrowserDiagnostics(page);
 
   const agentCreateRes = await page.request.post(`/api/companies/${company.id}/agents`, {
     data: {
@@ -54,7 +56,7 @@ test("retrying a failed inbox run does not emit model auto for claude_local", as
   await page.goto(`/${prefix}/inbox`);
 
   await expect(page.getByRole("heading", { name: "Inbox", exact: true })).toBeVisible();
-  await expect(page.getByText(/Failed run/i)).toBeVisible();
+  await expect(page.getByRole("link", { name: /Failed run/i }).first()).toBeVisible();
 
   const retryButton = page.getByRole("button", { name: "Retry" }).first();
   await expect(retryButton).toBeVisible();
@@ -65,6 +67,6 @@ test("retrying a failed inbox run does not emit model auto for claude_local", as
     timeout: 20_000,
   });
 
-  expect(pageErrors).toEqual([]);
-  expect(consoleErrors).toEqual([]);
+  expect(diagnostics.pageErrors, diagnostics.pageErrors.join("\n")).toEqual([]);
+  expect(diagnostics.consoleErrors, diagnostics.consoleErrors.join("\n")).toEqual([]);
 });

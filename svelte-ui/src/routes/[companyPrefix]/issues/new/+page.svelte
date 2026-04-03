@@ -2,7 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Plus } from 'lucide-svelte';
@@ -22,8 +22,11 @@
   let assigneeAgentId = $state('');
   let projects = $state<any[]>([]);
   let projectId = $state('');
+  let labels = $state<any[]>([]);
+  let labelIds = $state<string[]>([]);
 
-  let companyId = $derived(companyStore.selectedCompany?.id);
+  let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
+  let companyId = $derived(routeCompanyId);
 
   $effect(() => {
     if (!companyId) return;
@@ -32,6 +35,9 @@
     }).catch(() => {});
     api(`/api/companies/${companyId}/projects`).then(r => r.json()).then(d => {
       projects = Array.isArray(d) ? d : d.projects ?? [];
+    }).catch(() => {});
+    api(`/api/companies/${companyId}/labels`).then(r => r.json()).then(d => {
+      labels = Array.isArray(d) ? d : d.labels ?? [];
     }).catch(() => {});
   });
 
@@ -50,6 +56,20 @@
     { value: 'low', label: 'Low' },
   ];
 
+  function labelDotStyle(color: string) {
+    const map: Record<string, string> = {
+      red: '#ef4444',
+      orange: '#f97316',
+      yellow: '#eab308',
+      green: '#22c55e',
+      blue: '#3b82f6',
+      purple: '#a855f7',
+      pink: '#ec4899',
+      zinc: '#71717a',
+    };
+    return `background-color: ${map[color] ?? map.blue};`;
+  }
+
   async function create() {
     if (!title.trim() || !companyId) return;
     creating = true;
@@ -63,6 +83,7 @@
       };
       if (assigneeAgentId) body.assigneeAgentId = assigneeAgentId;
       if (projectId) body.projectId = projectId;
+      if (labelIds.length > 0) body.labelIds = labelIds;
 
       const res = await api(`/api/companies/${companyId}/issues`, {
         method: 'POST',
@@ -130,6 +151,34 @@
           {#each projects as p}<option value={p.id}>{p.name}</option>{/each}
         </select>
       </label>
+    </div>
+
+    <div>
+      <div class="flex items-center justify-between gap-2">
+        <span class="text-sm font-medium text-zinc-700 dark:text-zinc-300">Labels</span>
+        <span class="text-[11px] text-zinc-500 dark:text-zinc-400">{labelIds.length} selected</span>
+      </div>
+      {#if labels.length === 0}
+        <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">No labels yet.</p>
+      {:else}
+        <div class="mt-2 flex flex-wrap gap-2">
+          {#each labels as label}
+            {@const selected = labelIds.includes(label.id)}
+            <button
+              type="button"
+              onclick={() => {
+                labelIds = selected ? labelIds.filter((id) => id !== label.id) : [...labelIds, label.id];
+              }}
+              class="inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors {selected
+                ? 'border-indigo-500/40 bg-indigo-500/10 text-indigo-700 dark:text-indigo-200'
+                : 'border-zinc-300 bg-transparent text-zinc-600 hover:border-indigo-500/30 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:text-zinc-100'}"
+            >
+              <span class="h-2 w-2 rounded-full" style={labelDotStyle(label.color)}></span>
+              {label.name}
+            </button>
+          {/each}
+        </div>
+      {/if}
     </div>
 
     {#if error}<p class="text-sm text-red-500">{error}</p>{/if}

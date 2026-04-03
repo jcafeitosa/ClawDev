@@ -2,6 +2,7 @@
   import { Bot, Brain, Network, Zap } from "lucide-svelte";
   import { authClient } from "$lib/auth-client";
   import { goto } from "$app/navigation";
+  import { page } from "$app/stores";
   import { onMount } from "svelte";
 
   let mode: "signin" | "signup" = $state("signin");
@@ -13,6 +14,7 @@
   let deploymentMode = $state<string | null>(null);
   let bootstrapPending = $state(false);
   let ready = $state(false);
+  let nextPath = $derived($page.url.searchParams.get("next") ?? "/");
 
   const session = authClient.useSession();
 
@@ -35,9 +37,9 @@
   $effect(() => {
     if ($session.data) {
       if (bootstrapPending) {
-        goto("/setup");
+        goto(nextPath || "/setup");
       } else {
-        goto("/");
+        goto(nextPath || "/");
       }
     }
   });
@@ -59,7 +61,7 @@
           return;
         }
       }
-      goto(bootstrapPending ? "/setup" : "/");
+      goto(bootstrapPending ? (nextPath || "/setup") : (nextPath || "/"));
     } catch (err) {
       error = err instanceof Error ? err.message : "An error occurred";
     } finally {

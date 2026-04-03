@@ -8,4 +8,5 @@ export { panelStore } from "./panel.svelte.js";
 export { liveEventsStore, type LiveEvent } from "./live-events.svelte.js";
 export { dashboardRefreshStore } from "./dashboard-refresh.svelte.js";
 export { liveRunTranscriptsStore } from "./live-run-transcripts.svelte.js";
+export { pluginUiContributionsStore, type PluginUiContribution, type PluginUiContributionLauncher, type PluginUiContributionSlot } from "./plugin-ui-contributions.svelte.js";
 export { keyboardShortcutsStore } from "./keyboard-shortcuts.svelte.js";

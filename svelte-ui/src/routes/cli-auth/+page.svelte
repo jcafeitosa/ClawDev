@@ -1,8 +1,10 @@
 <script lang="ts">
+  import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { Terminal, ShieldAlert, CheckCircle2, XCircle, AlertTriangle } from 'lucide-svelte';
 
   let code = $derived($page.url.searchParams.get('code') ?? '');
+  let nextPath = $derived($page.url.searchParams.get('next') ?? '');
   let status = $state<'pending' | 'approved' | 'denied' | 'error'>('pending');
   let errorMessage = $state<string | null>(null);
   let loading = $state(false);
@@ -24,6 +26,9 @@
         throw new Error(body?.message ?? `Request failed (${res.status})`);
       }
       status = action === 'approve' ? 'approved' : 'denied';
+      if (action === 'approve' && nextPath) {
+        setTimeout(() => goto(nextPath), 1200);
+      }
     } catch (err) {
       errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
       status = 'error';

@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
+  decodePGliteUrl,
   ensurePostgresDatabase,
   formatEmbeddedPostgresError,
   getPostgresDataDirectory,
@@ -307,13 +308,23 @@ export async function startServer(): Promise<StartedServer> {
     | { mode: "embedded-postgres"; dataDir: string; port: number }
     | { mode: "pglite"; dataDir: string };
   if (config.databaseUrl) {
-    logger.info("Startup: using external PostgreSQL");
-    migrationSummary = await ensureMigrations(config.databaseUrl, "PostgreSQL");
+    const pgliteDataDir = decodePGliteUrl(config.databaseUrl);
+    if (pgliteDataDir) {
+      logger.info("Startup: using PGlite");
+      db = createDb(config.databaseUrl);
+      activeDatabaseConnectionString = config.databaseUrl;
+      migrationSummary = "applied (pglite)";
+      startupDbInfo = { mode: "pglite", dataDir: pgliteDataDir };
+      config.databaseBackupEnabled = false;
+    } else {
+      logger.info("Startup: using external PostgreSQL");
+      migrationSummary = await ensureMigrations(config.databaseUrl, "PostgreSQL");
 
-    db = createDb(config.databaseUrl);
-    logger.info("Using external PostgreSQL via DATABASE_URL/config");
-    activeDatabaseConnectionString = config.databaseUrl;
-    startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
+      db = createDb(config.databaseUrl);
+      logger.info("Using external PostgreSQL via DATABASE_URL/config");
+      activeDatabaseConnectionString = config.databaseUrl;
+      startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
+    }
   } else if (usePGliteRuntime) {
     logger.info("Startup: using PGlite");
     const pgliteDataDir = resolve(repoRoot, "data", "pglite");

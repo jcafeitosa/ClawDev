@@ -362,6 +362,72 @@ describe("agent permission routes", () => {
     expect(res.body.adapterType).toBe("codex_local");
   });
 
+  it("toggles instance heartbeat scheduling without dropping runtime config fields", async () => {
+    mockAgentService.getById.mockResolvedValueOnce({
+      ...baseAgent,
+      runtimeConfig: {
+        heartbeat: {
+          enabled: true,
+          intervalSec: 300,
+        },
+        keepMe: "yes",
+      },
+    });
+    mockAgentService.update.mockResolvedValueOnce({
+      ...baseAgent,
+      runtimeConfig: {
+        heartbeat: {
+          enabled: false,
+          intervalSec: 300,
+        },
+        keepMe: "yes",
+      },
+    });
+
+    const app = createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    const res = await req(app, "PATCH", `/api/agents/${agentId}/heartbeat-settings`, {
+      enabled: false,
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockAgentService.update).toHaveBeenCalledWith(
+      agentId,
+      {
+        runtimeConfig: {
+          heartbeat: {
+            enabled: false,
+            intervalSec: 300,
+          },
+          keepMe: "yes",
+        },
+      },
+      expect.objectContaining({
+        recordRevision: expect.objectContaining({
+          source: "instance_scheduler_heartbeat_toggle",
+          createdByUserId: "board-user",
+        }),
+      }),
+    );
+    expect(mockLogActivity).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        companyId,
+        actorType: "user",
+        actorId: "board-user",
+        action: "heartbeat.disabled",
+        entityType: "agent",
+        entityId: agentId,
+      }),
+    );
+  });
+
   it("exposes the agent inbox mine route", async () => {
     mockIssueService.list.mockResolvedValue([
       {

@@ -119,6 +119,19 @@ ClawDev’s core identity is a **control plane for autonomous AI companies**, ce
 - Do not lead with raw bash logs and transcripts. Default view should be human-readable intent/progress, with raw detail beneath.
 - Do not force users to understand provider/API-key plumbing unless absolutely necessary. There are active onboarding/auth issues already; friction here is clearly real.
 
+## How We Build
+
+ClawDev itself should be developed with Spec-Driven Development (SDD).
+
+That means:
+
+1. capture the product intent in the spec or plan before coding
+2. record architecture decisions when the change affects contracts, data, or runtime behavior
+3. break the change into implementation tasks
+4. update tests and docs together with the code
+
+The canonical process document is [`internal-docs/spec/spec-driven-development.md`](./spec/spec-driven-development.md).
+
 ## Specific design goals
 
 1. **Time-to-first-success under 5 minutes**

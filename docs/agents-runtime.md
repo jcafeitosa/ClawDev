@@ -36,15 +36,16 @@ Built-in adapters:
 
 - `claude_local`: runs your local `claude` CLI
 - `codex_local`: runs your local `codex` CLI
+- `copilot_local`: runs your local GitHub Copilot CLI
+- `gemini_local`: runs your local Gemini CLI
 - `opencode_local`: runs your local `opencode` CLI
-- `hermes_local`: runs your local `hermes` CLI
 - `cursor`: runs Cursor in background mode
 - `pi_local`: runs an embedded Pi agent locally
 - `openclaw_gateway`: connects to an OpenClaw gateway endpoint
 - `process`: generic shell command adapter
 - `http`: calls an external HTTP endpoint
 
-For local CLI adapters (`claude_local`, `codex_local`, `opencode_local`, `hermes_local`), ClawDev assumes the CLI is already installed and authenticated on the host machine.
+For local CLI adapters (`claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`), ClawDev assumes the CLI is already installed and authenticated on the host machine.
 
 ## 3.2 Runtime behavior
 
@@ -140,7 +141,7 @@ If the connection drops, the UI reconnects automatically.
 
 If runs fail repeatedly:
 
-1. Check adapter command availability (e.g. `claude`/`codex`/`opencode`/`hermes` installed and logged in).
+1. Check adapter command availability (e.g. `claude`/`codex`/`copilot`/`gemini`/`opencode` installed and logged in).
 2. Verify `cwd` exists and is accessible.
 3. Inspect run error + stderr excerpt, then full log.
 4. Confirm timeout is not too low.
@@ -173,7 +174,7 @@ Start with least privilege where possible, and avoid exposing secrets in broad r
 
 ## 10. Minimal setup checklist
 
-1. Choose adapter (e.g. `claude_local`, `codex_local`, `opencode_local`, `hermes_local`, `cursor`, or `openclaw_gateway`).
+1. Choose adapter (e.g. `claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`, `cursor`, or `openclaw_gateway`).
 2. Set `cwd` to the target workspace (for local adapters).
 3. Optionally add a prompt template (`promptTemplate`) or use the managed instructions bundle.
 4. Configure heartbeat policy (timer and/or assignment wakeups).

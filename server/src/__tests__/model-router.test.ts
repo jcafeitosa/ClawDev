@@ -2,6 +2,37 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createModelRouterService } from "../services/model-router.js";
 
 const COMPANY_ID = "11111111-1111-4111-8111-111111111111";
+const mockListServerAdapters = vi.hoisted(() =>
+  vi.fn(() => [
+    { type: "claude_local" },
+    { type: "codex_local" },
+    { type: "copilot_local" },
+    { type: "opencode_local" },
+    { type: "pi_local" },
+    { type: "cursor" },
+    { type: "gemini_local" },
+  ]),
+);
+const mockListAdapterModels = vi.hoisted(() =>
+  vi.fn(async (adapterType: string) => {
+    switch (adapterType) {
+      case "claude_local":
+        return [{ id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6" }];
+      case "codex_local":
+        return [
+          { id: "gpt-5.4-mini", label: "GPT-5.4 Mini" },
+          { id: "gpt-5.4", label: "GPT-5.4" },
+          { id: "gpt-5.3-codex", label: "GPT-5.3 Codex" },
+        ];
+      case "gemini_local":
+        return [{ id: "gemini-2.5-flash", label: "Gemini 2.5 Flash" }];
+      case "pi_local":
+        return [{ id: "openai/gpt-5.4", label: "openai/gpt-5.4" }];
+      default:
+        return [];
+    }
+  }),
+);
 
 function baseNameOf(table: unknown): string | null {
   if (typeof table !== "object" || table === null) return null;
@@ -22,10 +53,23 @@ function createDbStub(options?: {
   const catalogRows = options?.catalogRows ?? [];
   const statusRows = options?.statusRows ?? [];
 
+  function filterRowsByAdapterHint(rows: Array<Record<string, unknown>>, condition: unknown) {
+    let serialized = "";
+    try {
+      serialized = JSON.stringify(condition) ?? "";
+    } catch {
+      serialized = String(condition ?? "");
+    }
+    const hintedAdapterType = ["claude_local", "codex_local", "copilot_local", "cursor", "gemini_local", "opencode_local", "pi_local"]
+      .find((adapterType) => serialized.includes(adapterType));
+    if (!hintedAdapterType) return rows;
+    return rows.filter((row) => row.adapterType === hintedAdapterType);
+  }
+
   function buildChain(resultRows: Array<Record<string, unknown>>) {
     const chain: any = {
-      where() {
-        return chain;
+      where(condition?: unknown) {
+        return buildChain(filterRowsByAdapterHint(resultRows, condition));
       },
       limit() {
         return chain;
@@ -68,6 +112,11 @@ function createProviderStatusStub(available: Set<string>) {
     ),
   };
 }
+
+vi.mock("../adapters/registry.js", () => ({
+  listServerAdapters: mockListServerAdapters,
+  listAdapterModels: mockListAdapterModels,
+}));
 
 describe("model router", () => {
   beforeEach(() => {
@@ -200,14 +249,12 @@ describe("model router", () => {
   it("falls back across providers when no preferences are configured and the requested adapter is rate-limited", async () => {
     const db = createDbStub({
       preferenceRow: null,
-      catalogRows: [
-        { adapterType: "claude_local", modelId: "claude-sonnet-4-6", inputPriceMicro: 30, isFree: false, isLocal: true },
-        { adapterType: "codex_local", modelId: "gpt-5.3-codex", inputPriceMicro: 20, isFree: false, isLocal: true },
-        { adapterType: "gemini_local", modelId: "gemini-2.5-flash", inputPriceMicro: 10, isFree: true, isLocal: true },
-      ],
+      catalogRows: [],
     } as any);
     const providerStatus = createProviderStatusStub(
       new Set([
+        "codex_local::gpt-5.4-mini",
+        "codex_local::gpt-5.4",
         "codex_local::gpt-5.3-codex",
         "gemini_local::gemini-2.5-flash",
       ]),
@@ -217,8 +264,40 @@ describe("model router", () => {
     const result = await router.resolveModel(COMPANY_ID, "agent-1", "claude_local", "auto");
 
     expect(result).toMatchObject({
-      adapterType: "gemini_local",
-      modelId: "gemini-2.5-flash",
+      adapterType: "codex_local",
+      modelId: "gpt-5.4-mini",
+      resolution: "routed",
+    });
+  });
+
+  it("keeps execution on the requested adapter and skips cross-provider auto candidates", async () => {
+    const db = createDbStub({
+      preferenceRow: null,
+      catalogRows: [
+        {
+          adapterType: "codex_local",
+          modelId: "gpt-5.4-mini",
+          inputPriceMicro: 400,
+          isFree: true,
+          isLocal: true,
+        },
+      ],
+    } as any);
+    const providerStatus = createProviderStatusStub(
+      new Set([
+        "codex_local::gpt-5.4-mini",
+        "gemini_local::auto",
+      ]),
+    );
+    const router = createModelRouterService(db as any, providerStatus as any);
+
+    const result = await router.resolveModel(COMPANY_ID, "agent-1", "codex_local", undefined, {
+      lockAdapterType: true,
+    });
+
+    expect(result).toMatchObject({
+      adapterType: "codex_local",
+      modelId: "gpt-5.4-mini",
       resolution: "routed",
     });
   });

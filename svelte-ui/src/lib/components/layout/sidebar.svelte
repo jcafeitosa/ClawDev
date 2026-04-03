@@ -1,8 +1,9 @@
 <script lang="ts">
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
+  import { PluginLauncherOutlet, PluginSlotOutlet } from "$lib/components/plugins/index.js";
   import { sidebarStore } from "$stores/sidebar.svelte.js";
-  import { companyStore } from "$stores/company.svelte.js";
+  import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { openNewIssueDialog } from "$components/new-issue-dialog.svelte";
   import { cn } from "$utils/index.js";
   import {
@@ -28,17 +29,43 @@
     Cog,
     Play,
     Search,
+    Rocket,
     BookOpen,
     Moon,
     Sun,
   } from "lucide-svelte";
 
-  const prefix = $derived(companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? "");
-  const companyName = $derived(companyStore.selectedCompany?.name ?? "ClawDev");
+  const routePrefix = $derived($page.params.companyPrefix ?? "");
+  const routeCompany = $derived.by(() => {
+    if (!routePrefix) return null;
+    const normalized = routePrefix.trim().toUpperCase();
+    return (
+      companyStore.companies.find(
+        (company) =>
+          company.id === routePrefix ||
+          company.slug === routePrefix ||
+          String(company.issuePrefix ?? "").trim().toUpperCase() === normalized,
+      ) ?? null
+    );
+  });
+  const prefix = $derived(routePrefix || (routeCompany?.slug ?? companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? ""));
+  const companyId = $derived(resolveCompanyIdFromPrefix(routePrefix) ?? routeCompany?.id ?? companyStore.selectedCompanyId ?? null);
+  const companyName = $derived(routeCompany?.name ?? companyStore.selectedCompany?.name ?? "ClawDev");
   const companyBrandColor = $derived(
-    (companyStore.selectedCompany?.brandColor as string | undefined) ?? "#3B82F6"
+    (routeCompany?.brandColor as string | undefined) ??
+      (companyStore.selectedCompany?.brandColor as string | undefined) ??
+      "#3B82F6"
   );
   const hasMultipleCompanies = $derived(companyStore.companies.length > 1);
+  const pluginHostContext = $derived({
+    companyId,
+    companyPrefix: prefix || null,
+    projectId: null,
+    entityId: null,
+    entityType: null,
+    parentEntityId: null,
+    userId: null,
+  });
 
   // ---------------------------------------------------------------------------
   // Types
@@ -108,8 +135,8 @@
   let hasAgentErrors = $state(false);
 
   $effect(() => {
-    if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/inbox?status=unread&limit=0`)
+    if (!companyId) return;
+    fetch(`/api/companies/${companyId}/inbox?status=unread&limit=0`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.total != null) inboxUnread = data.total;
@@ -118,8 +145,8 @@
   });
 
   $effect(() => {
-    if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/issues?limit=0`)
+    if (!companyId) return;
+    fetch(`/api/companies/${companyId}/issues?limit=0`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (data?.total != null) issueCount = data.total;
@@ -132,8 +159,8 @@
   let runBadgeInterval: ReturnType<typeof setInterval> | undefined;
 
   function fetchActiveRunCount() {
-    if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/live-runs?minCount=0`)
+    if (!companyId) return;
+    fetch(`/api/companies/${companyId}/live-runs?minCount=0`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (Array.isArray(data)) activeRunCount = data.length;
@@ -145,7 +172,7 @@
   }
 
   $effect(() => {
-    if (!companyStore.selectedCompanyId) return;
+    if (!companyId) return;
     fetchActiveRunCount();
     runBadgeInterval = setInterval(fetchActiveRunCount, 15_000);
     return () => { if (runBadgeInterval) clearInterval(runBadgeInterval); };
@@ -165,8 +192,8 @@
   let hasMoreProjects = $derived(allProjects.length > PROJECTS_COLLAPSED_LIMIT);
 
   $effect(() => {
-    if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/projects?sort=name:asc`)
+    if (!companyId) return;
+    fetch(`/api/companies/${companyId}/projects?sort=name:asc`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         if (Array.isArray(data)) allProjects = data;
@@ -190,8 +217,8 @@
   let hasMoreAgents = $derived(allAgents.length > AGENTS_COLLAPSED_LIMIT);
 
   $effect(() => {
-    if (!companyStore.selectedCompanyId) return;
-    fetch(`/api/companies/${companyStore.selectedCompanyId}/agents?sort=name:asc`)
+    if (!companyId) return;
+    fetch(`/api/companies/${companyId}/agents?sort=name:asc`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
         const list: SidebarAgent[] = Array.isArray(data)
@@ -269,6 +296,7 @@
     items: [
       { label: "Approvals", href: "approvals", icon: ShieldCheck },
       { label: "Workspaces", href: "workspaces", icon: Box },
+      { label: "Documents", href: "documents", icon: BookOpen },
       { label: "Org", href: "org", icon: Building2 },
       { label: "Skills", href: "skills", icon: Puzzle },
       { label: "Costs", href: "costs", icon: DollarSign },
@@ -352,6 +380,17 @@
 
   function openSearch() {
     document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", metaKey: true, bubbles: true }));
+  }
+
+  function openOnboardingFlow() {
+    const currentUrl = `${$page.url.pathname}${$page.url.search}`;
+    if (companyId && prefix) {
+      void goto(
+        `/${prefix}/onboarding?companyId=${companyId}&companyPrefix=${prefix}&step=2&next=${encodeURIComponent(currentUrl)}`,
+      );
+      return;
+    }
+    void goto(`/setup?next=${encodeURIComponent(currentUrl)}`);
   }
 
   /** Produce a deterministic color from a project's color field, or a hash-based fallback */
@@ -438,7 +477,7 @@
               <button
                 class={cn(
                   "flex w-full items-center gap-2.5 px-3 py-2 text-sm transition-colors",
-                  c.id === companyStore.selectedCompanyId
+                  c.id === companyId
                     ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
                     : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
                 )}
@@ -509,13 +548,22 @@
 
   <!-- New Issue button -->
   <div class="px-3 pt-3 pb-1">
-    <button
-      onclick={() => openNewIssueDialog()}
-      class="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-[var(--clawdev-primary)] px-3 text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors"
-    >
-      <Plus class="size-3.5" />
-      New Issue
-    </button>
+    <div class="space-y-2">
+      <button
+        onclick={() => openNewIssueDialog()}
+        class="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-[var(--clawdev-primary)] px-3 text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors"
+      >
+        <Plus class="size-3.5" />
+        New Issue
+      </button>
+      <button
+        onclick={openOnboardingFlow}
+        class="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 text-sm font-medium text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+      >
+        <Rocket class="size-3.5" />
+        Onboarding
+      </button>
+    </div>
   </div>
 
   <!-- Navigation -->
@@ -782,6 +830,36 @@
       {/if}
     </div>
   </nav>
+
+  <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-3">
+    <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--clawdev-text-muted)]">
+      Extensions
+    </div>
+    {#snippet noSidebarExtensions()}
+      <div class="rounded-lg border border-dashed border-[var(--clawdev-bg-surface-border)] px-3 py-2 text-xs text-[var(--clawdev-text-muted)]">
+        No plugin sidebar extensions installed.
+      </div>
+    {/snippet}
+    <PluginSlotOutlet
+      slotTypes={["sidebar", "sidebarPanel"]}
+      context={pluginHostContext}
+      class="space-y-2"
+      itemClassName="rounded-lg border border-[var(--clawdev-bg-surface-border)] bg-[rgba(255,255,255,0.02)] p-2"
+      fallback={noSidebarExtensions}
+    />
+    {#snippet noSidebarLaunchers()}
+      <div class="rounded-lg border border-dashed border-[var(--clawdev-bg-surface-border)] px-3 py-2 text-xs text-[var(--clawdev-text-muted)]">
+        No plugin launchers installed.
+      </div>
+    {/snippet}
+    <PluginLauncherOutlet
+      placementZones={["sidebar", "sidebarPanel", "projectSidebarItem"]}
+      context={pluginHostContext}
+      class="space-y-2"
+      itemClassName="flex flex-wrap gap-2"
+      fallback={noSidebarLaunchers}
+    />
+  </div>
 
   <!-- Footer -->
   <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-1.5">

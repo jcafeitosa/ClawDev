@@ -1,5 +1,5 @@
-// Command component — placeholder for cmdk-sv integration (Tarefa 8)
-// For now, provides styled containers matching the React Command component API
+// Command component primitives for the command palette and related shell UIs.
+// These stay dependency-light and mirror the React command API shape used by the app.
 export { default as Command } from "./command.svelte";
 export { default as CommandInput } from "./command-input.svelte";
 export { default as CommandList } from "./command-list.svelte";

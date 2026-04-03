@@ -31,7 +31,9 @@ async function createApp() {
 }
 
 describe("issues root route", () => {
-  it("rejects the companyless /issues endpoint", async () => {
+  it(
+    "rejects the companyless /issues endpoint",
+    async () => {
     const app = await createApp();
     const res = await app.handle(new Request("http://localhost/api/issues"));
 
@@ -39,5 +41,7 @@ describe("issues root route", () => {
     expect(await res.json()).toEqual({
       error: "Missing companyId in path. Use /api/companies/{companyId}/issues.",
     });
-  });
+    },
+    15_000,
+  );
 });

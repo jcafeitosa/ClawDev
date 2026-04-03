@@ -4,12 +4,14 @@
   import { api } from '$lib/api';
   import { toastStore } from '$stores/toast.svelte.js';
   import { User, Bot, Copy, Check, ChevronRight } from 'lucide-svelte';
+  import { AGENT_ADAPTER_OPTIONS } from '$lib/constants/agent-adapters';
 
   let token = $derived($page.url.searchParams.get('token') ?? '');
   let invite = $state<any>(null);
   let loading = $state(true);
   let accepting = $state(false);
   let error = $state('');
+  let nextPath = $derived($page.url.searchParams.get('next') ?? '/');
 
   // Tab state: "human" or "agent"
   let activeTab = $state<'human' | 'agent'>('human');
@@ -22,16 +24,6 @@
   // Success state for agent join
   let agentResult = $state<{ apiKey: string; onboarding?: string } | null>(null);
   let copied = $state(false);
-
-  const adapterOptions = [
-    { value: 'claude_local', label: 'Claude (Local)' },
-    { value: 'codex_local', label: 'Codex (Local)' },
-    { value: 'cursor_local', label: 'Cursor (Local)' },
-    { value: 'gemini_local', label: 'Gemini (Local)' },
-    { value: 'opencode_local', label: 'OpenCode (Local)' },
-    { value: 'pi_local', label: 'Pi (Local)' },
-    { value: 'openclaw_gateway', label: 'OpenClaw Gateway' },
-  ];
 
   $effect(() => {
     if (!token) { loading = false; return; }
@@ -49,7 +41,7 @@
       const res = await api(`/api/access/invites/${token}/accept`, { method: 'POST' });
       if (!res.ok) throw new Error('Failed');
       toastStore.push({ title: 'Invite accepted', tone: 'success' });
-      goto('/');
+      goto(nextPath || '/');
     } catch {
       error = 'Failed to accept invite';
     } finally {
@@ -147,7 +139,7 @@
           </div>
         {/if}
 
-        <button class="invite-btn-primary" onclick={() => goto('/')}>
+        <button class="invite-btn-primary" onclick={() => goto(nextPath || '/')}>
           Go to Dashboard
           <ChevronRight size={14} />
         </button>
@@ -211,7 +203,7 @@
           <div class="invite-field">
             <label for="adapter-type">Adapter Type</label>
             <select id="adapter-type" bind:value={adapterType}>
-              {#each adapterOptions as opt (opt.value)}
+              {#each AGENT_ADAPTER_OPTIONS as opt (opt.value)}
                 <option value={opt.value}>{opt.label}</option>
               {/each}
             </select>

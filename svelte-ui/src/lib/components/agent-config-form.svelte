@@ -13,18 +13,35 @@
     Terminal,
     Settings,
     ShieldAlert,
+    Loader2,
+    Search,
+    AlertTriangle,
   } from "lucide-svelte";
+  import { api } from "$lib/api";
+  import type {
+    AdapterEnvironmentTestResult,
+  } from "@clawdev/shared";
 
   // ---------------------------------------------------------------------------
   // Props
   // ---------------------------------------------------------------------------
   interface Props {
     adapterType: string;
+    companyId?: string | null;
     config: Record<string, any>;
     mode: "create" | "edit";
   }
 
-  let { adapterType, config = $bindable({}), mode }: Props = $props();
+  interface AdapterModel {
+    id: string;
+    label: string;
+    status?: string;
+    statusDetail?: string;
+    provider?: string;
+    probedAt?: string;
+  }
+
+  let { adapterType, companyId = null, config = $bindable({}), mode }: Props = $props();
 
   // ---------------------------------------------------------------------------
   // Adapter metadata
@@ -32,6 +49,7 @@
   const LOCAL_ADAPTERS = [
     "claude_local",
     "codex_local",
+    "copilot_local",
     "cursor",
     "gemini_local",
     "pi_local",
@@ -39,6 +57,58 @@
   ];
 
   const isLocal = $derived(LOCAL_ADAPTERS.includes(adapterType));
+  const MODEL_DISCOVERY_ADAPTERS = new Set([
+    "claude_local",
+    "codex_local",
+    "copilot_local",
+    "cursor",
+    "gemini_local",
+    "opencode_local",
+    "pi_local",
+  ]);
+  const TESTABLE_ADAPTERS = new Set([
+    "claude_local",
+    "codex_local",
+    "copilot_local",
+    "cursor",
+    "gemini_local",
+    "opencode_local",
+    "pi_local",
+    "openclaw_gateway",
+    "process",
+    "http",
+  ]);
+  const isModelDiscoveryAdapter = $derived(Boolean(companyId) && MODEL_DISCOVERY_ADAPTERS.has(adapterType));
+  const isEnvironmentTestableAdapter = $derived(Boolean(companyId) && TESTABLE_ADAPTERS.has(adapterType));
+
+  let adapterModels = $state<AdapterModel[]>([]);
+  let adapterModelsLoading = $state(false);
+  let adapterModelsError = $state<string | null>(null);
+  let modelSearch = $state("");
+  let adapterEnvResult = $state<AdapterEnvironmentTestResult | null>(null);
+  let adapterEnvError = $state<string | null>(null);
+  let adapterEnvLoading = $state(false);
+  let unsetAnthropicLoading = $state(false);
+
+  const filteredModels = $derived(
+    adapterModels.filter((entry) => {
+      const query = modelSearch.trim().toLowerCase();
+      if (!query) return true;
+      return (
+        entry.id.toLowerCase().includes(query) ||
+        entry.label.toLowerCase().includes(query) ||
+        (entry.provider ?? "").toLowerCase().includes(query)
+      );
+    }),
+  );
+  const selectedModel = $derived(
+    adapterModels.find((entry) => entry.id === (typeof config.model === "string" ? config.model : "")) ?? null,
+  );
+  const shouldSuggestUnsetAnthropicApiKey = $derived(
+    adapterType === "claude_local" &&
+      adapterEnvResult?.status === "fail" &&
+      (adapterEnvResult?.checks.some((check) => check.code === "claude_anthropic_api_key_overrides_subscription") ?? false),
+  );
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -81,10 +151,18 @@
         break;
       case "codex_local":
         ensure("cwd");
-        ensure("model", "gpt-5.3-codex");
+        ensure("model", "gpt-5.4-mini");
         ensure("modelReasoningEffort", "medium");
         ensure("search", false);
         ensure("dangerouslyBypassApprovalsAndSandbox", false);
+        ensure("skipGitRepoCheck", true);
+        break;
+      case "copilot_local":
+        ensure("cwd");
+        ensure("model");
+        ensure("effort", "medium");
+        ensure("command", "copilot");
+        ensure("configDir");
         break;
       case "cursor":
         ensure("cwd");
@@ -127,6 +205,120 @@
       ensure("promptTemplate");
     }
   }
+
+  async function loadAdapterModels(): Promise<void> {
+    if (!companyId || !isModelDiscoveryAdapter) {
+      adapterModels = [];
+      adapterModelsError = null;
+      adapterModelsLoading = false;
+      return;
+    }
+    adapterModelsLoading = true;
+    adapterModelsError = null;
+    try {
+      const res = await api(`/api/companies/${companyId}/adapters/${adapterType}/models`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? `Failed to load ${adapterType} models (${res.status})`);
+      }
+      const data = await res.json();
+      adapterModels = Array.isArray(data) ? data : data.models ?? [];
+    } catch (err) {
+      adapterModels = [];
+      adapterModelsError = err instanceof Error ? err.message : "Failed to load adapter models";
+    } finally {
+      adapterModelsLoading = false;
+    }
+  }
+
+  async function detectAdapterModel(): Promise<void> {
+    if (!companyId || !isModelDiscoveryAdapter) return;
+    adapterModelsLoading = true;
+    adapterModelsError = null;
+    try {
+      const res = await api(`/api/companies/${companyId}/adapters/${adapterType}/detect-model`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? `Failed to detect ${adapterType} model (${res.status})`);
+      }
+      const detected = await res.json();
+      if (detected?.model) {
+        setField("model", detected.model);
+      }
+    } catch (err) {
+      adapterModelsError = err instanceof Error ? err.message : "Failed to detect model";
+    } finally {
+      adapterModelsLoading = false;
+    }
+  }
+
+  async function runAdapterEnvironmentTest(adapterConfigOverride?: Record<string, unknown>): Promise<AdapterEnvironmentTestResult | null> {
+    if (!companyId || !isEnvironmentTestableAdapter) {
+      adapterEnvError = "Create or select a company before testing the adapter environment.";
+      return null;
+    }
+    adapterEnvLoading = true;
+    adapterEnvError = null;
+    try {
+      const res = await api(`/api/companies/${companyId}/adapters/${adapterType}/test-environment`, {
+        method: "POST",
+        body: JSON.stringify({ adapterConfig: adapterConfigOverride ?? config }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? `Adapter environment test failed (${res.status})`);
+      }
+      const result = (await res.json()) as AdapterEnvironmentTestResult;
+      adapterEnvResult = result;
+      return result;
+    } catch (err) {
+      adapterEnvError = err instanceof Error ? err.message : "Adapter environment test failed";
+      return null;
+    } finally {
+      adapterEnvLoading = false;
+    }
+  }
+
+  async function handleUnsetAnthropicApiKey(): Promise<void> {
+    if (unsetAnthropicLoading) return;
+    unsetAnthropicLoading = true;
+    try {
+      const env =
+        typeof config.env === "object" &&
+        config.env !== null &&
+        !Array.isArray(config.env)
+          ? { ...(config.env as Record<string, unknown>) }
+          : {};
+      env.ANTHROPIC_API_KEY = { type: "plain", value: "" };
+      setField("env", env);
+      await runAdapterEnvironmentTest({ ...config, env });
+    } finally {
+      unsetAnthropicLoading = false;
+    }
+  }
+
+  $effect(() => {
+    void companyId;
+    void adapterType;
+    void isModelDiscoveryAdapter;
+    void isEnvironmentTestableAdapter;
+    adapterEnvResult = null;
+    adapterEnvError = null;
+    if (!companyId) {
+      adapterModels = [];
+      adapterModelsError = null;
+      adapterModelsLoading = false;
+      return;
+    }
+    if (isModelDiscoveryAdapter) {
+      void loadAdapterModels();
+    } else {
+      adapterModels = [];
+      adapterModelsError = null;
+      adapterModelsLoading = false;
+    }
+  });
+
 
   // ---------------------------------------------------------------------------
   // CSS helpers
@@ -212,9 +404,10 @@
             <select
               id="cfg-model"
               class={selectCls}
-              value={config.model ?? "gpt-5.3-codex"}
+              value={config.model ?? "gpt-5.4-mini"}
               onchange={(e) => setField("model", e.currentTarget.value)}
             >
+              <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
               <option value="gpt-5.4">GPT-5.4</option>
               <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
               <option value="o3">o3</option>
@@ -222,14 +415,74 @@
             </select>
             <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
-          <p class={helpCls}>The OpenAI model to use for code generation.</p>
+          <p class={helpCls}>The OpenAI model to use for code generation. Codex local defaults to GPT-5.4 Mini.</p>
+        </div>
+
+      <!-- copilot_local -->
+      {:else if adapterType === "copilot_local"}
+        <div>
+          <label for="cfg-model" class={labelCls}>Model</label>
+          <input
+            id="cfg-model"
+            type="text"
+            class="{inputCls} mt-1.5"
+            value={config.model ?? ""}
+            oninput={(e) => setField("model", e.currentTarget.value)}
+            placeholder="gpt-5.4-mini"
+          />
+          <p class={helpCls}>Model id with optional effort suffix. Leave empty to use Copilot defaults.</p>
         </div>
 
         <div>
-          <label for="cfg-reasoning" class={labelCls}>Model Reasoning Effort</label>
+          <label for="cfg-effort" class={labelCls}>Effort</label>
           <div class="relative mt-1.5">
             <select
-              id="cfg-reasoning"
+              id="cfg-effort"
+              class={selectCls}
+              value={config.effort ?? "medium"}
+              onchange={(e) => setField("effort", e.currentTarget.value)}
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="xhigh">Extra High</option>
+            </select>
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          </div>
+          <p class={helpCls}>Reasoning effort for Copilot runs.</p>
+        </div>
+
+        <div>
+          <label for="cfg-command" class={labelCls}>Command</label>
+          <input
+            id="cfg-command"
+            type="text"
+            class="{inputCls} mt-1.5"
+            value={config.command ?? "copilot"}
+            oninput={(e) => setField("command", e.currentTarget.value)}
+            placeholder="copilot"
+          />
+          <p class={helpCls}>Command used to launch GitHub Copilot locally.</p>
+        </div>
+
+        <div>
+          <label for="cfg-configDir" class={labelCls}>Config Directory</label>
+          <input
+            id="cfg-configDir"
+            type="text"
+            class="{inputCls} mt-1.5"
+            value={config.configDir ?? ""}
+            oninput={(e) => setField("configDir", e.currentTarget.value)}
+            placeholder="~/.config/copilot"
+          />
+          <p class={helpCls}>Optional Copilot config directory override.</p>
+        </div>
+
+      <div>
+        <label for="cfg-reasoning" class={labelCls}>Model Reasoning Effort</label>
+        <div class="relative mt-1.5">
+          <select
+            id="cfg-reasoning"
               class={selectCls}
               value={config.modelReasoningEffort ?? "medium"}
               onchange={(e) => setField("modelReasoningEffort", e.currentTarget.value)}
@@ -513,6 +766,166 @@
     </div>
   </section>
 
+  {#if companyId && isModelDiscoveryAdapter}
+    <section>
+      <div class={sectionHeadingCls}>
+        <Search class="size-3.5" />
+        <span>Model Discovery</span>
+      </div>
+
+      <div class="space-y-4 rounded-lg border border-border bg-background p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-medium text-muted-foreground/80">Discover models</p>
+            <p class="text-xs text-muted-foreground mt-0.5">
+              Loaded from the selected adapter in the current company context.
+            </p>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent/50"
+            onclick={() => void detectAdapterModel()}
+            disabled={adapterModelsLoading}
+          >
+            {adapterModelsLoading ? "Detecting..." : "Detect model"}
+          </button>
+        </div>
+
+        <div>
+          <label for="cfg-model-search" class={labelCls}>Model</label>
+          <input
+            id="cfg-model-search"
+            type="text"
+            class="{inputCls} mt-1.5"
+            value={modelSearch}
+            oninput={(e) => (modelSearch = e.currentTarget.value)}
+            placeholder="Search models or type provider/model"
+          />
+          <p class={helpCls}>
+            {#if selectedModel}
+              Selected: <span class="font-medium text-foreground">{selectedModel.label}</span>
+            {:else}
+              Pick a discovered model or let the adapter detect one.
+            {/if}
+          </p>
+        </div>
+
+        {#if adapterModelsError}
+          <div class="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            {adapterModelsError}
+          </div>
+        {:else if adapterModelsLoading}
+          <div class="flex items-center gap-2 text-sm text-muted-foreground py-2">
+            <Loader2 class="size-4 animate-spin" />
+            Loading models...
+          </div>
+        {:else if filteredModels.length === 0}
+          <div class="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+            <AlertTriangle class="size-4 shrink-0 mt-0.5" />
+            <span>No models discovered yet. Refresh discovery or verify the adapter is authenticated.</span>
+          </div>
+        {:else}
+          <div class="grid gap-2 sm:grid-cols-2">
+            {#each filteredModels as entry}
+              <button
+                type="button"
+                class="rounded-lg border px-3 py-2 text-left transition hover:bg-accent/50 {typeof config.model === 'string' && config.model === entry.id ? 'border-foreground bg-accent' : 'border-border'}"
+                onclick={() => setField('model', entry.id)}
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <div class="min-w-0">
+                    <p class="truncate text-sm font-medium text-foreground">{entry.label}</p>
+                    <p class="truncate text-xs text-muted-foreground">{entry.id}</p>
+                  </div>
+                  {#if typeof config.model === 'string' && config.model === entry.id}
+                    <span class="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-600">Selected</span>
+                  {/if}
+                </div>
+                {#if entry.provider}
+                  <p class="mt-2 text-[11px] uppercase tracking-wide text-muted-foreground">Provider: {entry.provider}</p>
+                {/if}
+                {#if entry.statusDetail}
+                  <p class="mt-1 text-[11px] text-muted-foreground">{entry.statusDetail}</p>
+                {/if}
+              </button>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    </section>
+  {/if}
+
+  {#if companyId && isEnvironmentTestableAdapter}
+    <section>
+      <div class={sectionHeadingCls}>
+        <Settings class="size-3.5" />
+        <span>Environment Check</span>
+      </div>
+
+      <div class="space-y-4 rounded-lg border border-border bg-background p-4">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <p class="text-sm font-medium text-muted-foreground/80">Adapter environment check</p>
+            <p class="text-xs text-muted-foreground mt-0.5">Runs a live probe using the current adapter settings.</p>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent/50"
+            onclick={() => void runAdapterEnvironmentTest()}
+            disabled={adapterEnvLoading}
+          >
+            {adapterEnvLoading ? "Testing..." : "Test now"}
+          </button>
+        </div>
+
+        {#if adapterEnvError}
+          <div class="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+            {adapterEnvError}
+          </div>
+        {/if}
+
+        {#if adapterEnvResult}
+          <div class="rounded-lg border px-4 py-3 text-sm {adapterEnvResult.status === 'pass' ? 'border-green-300 bg-green-50 text-green-700' : adapterEnvResult.status === 'warn' ? 'border-amber-300 bg-amber-50 text-amber-700' : 'border-red-300 bg-red-50 text-red-700'}">
+            <div class="flex items-center justify-between gap-3">
+              <div class="font-medium uppercase tracking-wide">{adapterEnvResult.status === 'pass' ? 'Passed' : adapterEnvResult.status === 'warn' ? 'Warnings' : 'Failed'}</div>
+              <div class="text-[11px] opacity-80">{new Date(adapterEnvResult.testedAt).toLocaleTimeString()}</div>
+            </div>
+            <div class="mt-3 space-y-2 text-xs">
+              {#each adapterEnvResult.checks as check, idx}
+                <div class="rounded-md border border-current/10 bg-white/60 px-2.5 py-2">
+                  <div class="font-semibold uppercase tracking-wide opacity-80">{check.level}</div>
+                  <div class="mt-1 leading-relaxed">{check.message}</div>
+                  {#if check.detail}
+                    <div class="mt-1 break-all opacity-80">{check.detail}</div>
+                  {/if}
+                  {#if check.hint}
+                    <div class="mt-1 opacity-90">Hint: {check.hint}</div>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          </div>
+        {/if}
+
+        {#if shouldSuggestUnsetAnthropicApiKey}
+          <div class="rounded-lg border border-amber-300/60 bg-amber-50/50 px-4 py-3 space-y-2">
+            <p class="text-sm text-amber-900/90 leading-relaxed">
+              Claude failed while <span class="font-mono">ANTHROPIC_API_KEY</span> is set. You can clear it in this config and retry the probe.
+            </p>
+            <button
+              type="button"
+              class="rounded-lg border border-amber-300 px-3 py-1.5 text-xs font-medium text-amber-900 transition hover:bg-amber-100"
+              onclick={() => void handleUnsetAnthropicApiKey()}
+              disabled={adapterEnvLoading || unsetAnthropicLoading}
+            >
+              {unsetAnthropicLoading ? 'Retrying...' : 'Unset ANTHROPIC_API_KEY'}
+            </button>
+          </div>
+        {/if}
+      </div>
+    </section>
+  {/if}
+
   <!-- ===================================================================== -->
   <!-- SECTION: Execution (local adapters only)                               -->
   <!-- ===================================================================== -->
@@ -610,6 +1023,28 @@
         {/if}
 
         {#if adapterType === "codex_local"}
+          <div class="flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/[0.04] px-4 py-3">
+            <div>
+              <span class="text-sm font-medium text-muted-foreground/80">Skip Git Repo Check</span>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                Allow Codex to run from ClawDev-managed worktrees and temporary directories.
+              </p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={config.skipGitRepoCheck ?? true}
+              aria-label="Skip Git repo check"
+              title="Skip Git repo check"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {(config.skipGitRepoCheck ?? true) ? 'bg-amber-500' : 'bg-accent'}"
+              onclick={() => toggleField("skipGitRepoCheck")}
+            >
+              <span
+                class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 {(config.skipGitRepoCheck ?? true) ? 'translate-x-5' : 'translate-x-0'}"
+              ></span>
+            </button>
+          </div>
+
           <div class="flex items-center justify-between rounded-lg border border-amber-500/20 bg-amber-500/[0.04] px-4 py-3">
             <div>
               <span class="text-sm font-medium text-muted-foreground/80">Bypass Approvals & Sandbox</span>

@@ -1,13 +1,38 @@
-<script lang="ts">
+  <script lang="ts">
   import { page } from '$app/stores';
-  import { goto } from '$app/navigation';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from '$components/index.js';
-  import { Separator, Badge, Tabs, TabsList, TabsTrigger, TabsContent } from '$components/ui/index.js';
-  import { Archive, Server, Database, Clock, Terminal, ArrowLeft } from 'lucide-svelte';
+  import {
+    Button,
+    Separator,
+    Tabs,
+    TabsList,
+    TabsTrigger,
+    TabsContent,
+    Dialog,
+    DialogContent,
+    DialogHeader,
+    DialogTitle,
+    DialogDescription,
+    DialogFooter,
+  } from '$components/ui/index.js';
+  import {
+    Archive,
+    Server,
+    Database,
+    Clock,
+    Terminal,
+    ArrowLeft,
+    Loader2,
+    Play,
+    Square,
+    RotateCcw,
+    CircleAlert,
+    CheckCircle2,
+  } from 'lucide-svelte';
 
   // ---------------------------------------------------------------------------
   // Types
@@ -25,11 +50,59 @@
   }
 
   interface RuntimeService {
+    id?: string;
     name: string;
     type: string;
     status?: string;
     port?: number;
+    url?: string;
+    command?: string;
+    cwd?: string;
     [key: string]: unknown;
+  }
+
+  interface ExecutionWorkspaceCloseAction {
+    kind: string;
+    label: string;
+    description: string;
+    command?: string | null;
+  }
+
+  interface ExecutionWorkspaceCloseLinkedIssue {
+    id: string;
+    identifier?: string | null;
+    title: string;
+    status: string;
+    isTerminal: boolean;
+  }
+
+  interface ExecutionWorkspaceCloseGitReadiness {
+    repoRoot?: string | null;
+    workspacePath?: string | null;
+    branchName?: string | null;
+    baseRef?: string | null;
+    hasDirtyTrackedFiles?: boolean;
+    hasUntrackedFiles?: boolean;
+    dirtyEntryCount?: number;
+    untrackedEntryCount?: number;
+    aheadCount?: number | null;
+    behindCount?: number | null;
+    isMergedIntoBase?: boolean | null;
+    createdByRuntime?: boolean;
+  }
+
+  interface ExecutionWorkspaceCloseReadiness {
+    workspaceId: string;
+    state: 'ready' | 'ready_with_warnings' | 'blocked';
+    blockingReasons: string[];
+    warnings: string[];
+    linkedIssues: ExecutionWorkspaceCloseLinkedIssue[];
+    plannedActions: ExecutionWorkspaceCloseAction[];
+    isDestructiveCloseAllowed: boolean;
+    isSharedWorkspace: boolean;
+    isProjectPrimaryWorkspace: boolean;
+    git: ExecutionWorkspaceCloseGitReadiness | null;
+    runtimeServices: RuntimeService[];
   }
 
   interface Workspace {
@@ -49,9 +122,30 @@
     lastUsedAt?: string;
     createdAt?: string;
     updatedAt?: string;
+    config?: {
+      provisionCommand?: string | null;
+      teardownCommand?: string | null;
+      cleanupCommand?: string | null;
+      workspaceRuntime?: Record<string, unknown> | null;
+      desiredState?: 'running' | 'stopped' | null;
+    } | null;
     operations?: WorkspaceOperation[];
     runtimeServices?: RuntimeService[];
     services?: RuntimeService[];
+    [key: string]: unknown;
+  }
+
+  interface ProjectWorkspace {
+    id: string;
+    runtimeConfig?: {
+      workspaceRuntime?: Record<string, unknown> | null;
+    } | null;
+    [key: string]: unknown;
+  }
+
+  interface Project {
+    id: string;
+    workspaces?: ProjectWorkspace[];
     [key: string]: unknown;
   }
 
@@ -63,11 +157,26 @@
   let loading = $state(true);
   let notFound = $state(false);
   let activeTab = $state('overview');
-  let archiving = $state(false);
-  let confirmArchive = $state(false);
+  let closeDialogOpen = $state(false);
+  let closing = $state(false);
+  let closeReadiness = $state<ExecutionWorkspaceCloseReadiness | null>(null);
+  let closeReadinessLoading = $state(false);
+  let runtimeAction = $state<'start' | 'stop' | 'restart' | null>(null);
+  let operationRefreshNonce = $state(0);
+  let workspaceOperationsLoading = $state(false);
+  let workspaceOperationsError = $state<string | null>(null);
+  let project = $state<Project | null>(null);
 
   let workspaceId = $derived($page.params.workspaceId);
   let companyPrefix = $derived($page.params.companyPrefix);
+  let linkedProjectWorkspace = $derived(
+    project?.workspaces?.find((item) => item.id === ws?.projectWorkspaceId) ?? null
+  );
+  let effectiveRuntimeConfig = $derived(
+    ws?.config?.workspaceRuntime ??
+      linkedProjectWorkspace?.runtimeConfig?.workspaceRuntime ??
+      null
+  );
   let runtimeServices = $derived<RuntimeService[]>(
     ws?.runtimeServices ?? ws?.services ?? []
   );
@@ -87,6 +196,17 @@
     loadWorkspace();
   });
 
+  $effect(() => {
+    if (!ws?.projectId) return;
+    loadProject(ws.projectId);
+  });
+
+  $effect(() => {
+    if (!workspaceId) return;
+    operationRefreshNonce;
+    loadWorkspaceOperations();
+  });
+
   async function loadWorkspace() {
     if (!workspaceId) return;
     loading = true;
@@ -99,7 +219,6 @@
       }
       const data = await res.json();
       ws = data;
-      operations = data.operations ?? [];
     } catch (err: any) {
       if (!notFound) {
         toastStore.push({ title: 'Failed to load workspace', body: err?.message, tone: 'error' });
@@ -109,25 +228,30 @@
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Archive
-  // ---------------------------------------------------------------------------
-  async function archiveWorkspace() {
+  async function loadWorkspaceOperations() {
     if (!workspaceId) return;
-    archiving = true;
+    workspaceOperationsLoading = true;
+    workspaceOperationsError = null;
     try {
-      const res = await api(`/api/execution-workspaces/${workspaceId}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ status: 'archived' }),
-      });
+      const res = await api(`/api/execution-workspaces/${workspaceId}/workspace-operations`);
       if (!res.ok) throw new Error(await res.text());
-      toastStore.push({ title: 'Workspace archived', tone: 'success' });
-      confirmArchive = false;
-      await loadWorkspace();
+      const data = await res.json();
+      operations = Array.isArray(data) ? data : data.operations ?? data.items ?? [];
     } catch (err: any) {
-      toastStore.push({ title: 'Failed to archive workspace', body: err?.message, tone: 'error' });
+      workspaceOperationsError = err?.message ?? 'Failed to load workspace operations.';
+      operations = [];
     } finally {
-      archiving = false;
+      workspaceOperationsLoading = false;
+    }
+  }
+
+  async function loadProject(projectId: string) {
+    try {
+      const res = await api(`/api/projects/${projectId}`);
+      if (!res.ok) throw new Error(await res.text());
+      project = await res.json();
+    } catch {
+      project = null;
     }
   }
 
@@ -161,6 +285,90 @@
       default: return 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400';
     }
   }
+
+  function closeStateColor(state: ExecutionWorkspaceCloseReadiness['state'] | null | undefined): string {
+    switch (state) {
+      case 'ready':
+        return 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-300';
+      case 'ready_with_warnings':
+        return 'bg-amber-500/15 text-amber-700 dark:text-amber-300';
+      case 'blocked':
+        return 'bg-red-500/15 text-red-700 dark:text-red-300';
+      default:
+        return 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400';
+    }
+  }
+
+  async function loadCloseReadiness() {
+    if (!workspaceId) return;
+    closeReadinessLoading = true;
+    try {
+      const res = await api(`/api/execution-workspaces/${workspaceId}/close-readiness`);
+      if (!res.ok) throw new Error(await res.text());
+      closeReadiness = await res.json();
+    } catch (err: any) {
+      closeReadiness = null;
+      toastStore.push({
+        title: 'Failed to load workspace close readiness',
+        body: err?.message,
+        tone: 'error',
+      });
+    } finally {
+      closeReadinessLoading = false;
+    }
+  }
+
+  async function requestCloseWorkspace() {
+    if (!workspaceId || !ws) return;
+    closing = true;
+    try {
+      const res = await api(`/api/execution-workspaces/${workspaceId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: 'archived' }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({ title: 'Workspace closed', tone: 'success' });
+      closeDialogOpen = false;
+      await loadWorkspace();
+      operationRefreshNonce += 1;
+    } catch (err: any) {
+      toastStore.push({ title: 'Failed to close workspace', body: err?.message, tone: 'error' });
+      await loadCloseReadiness();
+    } finally {
+      closing = false;
+    }
+  }
+
+  async function controlRuntimeServices(action: 'start' | 'stop' | 'restart') {
+    if (!workspaceId) return;
+    runtimeAction = action;
+    try {
+      const res = await api(`/api/execution-workspaces/${workspaceId}/runtime-services/${action}`, {
+        method: 'POST',
+      });
+      if (!res.ok) throw new Error(await res.text());
+      toastStore.push({
+        title: action === 'stop' ? 'Runtime services stopped' : action === 'restart' ? 'Runtime services restarted' : 'Runtime services started',
+        tone: 'success',
+      });
+      await loadWorkspace();
+      operationRefreshNonce += 1;
+      if (closeDialogOpen) await loadCloseReadiness();
+    } catch (err: any) {
+      toastStore.push({
+        title: `Failed to ${action} runtime services`,
+        body: err?.message,
+        tone: 'error',
+      });
+    } finally {
+      runtimeAction = null;
+    }
+  }
+
+  async function openCloseDialog() {
+    closeDialogOpen = true;
+    await loadCloseReadiness();
+  }
 </script>
 
 {#if loading}
@@ -188,29 +396,10 @@
       </div>
       <div class="flex items-center gap-2 shrink-0">
         {#if ws.status !== 'archived'}
-          {#if confirmArchive}
-            <button
-              onclick={archiveWorkspace}
-              disabled={archiving}
-              class="inline-flex items-center gap-1.5 rounded-md bg-amber-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-700 transition-colors disabled:opacity-50"
-            >
-              {archiving ? 'Archiving...' : 'Confirm Archive'}
-            </button>
-            <button
-              onclick={() => { confirmArchive = false; }}
-              class="rounded-md border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              Cancel
-            </button>
-          {:else}
-            <button
-              onclick={() => { confirmArchive = true; }}
-              class="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-            >
-              <Archive class="w-3.5 h-3.5" />
-              Archive
-            </button>
-          {/if}
+          <Button variant="outline" size="sm" class="gap-1.5" onclick={openCloseDialog}>
+            <Archive class="w-3.5 h-3.5" />
+            Close workspace
+          </Button>
         {/if}
         <a
           href="/{companyPrefix}/workspaces"
@@ -323,7 +512,11 @@
 
           <TabsContent value="operations">
             <div class="mt-4">
-              {#if operations.length === 0}
+              {#if workspaceOperationsLoading}
+                <p class="text-sm text-muted-foreground">Loading workspace operations…</p>
+              {:else if workspaceOperationsError}
+                <p class="text-sm text-destructive">{workspaceOperationsError}</p>
+              {:else if operations.length === 0}
                 <EmptyState title="No operations" description="No workspace operations have been recorded yet." icon="🔧" />
               {:else}
                 <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
@@ -471,6 +664,229 @@
           <span class="font-mono text-xs break-all">{ws.id}</span>
         </PropertyRow>
       </PropertiesPanel>
+
+      <div class="rounded-2xl border border-border bg-card p-5">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div class="space-y-1">
+            <div class="text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Runtime controls</div>
+            <h2 class="text-lg font-semibold">Workspace services</h2>
+            <p class="text-sm text-muted-foreground">
+              {#if effectiveRuntimeConfig}
+                Manage the local runtime services attached to this workspace.
+              {:else}
+                No runtime config is defined for this execution workspace yet.
+              {/if}
+            </p>
+          </div>
+          <div class="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap">
+            <Button
+              variant="outline"
+              size="sm"
+              class="w-full sm:w-auto gap-1.5"
+              disabled={runtimeAction !== null || !effectiveRuntimeConfig || !ws?.cwd}
+              onclick={() => controlRuntimeServices("start")}
+            >
+              {#if runtimeAction === "start"}
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
+              {:else}
+                <Play class="h-3.5 w-3.5" />
+              {/if}
+              Start
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              class="w-full sm:w-auto gap-1.5"
+              disabled={runtimeAction !== null || !effectiveRuntimeConfig || !ws?.cwd}
+              onclick={() => controlRuntimeServices("restart")}
+            >
+              {#if runtimeAction === "restart"}
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
+              {:else}
+                <RotateCcw class="h-3.5 w-3.5" />
+              {/if}
+              Restart
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              class="w-full sm:w-auto gap-1.5"
+              disabled={runtimeAction !== null || (ws.runtimeServices?.length ?? 0) === 0}
+              onclick={() => controlRuntimeServices("stop")}
+            >
+              {#if runtimeAction === "stop"}
+                <Loader2 class="h-3.5 w-3.5 animate-spin" />
+              {:else}
+                <Square class="h-3.5 w-3.5" />
+              {/if}
+              Stop
+            </Button>
+          </div>
+        </div>
+        <Separator class="my-4" />
+        {#if runtimeServices.length > 0}
+          <div class="space-y-3">
+            {#each runtimeServices as svc}
+              <div class="rounded-xl border border-border/80 bg-background px-3 py-2">
+                <div class="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div class="space-y-1">
+                    <div class="text-sm font-medium">{svc.name}</div>
+                    <div class="text-xs text-muted-foreground">{svc.type}{svc.status ? ` · ${svc.status}` : ''}</div>
+                    <div class="space-y-1 text-xs text-muted-foreground">
+                      {#if svc.port}
+                        <div>Port {svc.port}</div>
+                      {/if}
+                      {#if svc.url}
+                        <a href={svc.url} target="_blank" rel="noreferrer" class="inline-flex items-center gap-1 hover:underline">
+                          {svc.url}
+                        </a>
+                      {/if}
+                    </div>
+                  </div>
+                  <StatusBadge status={svc.status ?? 'unknown'} />
+                </div>
+              </div>
+            {/each}
+          </div>
+        {:else}
+          <p class="text-sm text-muted-foreground">
+            {effectiveRuntimeConfig
+              ? "No runtime services are currently running for this execution workspace."
+              : "No runtime config is defined for this execution workspace yet."}
+          </p>
+        {/if}
+      </div>
     </div>
+
+    <Dialog bind:open={closeDialogOpen}>
+      <DialogContent class="sm:max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Close workspace</DialogTitle>
+          <DialogDescription>
+            Review the workspace close readiness before ClawDev archives the workspace and stops its runtime services.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div class="space-y-4">
+          {#if closeReadinessLoading}
+            <p class="text-sm text-muted-foreground">Loading close readiness…</p>
+          {:else if closeReadiness}
+            <div class="flex items-center gap-2">
+              <span class={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ${closeStateColor(closeReadiness.state)}`}>
+                {closeReadiness.state.replace(/_/g, ' ')}
+              </span>
+              {#if closeReadiness.isDestructiveCloseAllowed}
+                <span class="inline-flex items-center gap-1 rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-700 dark:text-emerald-300">
+                  <CheckCircle2 class="h-3.5 w-3.5" />
+                  Destructive close allowed
+                </span>
+              {/if}
+            </div>
+
+            {#if closeReadiness.blockingReasons.length > 0}
+              <div class="rounded-lg border border-red-500/30 bg-red-500/10 p-3">
+                <div class="mb-2 flex items-center gap-2 text-sm font-medium text-red-700 dark:text-red-300">
+                  <CircleAlert class="h-4 w-4" />
+                  Blocking reasons
+                </div>
+                <ul class="space-y-1 text-sm text-red-700/90 dark:text-red-200">
+                  {#each closeReadiness.blockingReasons as reason}
+                    <li>• {reason}</li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+
+            {#if closeReadiness.warnings.length > 0}
+              <div class="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3">
+                <div class="mb-2 text-sm font-medium text-amber-700 dark:text-amber-300">Warnings</div>
+                <ul class="space-y-1 text-sm text-amber-700/90 dark:text-amber-200">
+                  {#each closeReadiness.warnings as warning}
+                    <li>• {warning}</li>
+                  {/each}
+                </ul>
+              </div>
+            {/if}
+
+            <div class="grid gap-3 md:grid-cols-2">
+              <div class="rounded-lg border border-border p-3">
+                <div class="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Linked issues</div>
+                {#if closeReadiness.linkedIssues.length > 0}
+                  <div class="space-y-2">
+                    {#each closeReadiness.linkedIssues as issue}
+                      <div class="flex items-start justify-between gap-3 text-sm">
+                        <div class="min-w-0">
+                          <div class="font-medium">{issue.identifier ?? issue.id.slice(0, 8)} · {issue.title}</div>
+                          <div class="text-xs text-muted-foreground">{issue.status}{issue.isTerminal ? ' · terminal' : ''}</div>
+                        </div>
+                        <a href="/{companyPrefix}/issues/{issue.id}" class="text-xs text-primary hover:underline">Open</a>
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <p class="text-sm text-muted-foreground">No linked issues.</p>
+                {/if}
+              </div>
+
+              <div class="rounded-lg border border-border p-3">
+                <div class="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Git readiness</div>
+                {#if closeReadiness.git}
+                  <div class="space-y-1 text-sm">
+                    <div>Workspace path: <span class="font-mono text-xs">{closeReadiness.git.workspacePath ?? '--'}</span></div>
+                    <div>Branch: <span class="font-mono text-xs">{closeReadiness.git.branchName ?? '--'}</span></div>
+                    <div>Base ref: <span class="font-mono text-xs">{closeReadiness.git.baseRef ?? '--'}</span></div>
+                    <div>Dirty files: <span class="font-medium">{closeReadiness.git.dirtyEntryCount ?? 0}</span></div>
+                    <div>Untracked files: <span class="font-medium">{closeReadiness.git.untrackedEntryCount ?? 0}</span></div>
+                    <div>Ahead/behind: <span class="font-medium">{closeReadiness.git.aheadCount ?? 0}/{closeReadiness.git.behindCount ?? 0}</span></div>
+                  </div>
+                {:else}
+                  <p class="text-sm text-muted-foreground">No git readiness data available.</p>
+                {/if}
+              </div>
+            </div>
+
+            {#if closeReadiness.plannedActions.length > 0}
+              <div class="rounded-lg border border-border p-3">
+                <div class="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-muted-foreground">Planned actions</div>
+                <div class="space-y-2">
+                  {#each closeReadiness.plannedActions as action}
+                    <div class="rounded-md border border-border/70 bg-background px-3 py-2">
+                      <div class="flex items-start justify-between gap-3">
+                        <div>
+                          <div class="text-sm font-medium">{action.label}</div>
+                          <div class="text-xs text-muted-foreground">{action.description}</div>
+                        </div>
+                        {#if action.command}
+                          <span class="font-mono text-xs text-muted-foreground">{action.command}</span>
+                        {/if}
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              </div>
+            {/if}
+          {:else}
+            <p class="text-sm text-muted-foreground">
+              Close readiness could not be loaded yet.
+            </p>
+          {/if}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onclick={() => { closeDialogOpen = false; }}>
+            Cancel
+          </Button>
+          <Button
+            disabled={closing || closeReadiness?.state === 'blocked'}
+            onclick={requestCloseWorkspace}
+          >
+            {#if closing}
+              <Loader2 class="mr-2 h-4 w-4 animate-spin" />
+            {/if}
+            Close workspace
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   </div>
 {/if}
