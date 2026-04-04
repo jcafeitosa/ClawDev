@@ -552,30 +552,19 @@
     </div>
   </div>
 
-  <!-- New Issue button -->
-  <div class="px-3 pt-3 pb-1">
-    <div class="space-y-2">
-      <button
-        onclick={() => openNewIssueDialog()}
-        class={cn(
-          "flex h-8 w-full items-center gap-2 rounded-md bg-[var(--clawdev-primary)] text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors",
-          expanded ? "justify-center px-3" : "justify-center px-0",
-        )}
-        title="New Issue"
-      >
-        <Plus class="size-3.5 shrink-0" />
-        {#if expanded}<span transition:slide={{ axis: "x", duration: 200 }} class="whitespace-nowrap">New Issue</span>{/if}
-      </button>
-      {#if expanded}
-        <button
-          onclick={openOnboardingFlow}
-          class="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 text-sm font-medium text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-        >
-          <Rocket class="size-3.5" />
-          Onboarding
-        </button>
-      {/if}
-    </div>
+  <!-- Quick actions (inline with nav items) -->
+  <div class="px-3 pt-3 pb-0">
+    <button
+      onclick={() => openNewIssueDialog()}
+      title={expanded ? undefined : "New Issue"}
+      class={cn(
+        "flex w-full items-center gap-2.5 rounded-md py-1.5 text-sm transition-colors text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
+        expanded ? "px-2.5" : "px-2.5 justify-center",
+      )}
+    >
+      <Plus class="size-4 shrink-0" />
+      {#if expanded}<span transition:slide={{ axis: "x", duration: 200 }} class="whitespace-nowrap">New Issue</span>{/if}
+    </button>
   </div>
 
   <!-- Navigation -->

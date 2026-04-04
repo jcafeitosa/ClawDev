@@ -424,7 +424,7 @@
 
 </script>
 
-<div class="flex flex-col gap-8 pb-10 max-w-7xl">
+<div class="flex flex-col gap-8 pb-10 w-full">
   <!-- ── Header ──────────────────────────────────────────────────────── -->
   <div class="flex items-end justify-between">
     <div>
