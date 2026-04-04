@@ -9,6 +9,7 @@
   import { PluginLauncherOutlet, PluginRenderer } from "$lib/components/plugins/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea, Input, Label } from "$components/ui/index.js";
+  import { PageLayout } from "$components/layout/index.js";
   import InlineEditor from "$lib/components/inline-editor.svelte";
   import MarkdownBody from "$lib/components/markdown-body.svelte";
   import LiveRunWidget from "$lib/components/live-run-widget.svelte";
@@ -1191,18 +1192,15 @@
   });
 </script>
 
+<PageLayout title={issue?.title ?? 'Issue'} fullWidth>
 {#if loading}
-  <div class="p-6">
-    <PageSkeleton lines={10} />
-  </div>
+  <PageSkeleton lines={10} />
 {:else if notFound}
-  <div class="p-6">
-    <EmptyState title="Issue not found" description="The issue you're looking for doesn't exist or you don't have access." icon="📋">
-      <a href="/{$page.params.companyPrefix}/issues" class="text-sm text-primary hover:underline">Back to issues</a>
-    </EmptyState>
-  </div>
+  <EmptyState title="Issue not found" description="The issue you're looking for doesn't exist or you don't have access." icon="📋">
+    <a href="/{$page.params.companyPrefix}/issues" class="text-sm text-primary hover:underline">Back to issues</a>
+  </EmptyState>
 {:else if issue}
-  <div class="p-6">
+  <div>
     <!-- Header -->
     <div class="flex items-start justify-between gap-4 mb-4">
       <div class="min-w-0 flex-1">
@@ -2381,3 +2379,4 @@
   </div>
   <ScrollToBottom />
 {/if}
+</PageLayout>

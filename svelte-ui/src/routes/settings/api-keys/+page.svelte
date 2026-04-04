@@ -5,6 +5,7 @@
     Badge, Button, Skeleton, Alert, AlertTitle, AlertDescription,
   } from '$lib/components/ui/index.js';
   import { Key, Plus, Copy, CheckCircle, Trash2, AlertTriangle, Shield } from 'lucide-svelte';
+  import { PageLayout } from '$lib/components/layout/index.js';
 
   interface BoardApiKey {
     id: string;
@@ -105,25 +106,19 @@
   }
 </script>
 
-<div class="mx-auto max-w-3xl space-y-6 p-6">
-  <!-- Tab bar -->
-  <div class="flex gap-3 border-b border-border pb-3">
-    {#each tabs as tab}
-      <a
-        href={tab.href}
-        class="text-sm transition-colors {tab.href === '/settings/api-keys'
-          ? 'font-medium text-primary'
-          : 'text-muted-foreground hover:text-foreground'}"
-      >{tab.label}</a>
-    {/each}
-  </div>
-
-  <div class="flex items-center justify-between">
-    <div class="flex items-center gap-3">
-      <Key class="h-6 w-6 text-muted-foreground" />
-      <h1 class="text-xl font-bold text-foreground">Board API Keys</h1>
+<PageLayout title="API Keys" description="Board API keys are created through the CLI authentication flow.">
+  {#snippet tabs()}
+    <div class="flex gap-3 border-b border-border pb-3">
+      {#each tabs as tab}
+        <a
+          href={tab.href}
+          class="text-sm transition-colors {tab.href === '/settings/api-keys'
+            ? 'font-medium text-primary'
+            : 'text-muted-foreground hover:text-foreground'}"
+        >{tab.label}</a>
+      {/each}
     </div>
-  </div>
+  {/snippet}
 
   <p class="text-sm text-muted-foreground">
     Board API keys are created through the CLI authentication flow. Use <code class="rounded bg-accent px-1.5 py-0.5 font-mono text-xs">claude-cli auth login</code> to create a new key, or revoke your current key below.
@@ -278,4 +273,4 @@
       <AlertDescription>{error}</AlertDescription>
     </Alert>
   {/if}
-</div>
+</PageLayout>

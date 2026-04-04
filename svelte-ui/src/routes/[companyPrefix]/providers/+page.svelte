@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
   import { Skeleton, Badge, Input, Button } from '$lib/components/ui/index.js';
+  import { PageLayout } from '$lib/components/layout/index.js';
   import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/index.js';
   import ProviderIcon from '$lib/components/providers/provider-icon.svelte';
   import TimeAgo from '$lib/components/time-ago.svelte';
@@ -609,40 +610,34 @@
   let newFallbackModel = $state('');
 </script>
 
-<div class="providers-root space-y-6 p-6">
-  <!-- ── Header ────────────────────────────────────────────────────── -->
-  <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Providers & Models</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Manage AI providers, monitor model availability, and configure routing</p>
-    </div>
-    <div class="flex items-center gap-2">
-      {#if lastRefreshed}
-        <span class="text-xs text-muted-foreground">Updated: {lastRefreshed.toLocaleTimeString()}</span>
-      {/if}
-      <Button
-        variant="outline"
-        size="sm"
-        onclick={() => { if (companyId) { loadProviderSummaries(); loadModels(); } }}
-      >
+<PageLayout title="Providers" description="Manage AI providers, monitor model availability, and configure routing">
+  {#snippet actions()}
+    {#if lastRefreshed}
+      <span class="text-xs text-muted-foreground">Updated: {lastRefreshed.toLocaleTimeString()}</span>
+    {/if}
+    <Button
+      variant="outline"
+      size="sm"
+      onclick={() => { if (companyId) { loadProviderSummaries(); loadModels(); } }}
+    >
+      <RefreshCw class="h-3.5 w-3.5" />
+      Refresh
+    </Button>
+    <Button
+      size="sm"
+      onclick={syncModels}
+      disabled={syncing}
+    >
+      {#if syncing}
+        <Loader2 class="h-3.5 w-3.5 animate-spin" />
+        Syncing...
+      {:else}
         <RefreshCw class="h-3.5 w-3.5" />
-        Refresh
-      </Button>
-      <Button
-        size="sm"
-        onclick={syncModels}
-        disabled={syncing}
-      >
-        {#if syncing}
-          <Loader2 class="h-3.5 w-3.5 animate-spin" />
-          Syncing...
-        {:else}
-          <RefreshCw class="h-3.5 w-3.5" />
-          Sync Models
-        {/if}
-      </Button>
-    </div>
-  </div>
+        Sync Models
+      {/if}
+    </Button>
+  {/snippet}
+<div class="providers-root space-y-6">
 
   <!-- ── Provider Summary Cards ──────────────────────────────────── -->
   {#if loading}
@@ -1379,6 +1374,7 @@
     </TabsContent>
   </Tabs>
 </div>
+</PageLayout>
 
 <style>
   .providers-root {

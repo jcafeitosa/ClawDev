@@ -90,7 +90,9 @@
   <div class="flex flex-1 flex-col min-w-0 overflow-hidden">
     <BreadcrumbBar />
     <main class="flex-1 overflow-y-auto bg-[var(--clawdev-bg-base)] pb-16 md:pb-0">
-      {@render children()}
+      <div class="px-4 pt-6 sm:px-6 lg:px-8">
+        {@render children()}
+      </div>
     </main>
   </div>
   </div>

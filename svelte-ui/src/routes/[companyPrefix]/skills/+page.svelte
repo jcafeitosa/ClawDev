@@ -12,6 +12,7 @@
     Boxes, Shield, ShieldCheck, Wrench
   } from 'lucide-svelte';
   import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   // ---------------------------------------------------------------------------
   // Types
@@ -352,6 +353,7 @@
   }
 </script>
 
+<PageLayout title="Skills" fullWidth>
 <div class="flex h-[calc(100vh-8rem)]">
   <!-- ===================================================================== -->
   <!-- LEFT PANEL: Skill list with search, import, file trees                -->
@@ -749,3 +751,4 @@
     {/if}
   </div>
 </div>
+</PageLayout>

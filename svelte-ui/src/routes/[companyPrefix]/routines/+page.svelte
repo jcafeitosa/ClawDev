@@ -9,6 +9,7 @@
     Alert, AlertDescription,
   } from '$lib/components/ui/index.js';
   import { Plus, RefreshCw, ChevronRight, Search, Clock, Play, Pause, Archive } from 'lucide-svelte';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Routines' }]));
 
@@ -194,18 +195,13 @@
   }
 </script>
 
-<div class="p-6 space-y-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Routines</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Scheduled recurring tasks and automations</p>
-    </div>
+<PageLayout title="Routines" description="Scheduled recurring tasks and automations">
+  {#snippet actions()}
     <Button onclick={() => (showCreate = !showCreate)}>
       <Plus class="w-4 h-4" />
       New Routine
     </Button>
-  </div>
+  {/snippet}
 
   <!-- Create form -->
   {#if showCreate}
@@ -387,4 +383,4 @@
       {filteredRoutines.length} routine{filteredRoutines.length !== 1 ? 's' : ''}
     </p>
   {/if}
-</div>
+</PageLayout>

@@ -33,12 +33,12 @@
     fetchInFlight = true;
     try {
       const [liveRes, recentRes] = await Promise.all([
-        api(`/api/companies/${companyId}/live-runs?minCount=4`),
+        api(`/api/companies/${companyId}/live-runs?minCount=0`),
         api(`/api/companies/${companyId}/heartbeat-runs?limit=5`),
       ]);
 
       let activeRuns: any[] = [];
-      let finishedRuns: any[] = [];
+      let recentlyFinished: any[] = [];
 
       if (liveRes.ok) {
         const data = await liveRes.json();
@@ -46,22 +46,21 @@
         activeRuns = arr.filter((r: any) => r.status === 'running' || r.status === 'queued');
       }
 
+      // Show recently finished runs (< 2 min ago) so they fade out gracefully
       if (recentRes.ok) {
         const data = await recentRes.json();
-        finishedRuns = Array.isArray(data) ? data : data.runs ?? data.data ?? [];
+        const all = Array.isArray(data) ? data : data.runs ?? data.data ?? [];
+        const twoMinAgo = Date.now() - 2 * 60 * 1000;
+        const activeIds = new Set(activeRuns.map((r: any) => r.id));
+        recentlyFinished = all.filter((r: any) => {
+          if (activeIds.has(r.id)) return false;
+          if (r.status === 'running' || r.status === 'queued') return false;
+          const finished = r.finishedAt ?? r.completedAt ?? r.updatedAt;
+          return finished && new Date(finished).getTime() > twoMinAgo;
+        });
       }
 
-      // Deduplicate: active runs first, then finished runs not already present
-      const seenIds = new Set(activeRuns.map((r: any) => r.id));
-      const deduped = [...activeRuns];
-      for (const r of finishedRuns) {
-        if (!seenIds.has(r.id)) {
-          seenIds.add(r.id);
-          deduped.push(r);
-        }
-      }
-
-      allRuns = deduped;
+      allRuns = [...activeRuns, ...recentlyFinished];
     } catch {
       allRuns = [];
     } finally {
@@ -235,13 +234,5 @@
       {/each}
     </div>
   </div>
-{:else if !loading && allRuns.length === 0}
-  <div class="space-y-3">
-    <h3 class="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">
-      AGENTS
-    </h3>
-    <div class="rounded-xl border border-border p-4">
-      <p class="text-sm text-muted-foreground">No recent agent runs.</p>
-    </div>
-  </div>
 {/if}
+<!-- When no runs: render nothing — section only appears with active cards -->

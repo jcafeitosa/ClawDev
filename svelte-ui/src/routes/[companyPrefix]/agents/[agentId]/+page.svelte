@@ -8,6 +8,7 @@
   import { PluginLauncherOutlet } from "$lib/components/plugins/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "$components/ui/index.js";
+  import { PageLayout } from "$components/layout/index.js";
   import { ActivityChart } from "$lib/components/charts/index.js";
   import { onMount } from "svelte";
   import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check, FolderOpen, Loader2, ExternalLink, BookOpen, MoreHorizontal, AlertCircle, Activity, ClipboardList, StopCircle } from "lucide-svelte";
@@ -1004,16 +1005,15 @@
   function formatCents(cents: number): string { return `$${(cents / 100).toFixed(2)}`; }
 </script>
 
+<PageLayout title={agent?.name ?? 'Agent'} fullWidth>
 {#if loading}
-  <div class="p-6"><PageSkeleton lines={8} /></div>
+  <PageSkeleton lines={8} />
 {:else if notFound}
-  <div class="p-6">
-    <EmptyState title="Agent not found" description="The agent doesn't exist or you don't have access." icon="🤖">
-      <a href="/{prefix}/agents" class="text-sm text-[#2563EB] hover:underline">Back to agents</a>
-    </EmptyState>
-  </div>
+  <EmptyState title="Agent not found" description="The agent doesn't exist or you don't have access." icon="🤖">
+    <a href="/{prefix}/agents" class="text-sm text-[#2563EB] hover:underline">Back to agents</a>
+  </EmptyState>
 {:else if agent}
-  <div class="p-6 space-y-6">
+  <div class="space-y-6">
     <!-- Header -->
     <div class="flex items-start justify-between gap-4">
       <div class="min-w-0">
@@ -2620,3 +2620,4 @@
     </div>
   </div>
 {/if}
+</PageLayout>

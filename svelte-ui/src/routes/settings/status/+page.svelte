@@ -5,6 +5,7 @@
     Badge, Button, Skeleton, Separator, Alert, AlertTitle, AlertDescription,
   } from '$lib/components/ui/index.js';
   import { Activity, CheckCircle, XCircle, AlertTriangle, ExternalLink, Server, Cpu, Shield } from 'lucide-svelte';
+  import { PageLayout } from '$lib/components/layout/index.js';
 
   interface HealthData {
     status: string;
@@ -99,23 +100,19 @@
   }
 </script>
 
-<div class="mx-auto max-w-3xl space-y-6 p-6">
-  <!-- Tab bar -->
-  <div class="flex gap-3 border-b border-border pb-3">
-    {#each tabs as tab}
-      <a
-        href={tab.href}
-        class="text-sm transition-colors {tab.href === '/settings/status'
-          ? 'font-medium text-primary'
-          : 'text-muted-foreground hover:text-foreground'}"
-      >{tab.label}</a>
-    {/each}
-  </div>
-
-  <div class="flex items-center gap-3">
-    <Server class="h-6 w-6 text-muted-foreground" />
-    <h1 class="text-xl font-bold text-foreground">Instance Status</h1>
-  </div>
+<PageLayout title="System Status">
+  {#snippet tabs()}
+    <div class="flex gap-3 border-b border-border pb-3">
+      {#each tabs as tab}
+        <a
+          href={tab.href}
+          class="text-sm transition-colors {tab.href === '/settings/status'
+            ? 'font-medium text-primary'
+            : 'text-muted-foreground hover:text-foreground'}"
+        >{tab.label}</a>
+      {/each}
+    </div>
+  {/snippet}
 
   {#if loading}
     <div class="space-y-4">
@@ -345,4 +342,4 @@
       {/if}
     </p>
   {/if}
-</div>
+</PageLayout>

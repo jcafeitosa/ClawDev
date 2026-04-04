@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { KeyRound, Plus, RotateCw, Trash2, ShieldAlert, Clock, Tag, Search, X, Eye, EyeOff } from 'lucide-svelte';
   import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Skeleton, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Secrets' }]));
 
@@ -201,17 +202,9 @@
   }
 </script>
 
-<div class="space-y-6 p-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Secrets</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Manage API keys, tokens, and credentials</p>
-    </div>
-    <button
-      onclick={() => { showCreateForm = !showCreateForm; }}
-      class="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1d4ed8] active:scale-[0.98]"
-    >
+<PageLayout title="Secrets" description="Manage API keys, tokens, and credentials">
+  {#snippet actions()}
+    <Button onclick={() => { showCreateForm = !showCreateForm; }}>
       {#if showCreateForm}
         <X class="w-4 h-4" />
         Cancel
@@ -219,8 +212,8 @@
         <Plus class="w-4 h-4" />
         Add Secret
       {/if}
-    </button>
-  </div>
+    </Button>
+  {/snippet}
 
   <!-- Create form -->
   {#if showCreateForm}
@@ -495,4 +488,4 @@
       {/if}
     </p>
   {/if}
-</div>
+</PageLayout>

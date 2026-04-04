@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { Users, Plus, UserMinus, Mail, Shield, Clock, Search, X, ChevronDown } from 'lucide-svelte';
   import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Skeleton, Separator, Avatar, AvatarFallback } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Members' }]));
 
@@ -241,17 +242,9 @@
   ];
 </script>
 
-<div class="space-y-6 p-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Members</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Manage team access and roles</p>
-    </div>
-    <button
-      onclick={() => { showInviteForm = !showInviteForm; }}
-      class="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1d4ed8] active:scale-[0.98]"
-    >
+<PageLayout title="Members" description="Manage team access and roles">
+  {#snippet actions()}
+    <Button onclick={() => { showInviteForm = !showInviteForm; }}>
       {#if showInviteForm}
         <X class="w-4 h-4" />
         Cancel
@@ -259,8 +252,8 @@
         <Plus class="w-4 h-4" />
         Invite
       {/if}
-    </button>
-  </div>
+    </Button>
+  {/snippet}
 
   <!-- Invite form -->
   {#if showInviteForm}
@@ -564,4 +557,4 @@
       {/if}
     </p>
   {/if}
-</div>
+</PageLayout>

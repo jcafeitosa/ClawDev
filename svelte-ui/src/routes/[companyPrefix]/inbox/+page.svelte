@@ -13,6 +13,7 @@
   import SwipeToArchive from '$lib/components/swipe-to-archive.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   // ---------------------------------------------------------------------------
   // Constants (ported from React inbox.ts)
@@ -720,8 +721,7 @@
   };
 </script>
 
-<div class="space-y-6">
-  <!-- Header with tabs and controls -->
+<PageLayout title="Inbox">
   <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
     <div class="flex flex-wrap items-center gap-2">
       <!-- Tab bar -->
@@ -1434,4 +1434,4 @@
       </div>
     {/if}
   {/if}
-</div>
+</PageLayout>

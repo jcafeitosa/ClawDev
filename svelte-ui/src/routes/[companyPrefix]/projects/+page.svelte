@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { FolderKanban, Plus, Calendar, CircleDot, FolderOpen } from 'lucide-svelte';
   import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Input, Skeleton, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Projects' }]));
 
@@ -58,18 +59,13 @@
   }
 </script>
 
-<div class="space-y-6 p-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Projects</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Manage your team's projects and track progress</p>
-    </div>
+<PageLayout title="Projects" description="Manage your team's projects and track progress">
+  {#snippet actions()}
     <Button onclick={() => (showCreate = !showCreate)}>
       <Plus class="h-4 w-4" />
       New Project
     </Button>
-  </div>
+  {/snippet}
 
   <!-- Create form -->
   {#if showCreate}
@@ -181,4 +177,4 @@
       {/each}
     </div>
   {/if}
-</div>
+</PageLayout>

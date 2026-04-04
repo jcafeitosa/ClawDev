@@ -390,19 +390,66 @@
     return STATUS_COLORS[normalizeIssueStatus(status)] ?? '#64748b';
   }
 
+  // ── Metric cards for glassmorphism grid ────────────────────────────
+  let metricCards = $derived([
+    {
+      href: `/${prefix}/agents`,
+      value: enabledAgents,
+      label: 'Agents Enabled',
+      sub: `${runningAgents} running, ${pausedAgents} paused, ${errorAgents} errors`,
+      icon: Bot,
+    },
+    {
+      href: `/${prefix}/issues`,
+      value: tasksInProgress,
+      label: 'Tasks In Progress',
+      sub: `${openIssues} open, ${blockedIssues} blocked`,
+      icon: CircleDot,
+    },
+    {
+      href: `/${prefix}/costs`,
+      value: formatCents(monthSpend),
+      label: 'Month Spend',
+      sub: monthBudgetCents > 0 ? `${monthUtilizationPercent}% of ${formatCents(monthBudgetCents)} budget` : 'Unlimited budget',
+      icon: DollarSign,
+    },
+    {
+      href: `/${prefix}/approvals`,
+      value: pendingApprovals + budgetPendingApprovals,
+      label: 'Pending Approvals',
+      sub: budgetPendingApprovals > 0 ? `${budgetPendingApprovals} budget overrides awaiting review` : 'Awaiting board review',
+      icon: ShieldCheck,
+    },
+  ]);
+
 </script>
 
-<div class="space-y-6">
+<div class="flex flex-col gap-8 pb-10 max-w-7xl">
+  <!-- ── Header ──────────────────────────────────────────────────────── -->
+  <div class="flex items-end justify-between">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight">Dashboard</h1>
+      <p class="text-sm text-muted-foreground/70 mt-0.5">Overview of your AI workforce</p>
+    </div>
+    <div class="flex items-center gap-2 text-xs text-muted-foreground/50">
+      <span class="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+      System online
+    </div>
+  </div>
+
+  <!-- ── Company not ready ───────────────────────────────────────────── -->
   {#if !companyId}
-    <div class="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-      <div class="font-medium">Company context is not ready yet.</div>
-      <div class="mt-1 text-amber-100/80">
-        The dashboard is waiting for the active company to load. If this persists, go back to the companies page and re-enter the dashboard.
-      </div>
-      <div class="mt-3">
-        <a href="/companies" class="inline-flex items-center rounded-md border border-amber-400/30 bg-amber-400/15 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-400/25 transition-colors">
-          Open Companies
-        </a>
+    <div class="glass-card p-5">
+      <div class="rounded-xl border border-amber-500/20 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+        <div class="font-medium">Company context is not ready yet.</div>
+        <div class="mt-1 text-amber-100/80">
+          The dashboard is waiting for the active company to load. If this persists, go back to the companies page and re-enter the dashboard.
+        </div>
+        <div class="mt-3">
+          <a href="/companies" class="inline-flex items-center rounded-md border border-amber-400/30 bg-amber-400/15 px-3 py-1.5 text-xs font-medium text-amber-50 hover:bg-amber-400/25 transition-all duration-200 cursor-pointer">
+            Open Companies
+          </a>
+        </div>
       </div>
     </div>
   {/if}
@@ -413,7 +460,7 @@
       <Bot class="h-4 w-4" />
       <AlertTitle>No agents configured</AlertTitle>
       <AlertDescription>
-        <p>You have no agents. <a href="/{prefix}/agents/new" class="font-medium underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100">Create one here</a></p>
+        <p>You have no agents. <a href="/{prefix}/agents/new" class="font-medium underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100 cursor-pointer transition-all duration-200">Create one here</a></p>
       </AlertDescription>
     </Alert>
   {/if}
@@ -429,167 +476,102 @@
       <PauseCircle class="h-4 w-4" />
       <AlertTitle>{pendingIncidents.length} active budget incident{pendingIncidents.length === 1 ? '' : 's'}</AlertTitle>
       <AlertDescription>
-        <p>{pendingIncidents.length} agents paused — monthly budget exceeded. <a href="/{prefix}/costs" class="font-medium underline underline-offset-2">Open budgets</a></p>
+        <p>{pendingIncidents.length} agents paused — monthly budget exceeded. <a href="/{prefix}/costs" class="font-medium underline underline-offset-2 cursor-pointer transition-all duration-200">Open budgets</a></p>
       </AlertDescription>
     </Alert>
   {/if}
 
-  <!-- ── Metric Cards (shadcn Card) ────────────────────────────────── -->
+  <!-- ── Metric Cards (glassmorphism) ────────────────────────────────── -->
   {#if !loading}
-    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
-      <!-- Agents Enabled -->
-      <a href="/{prefix}/agents" class="no-underline text-inherit block h-full">
-        <Card class="h-full transition-colors hover:bg-accent/50 cursor-pointer border-border/60 !py-0 !gap-0">
-          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex-1 min-w-0">
-                <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{enabledAgents}</p>
-                <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">Agents Enabled</p>
-                <p class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">{runningAgents} running, {pausedAgents} paused, {errorAgents} errors</p>
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
+      {#each metricCards as card}
+        <a href={card.href} class="group no-underline text-inherit">
+          <div class="glass-card p-5 cursor-pointer">
+            <div class="flex items-start justify-between">
+              <div>
+                <p class="text-3xl font-bold tabular-nums">{card.value}</p>
+                <p class="text-sm font-medium text-muted-foreground mt-1">{card.label}</p>
+                <p class="text-[11px] text-muted-foreground/50 mt-1 hidden sm:block">{card.sub}</p>
               </div>
-              <Bot class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
-            </div>
-          </CardContent>
-        </Card>
-      </a>
-
-      <!-- Tasks In Progress -->
-      <a href="/{prefix}/issues" class="no-underline text-inherit block h-full">
-        <Card class="h-full transition-colors hover:bg-accent/50 cursor-pointer border-border/60 !py-0 !gap-0">
-          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex-1 min-w-0">
-                <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{tasksInProgress}</p>
-                <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">Tasks In Progress</p>
-                <p class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">{openIssues} open, {blockedIssues} blocked</p>
+              <div class="h-9 w-9 rounded-xl bg-background/50 backdrop-blur-sm border border-white/[0.06] flex items-center justify-center group-hover:scale-110 transition-transform duration-200">
+                <svelte:component this={card.icon} class="h-4 w-4 text-muted-foreground/60" />
               </div>
-              <CircleDot class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
             </div>
-          </CardContent>
-        </Card>
-      </a>
-
-      <!-- Month Spend -->
-      <a href="/{prefix}/costs" class="no-underline text-inherit block h-full">
-        <Card class="h-full transition-colors hover:bg-accent/50 cursor-pointer border-border/60 !py-0 !gap-0">
-          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex-1 min-w-0">
-                <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{formatCents(monthSpend)}</p>
-                <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">Month Spend</p>
-                <p class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
-                  {#if monthBudgetCents > 0}{monthUtilizationPercent}% of {formatCents(monthBudgetCents)} budget{:else}Unlimited budget{/if}
-                </p>
-                {#if monthBudgetCents > 0}
-                  <Progress value={monthUtilizationPercent} class="mt-2 h-1.5" />
-                {/if}
-              </div>
-              <DollarSign class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
-            </div>
-          </CardContent>
-        </Card>
-      </a>
-
-      <!-- Pending Approvals -->
-      <a href="/{prefix}/approvals" class="no-underline text-inherit block h-full">
-        <Card class="h-full transition-colors hover:bg-accent/50 cursor-pointer border-border/60 !py-0 !gap-0">
-          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
-            <div class="flex items-start justify-between gap-3">
-              <div class="flex-1 min-w-0">
-                <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{pendingApprovals + budgetPendingApprovals}</p>
-                <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">Pending Approvals</p>
-                <p class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
-                  {#if budgetPendingApprovals > 0}{budgetPendingApprovals} budget overrides awaiting board review{:else}Awaiting board review{/if}
-                </p>
-              </div>
-              <ShieldCheck class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
-            </div>
-          </CardContent>
-        </Card>
-      </a>
+          </div>
+        </a>
+      {/each}
     </div>
   {:else}
     <!-- Loading skeleton for metric cards -->
-    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-4">
       {#each Array(4) as _}
-        <Card class="border-border/60 !py-0 !gap-0">
-          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
-            <Skeleton class="h-8 w-16" />
-            <Skeleton class="h-4 w-24 mt-2" />
-            <Skeleton class="h-3 w-32 mt-2" />
-          </CardContent>
-        </Card>
+        <div class="glass-card p-5">
+          <Skeleton class="h-8 w-16" />
+          <Skeleton class="h-4 w-24 mt-2" />
+          <Skeleton class="h-3 w-32 mt-2" />
+        </div>
       {/each}
     </div>
   {/if}
 
-  <!-- ── Activity Charts (existing stacked bars) ────────────────────── -->
+  <!-- ── Activity Charts ─────────────────────────────────────────────── -->
   {#if companyId}
-    <ActivityCharts {companyId} />
+    <div class="glass-card p-6">
+      <h2 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">Activity Overview</h2>
+      <ActivityCharts {companyId} />
+    </div>
   {/if}
 
-  <!-- ── New ECharts: Gauge + Pie + Line ─────────────────────────── -->
+  <!-- ── ECharts: Budget + Agent Status + Cost Trend ─────────────────── -->
   {#if !loading}
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <!-- Budget Gauge -->
-      <Card class="border-border/60 !py-0 !gap-0 rounded-xl">
-        <CardHeader class="px-4 py-3 !pb-0">
-          <CardTitle class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Budget Usage</CardTitle>
-        </CardHeader>
-        <CardContent class="px-4 pb-4">
-          {#if monthBudgetCents > 0}
-            <GaugeChart value={monthSpend} max={monthBudgetCents} label="of budget" height="180px" colorMode="ascending" />
-          {:else}
-            <div class="flex h-[180px] items-center justify-center">
-              <p class="text-sm text-muted-foreground/60 italic">No budget set</p>
-            </div>
-          {/if}
-        </CardContent>
-      </Card>
+      <div class="glass-card p-6">
+        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">Budget Usage</h3>
+        {#if monthBudgetCents > 0}
+          <GaugeChart value={monthSpend} max={monthBudgetCents} label="of budget" height="180px" colorMode="ascending" />
+        {:else}
+          <div class="flex h-[180px] items-center justify-center">
+            <p class="text-sm text-muted-foreground/60 italic">No budget set</p>
+          </div>
+        {/if}
+      </div>
 
       <!-- Agent Status Pie -->
-      <Card class="border-border/60 !py-0 !gap-0 rounded-xl">
-        <CardHeader class="px-4 py-3 !pb-0">
-          <CardTitle class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Agent Status</CardTitle>
-        </CardHeader>
-        <CardContent class="px-4 pb-4">
-          {#if agents.length > 0}
-            <PieChart
-              data={[
-                { name: 'Running', value: runningAgents, color: '#3b82f6' },
-                { name: 'Idle', value: pausedAgents, color: '#22c55e' },
-                { name: 'Error', value: errorAgents, color: '#ef4444' },
-              ].filter(d => d.value > 0)}
-              height="180px"
-            />
-          {:else}
-            <div class="flex h-[180px] items-center justify-center">
-              <p class="text-sm text-muted-foreground/60 italic">No agents</p>
-            </div>
-          {/if}
-        </CardContent>
-      </Card>
+      <div class="glass-card p-6">
+        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">Agent Status</h3>
+        {#if agents.length > 0}
+          <PieChart
+            data={[
+              { name: 'Running', value: runningAgents, color: '#3b82f6' },
+              { name: 'Idle', value: pausedAgents, color: '#22c55e' },
+              { name: 'Error', value: errorAgents, color: '#ef4444' },
+            ].filter(d => d.value > 0)}
+            height="180px"
+          />
+        {:else}
+          <div class="flex h-[180px] items-center justify-center">
+            <p class="text-sm text-muted-foreground/60 italic">No agents</p>
+          </div>
+        {/if}
+      </div>
 
       <!-- Cost Trend Line -->
-      <Card class="border-border/60 !py-0 !gap-0 rounded-xl">
-        <CardHeader class="px-4 py-3 !pb-0">
-          <CardTitle class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Cost Trend</CardTitle>
-        </CardHeader>
-        <CardContent class="px-4 pb-4">
-          {#if costDailyData.length > 0}
-            <LineChart
-              labels={costDailyData.map(d => d.label)}
-              series={[{ name: 'Daily Spend', data: costDailyData.map(d => d.value), color: '#3b82f6', area: true }]}
-              height="180px"
-              yAxisLabel="$"
-            />
-          {:else}
-            <div class="flex h-[180px] items-center justify-center">
-              <p class="text-sm text-muted-foreground/60 italic">No cost data yet</p>
-            </div>
-          {/if}
-        </CardContent>
-      </Card>
+      <div class="glass-card p-6">
+        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">Cost Trend</h3>
+        {#if costDailyData.length > 0}
+          <LineChart
+            labels={costDailyData.map(d => d.label)}
+            series={[{ name: 'Daily Spend', data: costDailyData.map(d => d.value), color: '#3b82f6', area: true }]}
+            height="180px"
+            yAxisLabel="$"
+          />
+        {:else}
+          <div class="flex h-[180px] items-center justify-center">
+            <p class="text-sm text-muted-foreground/60 italic">No cost data yet</p>
+          </div>
+        {/if}
+      </div>
     </div>
   {/if}
 
@@ -597,8 +579,8 @@
   <div class="grid md:grid-cols-2 gap-4">
     <!-- Recent Activity (Timeline) -->
     {#if recentActivity.length > 0 || recentActivityLoading}
-      <div class="min-w-0">
-        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+      <div class="glass-card p-6">
+        <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">
           Recent Activity
         </h3>
         {#if recentActivityLoading}
@@ -632,22 +614,20 @@
 
               <a
                 href={activityHref || `/${prefix}/activity`}
-                class="group relative flex no-underline text-inherit"
+                class="group relative flex no-underline text-inherit cursor-pointer"
               >
                 <!-- Left column: dot + connector line -->
                 <div class="flex flex-col items-center shrink-0 w-6">
-                  <!-- Dot -->
-                  <div class="z-10 flex h-6 w-6 items-center justify-center rounded-full ring-2 {dotRing} shadow-sm transition-transform group-hover:scale-110">
+                  <div class="z-10 flex h-6 w-6 items-center justify-center rounded-full ring-2 {dotRing} shadow-sm transition-transform duration-200 group-hover:scale-110">
                     <svelte:component this={activityIcon.icon} size={12} class={activityIcon.color} />
                   </div>
-                  <!-- Connector line below dot -->
                   {#if !isLast}
                     <div class="w-px flex-1 bg-border/50"></div>
                   {/if}
                 </div>
 
-                <!-- Content (vertically centered with dot) -->
-                <div class="flex-1 min-w-0 ml-3 rounded-lg px-3 pt-0.5 pb-2 mb-1 transition-colors group-hover:bg-accent/50">
+                <!-- Content -->
+                <div class="flex-1 min-w-0 ml-3 rounded-lg px-3 pt-0.5 pb-2 mb-1 transition-all duration-200 group-hover:bg-accent/50">
                   <div class="flex items-start justify-between gap-2">
                     <div class="min-w-0 flex-1">
                       <p class="text-[13px] leading-6">
@@ -685,14 +665,14 @@
     {/if}
 
     <!-- Recent Tasks -->
-    <div class="min-w-0">
-      <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
+    <div class="glass-card p-6 overflow-hidden">
+      <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-4">
         Recent Tasks
       </h3>
       {#if loading}
-        <div class="border border-border divide-y divide-border overflow-hidden">
+        <div class="divide-y divide-white/[0.06]">
           {#each Array(5) as _}
-            <div class="px-4 py-3 flex items-center gap-3">
+            <div class="px-2 py-3 flex items-center gap-3">
               <Skeleton class="h-4 w-4 rounded-full shrink-0" />
               <Skeleton class="h-3 w-16" />
               <Skeleton class="h-3 w-3/4" />
@@ -700,11 +680,11 @@
           {/each}
         </div>
       {:else if recentIssues.length === 0}
-        <div class="border border-border p-4">
+        <div class="py-4">
           <p class="text-sm text-muted-foreground">No tasks yet.</p>
         </div>
       {:else}
-        <div class="border border-border divide-y divide-border overflow-hidden">
+        <div class="divide-y divide-white/[0.06]">
           {#each recentIssues.slice(0, 10) as issue}
             {@const normalizedStatus = normalizeIssueStatus(issue.status)}
             {@const color = statusColor(issue.status)}
@@ -713,7 +693,7 @@
             {@const agentName = assignedAgent?.name ?? issue.assigneeName ?? issue.agentName ?? ''}
             <a
               href="/{prefix}/issues/{issue.identifier ?? issue.id}"
-              class="px-4 py-3 text-sm cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit block"
+              class="px-2 py-3 text-sm cursor-pointer hover:bg-white/[0.04] transition-all duration-200 no-underline text-inherit block rounded-lg"
             >
               <div class="flex items-start gap-2 sm:items-center sm:gap-3">
                 <!-- Status icon -->

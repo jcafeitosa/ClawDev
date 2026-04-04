@@ -17,6 +17,7 @@
     X,
   } from 'lucide-svelte';
   import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Progress, Skeleton, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Budget Policies' }]));
 
@@ -227,21 +228,13 @@
   }
 </script>
 
-<div class="space-y-6 p-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Budget Policies</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Manage spending limits across agents, projects, and company</p>
-    </div>
-    <button
-      onclick={() => (showCreate = !showCreate)}
-      class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-    >
+<PageLayout title="Budgets" description="Manage spending limits across agents, projects, and company">
+  {#snippet actions()}
+    <Button onclick={() => (showCreate = !showCreate)}>
       <Plus class="h-4 w-4" />
       Add Policy
-    </button>
-  </div>
+    </Button>
+  {/snippet}
 
   <!-- Overview metric cards -->
   {#if loading}
@@ -590,4 +583,4 @@
       </div>
     </Card>
   {/if}
-</div>
+</PageLayout>

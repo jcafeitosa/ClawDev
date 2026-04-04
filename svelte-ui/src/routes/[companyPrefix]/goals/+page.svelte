@@ -8,6 +8,7 @@
     Card, CardContent, Badge, Button, Input, Skeleton, Progress,
   } from '$lib/components/ui/index.js';
   import { Target, Plus, ChevronRight, TrendingUp } from 'lucide-svelte';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Goals' }]));
 
@@ -70,18 +71,13 @@
   }
 </script>
 
-<div class="space-y-6 p-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Goals</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Track objectives and key results</p>
-    </div>
+<PageLayout title="Goals" description="Track objectives and key results">
+  {#snippet actions()}
     <Button onclick={() => (showCreate = !showCreate)}>
       <Plus class="h-4 w-4" />
       New Goal
     </Button>
-  </div>
+  {/snippet}
 
   <!-- Create form -->
   {#if showCreate}
@@ -189,4 +185,4 @@
       {/each}
     </div>
   {/if}
-</div>
+</PageLayout>

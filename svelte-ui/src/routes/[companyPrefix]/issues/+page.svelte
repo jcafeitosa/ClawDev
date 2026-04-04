@@ -7,6 +7,7 @@
   import { Plus, Search, List, LayoutGrid, Filter, ArrowUpDown, Layers, ChevronRight, X, Check, User } from 'lucide-svelte';
   import KanbanBoard from '$lib/components/board/kanban-board.svelte';
   import { Badge, Button, Input, Skeleton, Alert, AlertTitle, AlertDescription, Separator, Card } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Issues' }]));
 
@@ -474,15 +475,18 @@
 
 <svelte:window onclick={closePopovers} />
 
-<div class="flex flex-col space-y-4 p-6">
+<PageLayout title="Issues" description="Track and manage tasks">
+  {#snippet actions()}
+    <Button variant="outline" size="sm" href="/{currentPrefix}/issues/new" class="cursor-pointer">
+      <Plus class="h-4 w-4" />
+      <span class="hidden sm:inline">New Issue</span>
+    </Button>
+  {/snippet}
+
   <!-- Toolbar -->
   <div class="flex items-center justify-between gap-2 sm:gap-3">
-    <!-- Left: New Issue + Search -->
+    <!-- Left: Search -->
     <div class="flex min-w-0 items-center gap-2 sm:gap-3">
-      <Button variant="outline" size="sm" href="/{currentPrefix}/issues/new" class="cursor-pointer">
-        <Plus class="h-4 w-4" />
-        <span class="hidden sm:inline">New Issue</span>
-      </Button>
       <div class="relative">
         <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground z-10" />
         <Input
@@ -800,7 +804,7 @@
       {filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''}
     </p>
   {/if}
-</div>
+</PageLayout>
 
 <style>
   .assignee-badge {

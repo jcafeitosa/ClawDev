@@ -9,6 +9,7 @@
     Zap, User, FileText, Filter, Target, ShieldCheck, Loader2
   } from 'lucide-svelte';
   import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Activity' }]));
 
@@ -167,29 +168,20 @@
   });
 </script>
 
-<div class="space-y-6 p-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Activity</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Recent events across your workspace</p>
+<PageLayout title="Activity" description="Recent events across your workspace">
+  {#snippet actions()}
+    <div class="inline-flex items-center gap-2">
+      <Filter class="h-4 w-4 text-muted-foreground" />
+      <select
+        bind:value={filterType}
+        class="appearance-none rounded-lg border border-border bg-card px-3 py-2 pr-8 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+      >
+        {#each entityTypes as t}
+          <option value={t.value}>{t.label}</option>
+        {/each}
+      </select>
     </div>
-
-    <!-- Filter dropdown -->
-    <div class="relative">
-      <div class="inline-flex items-center gap-2">
-        <Filter class="h-4 w-4 text-muted-foreground" />
-        <select
-          bind:value={filterType}
-          class="appearance-none rounded-lg border border-border bg-card px-3 py-2 pr-8 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          {#each entityTypes as t}
-            <option value={t.value}>{t.label}</option>
-          {/each}
-        </select>
-      </div>
-    </div>
-  </div>
+  {/snippet}
 
   <!-- Loading skeleton -->
   {#if loading}
@@ -273,4 +265,4 @@
       </div>
     {/if}
   {/if}
-</div>
+</PageLayout>

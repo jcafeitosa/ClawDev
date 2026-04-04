@@ -14,6 +14,7 @@
     Upload, X, Users, Archive, Image as ImageIcon, Link, Copy,
     Download, Package, Sparkles,
   } from 'lucide-svelte';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Settings' }]));
 
@@ -271,12 +272,7 @@
   }
 </script>
 
-<div class="mx-auto max-w-3xl space-y-8 p-6">
-  <!-- Header -->
-  <div>
-    <h1 class="text-2xl font-bold text-foreground">Company Settings</h1>
-    <p class="mt-1 text-sm text-muted-foreground">Manage your company configuration</p>
-  </div>
+<PageLayout title="Company Settings" description="Manage your company configuration">
 
   <!-- General section -->
   <Card class="border-border/60">
@@ -649,4 +645,4 @@
       {/if}
     </CardContent>
   </Card>
-</div>
+</PageLayout>

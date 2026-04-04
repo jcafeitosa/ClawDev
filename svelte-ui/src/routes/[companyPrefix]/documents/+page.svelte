@@ -8,6 +8,7 @@
   import { BookOpen, Clock3, ExternalLink, FileText, History, PencilLine, Plus, RefreshCcw, Save, Search, Download, Copy, Trash2, Check } from "lucide-svelte";
   import { EmptyState, PageSkeleton } from "$components/index.js";
   import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Skeleton, Separator } from "$components/ui/index.js";
+  import { PageLayout } from "$components/layout/index.js";
 
   type DocumentRow = {
     id: string;
@@ -309,44 +310,21 @@
   }
 </script>
 
-<div class="space-y-6 p-6">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Company documents</p>
-      <h1 class="mt-1 text-3xl font-semibold text-foreground">Documents</h1>
-      <p class="mt-2 max-w-2xl text-sm text-muted-foreground">
-        Create and revise company documents, planning notes, and issue-linked work products from one place.
-      </p>
-    </div>
-    <div class="flex items-center gap-2">
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-accent/40"
-        onclick={() => {
-          if (companyId) void loadDocumentsForCompany(companyId);
-        }}
-      >
-        <RefreshCcw class="h-4 w-4" />
-        Refresh
-      </button>
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
-        onclick={() => (showCreate = !showCreate)}
-      >
-        <Plus class="h-4 w-4" />
-        New document
-      </button>
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 rounded-xl border border-border bg-card px-4 py-2 text-sm font-medium text-foreground transition hover:bg-accent/40"
-        onclick={openDocumentLibrarySearch}
-      >
-        <Search class="h-4 w-4" />
-        Search in library
-      </button>
-    </div>
-  </div>
+<PageLayout title="Documents" description="Create and revise company documents, planning notes, and issue-linked work products from one place.">
+  {#snippet actions()}
+    <Button variant="outline" onclick={() => { if (companyId) void loadDocumentsForCompany(companyId); }}>
+      <RefreshCcw class="h-4 w-4" />
+      Refresh
+    </Button>
+    <Button onclick={() => (showCreate = !showCreate)}>
+      <Plus class="h-4 w-4" />
+      New document
+    </Button>
+    <Button variant="outline" onclick={openDocumentLibrarySearch}>
+      <Search class="h-4 w-4" />
+      Search in library
+    </Button>
+  {/snippet}
 
   <div class="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
     <aside class="space-y-4">
@@ -782,4 +760,4 @@
       {/if}
     </main>
   </div>
-</div>
+</PageLayout>

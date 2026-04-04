@@ -6,6 +6,7 @@
   import { toastStore } from "$stores/toast.svelte.js";
   import { PageSkeleton, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge } from "$components/ui/index.js";
+  import { PageLayout } from "$components/layout/index.js";
   import { Archive } from "lucide-svelte";
   import { onMount } from "svelte";
 
@@ -117,12 +118,7 @@
   ];
 </script>
 
-<div class="p-6 space-y-5">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <h1 class="text-xl font-semibold text-zinc-900 dark:text-zinc-50">Workspaces</h1>
-  </div>
-
+<PageLayout title="Workspaces">
   <!-- Filter pills -->
   <div class="flex items-center gap-2">
     {#each FILTER_OPTIONS as opt (opt.value)}
@@ -206,4 +202,4 @@
       {/each}
     </div>
   {/if}
-</div>
+</PageLayout>

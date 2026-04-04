@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Tabs, TabsList, TabsTrigger, TabsContent, Skeleton } from '$lib/components/ui/index.js';
+  import { PageLayout } from '$lib/components/layout/index.js';
   import {
     DollarSign,
     TrendingUp,
@@ -316,12 +317,8 @@
   ];
 </script>
 
-<div class="costs-root space-y-6 p-6">
-  <!-- Header -->
-  <div>
-    <h1 class="text-2xl font-bold text-foreground">Costs & Budgets</h1>
-    <p class="mt-1 text-sm text-muted-foreground">Track spending across agents and providers</p>
-  </div>
+<PageLayout title="Costs" description="Track spending across agents and providers">
+<div class="costs-root space-y-6">
 
   <!-- 4 Summary Cards (matching original: INFERENCE SPEND, BUDGET, FINANCE NET, FINANCE EVENTS) -->
   {#if loading}
@@ -936,3 +933,4 @@
     </Tabs>
   </div>
 </div>
+</PageLayout>

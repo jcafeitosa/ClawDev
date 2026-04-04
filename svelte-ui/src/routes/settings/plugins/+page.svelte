@@ -16,6 +16,7 @@
     RefreshCcw,
     Trash2,
   } from 'lucide-svelte';
+  import { PageLayout } from '$lib/components/layout/index.js';
 
   interface Plugin {
     id: string;
@@ -235,22 +236,13 @@
   });
 </script>
 
-<div class="space-y-6 p-6">
-  <div class="flex items-start justify-between gap-4">
-    <div class="min-w-0 space-y-1">
-      <div class="flex items-center gap-2">
-        <Puzzle class="h-6 w-6 text-muted-foreground" />
-        <h1 class="truncate text-xl font-semibold text-foreground">Plugins</h1>
-      </div>
-      <p class="text-sm text-muted-foreground">
-        Manage the global plugin runtime, install examples, and inspect plugin health.
-      </p>
-    </div>
+<PageLayout title="Plugins" description="Manage the global plugin runtime, install examples, and inspect plugin health.">
+  {#snippet actions()}
     <Button variant="outline" onclick={() => loadPlugins()} disabled={loading || refreshing}>
       <RefreshCcw class="h-4 w-4 {refreshing ? 'animate-spin' : ''}" />
       Refresh
     </Button>
-  </div>
+  {/snippet}
 
   <Alert variant="warning">
     <AlertTriangle class="h-4 w-4" />
@@ -468,4 +460,4 @@
       </div>
     {/if}
   </section>
-</div>
+</PageLayout>

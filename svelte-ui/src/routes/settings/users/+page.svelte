@@ -7,6 +7,7 @@
     Badge, Button, Skeleton, Alert, AlertDescription,
   } from '$lib/components/ui/index.js';
   import { Shield, ShieldOff, User, Crown, Loader2 } from 'lucide-svelte';
+  import { PageLayout } from '$lib/components/layout/index.js';
 
   interface InstanceUser {
     id: string;
@@ -104,23 +105,19 @@
   let currentUserId = $derived($session.data?.user?.id ?? null);
 </script>
 
-<div class="mx-auto max-w-2xl space-y-6 p-6">
-  <!-- Settings Tab Bar -->
-  <div class="flex gap-3 border-b border-border pb-3">
-    {#each tabs as tab}
-      <a
-        href={tab.href}
-        class="text-sm transition-colors {tab.href === '/settings/users'
-          ? 'font-medium text-primary'
-          : 'text-muted-foreground hover:text-foreground'}"
-      >{tab.label}</a>
-    {/each}
-  </div>
-
-  <div>
-    <h1 class="text-xl font-bold text-foreground">Instance Users</h1>
-    <p class="mt-1 text-sm text-muted-foreground">Manage instance-level user roles and admin access.</p>
-  </div>
+<PageLayout title="Users" description="Manage instance-level user roles and admin access.">
+  {#snippet tabs()}
+    <div class="flex gap-3 border-b border-border pb-3">
+      {#each tabs as tab}
+        <a
+          href={tab.href}
+          class="text-sm transition-colors {tab.href === '/settings/users'
+            ? 'font-medium text-primary'
+            : 'text-muted-foreground hover:text-foreground'}"
+        >{tab.label}</a>
+      {/each}
+    </div>
+  {/snippet}
 
   {#if loading}
     <div class="space-y-3">
@@ -219,7 +216,7 @@
       {/each}
     </div>
   {/if}
-</div>
+</PageLayout>
 
 <!-- Confirmation Dialog -->
 {#if confirmDialog}

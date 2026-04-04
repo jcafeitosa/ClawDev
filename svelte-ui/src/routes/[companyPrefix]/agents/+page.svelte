@@ -8,6 +8,7 @@
   import { onMount, onDestroy } from 'svelte';
   import { Plus, Bot, List, GitBranch, SlidersHorizontal } from 'lucide-svelte';
   import { Card, Badge, Skeleton, Avatar, AvatarFallback, Alert, AlertDescription, Button } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Agents' }]));
 
@@ -357,84 +358,80 @@
   Page
   ------------------------------------------------------------------------- -->
 
-<div class="space-y-4 p-6">
-  <!-- Toolbar: tabs + controls -->
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <!-- Filter tabs -->
-    <div class="flex items-center gap-1.5 flex-wrap">
-      {#each FILTER_TABS as tab}
-        <button
-          onclick={() => { activeFilter = tab.value; }}
-          class="rounded-lg px-3 py-1.5 text-sm font-medium transition
-            {activeFilter === tab.value
-              ? 'bg-[#2563EB] text-white'
-              : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
-        >
-          {tab.label}
-          <span class="ml-1 text-xs opacity-70">({countByTab(tab.value)})</span>
-        </button>
-      {/each}
-    </div>
-
-    <!-- Controls: Filters + View toggle + New Agent -->
-    <div class="flex items-center gap-2">
-      <!-- Filters dropdown -->
-      <div class="relative" data-filters-dropdown>
-        <button
-          onclick={() => { filtersOpen = !filtersOpen; }}
-          class="flex items-center gap-1.5 px-2 py-1.5 text-xs transition-colors border border-border
-            {filtersOpen || showTerminated ? 'text-foreground bg-accent' : 'text-muted-foreground hover:bg-accent/50'}"
-        >
-          <SlidersHorizontal class="h-3 w-3" />
-          Filters
-          {#if showTerminated}
-            <span class="ml-0.5 px-1 bg-foreground/10 rounded text-[10px]">1</span>
-          {/if}
-        </button>
-        {#if filtersOpen}
-          <div class="absolute right-0 top-full mt-1 z-50 w-48 border border-border bg-popover shadow-md p-1">
-            <button
-              class="flex items-center gap-2 w-full px-2 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors"
-              onclick={() => { showTerminated = !showTerminated; }}
-            >
-              <span
-                class="flex items-center justify-center h-3.5 w-3.5 border border-border rounded-sm
-                  {showTerminated ? 'bg-foreground' : ''}"
-              >
-                {#if showTerminated}
-                  <span class="text-background text-[10px] leading-none">✓</span>
-                {/if}
-              </span>
-              Show terminated
-            </button>
-          </div>
+<PageLayout title="Agents" description="Your AI workforce">
+  {#snippet actions()}
+    <!-- Filters dropdown -->
+    <div class="relative" data-filters-dropdown>
+      <button
+        onclick={() => { filtersOpen = !filtersOpen; }}
+        class="flex items-center gap-1.5 px-2 py-1.5 text-xs transition-colors border border-border
+          {filtersOpen || showTerminated ? 'text-foreground bg-accent' : 'text-muted-foreground hover:bg-accent/50'}"
+      >
+        <SlidersHorizontal class="h-3 w-3" />
+        Filters
+        {#if showTerminated}
+          <span class="ml-0.5 px-1 bg-foreground/10 rounded text-[10px]">1</span>
         {/if}
-      </div>
-
-      <!-- View toggle -->
-      <div class="flex items-center border border-border">
-        <button
-          onclick={() => { viewMode = 'list'; }}
-          class="p-1.5 transition-colors {viewMode === 'list' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'}"
-          title="List view"
-        >
-          <List class="h-3.5 w-3.5" />
-        </button>
-        <button
-          onclick={() => { viewMode = 'tree'; }}
-          class="p-1.5 transition-colors {viewMode === 'tree' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'}"
-          title="Org tree view"
-        >
-          <GitBranch class="h-3.5 w-3.5" />
-        </button>
-      </div>
-
-      <!-- New Agent -->
-      <Button variant="outline" href="/{$page.params.companyPrefix}/agents/new" class="gap-1.5 cursor-pointer">
-        <Plus class="h-3.5 w-3.5" />
-        New Agent
-      </Button>
+      </button>
+      {#if filtersOpen}
+        <div class="absolute right-0 top-full mt-1 z-50 w-48 border border-border bg-popover shadow-md p-1">
+          <button
+            class="flex items-center gap-2 w-full px-2 py-1.5 text-xs text-left hover:bg-accent/50 transition-colors"
+            onclick={() => { showTerminated = !showTerminated; }}
+          >
+            <span
+              class="flex items-center justify-center h-3.5 w-3.5 border border-border rounded-sm
+                {showTerminated ? 'bg-foreground' : ''}"
+            >
+              {#if showTerminated}
+                <span class="text-background text-[10px] leading-none">✓</span>
+              {/if}
+            </span>
+            Show terminated
+          </button>
+        </div>
+      {/if}
     </div>
+
+    <!-- View toggle -->
+    <div class="flex items-center border border-border">
+      <button
+        onclick={() => { viewMode = 'list'; }}
+        class="p-1.5 transition-colors {viewMode === 'list' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'}"
+        title="List view"
+      >
+        <List class="h-3.5 w-3.5" />
+      </button>
+      <button
+        onclick={() => { viewMode = 'tree'; }}
+        class="p-1.5 transition-colors {viewMode === 'tree' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:bg-accent/50'}"
+        title="Org tree view"
+      >
+        <GitBranch class="h-3.5 w-3.5" />
+      </button>
+    </div>
+
+    <!-- New Agent -->
+    <Button variant="outline" href="/{$page.params.companyPrefix}/agents/new" class="gap-1.5 cursor-pointer">
+      <Plus class="h-3.5 w-3.5" />
+      New Agent
+    </Button>
+  {/snippet}
+
+  <!-- Filter tabs -->
+  <div class="flex items-center gap-1.5 flex-wrap">
+    {#each FILTER_TABS as tab}
+      <button
+        onclick={() => { activeFilter = tab.value; }}
+        class="rounded-lg px-3 py-1.5 text-sm font-medium transition
+          {activeFilter === tab.value
+            ? 'bg-[#2563EB] text-white'
+            : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
+      >
+        {tab.label}
+        <span class="ml-1 text-xs opacity-70">({countByTab(tab.value)})</span>
+      </button>
+    {/each}
   </div>
 
   <!-- Agent count -->
@@ -446,7 +443,7 @@
 
   <!-- Loading skeleton -->
   {#if loading}
-    <Card class="border-border/60 backdrop-blur-sm p-0 gap-0">
+    <div class="glass-card p-0">
       {#each Array(6) as _, i}
         <div class="flex items-center gap-3 px-3 py-2.5">
           <Skeleton class="h-6 w-6 rounded-full" />
@@ -456,7 +453,7 @@
         </div>
         {#if i < 5}<div class="border-t border-border/40"></div>{/if}
       {/each}
-    </Card>
+    </div>
 
   <!-- Error -->
   {:else if error}
@@ -501,4 +498,4 @@
       <p class="text-sm text-muted-foreground text-center py-8">No organizational hierarchy defined.</p>
     {/if}
   {/if}
-</div>
+</PageLayout>

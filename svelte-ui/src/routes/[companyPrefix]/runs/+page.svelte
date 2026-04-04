@@ -9,6 +9,7 @@
     Alert, AlertDescription,
   } from '$lib/components/ui/index.js';
   import { Play, Search, ChevronRight, Timer, Zap, UserCheck, XCircle, CheckCircle2, Loader2, CircleDot } from 'lucide-svelte';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Runs' }]));
 
@@ -228,15 +229,7 @@
   }
 </script>
 
-<div class="p-6 space-y-6">
-  <!-- Header -->
-  <div class="flex items-center justify-between">
-    <div>
-      <h1 class="text-2xl font-bold text-foreground">Runs</h1>
-      <p class="mt-1 text-sm text-muted-foreground">Agent execution history and active runs</p>
-    </div>
-  </div>
-
+<PageLayout title="Runs" description="Agent execution history and active runs">
   <!-- Filter pills + Search -->
   <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <div class="flex items-center gap-1.5 flex-wrap">
@@ -355,4 +348,4 @@
       {filteredRuns.length} run{filteredRuns.length !== 1 ? 's' : ''}
     </p>
   {/if}
-</div>
+</PageLayout>

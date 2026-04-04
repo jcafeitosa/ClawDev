@@ -13,6 +13,7 @@
     ToggleLeft,
     ToggleRight,
   } from 'lucide-svelte';
+  import { PageLayout } from '$lib/components/layout/index.js';
 
   interface SchedulerHeartbeat {
     id: string;
@@ -208,40 +209,30 @@
   });
 </script>
 
-<div class="mx-auto max-w-5xl space-y-6 p-6">
-  <div class="flex gap-3 border-b border-border pb-3">
-    {#each tabs as tab}
-      <a
-        href={tab.href}
-        class="text-sm transition-colors {tab.href === '/settings/heartbeats'
-          ? 'font-medium text-primary'
-          : 'text-muted-foreground hover:text-foreground'}"
-      >{tab.label}</a>
-    {/each}
-  </div>
-
-  <div class="flex items-start justify-between gap-4">
-    <div class="space-y-1">
-      <div class="flex items-center gap-2">
-        <Server class="h-6 w-6 text-muted-foreground" />
-        <h1 class="text-xl font-bold text-foreground">Instance Heartbeats</h1>
-      </div>
-      <p class="text-sm text-muted-foreground">
-        Manage scheduler heartbeats for agents across every company.
-      </p>
+<PageLayout title="Heartbeat Config" description="Manage scheduler heartbeats for agents across every company.">
+  {#snippet tabs()}
+    <div class="flex gap-3 border-b border-border pb-3">
+      {#each tabs as tab}
+        <a
+          href={tab.href}
+          class="text-sm transition-colors {tab.href === '/settings/heartbeats'
+            ? 'font-medium text-primary'
+            : 'text-muted-foreground hover:text-foreground'}"
+        >{tab.label}</a>
+      {/each}
     </div>
+  {/snippet}
 
-    <div class="flex items-center gap-2">
-      <Button variant="outline" onclick={() => loadHeartbeats({ silent: true })} disabled={loading || refreshing}>
-        <RefreshCcw class="h-4 w-4 {refreshing ? 'animate-spin' : ''}" />
-        Refresh
-      </Button>
-      <Button onclick={disableAllHeartbeats} disabled={disableAllBusy || heartbeats.filter((item) => item.heartbeatEnabled).length === 0}>
-        <ToggleLeft class="h-4 w-4" />
-        {disableAllBusy ? 'Disabling...' : 'Disable All'}
-      </Button>
-    </div>
-  </div>
+  {#snippet actions()}
+    <Button variant="outline" onclick={() => loadHeartbeats({ silent: true })} disabled={loading || refreshing}>
+      <RefreshCcw class="h-4 w-4 {refreshing ? 'animate-spin' : ''}" />
+      Refresh
+    </Button>
+    <Button onclick={disableAllHeartbeats} disabled={disableAllBusy || heartbeats.filter((item) => item.heartbeatEnabled).length === 0}>
+      <ToggleLeft class="h-4 w-4" />
+      {disableAllBusy ? 'Disabling...' : 'Disable All'}
+    </Button>
+  {/snippet}
 
   {#if loading}
     <div class="grid gap-4 md:grid-cols-4">
@@ -376,4 +367,4 @@
       </Card>
     {/each}
   </div>
-</div>
+</PageLayout>

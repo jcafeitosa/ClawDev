@@ -8,6 +8,7 @@
     Card, CardContent, Badge, Button, Skeleton,
   } from '$lib/components/ui/index.js';
   import { ShieldCheck, Check, X, Clock, User, ChevronRight } from 'lucide-svelte';
+  import { PageLayout } from '$components/layout/index.js';
 
   let prefix = $derived($page.params.companyPrefix);
 
@@ -88,13 +89,7 @@
   }
 </script>
 
-<div class="space-y-6 p-6">
-  <!-- Header -->
-  <div>
-    <h1 class="text-2xl font-bold text-foreground">Approvals</h1>
-    <p class="mt-1 text-sm text-muted-foreground">Review and approve pending requests</p>
-  </div>
-
+<PageLayout title="Approvals" description="Review and approve pending requests">
   <!-- Tabs -->
   <div class="flex items-center gap-1 border-b border-border">
     <button
@@ -214,4 +209,4 @@
       {/each}
     </div>
   {/if}
-</div>
+</PageLayout>
