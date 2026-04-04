@@ -36,7 +36,7 @@
   let createdCompanyPrefix = $state<string | null>(null);
 
   // Step 2: Agent
-  let agentName = $state("");
+  let agentName = $state("CEO");
   let adapterType = $state("claude_local");
   let createdAgent = $state<{ id: string; name: string; role: string } | null>(null);
   let adapterConfig = $state<Record<string, any>>({});
