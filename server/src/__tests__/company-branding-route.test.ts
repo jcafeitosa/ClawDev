@@ -221,3 +221,71 @@ describe("PATCH /api/companies/:companyId/branding", () => {
     expect(mockCompanyService.update).not.toHaveBeenCalled();
   });
 });
+
+describe("POST /api/companies", () => {
+  beforeEach(() => {
+    mockCompanyService.create.mockReset();
+    mockAccessService.ensureMembership.mockReset();
+    mockBudgetService.upsertPolicy.mockReset();
+    mockLogActivity.mockReset();
+  });
+
+  it("returns a validation error when the name is missing", async () => {
+    const app = createApp({
+      type: "board",
+      userId: "user-1",
+      source: "local_implicit",
+    });
+
+    const res = await app.handle(
+      new Request("http://localhost/companies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      }),
+    );
+
+    const body = await res.json();
+    expect(res.status).toBe(400);
+    expect(body.error).toBe("Validation error");
+    expect(body.details).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ path: ["name"] }),
+      ]),
+    );
+    expect(mockCompanyService.create).not.toHaveBeenCalled();
+  });
+
+  it("creates the company with a 201 response for valid input", async () => {
+    const company = createCompany();
+    mockCompanyService.create.mockResolvedValue(company);
+    const app = createApp({
+      type: "board",
+      userId: "user-1",
+      source: "local_implicit",
+    });
+
+    const res = await app.handle(
+      new Request("http://localhost/companies", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "ClawDev", budgetMonthlyCents: 0 }),
+      }),
+    );
+
+    const body = await res.json();
+    expect(res.status).toBe(201);
+    expect(body.name).toBe("ClawDev");
+    expect(mockCompanyService.create).toHaveBeenCalledWith({
+      name: "ClawDev",
+      budgetMonthlyCents: 0,
+    });
+    expect(mockAccessService.ensureMembership).toHaveBeenCalledWith(
+      company.id,
+      "user",
+      "user-1",
+      "owner",
+      "active",
+    );
+  });
+});

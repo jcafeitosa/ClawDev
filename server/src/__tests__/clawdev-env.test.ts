@@ -33,6 +33,11 @@ describe("buildClawDevEnv", () => {
     const env = buildClawDevEnv({ id: "agent-1", companyId: "company-1" });
 
     expect(env.CLAWDEV_API_URL).toBe("http://localhost:4100");
+    expect(env.PAPERCLIP_API_URL).toBe("http://localhost:4100");
+    expect(env.CLAWDEV_AGENT_ID).toBe("agent-1");
+    expect(env.PAPERCLIP_AGENT_ID).toBe("agent-1");
+    expect(env.CLAWDEV_COMPANY_ID).toBe("company-1");
+    expect(env.PAPERCLIP_COMPANY_ID).toBe("company-1");
   });
 
   it("uses runtime listen host/port when explicit URL is not set", () => {
@@ -44,6 +49,7 @@ describe("buildClawDevEnv", () => {
     const env = buildClawDevEnv({ id: "agent-1", companyId: "company-1" });
 
     expect(env.CLAWDEV_API_URL).toBe("http://localhost:3101");
+    expect(env.PAPERCLIP_API_URL).toBe("http://localhost:3101");
   });
 
   it("formats IPv6 hosts safely in fallback URL generation", () => {
@@ -54,5 +60,6 @@ describe("buildClawDevEnv", () => {
     const env = buildClawDevEnv({ id: "agent-1", companyId: "company-1" });
 
     expect(env.CLAWDEV_API_URL).toBe("http://[::1]:3101");
+    expect(env.PAPERCLIP_API_URL).toBe("http://[::1]:3101");
   });
 });

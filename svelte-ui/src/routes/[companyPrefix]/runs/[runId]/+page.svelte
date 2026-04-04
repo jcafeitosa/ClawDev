@@ -561,7 +561,7 @@
 
 <div class="flex min-h-screen">
   <!-- ====================================================== -->
-  <!-- LEFT SIDEBAR: Runs list (matching Paperclip)            -->
+  <!-- LEFT SIDEBAR: Runs list -->
   <!-- ====================================================== -->
   {#if !loading && run?.agentId}
     <aside class="hidden lg:block w-72 shrink-0 border-r border-border overflow-y-auto">
@@ -624,7 +624,7 @@
     <p class="text-destructive">Run not found.</p>
   {:else}
 
-    <!-- Agent Header (matching Paperclip: icon 48px, name text-2xl bold, 3 action buttons) -->
+    <!-- Agent Header -->
     <div class="flex items-center justify-between gap-4">
       <div class="flex items-center gap-3">
         <button class="flex h-12 w-12 items-center justify-center rounded-lg bg-accent hover:bg-accent/80 transition-colors" title="Agent icon">
@@ -640,7 +640,7 @@
         </div>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
-        <!-- Assign Task (matching Paperclip) -->
+        <!-- Assign Task -->
         <a
           href="/{prefix}/issues/new?assigneeAgentId={run.agentId}"
           class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
@@ -648,7 +648,7 @@
           <Plus class="h-3.5 w-3.5" />
           Assign Task
         </a>
-        <!-- Run Heartbeat (matching Paperclip) -->
+        <!-- Run Heartbeat -->
         <button
           class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
           onclick={async () => {
@@ -664,7 +664,7 @@
           <Play class="h-3.5 w-3.5" />
           Run Heartbeat
         </button>
-        <!-- Pause (matching Paperclip) -->
+        <!-- Pause -->
         {#if run.status === 'running' || run.status === 'queued'}
           <button
             class="inline-flex items-center gap-1.5 rounded-md border border-border bg-background px-3 py-1.5 text-sm font-medium transition-colors hover:bg-accent"
@@ -674,7 +674,7 @@
             Pause
           </button>
         {/if}
-        <!-- Status badge (matching Paperclip: agent status) -->
+        <!-- Status badge -->
         {#if run.status}
           <StatusBadge status={run.status} />
         {/if}

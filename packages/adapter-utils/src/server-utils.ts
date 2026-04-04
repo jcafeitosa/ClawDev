@@ -218,7 +218,14 @@ export function buildClawDevEnv(agent: { id: string; companyId: string }): Recor
   const runtimePort = process.env.CLAWDEV_LISTEN_PORT ?? process.env.PORT ?? "3100";
   const apiUrl = process.env.CLAWDEV_API_URL ?? `http://${runtimeHost}:${runtimePort}`;
   vars.CLAWDEV_API_URL = apiUrl;
+  vars.PAPERCLIP_AGENT_ID = agent.id;
+  vars.PAPERCLIP_COMPANY_ID = agent.companyId;
+  vars.PAPERCLIP_API_URL = apiUrl;
   return vars;
+}
+
+export function buildPaperclipEnv(agent: { id: string; companyId: string }): Record<string, string> {
+  return buildClawDevEnv(agent);
 }
 
 export function defaultPathForPlatform() {

@@ -316,7 +316,7 @@
   <p class="text-sm text-gray-400">Loading...</p>
 </div>
 {:else}
-<!-- Full-screen overlay matching Paperclip onboarding -->
+<!-- Full-screen onboarding overlay -->
 <div class="fixed inset-0 z-50 flex bg-white">
   <!-- Close button -->
   <button

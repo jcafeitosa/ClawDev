@@ -79,14 +79,14 @@ export function companySkillRoutes(db: Db) {
         const actor = ctx.actor as Actor;
         assertBoard(actor);
         const skill = await svc.getById(ctx.params.id);
-        if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
+        if (!skill) { ctx.set.status = 404; return { error: "Skill not found" }; }
         assertCompanyAccess(actor, skill.companyId);
         return skill;
       },
       { params: t.Object({ id: t.String() }) },
     )
 
-    // Company-scoped detail route used by the original Paperclip UI.
+    // Company-scoped detail route used by the ClawDev UI.
     .get(
       "/companies/:companyId/skills/:skillId",
       async (ctx: any) => {
@@ -96,7 +96,7 @@ export function companySkillRoutes(db: Db) {
         const skill = await svc.getById(skillId);
         if (!skill || skill.companyId !== companyId) {
           ctx.set.status = 404;
-          return { error: "Not found" };
+          return { error: "Skill not found" };
         }
         return await svc.detail(companyId, skillId);
       },
@@ -129,12 +129,12 @@ export function companySkillRoutes(db: Db) {
         const skill = await svc.getById(skillId);
         if (!skill || skill.companyId !== companyId) {
           ctx.set.status = 404;
-          return { error: "Not found" };
+          return { error: "Skill not found" };
         }
         const deleted = await svc.deleteSkill(companyId, skillId);
         if (!deleted) {
           ctx.set.status = 404;
-          return { error: "Not found" };
+          return { error: "Skill not found" };
         }
 
         const actorInfo = getActorInfo(actor);
@@ -240,7 +240,7 @@ export function companySkillRoutes(db: Db) {
         const actor = ctx.actor as Actor;
         assertBoard(actor);
         const skill = await svc.getById(params.id);
-        if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
+        if (!skill) { ctx.set.status = 404; return { error: "Skill not found" }; }
         assertCompanyAccess(actor, skill.companyId);
         const deniedMsg = await checkCanMutateCompanySkills(actor, skill.companyId, ctx);
         if (deniedMsg) return { error: deniedMsg };
@@ -280,14 +280,14 @@ export function companySkillRoutes(db: Db) {
         const actor = ctx.actor as Actor;
         assertBoard(actor);
         const skill = await svc.getById(ctx.params.id);
-        if (!skill) { ctx.set.status = 404; return { error: "Not found" }; }
+        if (!skill) { ctx.set.status = 404; return { error: "Skill not found" }; }
         assertCompanyAccess(actor, skill.companyId);
         const deniedMsg = await checkCanMutateCompanySkills(actor, skill.companyId, ctx);
         if (deniedMsg) return { error: deniedMsg };
         const deleted = await svc.deleteSkill(skill.companyId, ctx.params.id);
         if (!deleted) {
           ctx.set.status = 404;
-          return { error: "Not found" };
+          return { error: "Skill not found" };
         }
 
         const actorInfo = getActorInfo(actor);

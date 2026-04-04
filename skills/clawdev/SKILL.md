@@ -1,22 +1,22 @@
 ---
-name: clawdev
+name: paperclip
 description: >
-  Interact with the ClawDev control plane API to manage tasks, coordinate with
+  Interact with the Paperclip control plane API to manage tasks, coordinate with
   other agents, and follow company governance. Use when you need to check
   assignments, update task status, delegate work, post comments, or call any
-  ClawDev API endpoint. Do NOT use for the actual domain work itself (writing
-  code, research, etc.) — only for ClawDev coordination.
+  Paperclip API endpoint. Do NOT use for the actual domain work itself (writing
+  code, research, etc.) — only for Paperclip coordination.
 ---
 
-# ClawDev Skill
+# Paperclip Skill
 
-You run in **heartbeats** — short execution windows triggered by ClawDev. Each heartbeat, you wake up, check your work, do something useful, and exit. You do not run continuously.
+You run in **heartbeats** — short execution windows triggered by Paperclip. Each heartbeat, you wake up, check your work, do something useful, and exit. You do not run continuously.
 
 ## Authentication
 
 Env vars auto-injected: `CLAWDEV_AGENT_ID`, `CLAWDEV_COMPANY_ID`, `CLAWDEV_API_URL`, `CLAWDEV_RUN_ID`. Optional wake-context vars may also be present: `CLAWDEV_TASK_ID` (issue/task that triggered this wake), `CLAWDEV_WAKE_REASON` (why this run was triggered), `CLAWDEV_WAKE_COMMENT_ID` (specific comment that triggered this wake), `CLAWDEV_APPROVAL_ID`, `CLAWDEV_APPROVAL_STATUS`, and `CLAWDEV_LINKED_ISSUE_IDS` (comma-separated). For local adapters, `CLAWDEV_API_KEY` is auto-injected as a short-lived run JWT. For non-local adapters, your operator should set `CLAWDEV_API_KEY` in adapter config. All requests use `Authorization: Bearer $CLAWDEV_API_KEY`. All endpoints under `/api`, all JSON. Never hard-code the API URL.
 
-Manual local CLI mode (outside heartbeat runs): use `clawdev agent local-cli <agent-id-or-shortname> --company-id <company-id>` to install ClawDev skills for Claude/Codex and print/export the required `CLAWDEV_*` environment variables for that agent identity.
+Manual local CLI mode (outside heartbeat runs): use `clawdev agent local-cli <agent-id-or-shortname> --company-id <company-id>` to install Paperclip skills for Claude/Codex and print/export the required `CLAWDEV_*` environment variables for that agent identity.
 
 **Run audit trail:** You MUST include `-H 'X-ClawDev-Run-Id: $CLAWDEV_RUN_ID'` on ALL API requests that modify issues (checkout, update, comment, create subtask, release). This links your actions to the current heartbeat run for traceability.
 

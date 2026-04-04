@@ -223,7 +223,7 @@
         <h1 class="text-xl font-bold text-zinc-900 dark:text-zinc-50">Instance Heartbeats</h1>
       </div>
       <p class="text-sm text-zinc-500 dark:text-zinc-400">
-        Manage scheduler heartbeats for agents across every company. This mirrors the operational controls in Paperclip.
+        Manage scheduler heartbeats for agents across every company.
       </p>
     </div>
 

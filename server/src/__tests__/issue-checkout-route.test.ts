@@ -42,9 +42,23 @@ vi.mock("../services/index.js", () => ({
 
 function createApp() {
   return new Elysia({ prefix: "/api" })
-    .onError(({ error, set }) => {
-      set.status = 500;
-      return { error: error instanceof Error ? error.message : String(error) };
+    .onError(({ code, error, set, request }) => {
+      switch (code) {
+        case "NOT_FOUND":
+          set.status = 404;
+          return new URL(request.url).pathname.startsWith("/api/")
+            ? { error: "API route not found" }
+            : { error: "Not found" };
+        case "VALIDATION":
+          set.status = 400;
+          return { error: "Validation error", details: (error as Error).message };
+        case "PARSE":
+          set.status = 400;
+          return { error: "Invalid request body" };
+        default:
+          set.status = 500;
+          return { error: "Internal server error" };
+      }
     })
     .derive(() => ({
       actor: {
@@ -117,6 +131,25 @@ describe("issue checkout route", () => {
       null,
     );
     expect(mockLogActivity).toHaveBeenCalled();
+  });
+
+  it("rejects invalid checkout payloads before reaching the service layer", async () => {
+    mockIssueService.getById.mockResolvedValue({
+      id: "11111111-1111-4111-8111-111111111111",
+      companyId: "company-1",
+      projectId: null,
+      status: "backlog",
+      assigneeAgentId: null,
+    });
+
+    const res = await req(createApp(), "POST", "/api/issues/11111111-1111-4111-8111-111111111111/checkout", {
+      agentId: "local-board",
+      expectedStatuses: ["open"],
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("Validation error");
+    expect(mockIssueService.checkout).not.toHaveBeenCalled();
   });
 
   it("marks an issue as read for the board actor", async () => {

@@ -1,14 +1,14 @@
-# Paperclip -> ClawDev Frontend Parity Matrix
+# Baseline -> ClawDev Frontend Parity Matrix
 
 Date: 2026-03-30
 Owner: CTO
 Source inventory:
-- Paperclip React routes: `/private/tmp/paperclip/ui/src/App.tsx`
+- Baseline React routes: `/private/tmp/baseline/ui/src/App.tsx`
 - ClawDev Svelte routes: `/Users/juliocezaraquinofeitosa/Development/clawdev/svelte-ui/src/routes`
 
 ## 1) Route/Page Inventory Mapping
 
-| Paperclip route (canonical) | ClawDev route | Parity | Notes |
+| Baseline route (canonical) | ClawDev route | Parity | Notes |
 |---|---|---|---|
 | `/auth` | `/auth` | Full | Auth entry exists in both. |
 | `/cli-auth/:id` | `/cli-auth` | Partial | ClawDev has route; tokenized path wiring needs verification. |
@@ -30,7 +30,7 @@ Source inventory:
 | `/:companyPrefix/routines` | `/:companyPrefix/routines` | Full | Routines list present. |
 | `/:companyPrefix/routines/:routineId` | `/:companyPrefix/routines/:routineId` | Full | Routine detail present. |
 | `/:companyPrefix/execution-workspaces/:workspaceId` | `/:companyPrefix/workspaces/:workspaceId` | Full | Naming differs; functional equivalent exists. |
-| `/:companyPrefix/workspaces` (implicit in ClawDev nav) | `/:companyPrefix/workspaces` | Full | Present in ClawDev; equivalent to Paperclip workspace surface. |
+| `/:companyPrefix/workspaces` (implicit in ClawDev nav) | `/:companyPrefix/workspaces` | Full | Present in ClawDev; equivalent to the baseline workspace surface. |
 | `/:companyPrefix/goals` | `/:companyPrefix/goals` | Full | Goals list present. |
 | `/:companyPrefix/goals/:goalId` | `/:companyPrefix/goals/:goalId` | Full | Goal detail present. |
 | `/:companyPrefix/approvals` | `/:companyPrefix/approvals` | Full | Approvals list present. |
@@ -107,6 +107,6 @@ For each page above, accept only when all pass:
 ## 5) Known Gaps to Track as Follow-up
 
 - Dedicated `tests/ux/runs` route parity missing in ClawDev Svelte UI.
-- Paperclip `inbox/*` segmented routes are consolidated in ClawDev (`/inbox`); verify filter-memory parity.
+- Baseline `inbox/*` segmented routes are consolidated in ClawDev (`/inbox`); verify filter-memory parity.
 - Plugin `:pluginRoutePath` dynamic slot route from React app requires explicit parity decision in Svelte implementation.
 - Legacy path alias coverage (`/agents/:agentId/runs/:runId`, nested project tab URLs) should be validated for deep-link compatibility.

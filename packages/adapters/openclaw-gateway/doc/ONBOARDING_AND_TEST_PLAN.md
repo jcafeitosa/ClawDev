@@ -39,7 +39,7 @@ This plan is now **gateway-only**. ClawDev supports OpenClaw through `openclaw_g
 Recommended fields:
 ```json
 {
-  "clawdevApiUrl": "http://host.docker.internal:3100",
+  "paperclipApiUrl": "http://host.docker.internal:3100",
   "waitTimeoutMs": 120000,
   "sessionKeyStrategy": "issue",
   "role": "operator",

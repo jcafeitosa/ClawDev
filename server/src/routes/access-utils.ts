@@ -75,6 +75,7 @@ export function resolveJoinRequestAgentManagerId(
 interface BuildAcceptOpts {
   adapterType: string;
   defaultsPayload: Record<string, unknown> | null | undefined;
+  paperclipApiUrl?: unknown;
   inboundOpenClawTokenHeader?: string | null;
   inboundOpenClawAuthHeader?: string | null;
 }
@@ -98,6 +99,16 @@ export function buildJoinDefaultsPayloadForAccept(
   }
 
   const payload: Record<string, unknown> = { ...(opts.defaultsPayload ?? {}) };
+  if (
+    typeof payload.paperclipApiUrl !== "string" ||
+    payload.paperclipApiUrl.trim().length === 0
+  ) {
+    const paperclipApiUrl =
+      typeof opts.paperclipApiUrl === "string" ? opts.paperclipApiUrl.trim() : "";
+    if (paperclipApiUrl) {
+      payload.paperclipApiUrl = paperclipApiUrl;
+    }
+  }
   let headers: Record<string, unknown> = {
     ...((payload.headers as Record<string, unknown>) ?? {}),
   };
@@ -114,13 +125,21 @@ export function buildJoinDefaultsPayloadForAccept(
     headers["x-openclaw-token"] = opts.inboundOpenClawTokenHeader;
   }
 
-  // Derive from authorization header when x-openclaw-token is missing
-  if (
-    !headers["x-openclaw-token"] &&
-    typeof headers.authorization === "string" &&
-    headers.authorization.startsWith("Bearer ")
-  ) {
-    headers["x-openclaw-token"] = headers.authorization.slice("Bearer ".length);
+  if (opts.inboundOpenClawAuthHeader && !headers["x-openclaw-auth"]) {
+    headers["x-openclaw-auth"] = opts.inboundOpenClawAuthHeader;
+  }
+
+  if (!headers["x-openclaw-token"]) {
+    const authHeader =
+      typeof headers["x-openclaw-auth"] === "string"
+        ? headers["x-openclaw-auth"]
+        : typeof headers.authorization === "string" &&
+            headers.authorization.startsWith("Bearer ")
+          ? headers.authorization.slice("Bearer ".length)
+          : null;
+    if (authHeader) {
+      headers["x-openclaw-token"] = authHeader;
+    }
   }
 
   payload.headers = headers;
@@ -278,20 +297,20 @@ export function buildInviteOnboardingTextDocument(
   const agentMessage = invite.defaultsPayload?.agentMessage as string | undefined;
 
   const lines: string[] = [
-    "ClawDev OpenClaw Gateway Onboarding",
+    "Paperclip OpenClaw Gateway Onboarding",
     "======================================",
     "",
     `Accept endpoint: ${baseUrl}${acceptPath}`,
     `Claim API key: ${baseUrl}${claimPath}`,
     `Onboarding text: ${baseUrl}${onboardingPath}`,
     "",
-    "Suggested ClawDev base URLs to try:",
+    "Suggested Paperclip base URLs to try:",
     `  - ${baseUrl}`,
     `  - http://${host}`,
     `  - http://host.docker.internal:${host.split(":")[1] ?? "3100"}`,
     "",
     'When joining, set adapterType "openclaw_gateway" and provide:',
-    "  - clawdevApiUrl: set the first reachable candidate as agentDefaultsPayload.clawdevApiUrl",
+    "  - paperclipApiUrl: set the first reachable candidate as agentDefaultsPayload.paperclipApiUrl",
     "  - headers.x-openclaw-token: your gateway token",
     "",
     "Gateway token unexpectedly short? Ensure you are passing the full token value.",
@@ -299,8 +318,8 @@ export function buildInviteOnboardingTextDocument(
     "Important endpoints — Do NOT use /v1/responses or /hooks/* directly.",
     "",
     "After claiming your API key:",
-    "  - Save to ~/.openclaw/workspace/clawdev-claimed-api-key.json",
-    "  - Use the CLAWDEV_API_KEY environment variable",
+    "  - Save to ~/.openclaw/workspace/paperclip-claimed-api-key.json",
+    "  - Use the PAPERCLIP_API_KEY environment variable",
     "  - Use the saved token field for subsequent requests",
     "",
   ];

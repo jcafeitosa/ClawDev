@@ -11,6 +11,7 @@ const mockRegistry = vi.hoisted(() => ({
 
 const mockLifecycle = vi.hoisted(() => ({}));
 const mockMetadata = vi.hoisted(() => vi.fn((manifest: Record<string, unknown>) => manifest.ui?.metadata ?? null));
+const mockInstallPlugin = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/plugin-registry.js", () => ({
   pluginRegistryService: () => mockRegistry,
@@ -22,7 +23,9 @@ vi.mock("../services/plugin-lifecycle.js", () => ({
 
 vi.mock("../services/plugin-loader.js", () => ({
   getPluginUiContributionMetadata: mockMetadata,
-  pluginLoader: {},
+  pluginLoader: vi.fn(() => ({
+    installPlugin: mockInstallPlugin,
+  })),
 }));
 
 vi.mock("../services/activity-log.js", () => ({
@@ -62,6 +65,33 @@ function createApp() {
     );
 }
 
+function createAppWithJobScheduler(jobScheduler: { triggerJob: ReturnType<typeof vi.fn> }) {
+  return new Elysia({ prefix: "/api" })
+    .derive(() => ({
+      actor: {
+        type: "board",
+        userId: "board-user",
+        companyIds: ["company-1"],
+        source: "local_implicit",
+      },
+    }))
+    .use(
+      pluginRoutes({
+        db: {} as any,
+        jobScheduler: jobScheduler as any,
+        jobStore: {
+          getJobByIdForPlugin: vi.fn(),
+        } as any,
+        workerManager: {} as any,
+        streamBus: {} as any,
+        toolDispatcher: {
+          listToolsForAgent: vi.fn(() => []),
+          executeTool: vi.fn(),
+        } as any,
+      }),
+    );
+}
+
 async function req(app: Elysia, method: string, path: string, body?: unknown) {
   const init: RequestInit = { method, headers: {} };
   if (body !== undefined) {
@@ -82,6 +112,11 @@ async function req(app: Elysia, method: string, path: string, body?: unknown) {
 describe("plugin routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockInstallPlugin.mockResolvedValue({
+      manifest: {
+        id: "plugin-1",
+      },
+    });
     mockRegistry.listInstalled.mockResolvedValue([
       {
         id: "plugin-1",
@@ -138,5 +173,59 @@ describe("plugin routes", () => {
         uiEntryFile: "ui.tsx",
       }),
     ]);
+  });
+
+  it("returns plugin details by pluginId", async () => {
+    mockRegistry.getById.mockResolvedValue(null);
+    mockRegistry.getByKey.mockResolvedValue(null);
+
+    const app = createApp();
+    const response = await req(app, "GET", "/api/plugins/abc");
+
+    expect(response.status).toBe(404);
+    expect(response.body).toEqual({ error: "Plugin not found" });
+  });
+
+  it("triggers plugin jobs by jobId", async () => {
+    const triggerJob = vi.fn().mockResolvedValue({ runId: "run-1", jobId: "job-1" });
+    mockRegistry.getById.mockResolvedValueOnce({
+      id: "plugin-1",
+      pluginKey: "example.plugin",
+      version: "1.0.0",
+      updatedAt: new Date("2026-03-19T00:00:00.000Z"),
+      manifestJson: {
+        displayName: "Example Plugin",
+      },
+    });
+
+    const app = createAppWithJobScheduler({ triggerJob });
+
+    const byIdRes = await req(app, "POST", "/api/plugins/plugin-1/jobs/job-1/trigger");
+    expect(byIdRes.status).toBe(200);
+    expect(byIdRes.body).toEqual({ runId: "run-1", jobId: "job-1" });
+    expect(triggerJob).toHaveBeenCalledWith("job-1", "manual");
+  });
+
+  it("validates plugin install payloads with packageName", async () => {
+    const app = createApp();
+    const response = await req(app, "POST", "/api/plugins/install", {
+      source: "local",
+      specifier: "/tmp/nope",
+    } as any);
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "packageName is required and must be a string" });
+  });
+
+  it("returns local install path errors from the loader", async () => {
+    mockInstallPlugin.mockRejectedValueOnce(new Error("Local plugin path does not exist: /tmp/nope"));
+    const app = createApp();
+    const response = await req(app, "POST", "/api/plugins/install", {
+      packageName: "/tmp/nope",
+      isLocalPath: true,
+    });
+
+    expect(response.status).toBe(500);
+    expect(response.body).toEqual({ error: "Local plugin path does not exist: /tmp/nope" });
   });
 });

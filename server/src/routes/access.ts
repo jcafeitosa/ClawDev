@@ -13,7 +13,7 @@ import { Elysia, t } from "elysia";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import type { PermissionKey } from "@clawdev/shared";
-import { agentApiKeys, authUsers, invites, joinRequests } from "@clawdev/db";
+import { agentApiKeys, authUsers, companies, invites, joinRequests } from "@clawdev/db";
 import {
   accessService,
   agentService,
@@ -56,7 +56,7 @@ function hashToken(token: string) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
 
-const INVITE_TOKEN_PREFIX = "cld_invite_";
+const INVITE_TOKEN_PREFIX = "pcp_invite_";
 const INVITE_TOKEN_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789";
 const INVITE_TOKEN_SUFFIX_LENGTH = 8;
 const INVITE_TOKEN_MAX_RETRIES = 5;
@@ -71,7 +71,7 @@ function createInviteToken() {
 }
 
 function createClaimSecret() {
-  return `cld_claim_${crypto.randomBytes(24).toString("hex")}`;
+  return `pcp_claim_${crypto.randomBytes(24).toString("hex")}`;
 }
 
 function tokenHashesMatch(left: string, right: string) {
@@ -107,6 +107,46 @@ function requestBaseUrl(request: Request): string {
   } catch {
     return "http://localhost:3100";
   }
+}
+
+function requestIp(
+  request: Request & {
+    header?: (name: string) => string | undefined;
+    ip?: string | null;
+  },
+): string {
+  const forwarded = request.header?.("x-forwarded-for") ?? request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  const realIp = request.header?.("x-real-ip") ?? request.headers.get("x-real-ip");
+  if (realIp) {
+    const first = realIp.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  if (typeof request.ip === "string" && request.ip.trim()) {
+    return request.ip.trim();
+  }
+  try {
+    const hostHeader = request.header?.("host") ?? request.headers.get("host");
+    if (hostHeader) {
+      const host = hostHeader.split(":")[0]?.trim().toLowerCase();
+      if (host === "localhost" || host === "127.0.0.1" || host === "::1") {
+        return "127.0.0.1";
+      }
+    }
+    const host = new URL(request.url).hostname.toLowerCase();
+    if (host === "localhost" || host === "127.0.0.1") {
+      return "127.0.0.1";
+    }
+    if (host === "::1") {
+      return "127.0.0.1";
+    }
+  } catch {
+    // ignore URL parsing failures and fall through to the default fallback
+  }
+  return "127.0.0.1";
 }
 
 function normalizeHostname(value: string | null | undefined): string | null {
@@ -169,6 +209,43 @@ function createInviteOnboardingProbe(baseUrl: string, token: string) {
   };
 }
 
+async function getInviteCompanyName(db: Db, companyId: string | null) {
+  if (!companyId) return null;
+  const company = await db
+    .select({ name: companies.name })
+    .from(companies)
+    .where(eq(companies.id, companyId))
+    .then((rows) => rows[0] ?? null);
+  return company?.name ?? null;
+}
+
+function toInviteSummaryResponse(
+  req: Request,
+  token: string,
+  invite: typeof invites.$inferSelect,
+  companyName: string | null = null,
+) {
+  const baseUrl = requestBaseUrl(req);
+  const onboardingPath = `/api/invites/${token}/onboarding`;
+  const onboardingTextPath = `/api/invites/${token}/onboarding.txt`;
+  const inviteMessage = extractInviteMessage(invite);
+  return {
+    id: invite.id,
+    companyId: invite.companyId,
+    companyName,
+    inviteType: invite.inviteType,
+    allowedJoinTypes: invite.allowedJoinTypes,
+    expiresAt: invite.expiresAt,
+    onboardingPath,
+    onboardingUrl: `${baseUrl}${onboardingPath}`,
+    onboardingTextPath,
+    onboardingTextUrl: `${baseUrl}${onboardingTextPath}`,
+    skillIndexPath: "/api/skills/index",
+    skillIndexUrl: `${baseUrl}/api/skills/index`,
+    inviteMessage,
+  };
+}
+
 function buildInviteOnboardingManifest(
   req: Request,
   token: string,
@@ -203,16 +280,16 @@ function buildInviteOnboardingManifest(
     },
     onboarding: {
       instructions:
-        "Join as an OpenClaw Gateway agent, save your one-time claim secret, wait for board approval, then claim your API key. Set adapterType='openclaw_gateway' and include agentDefaultsPayload.headers.x-openclaw-token.",
+        "Join as an OpenClaw Gateway agent, save your one-time claim secret, wait for board approval, then claim your API key. Save the claim response token to ~/.openclaw/workspace/paperclip-claimed-api-key.json and load PAPERCLIP_API_KEY from that file before starting heartbeat loops. You MUST submit adapterType='openclaw_gateway', set agentDefaultsPayload.url to your ws:// or wss:// OpenClaw gateway endpoint, and include agentDefaultsPayload.headers.x-openclaw-token (or legacy x-openclaw-auth).",
       inviteMessage: extractInviteMessage(invite),
       recommendedAdapterType: "openclaw_gateway",
       requiredFields: {
         requestType: "agent",
         agentName: "Display name for this agent",
-        adapterType: "Use 'openclaw_gateway' for ClawDev gateway agents",
+        adapterType: "Use 'openclaw_gateway' for OpenClaw Gateway agents",
         capabilities: "Optional capability summary",
         agentDefaultsPayload:
-          "Adapter config for ClawDev gateway. MUST include url (ws:// or wss://) and headers.x-openclaw-token. Optional fields: clawdevApiUrl, waitTimeoutMs, sessionKeyStrategy, sessionKey, role, scopes, disableDeviceAuth, devicePrivateKeyPem.",
+          "Adapter config for OpenClaw gateway. MUST include url (ws:// or wss://) and headers.x-openclaw-token (or legacy x-openclaw-auth). Optional fields: paperclipApiUrl, waitTimeoutMs, sessionKeyStrategy, sessionKey, role, scopes, disableDeviceAuth, devicePrivateKeyPem.",
       },
       registrationEndpoint: {
         method: "POST",
@@ -241,8 +318,8 @@ function buildInviteOnboardingManifest(
         }),
         guidance:
           deploymentMode === "authenticated" && deploymentExposure === "private"
-            ? "If ClawDev runs on another machine, ensure the hostname is reachable and allowed."
-            : "Ensure ClawDev can reach this API base URL for invite, claim, and bootstrap calls.",
+            ? "If OpenClaw runs on another machine, ensure the Paperclip hostname is reachable and allowed via `pnpm paperclipai allowed-hostname <host>`."
+            : "Ensure OpenClaw can reach this Paperclip API base URL for invite, claim, and skill bootstrap calls.",
         testResolutionEndpoint: {
           method: "GET",
           path: onboarding.testResolutionPath,
@@ -255,10 +332,10 @@ function buildInviteOnboardingManifest(
         contentType: "text/plain",
       },
       skill: {
-        name: "clawdev",
-        path: "/api/skills/clawdev",
-        url: `${baseUrl}/api/skills/clawdev`,
-        installPath: "~/.openclaw/skills/clawdev/SKILL.md",
+        name: "paperclip",
+        path: "/api/skills/paperclip",
+        url: `${baseUrl}/api/skills/paperclip`,
+        installPath: "~/.openclaw/skills/paperclip/SKILL.md",
       },
     },
   };
@@ -375,41 +452,30 @@ function assertBoardCompanyAccess(actor: Actor, companyId: string) {
 
 function readSkillMarkdown(skillName: string): string | null {
   const normalized = skillName.trim().toLowerCase();
+  const aliasMap: Record<string, string> = {
+    paperclip: "clawdev",
+    "paperclip-create-agent": "clawdev-create-agent",
+    "paperclip-create-plugin": "clawdev-create-plugin",
+  };
+  const resolved = aliasMap[normalized] ?? normalized;
   if (
-    normalized !== "clawdev" &&
-    normalized !== "clawdev-create-agent" &&
-    normalized !== "clawdev-create-plugin" &&
-    normalized !== "para-memory-files"
+    resolved !== "clawdev" &&
+    resolved !== "clawdev-create-agent" &&
+    resolved !== "clawdev-create-plugin" &&
+    resolved !== "para-memory-files"
   )
     return null;
   const moduleDir = path.dirname(fileURLToPath(import.meta.url));
   const candidates = [
-    path.resolve(moduleDir, "../../skills", normalized, "SKILL.md"),
-    path.resolve(process.cwd(), "skills", normalized, "SKILL.md"),
-    path.resolve(moduleDir, "../../../skills", normalized, "SKILL.md"),
+    path.resolve(moduleDir, "../../skills", resolved, "SKILL.md"),
+    path.resolve(process.cwd(), "skills", resolved, "SKILL.md"),
+    path.resolve(moduleDir, "../../../skills", resolved, "SKILL.md"),
   ];
   for (const skillPath of candidates) {
     try {
       return fs.readFileSync(skillPath, "utf8");
     } catch {
       // Continue to next candidate
-    }
-  }
-  return null;
-}
-
-function resolveSkillsDir(): string | null {
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
-  const candidates = [
-    path.resolve(moduleDir, "../../skills"),
-    path.resolve(process.cwd(), "skills"),
-    path.resolve(moduleDir, "../../../skills"),
-  ];
-  for (const candidate of candidates) {
-    try {
-      if (fs.statSync(candidate).isDirectory()) return candidate;
-    } catch {
-      /* skip */
     }
   }
   return null;
@@ -432,24 +498,19 @@ function parseSkillFrontmatter(markdown: string): { description: string } {
 export interface AvailableSkill {
   name: string;
   description: string;
-  isClawdevManaged: boolean;
+  isPaperclipManaged: boolean;
 }
+
+const PAPERCLIP_MANAGED_SKILL_NAMES = new Set([
+  "paperclip",
+  "paperclip-create-agent",
+  "paperclip-create-plugin",
+  "para-memory-files",
+]);
 
 function listAvailableSkills(): AvailableSkill[] {
   const homeDir = process.env.HOME || process.env.USERPROFILE || "";
   const claudeSkillsDir = path.join(homeDir, ".claude", "skills");
-  const clawdevSkillsDir = resolveSkillsDir();
-
-  const clawdevSkillNames = new Set<string>();
-  if (clawdevSkillsDir) {
-    try {
-      for (const entry of fs.readdirSync(clawdevSkillsDir, { withFileTypes: true })) {
-        if (entry.isDirectory()) clawdevSkillNames.add(entry.name);
-      }
-    } catch {
-      /* skip */
-    }
-  }
 
   const skills: AvailableSkill[] = [];
   try {
@@ -468,7 +529,7 @@ function listAvailableSkills(): AvailableSkill[] {
       skills.push({
         name: entry.name,
         description,
-        isClawdevManaged: clawdevSkillNames.has(entry.name),
+        isPaperclipManaged: PAPERCLIP_MANAGED_SKILL_NAMES.has(entry.name),
       });
     }
   } catch {
@@ -538,91 +599,89 @@ export function accessRoutes(db: Db) {
       },
     )
 
-    // ---------------------------------------------------------------
-    // Invites — company-scoped creation
-    // ---------------------------------------------------------------
-
-    .get(
-      "/companies/:companyId/invites",
-      async (ctx: any) => {
-        const { params } = ctx;
-        const actor = ctx.actor as Actor;
-        assertBoardCompanyAccess(actor, params.companyId);
-        const inviteRows = await svc.listInvites(params.companyId);
-        return inviteRows;
-      },
-      { params: companyIdParam },
-    )
-
     .post(
       "/companies/:companyId/invites",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        assertBoardCompanyAccess(actor, params.companyId);
+        try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          assertBoardCompanyAccess(actor, params.companyId);
 
-        const allowedJoinTypes = body.allowedJoinTypes ?? "both";
-        const agentMessage = body.agentMessage
-          ? (typeof body.agentMessage === "string" ? body.agentMessage.trim() : null)
-          : null;
-        const defaultsPayload = mergeInviteDefaults(
-          body.defaultsPayload ?? null,
-          agentMessage,
-        );
+          const allowedJoinTypes = body?.allowedJoinTypes ?? "both";
+          const agentMessage = body?.agentMessage
+            ? (typeof body.agentMessage === "string" ? body.agentMessage.trim() : null)
+            : null;
+          const defaultsPayload = mergeInviteDefaults(
+            body?.defaultsPayload ?? null,
+            agentMessage,
+          );
 
-        let token: string | null = null;
-        let created: typeof invites.$inferSelect | null = null;
-        for (let attempt = 0; attempt < INVITE_TOKEN_MAX_RETRIES; attempt += 1) {
-          const candidateToken = createInviteToken();
-          try {
-            const row = await db
-              .insert(invites)
-              .values({
-                companyId: params.companyId,
-                inviteType: "company_join" as const,
-                allowedJoinTypes,
-                defaultsPayload,
-                expiresAt: companyInviteExpiresAt(Date.now()),
-                invitedByUserId: actor.userId ?? null,
-                tokenHash: hashToken(candidateToken),
-              })
-              .returning()
-              .then((rows) => rows[0]);
-            token = candidateToken;
-            created = row;
-            break;
-          } catch (error) {
-            if (!isInviteTokenHashCollisionError(error)) throw error;
+          let token: string | null = null;
+          let created: typeof invites.$inferSelect | null = null;
+          for (let attempt = 0; attempt < INVITE_TOKEN_MAX_RETRIES; attempt += 1) {
+            const candidateToken = createInviteToken();
+            try {
+              const row = await db
+                .insert(invites)
+                .values({
+                  companyId: params.companyId,
+                  inviteType: "company_join" as const,
+                  allowedJoinTypes,
+                  defaultsPayload,
+                  expiresAt: companyInviteExpiresAt(Date.now()),
+                  invitedByUserId: actor.userId ?? null,
+                  tokenHash: hashToken(candidateToken),
+                })
+                .returning()
+                .then((rows) => rows[0]);
+              token = candidateToken;
+              created = row;
+              break;
+            } catch (error) {
+              if (!isInviteTokenHashCollisionError(error)) throw error;
+            }
           }
-        }
-        if (!token || !created) {
-          set.status = 409;
-          return { error: "Failed to generate a unique invite token. Please retry." };
-        }
+          if (!token || !created) {
+            set.status = 409;
+            return { error: "Failed to generate a unique invite token. Please retry." };
+          }
 
         await logActivity(db, {
           companyId: params.companyId,
           actorType: actor.type === "agent" ? "agent" : "user",
-          actorId: actor.type === "agent" ? actor.agentId ?? "unknown-agent" : actor.userId ?? "board",
-          action: "invite.created",
-          entityType: "invite",
-          entityId: created.id,
-          details: {
-            inviteType: created.inviteType,
-            allowedJoinTypes: created.allowedJoinTypes,
-            expiresAt: created.expiresAt.toISOString(),
-            hasAgentMessage: Boolean(agentMessage),
-          },
+            actorId: actor.type === "agent" ? actor.agentId ?? "unknown-agent" : actor.userId ?? "board",
+            action: "invite.created",
+            entityType: "invite",
+            entityId: created.id,
+            details: {
+              inviteType: created.inviteType,
+              allowedJoinTypes: created.allowedJoinTypes,
+              expiresAt: created.expiresAt.toISOString(),
+              hasAgentMessage: Boolean(agentMessage),
+            },
         });
+
+        const companyName = await getInviteCompanyName(db, params.companyId);
+        const inviteSummary = toInviteSummaryResponse(ctx.request, token, created, companyName);
 
         set.status = 201;
         return {
           ...created,
           token,
           inviteUrl: `/invite/${token}`,
-          onboardingTextPath: `/api/invites/${token}/onboarding.txt`,
+          companyName,
+          onboardingPath: inviteSummary.onboardingPath,
+          onboardingUrl: inviteSummary.onboardingUrl,
+          onboardingTextPath: inviteSummary.onboardingTextPath,
+          onboardingTextUrl: inviteSummary.onboardingTextUrl,
+          skillIndexPath: inviteSummary.skillIndexPath,
+          skillIndexUrl: inviteSummary.skillIndexUrl,
           inviteMessage: extractInviteMessage(created),
         };
+        } catch (error) {
+          ctx.set.status = 500;
+          return { error: "Internal server error" };
+        }
       },
       {
         params: companyIdParam,
@@ -651,7 +710,7 @@ export function accessRoutes(db: Db) {
           .from(invites)
           .where(eq(invites.tokenHash, hashToken(token)))
           .then((rows) => rows[0] ?? null);
-        if (!invite || invite.revokedAt || invite.acceptedAt || inviteExpired(invite)) {
+        if (!invite || invite.revokedAt || inviteExpired(invite)) {
           set.status = 404;
           return { error: "Invite not found" };
         }
@@ -671,7 +730,7 @@ export function accessRoutes(db: Db) {
           .from(invites)
           .where(eq(invites.tokenHash, hashToken(token)))
           .then((rows) => rows[0] ?? null);
-        if (!invite || invite.revokedAt || invite.acceptedAt || inviteExpired(invite)) {
+        if (!invite || invite.revokedAt || inviteExpired(invite)) {
           set.status = 404;
           return { error: "Invite not found" };
         }
@@ -714,7 +773,8 @@ export function accessRoutes(db: Db) {
 
     .get(
       "/invites/:token",
-      async ({ params, set }) => {
+      async (ctx: any) => {
+        const { params, set } = ctx;
         const token = params.token.trim();
         if (!token) { set.status = 404; return { error: "Invite not found" }; }
         const invite = await db
@@ -726,15 +786,8 @@ export function accessRoutes(db: Db) {
           set.status = 404;
           return { error: "Invite not found" };
         }
-        return {
-          id: invite.id,
-          companyId: invite.companyId,
-          inviteType: invite.inviteType,
-          allowedJoinTypes: invite.allowedJoinTypes,
-          expiresAt: invite.expiresAt,
-          onboardingTextPath: `/api/invites/${token}/onboarding.txt`,
-          inviteMessage: extractInviteMessage(invite),
-        };
+        const companyName = await getInviteCompanyName(db, invite.companyId);
+        return toInviteSummaryResponse(ctx.request as Request, token, invite, companyName);
       },
       { params: t.Object({ token: t.String() }) },
     )
@@ -857,6 +910,9 @@ export function accessRoutes(db: Db) {
             ? buildJoinDefaultsPayloadForAccept({
                 adapterType: adapterType ?? "",
                 defaultsPayload: replayMergedDefaults as Record<string, unknown> | null,
+                paperclipApiUrl: body.paperclipApiUrl ?? null,
+                inboundOpenClawAuthHeader: ctx.request?.headers?.get?.("x-openclaw-auth") ?? null,
+                inboundOpenClawTokenHeader: ctx.request?.headers?.get?.("x-openclaw-token") ?? null,
               })
             : null;
 
@@ -884,7 +940,11 @@ export function accessRoutes(db: Db) {
           ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
           : null;
 
-        const requestIp = ctx.request?.headers?.get?.("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+        const requestIpValue = requestIp(ctx.request);
+        const actorEmail =
+          requestType === "human" && actor.type === "board" && actor.source === "local_implicit"
+            ? "local@paperclip.local"
+            : null;
 
         const created = !inviteAlreadyAccepted
           ? await db.transaction(async (tx) => {
@@ -900,9 +960,9 @@ export function accessRoutes(db: Db) {
                   companyId,
                   requestType,
                   status: "pending_approval",
-                  requestIp,
+                  requestIp: requestIpValue,
                   requestingUserId: requestType === "human" ? actor.userId ?? "local-board" : null,
-                  requestEmailSnapshot: null,
+                  requestEmailSnapshot: requestType === "human" ? actorEmail : null,
                   agentName: requestType === "agent" ? body.agentName : null,
                   adapterType: requestType === "agent" ? adapterType : null,
                   capabilities: requestType === "agent" ? body.capabilities ?? null : null,
@@ -917,7 +977,7 @@ export function accessRoutes(db: Db) {
           : await db
               .update(joinRequests)
               .set({
-                requestIp,
+                requestIp: requestIpValue,
                 agentName:
                   requestType === "agent"
                     ? body.agentName ?? existingJoinRequestForInvite?.agentName ?? null
@@ -1351,6 +1411,7 @@ export function accessRoutes(db: Db) {
           approvalUrl: `http://localhost/cli-auth/${challenge.id}?token=${challengeSecret}`,
           pollPath: `/cli-auth/challenges/${challenge.id}`,
           expiresAt: challenge.expiresAt.toISOString(),
+          suggestedPollIntervalMs: 1000,
         };
       },
     )
@@ -1364,24 +1425,30 @@ export function accessRoutes(db: Db) {
         );
         const requiresSignIn = ctx.actor?.type === "none";
         const canApprove = !requiresSignIn;
-        return { ...challenge, requiresSignIn, canApprove };
+        return {
+          ...challenge,
+          requiresSignIn,
+          canApprove,
+          currentUserId: ctx.actor?.type === "board" ? ctx.actor?.userId ?? null : null,
+        };
       },
     )
 
     .post(
       "/cli-auth/challenges/:challengeId/approve",
       async (ctx: any) => {
+        const userId = ctx.actor?.userId ?? "local-board";
         const result = await boardAuth.approveCliAuthChallenge(
           ctx.params.challengeId,
           ctx.body?.token,
-          ctx.actor?.userId,
+          userId,
         );
         if (result.status !== "approved") {
           return { approved: false, status: result.status };
         }
         const challenge = result.challenge;
         const companyIds = await boardAuth.resolveBoardActivityCompanyIds({
-          userId: ctx.actor?.userId,
+          userId,
           requestedCompanyId: challenge.requestedCompanyId ?? null,
           boardApiKeyId: challenge.boardApiKeyId ?? null,
         });
@@ -1389,16 +1456,22 @@ export function accessRoutes(db: Db) {
           await logActivity(db, {
             companyId,
             actorType: "user",
-            actorId: ctx.actor?.userId ?? "board",
+            actorId: userId,
             action: "board_api_key.created",
-            entityType: "board_api_key",
-            entityId: challenge.boardApiKeyId ?? companyId,
+            entityType: "user",
+            entityId: userId,
+            details: {
+              boardApiKeyId: challenge.boardApiKeyId,
+              requestedAccess: challenge.requestedAccess,
+              requestedCompanyId: challenge.requestedCompanyId,
+              challengeId: challenge.id,
+            },
           });
         }
         return {
           approved: true,
           status: "approved",
-          userId: ctx.actor?.userId,
+          userId,
           keyId: challenge.boardApiKeyId,
           expiresAt: challenge.expiresAt.toISOString(),
         };
@@ -1459,11 +1532,15 @@ export function accessRoutes(db: Db) {
             actorType: "user",
             actorId: key.userId ?? "board",
             action: "board_api_key.revoked",
-            entityType: "board_api_key",
-            entityId: key.id ?? companyId,
+            entityType: "user",
+            entityId: key.userId ?? "board",
+            details: {
+              boardApiKeyId: key.id,
+              revokedVia: "cli_auth_logout",
+            },
           });
         }
-        return { revoked: true };
+        return { revoked: true, keyId: key.id };
       },
     )
 
@@ -1474,56 +1551,75 @@ export function accessRoutes(db: Db) {
     .post(
       "/companies/:companyId/openclaw/invite-prompt",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const a = ctx.actor as Actor;
-        assertCompanyAccess(a, params.companyId);
-        if (a.type === "agent") {
-          if (!a.agentId) {
-            set.status = 403;
-            return { error: "Only CEO agents can create openclaw invite prompts" };
-          }
-          const agent = await agents.getById(a.agentId);
-          if (!agent || agent.role !== "ceo") {
-            set.status = 403;
-            return { error: "Only CEO agents can create openclaw invite prompts" };
-          }
-        } else if (a.type === "board") {
-          const allowed = await svc.canUser(params.companyId, a.userId, "users:invite");
-          if (!allowed) {
+        try {
+          const { params, body, set } = ctx;
+          const a = ctx.actor as Actor;
+          assertCompanyAccess(a, params.companyId);
+          if (a.type === "agent") {
+            if (!a.agentId) {
+              set.status = 403;
+              return { error: "Only CEO agents can create openclaw invite prompts" };
+            }
+            const agent = await agents.getById(a.agentId);
+            if (!agent || agent.role !== "ceo") {
+              set.status = 403;
+              return { error: "Only CEO agents can create openclaw invite prompts" };
+            }
+          } else if (a.type === "board") {
+            const allowed =
+              a.source === "local_implicit" || a.isInstanceAdmin
+                ? true
+                : await svc.canUser(params.companyId, a.userId ?? "board", "users:invite");
+            if (!allowed) {
+              set.status = 403;
+              return { error: "Permission denied" };
+            }
+          } else {
             set.status = 403;
             return { error: "Permission denied" };
           }
-        } else {
-          set.status = 403;
-          return { error: "Permission denied" };
+
+          const tokenStr = createInviteToken();
+          const tokenHash = hashToken(tokenStr);
+          const now = Date.now();
+          const expiresAt = companyInviteExpiresAt(now);
+
+          const row = await db
+            .insert(invites)
+            .values({
+              companyId: params.companyId,
+              inviteType: "company_join",
+              allowedJoinTypes: "agent",
+              defaultsPayload: body?.agentMessage ? { agentMessage: body.agentMessage } : null,
+              expiresAt,
+              invitedByUserId: a?.type === "board" ? a.userId : null,
+              tokenHash,
+            })
+            .returning()
+            .then((rows) => rows[0]);
+
+          const companyName = await getInviteCompanyName(db, params.companyId);
+          const inviteSummary = toInviteSummaryResponse(ctx.request, tokenStr, row, companyName);
+
+          set.status = 201;
+          return {
+            ...row,
+            inviteUrl: `/invite/${tokenStr}`,
+            companyName,
+            token: tokenStr,
+            allowedJoinTypes: row.allowedJoinTypes,
+            onboardingPath: inviteSummary.onboardingPath,
+            onboardingUrl: inviteSummary.onboardingUrl,
+            onboardingTextPath: inviteSummary.onboardingTextPath,
+            onboardingTextUrl: inviteSummary.onboardingTextUrl,
+            skillIndexPath: inviteSummary.skillIndexPath,
+            skillIndexUrl: inviteSummary.skillIndexUrl,
+            inviteMessage: body?.agentMessage ?? null,
+          };
+        } catch (error) {
+          ctx.set.status = 500;
+          return { error: "Internal server error" };
         }
-
-        const tokenStr = crypto.randomBytes(32).toString("hex");
-        const tokenHash = crypto.createHash("sha256").update(tokenStr).digest("hex");
-        const now = Date.now();
-        const expiresAt = companyInviteExpiresAt(now);
-
-        const row = await db
-          .insert(invites)
-          .values({
-            companyId: params.companyId,
-            inviteType: "company_join",
-            allowedJoinTypes: "agent",
-            defaultsPayload: body?.agentMessage ? { agentMessage: body.agentMessage } : null,
-            expiresAt,
-            invitedByUserId: a?.type === "board" ? a.userId : null,
-            tokenHash,
-          })
-          .returning()
-          .then((rows) => rows[0]);
-
-        set.status = 201;
-        return {
-          ...row,
-          token: tokenStr,
-          allowedJoinTypes: row.allowedJoinTypes,
-          onboardingTextPath: `/api/invites/${tokenStr}/onboarding.txt`,
-        };
       },
     )
 
@@ -1613,10 +1709,9 @@ export function accessRoutes(db: Db) {
     .get("/skills/index", () => {
       return {
         skills: [
-          { name: "clawdev", path: "/api/skills/clawdev" },
+          { name: "paperclip", path: "/api/skills/paperclip" },
           { name: "para-memory-files", path: "/api/skills/para-memory-files" },
-          { name: "clawdev-create-agent", path: "/api/skills/clawdev-create-agent" },
-          { name: "clawdev-create-plugin", path: "/api/skills/clawdev-create-plugin" },
+          { name: "paperclip-create-agent", path: "/api/skills/paperclip-create-agent" },
         ],
       };
     })

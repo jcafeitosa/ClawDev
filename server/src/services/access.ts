@@ -378,13 +378,6 @@ export function accessService(db: Db) {
   // Invites
   // -----------------------------------------------------------------------
 
-  async function listInvites(companyId: string) {
-    return db
-      .select()
-      .from(invites)
-      .where(and(eq(invites.companyId, companyId), isNull(invites.revokedAt)));
-  }
-
   async function createInvite(data: { companyId: string; email: string; role?: string }) {
     const token = crypto.randomBytes(32).toString("hex");
     const tokenHash = crypto.createHash("sha256").update(token).digest("hex");
@@ -487,7 +480,6 @@ export function accessService(db: Db) {
     setPrincipalGrants,
     listPrincipalGrants,
     setPrincipalPermission,
-    listInvites,
     createInvite,
     revokeInvite,
     acceptInvite,

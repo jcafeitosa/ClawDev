@@ -34,6 +34,10 @@ const pausedRoutine = {
   ...routine,
   status: "paused",
 };
+const otherOwnedRoutine = {
+  ...routine,
+  assigneeAgentId: otherAgentId,
+};
 const trigger = {
   id: "66666666-6666-4666-8666-666666666666",
   companyId,
@@ -255,5 +259,56 @@ describe("routine routes", () => {
       agentId: null,
       userId: "board-user",
     });
+  });
+
+  it("allows an agent to manage its own routine", async () => {
+    mockRoutineService.get.mockResolvedValue(routine);
+    const app = createApp({
+      type: "agent",
+      agentId,
+      companyId,
+    });
+
+    const res = await req(app, "PATCH", `/api/routines/${routineId}`, {
+      title: "Updated routine",
+    });
+
+    expect(res.status).toBe(200);
+    expect(mockRoutineService.update).toHaveBeenCalled();
+  });
+
+  it("prevents an agent from creating a routine for another agent", async () => {
+    const app = createApp({
+      type: "agent",
+      agentId,
+      companyId,
+    });
+
+    const res = await req(app, "POST", `/api/companies/${companyId}/routines`, {
+      projectId,
+      title: "Daily routine",
+      assigneeAgentId: otherAgentId,
+    });
+
+    expect(res.status).toBe(403);
+    expect(String(res.body.error ?? res.body.message ?? res.body)).toContain("Agents can only manage routines assigned to themselves");
+    expect(mockRoutineService.create).not.toHaveBeenCalled();
+  });
+
+  it("prevents an agent from updating another agent's routine", async () => {
+    mockRoutineService.get.mockResolvedValue(otherOwnedRoutine);
+    const app = createApp({
+      type: "agent",
+      agentId,
+      companyId,
+    });
+
+    const res = await req(app, "PATCH", `/api/routines/${routineId}`, {
+      title: "Updated routine",
+    });
+
+    expect(res.status).toBe(403);
+    expect(String(res.body.error ?? res.body.message ?? res.body)).toContain("Agents can only manage routines assigned to themselves");
+    expect(mockRoutineService.update).not.toHaveBeenCalled();
   });
 });

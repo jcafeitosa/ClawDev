@@ -8,6 +8,7 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
+import { checkoutIssueSchema } from "@clawdev/shared";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, assertBoard, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logger } from "../middleware/logger.js";
@@ -907,22 +908,18 @@ export function issueRoutes(db: Db, _storage?: any) {
     .post(
       "/:id/checkout",
       async (ctx: any) => {
+        const parsedBody = checkoutIssueSchema.safeParse(ctx.body);
+        if (!parsedBody.success) {
+          ctx.set.status = 400;
+          return { error: "Validation error", details: parsedBody.error.issues };
+        }
+        const { agentId, expectedStatuses } = parsedBody.data;
+
         const id = await normalizeIssueIdentifier(ctx.params.id);
         const issue = await svc.getById(id);
         if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
         const actor: Actor = ctx.actor;
         assertCompanyAccess(actor, issue.companyId);
-        const agentId = typeof ctx.body?.agentId === "string" ? ctx.body.agentId.trim() : "";
-        const expectedStatuses = Array.isArray(ctx.body?.expectedStatuses) ? ctx.body.expectedStatuses : [];
-
-        if (!agentId) {
-          ctx.set.status = 400;
-          return { error: "agentId is required" };
-        }
-        if (expectedStatuses.length === 0) {
-          ctx.set.status = 400;
-          return { error: "expectedStatuses is required" };
-        }
 
         if (issue.projectId) {
           const project = await projectsSvc.getById(issue.projectId);
@@ -990,10 +987,6 @@ export function issueRoutes(db: Db, _storage?: any) {
       },
       {
         params: t.Object({ id: t.String() }),
-        body: t.Object({
-          agentId: t.String(),
-          expectedStatuses: t.Array(t.String()),
-        }),
       },
     )
 

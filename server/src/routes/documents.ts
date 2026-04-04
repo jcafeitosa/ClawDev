@@ -1,7 +1,7 @@
 /**
  * Company document routes — REST surface for company-scoped documents.
  *
- * Mirrors the Paperclip document CRUD model:
+ * Mirrors the ClawDev document CRUD model:
  * - list documents by company
  * - get a document by id
  * - create a new document with revision 1

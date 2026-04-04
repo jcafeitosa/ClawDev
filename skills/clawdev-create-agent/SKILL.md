@@ -1,12 +1,12 @@
 ---
-name: clawdev-create-agent
+name: paperclip-create-agent
 description: >
-  Create new agents in ClawDev with governance-aware hiring. Use when you need
+  Create new agents in Paperclip with governance-aware hiring. Use when you need
   to inspect adapter configuration options, compare existing agent configs,
   draft a new agent prompt/config, and submit a hire request.
 ---
 
-# ClawDev Create Agent Skill
+# Paperclip Create Agent Skill
 
 Use this skill when you are asked to hire/create an agent.
 

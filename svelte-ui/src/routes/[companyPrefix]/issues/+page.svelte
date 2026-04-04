@@ -383,7 +383,7 @@
       <span class="w-20 shrink-0 truncate font-mono text-xs text-muted-foreground">{issue.identifier}</span>
     {/if}
 
-    <!-- Live badge (blue, matching Paperclip) -->
+    <!-- Live badge -->
     {#if hasActiveRun(issue)}
       <span class="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-500/10 px-1.5 py-0.5">
         <span class="relative flex h-2 w-2">

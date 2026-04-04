@@ -6,10 +6,17 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import type { AdapterRuntimeServiceReport } from "@clawdev/adapter-utils";
 import type { Db } from "@clawdev/db";
-import { workspaceRuntimeServices } from "@clawdev/db";
+import { executionWorkspaces, projectWorkspaces, workspaceRuntimeServices } from "@clawdev/db";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import { asNumber, asString, parseObject, renderTemplate } from "../adapters/utils.js";
 import { resolveHomeAwarePath } from "../home-paths.js";
+import {
+  createLocalServiceKey,
+  findLocalServiceRegistryRecordByRuntimeServiceId,
+  removeLocalServiceRegistryRecord,
+  writeLocalServiceRegistryRecord,
+  touchLocalServiceRegistryRecord,
+} from "./local-service-supervisor.js";
 import type { WorkspaceOperationRecorder } from "./workspace-operations.js";
 
 export interface ExecutionWorkspaceInput {
@@ -77,7 +84,15 @@ interface RuntimeServiceRecord extends RuntimeServiceRef {
   leaseRunIds: Set<string>;
   idleTimer: ReturnType<typeof globalThis.setTimeout> | null;
   envFingerprint: string;
+  serviceKey: string;
+  profileKind: string;
+  processGroupId: number | null;
 }
+
+type WorkspaceRuntimeConfigLike = {
+  desiredState: "running" | "stopped" | null;
+  workspaceRuntime: Record<string, unknown> | null;
+};
 
 const runtimeServicesById = new Map<string, RuntimeServiceRecord>();
 const runtimeServicesByReuseKey = new Map<string, string>();
@@ -94,10 +109,123 @@ function stableStringify(value: unknown): string {
   return JSON.stringify(value);
 }
 
+function readDesiredState(value: unknown): "running" | "stopped" | null {
+  return value === "running" || value === "stopped" ? value : null;
+}
+
+function cloneRecord(value: unknown): Record<string, unknown> | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  return { ...(value as Record<string, unknown>) };
+}
+
+function setCompatEnv(env: NodeJS.ProcessEnv, key: string, value: string) {
+  env[key] = value;
+  if (key.startsWith("CLAWDEV_")) {
+    env[`PAPERCLIP_${key.slice("CLAWDEV_".length)}`] = value;
+  }
+}
+
+function readWorkspaceRuntimeConfig(metadata: Record<string, unknown> | null | undefined): WorkspaceRuntimeConfigLike | null {
+  const raw = cloneRecord(metadata?.runtimeConfig) ?? cloneRecord(metadata?.config);
+  if (!raw) return null;
+  const config: WorkspaceRuntimeConfigLike = {
+    desiredState: readDesiredState(raw.desiredState),
+    workspaceRuntime: cloneRecord(raw.workspaceRuntime),
+  };
+  if (config.desiredState === null && config.workspaceRuntime === null) return null;
+  return config;
+}
+
+function buildProjectWorkspaceStartInput(row: {
+  companyId: string;
+  projectId: string;
+  id: string;
+  sourceType: string;
+  cwd: string | null;
+  repoUrl: string | null;
+  repoRef: string | null;
+  defaultRef: string | null;
+  isPrimary: boolean;
+  metadata: Record<string, unknown> | null;
+}) {
+  const runtimeConfig = readWorkspaceRuntimeConfig(row.metadata)?.workspaceRuntime ?? null;
+  if (!runtimeConfig || !row.cwd) return null;
+  return {
+    actor: {
+      id: "startup",
+      name: "ClawDev",
+      companyId: row.companyId,
+    },
+    issue: null as ExecutionWorkspaceIssueRef | null,
+    workspace: {
+      baseCwd: row.cwd,
+      source: row.isPrimary ? ("project_primary" as const) : ("task_session" as const),
+      projectId: row.projectId,
+      workspaceId: row.id,
+      repoUrl: row.repoUrl,
+      repoRef: row.defaultRef ?? row.repoRef,
+      strategy: row.sourceType === "git_repo" ? ("git_worktree" as const) : ("project_primary" as const),
+      cwd: row.cwd,
+      branchName: null,
+      worktreePath: row.sourceType === "git_repo" ? row.cwd : null,
+      warnings: [],
+      created: false,
+    },
+    config: { workspaceRuntime: runtimeConfig },
+  };
+}
+
+function buildExecutionWorkspaceStartInput(row: {
+  companyId: string;
+  projectId: string;
+  projectWorkspaceId: string | null;
+  sourceIssueId: string | null;
+  mode: string;
+  strategyType: string;
+  cwd: string | null;
+  repoUrl: string | null;
+  baseRef: string | null;
+  branchName: string | null;
+  name: string;
+  metadata: Record<string, unknown> | null;
+}) {
+  const runtimeConfig = readWorkspaceRuntimeConfig(row.metadata)?.workspaceRuntime ?? null;
+  if (!runtimeConfig || !row.cwd) return null;
+  return {
+    actor: {
+      id: "startup",
+      name: "ClawDev",
+      companyId: row.companyId,
+    },
+    issue: row.sourceIssueId
+      ? {
+          id: row.sourceIssueId,
+          identifier: null,
+          title: row.name,
+        }
+      : null,
+    workspace: {
+      baseCwd: row.cwd,
+      source: row.mode === "shared_workspace" ? ("project_primary" as const) : ("task_session" as const),
+      projectId: row.projectId,
+      workspaceId: row.projectWorkspaceId,
+      repoUrl: row.repoUrl,
+      repoRef: row.baseRef,
+      strategy: row.strategyType === "git_worktree" ? ("git_worktree" as const) : ("project_primary" as const),
+      cwd: row.cwd,
+      branchName: row.branchName,
+      worktreePath: row.strategyType === "git_worktree" ? row.cwd : null,
+      warnings: [],
+      created: false,
+    },
+    config: { workspaceRuntime: runtimeConfig },
+  };
+}
+
 export function sanitizeRuntimeServiceBaseEnv(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const env: NodeJS.ProcessEnv = { ...baseEnv };
   for (const key of Object.keys(env)) {
-    if (key.startsWith("CLAWDEV_")) {
+    if (key.startsWith("CLAWDEV_") || key.startsWith("PAPERCLIP_")) {
       delete env[key];
     }
   }
@@ -300,24 +428,24 @@ function buildWorkspaceCommandEnv(input: {
   created: boolean;
 }) {
   const env: NodeJS.ProcessEnv = { ...process.env };
-  env.CLAWDEV_WORKSPACE_CWD = input.worktreePath;
-  env.CLAWDEV_WORKSPACE_PATH = input.worktreePath;
-  env.CLAWDEV_WORKSPACE_WORKTREE_PATH = input.worktreePath;
-  env.CLAWDEV_WORKSPACE_BRANCH = input.branchName;
-  env.CLAWDEV_WORKSPACE_BASE_CWD = input.base.baseCwd;
-  env.CLAWDEV_WORKSPACE_REPO_ROOT = input.repoRoot;
-  env.CLAWDEV_WORKSPACE_SOURCE = input.base.source;
-  env.CLAWDEV_WORKSPACE_REPO_REF = input.base.repoRef ?? "";
-  env.CLAWDEV_WORKSPACE_REPO_URL = input.base.repoUrl ?? "";
-  env.CLAWDEV_WORKSPACE_CREATED = input.created ? "true" : "false";
-  env.CLAWDEV_PROJECT_ID = input.base.projectId ?? "";
-  env.CLAWDEV_PROJECT_WORKSPACE_ID = input.base.workspaceId ?? "";
-  env.CLAWDEV_AGENT_ID = input.agent.id;
-  env.CLAWDEV_AGENT_NAME = input.agent.name;
-  env.CLAWDEV_COMPANY_ID = input.agent.companyId;
-  env.CLAWDEV_ISSUE_ID = input.issue?.id ?? "";
-  env.CLAWDEV_ISSUE_IDENTIFIER = input.issue?.identifier ?? "";
-  env.CLAWDEV_ISSUE_TITLE = input.issue?.title ?? "";
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_CWD", input.worktreePath);
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_PATH", input.worktreePath);
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_WORKTREE_PATH", input.worktreePath);
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_BRANCH", input.branchName);
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_BASE_CWD", input.base.baseCwd);
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_REPO_ROOT", input.repoRoot);
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_SOURCE", input.base.source);
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_REPO_REF", input.base.repoRef ?? "");
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_REPO_URL", input.base.repoUrl ?? "");
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_CREATED", input.created ? "true" : "false");
+  setCompatEnv(env, "CLAWDEV_PROJECT_ID", input.base.projectId ?? "");
+  setCompatEnv(env, "CLAWDEV_PROJECT_WORKSPACE_ID", input.base.workspaceId ?? "");
+  setCompatEnv(env, "CLAWDEV_AGENT_ID", input.agent.id);
+  setCompatEnv(env, "CLAWDEV_AGENT_NAME", input.agent.name);
+  setCompatEnv(env, "CLAWDEV_COMPANY_ID", input.agent.companyId);
+  setCompatEnv(env, "CLAWDEV_ISSUE_ID", input.issue?.id ?? "");
+  setCompatEnv(env, "CLAWDEV_ISSUE_IDENTIFIER", input.issue?.identifier ?? "");
+  setCompatEnv(env, "CLAWDEV_ISSUE_TITLE", input.issue?.title ?? "");
   return env;
 }
 
@@ -505,18 +633,21 @@ function buildExecutionWorkspaceCleanupEnv(input: {
   projectWorkspaceCwd?: string | null;
 }) {
   const env: NodeJS.ProcessEnv = sanitizeRuntimeServiceBaseEnv(process.env);
-  env.CLAWDEV_WORKSPACE_CWD = input.workspace.cwd ?? "";
-  env.CLAWDEV_WORKSPACE_PATH = input.workspace.cwd ?? "";
-  env.CLAWDEV_WORKSPACE_WORKTREE_PATH =
-    input.workspace.providerRef ?? input.workspace.cwd ?? "";
-  env.CLAWDEV_WORKSPACE_BRANCH = input.workspace.branchName ?? "";
-  env.CLAWDEV_WORKSPACE_BASE_CWD = input.projectWorkspaceCwd ?? "";
-  env.CLAWDEV_WORKSPACE_REPO_ROOT = input.projectWorkspaceCwd ?? "";
-  env.CLAWDEV_WORKSPACE_REPO_URL = input.workspace.repoUrl ?? "";
-  env.CLAWDEV_WORKSPACE_REPO_REF = input.workspace.baseRef ?? "";
-  env.CLAWDEV_PROJECT_ID = input.workspace.projectId ?? "";
-  env.CLAWDEV_PROJECT_WORKSPACE_ID = input.workspace.projectWorkspaceId ?? "";
-  env.CLAWDEV_ISSUE_ID = input.workspace.sourceIssueId ?? "";
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_CWD", input.workspace.cwd ?? "");
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_PATH", input.workspace.cwd ?? "");
+  setCompatEnv(
+    env,
+    "CLAWDEV_WORKSPACE_WORKTREE_PATH",
+    input.workspace.providerRef ?? input.workspace.cwd ?? "",
+  );
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_BRANCH", input.workspace.branchName ?? "");
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_BASE_CWD", input.projectWorkspaceCwd ?? "");
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_REPO_ROOT", input.projectWorkspaceCwd ?? "");
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_REPO_URL", input.workspace.repoUrl ?? "");
+  setCompatEnv(env, "CLAWDEV_WORKSPACE_REPO_REF", input.workspace.baseRef ?? "");
+  setCompatEnv(env, "CLAWDEV_PROJECT_ID", input.workspace.projectId ?? "");
+  setCompatEnv(env, "CLAWDEV_PROJECT_WORKSPACE_ID", input.workspace.projectWorkspaceId ?? "");
+  setCompatEnv(env, "CLAWDEV_ISSUE_ID", input.workspace.sourceIssueId ?? "");
   return env;
 }
 
@@ -1122,6 +1253,25 @@ async function startLocalRuntimeService(input: {
     const portEnvKey = asString(portConfig.envKey, "PORT");
     env[portEnvKey] = String(port);
   }
+  const envFingerprint = createHash("sha256").update(stableStringify(envConfig)).digest("hex");
+  const serviceKey = createLocalServiceKey({
+    profileKind: "workspace-runtime",
+    serviceName,
+    cwd: serviceCwd,
+    command,
+    envFingerprint,
+    port,
+    scope: {
+      companyId: input.agent.companyId,
+      projectId: input.workspace.projectId,
+      workspaceId: input.workspace.workspaceId,
+      executionWorkspaceId: input.executionWorkspaceId ?? null,
+      issueId: input.issue?.id ?? null,
+      scopeType: input.scopeType,
+      scopeId: input.scopeId,
+      reuseKey: input.reuseKey,
+    },
+  });
   const shell = process.env.SHELL?.trim() || "/bin/sh";
   const child = spawn(shell, ["-lc", command], {
     cwd: serviceCwd,
@@ -1158,8 +1308,7 @@ async function startLocalRuntimeService(input: {
     );
   }
 
-  const envFingerprint = createHash("sha256").update(stableStringify(envConfig)).digest("hex");
-  return {
+  const record: RuntimeServiceRecord = {
     id: randomUUID(),
     companyId: input.agent.companyId,
     projectId: input.workspace.projectId,
@@ -1191,7 +1340,39 @@ async function startLocalRuntimeService(input: {
     leaseRunIds: new Set([input.runId]),
     idleTimer: null,
     envFingerprint,
+    serviceKey,
+    profileKind: "workspace-runtime",
+    processGroupId: child.pid ?? null,
   };
+  if (child.pid) {
+    await writeLocalServiceRegistryRecord({
+      version: 1,
+      serviceKey,
+      profileKind: "workspace-runtime",
+      serviceName,
+      command,
+      cwd: serviceCwd,
+      envFingerprint,
+      port,
+      url,
+      pid: child.pid,
+      processGroupId: child.pid,
+      provider: "local_process",
+      runtimeServiceId: record.id,
+      reuseKey: input.reuseKey,
+      startedAt: record.startedAt,
+      lastSeenAt: record.lastUsedAt,
+      metadata: {
+        projectId: record.projectId,
+        projectWorkspaceId: record.projectWorkspaceId,
+        executionWorkspaceId: record.executionWorkspaceId,
+        issueId: record.issueId,
+        scopeType: record.scopeType,
+        scopeId: record.scopeId,
+      },
+    });
+  }
+  return record;
 }
 
 function scheduleIdleStop(record: RuntimeServiceRecord) {
@@ -1482,8 +1663,8 @@ export async function listWorkspaceRuntimeServicesForProjectWorkspaces(
 }
 
 export async function reconcilePersistedRuntimeServicesOnStartup(db: Db) {
-  const staleRows = await db
-    .select({ id: workspaceRuntimeServices.id })
+  const liveRows = await db
+    .select()
     .from(workspaceRuntimeServices)
     .where(
       and(
@@ -1492,26 +1673,146 @@ export async function reconcilePersistedRuntimeServicesOnStartup(db: Db) {
       ),
     );
 
-  if (staleRows.length === 0) return { reconciled: 0 };
+  if (liveRows.length === 0) return { reconciled: 0, adopted: 0, stopped: 0 };
 
   const now = new Date();
-  await db
-    .update(workspaceRuntimeServices)
-    .set({
-      status: "stopped",
-      healthStatus: "unknown",
-      stoppedAt: now,
-      lastUsedAt: now,
-      updatedAt: now,
-    })
-    .where(
-      and(
-        eq(workspaceRuntimeServices.provider, "local_process"),
-        inArray(workspaceRuntimeServices.status, ["starting", "running"]),
-      ),
-    );
+  let adopted = 0;
+  let stopped = 0;
 
-  return { reconciled: staleRows.length };
+  for (const row of liveRows) {
+    const adoptedRecord = await findLocalServiceRegistryRecordByRuntimeServiceId({
+      runtimeServiceId: row.id,
+      profileKind: "workspace-runtime",
+    });
+    if (adoptedRecord) {
+      const record: RuntimeServiceRecord = {
+        id: row.id,
+        companyId: row.companyId,
+        projectId: row.projectId ?? null,
+        projectWorkspaceId: row.projectWorkspaceId ?? null,
+        executionWorkspaceId: row.executionWorkspaceId ?? null,
+        issueId: row.issueId ?? null,
+        serviceName: row.serviceName,
+        status: "running",
+        lifecycle: row.lifecycle as RuntimeServiceRecord["lifecycle"],
+        scopeType: row.scopeType as RuntimeServiceRecord["scopeType"],
+        scopeId: row.scopeId ?? null,
+        reuseKey: row.reuseKey ?? null,
+        command: row.command ?? null,
+        cwd: row.cwd ?? null,
+        port: adoptedRecord.port ?? row.port ?? null,
+        url: adoptedRecord.url ?? row.url ?? null,
+        provider: "local_process",
+        providerRef: String(adoptedRecord.pid),
+        ownerAgentId: row.ownerAgentId ?? null,
+        startedByRunId: row.startedByRunId ?? null,
+        lastUsedAt: new Date().toISOString(),
+        startedAt: row.startedAt.toISOString(),
+        stoppedAt: null,
+        stopPolicy: (row.stopPolicy as Record<string, unknown> | null) ?? null,
+        healthStatus: "healthy",
+        reused: true,
+        db,
+        child: null,
+        leaseRunIds: new Set(),
+        idleTimer: null,
+        envFingerprint: adoptedRecord.envFingerprint,
+        serviceKey: adoptedRecord.serviceKey,
+        profileKind: "workspace-runtime",
+        processGroupId: adoptedRecord.processGroupId ?? null,
+      };
+      registerRuntimeService(db, record);
+      await touchLocalServiceRegistryRecord(adoptedRecord.serviceKey, {
+        runtimeServiceId: row.id,
+        lastSeenAt: record.lastUsedAt,
+      });
+      await persistRuntimeServiceRecord(db, record);
+      adopted += 1;
+      continue;
+    }
+
+    await db
+      .update(workspaceRuntimeServices)
+      .set({
+        status: "stopped",
+        healthStatus: "unknown",
+        stoppedAt: now,
+        lastUsedAt: now,
+        updatedAt: now,
+      })
+      .where(eq(workspaceRuntimeServices.id, row.id));
+    stopped += 1;
+  }
+
+  return { reconciled: liveRows.length, adopted, stopped };
+}
+
+export async function restartDesiredRuntimeServicesOnStartup(
+  db: Db,
+  deps?: {
+    startRuntimeServicesForWorkspaceControl?: typeof startRuntimeServicesForWorkspaceControl;
+  },
+) {
+  const startRuntimeServices = deps?.startRuntimeServicesForWorkspaceControl ?? startRuntimeServicesForWorkspaceControl;
+  let restarted = 0;
+  let failed = 0;
+
+  const projectWorkspaceRows = await db.select().from(projectWorkspaces);
+  for (const row of projectWorkspaceRows) {
+    const startInput = buildProjectWorkspaceStartInput({
+      companyId: row.companyId,
+      projectId: row.projectId,
+      id: row.id,
+      sourceType: row.sourceType,
+      cwd: row.cwd,
+      repoUrl: row.repoUrl,
+      repoRef: row.repoRef,
+      defaultRef: row.defaultRef,
+      isPrimary: row.isPrimary,
+      metadata: (row.metadata as Record<string, unknown> | null) ?? null,
+    });
+    if (!startInput) continue;
+    const started = await startRuntimeServices({
+      db,
+      ...startInput,
+      adapterEnv: {},
+    }).catch(() => {
+      failed += 1;
+      return null;
+    });
+    if (started) restarted += started.filter((ref) => !ref.reused).length || started.length;
+  }
+
+  const executionWorkspaceRows = await db.select().from(executionWorkspaces);
+  for (const row of executionWorkspaceRows) {
+    const startInput = buildExecutionWorkspaceStartInput({
+      companyId: row.companyId,
+      projectId: row.projectId,
+      projectWorkspaceId: row.projectWorkspaceId ?? null,
+      sourceIssueId: row.sourceIssueId ?? null,
+      mode: row.mode,
+      strategyType: row.strategyType,
+      cwd: row.cwd,
+      repoUrl: row.repoUrl,
+      baseRef: row.baseRef,
+      branchName: row.branchName,
+      name: row.name,
+      metadata: (row.metadata as Record<string, unknown> | null) ?? null,
+    });
+    if (!startInput) continue;
+    const started = await startRuntimeServices({
+      db,
+      ...startInput,
+      executionWorkspaceId: row.id,
+      adapterEnv: {},
+    }).catch(() => {
+      failed += 1;
+      return null;
+    });
+    if (started) restarted += started.filter((ref) => !ref.reused).length || started.length;
+  }
+
+  return { restarted, failed };
 }
 
 export async function persistAdapterManagedRuntimeServices(input: {

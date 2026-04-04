@@ -6,6 +6,7 @@ import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
+import { forbidden, unauthorized } from "../errors.js";
 import { accessService, logActivity, routineService } from "../services/index.js";
 
 export function routineRoutes(db: Db) {
@@ -21,6 +22,27 @@ export function routineRoutes(db: Db) {
       return true;
     }
     return false;
+  }
+
+  function assertCanManageCompanyRoutine(actor: Actor, companyId: string, assigneeAgentId?: string | null) {
+    assertCompanyAccess(actor, companyId);
+    if (actor.type === "board") return;
+    if (actor.type !== "agent" || !actor.agentId) throw unauthorized();
+    if (assigneeAgentId && assigneeAgentId !== actor.agentId) {
+      throw forbidden("Agents can only manage routines assigned to themselves");
+    }
+  }
+
+  async function assertCanManageExistingRoutine(actor: Actor, routineId: string) {
+    const routine = await svc.get(routineId);
+    if (!routine) return null;
+    assertCompanyAccess(actor, routine.companyId);
+    if (actor.type === "board") return routine;
+    if (actor.type !== "agent" || !actor.agentId) throw unauthorized();
+    if (routine.assigneeAgentId !== actor.agentId) {
+      throw forbidden("Agents can only manage routines assigned to themselves");
+    }
+    return routine;
   }
 
   return new Elysia()
@@ -44,6 +66,7 @@ export function routineRoutes(db: Db) {
         assertCompanyAccess(actor, params.companyId);
         const denied = await checkBoardCanAssignTasks(actor, params.companyId, ctx);
         if (denied) return { error: "Missing permission: tasks:assign" };
+        assertCanManageCompanyRoutine(actor, params.companyId, body.assigneeAgentId);
         const created = await svc.create(params.companyId, body, {
           agentId: actor.type === "agent" ? actor.agentId : null,
           userId: actor.type === "board" ? actor.userId ?? "board" : null,
@@ -97,9 +120,8 @@ export function routineRoutes(db: Db) {
       "/routines/:id",
       async (ctx: any) => {
         const { params, body, actor } = ctx;
-        const routine = await svc.get(params.id);
+        const routine = await assertCanManageExistingRoutine(actor, params.id);
         if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
-        assertCompanyAccess(actor, routine.companyId);
 
         const assigneeWillChange =
           body.assigneeAgentId !== undefined &&
@@ -199,9 +221,8 @@ export function routineRoutes(db: Db) {
       "/routines/:id/run",
       async (ctx: any) => {
         const { params, body, actor, set } = ctx;
-        const routine = await svc.get(params.id);
+        const routine = await assertCanManageExistingRoutine(actor, params.id);
         if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
-        assertCompanyAccess(actor, routine.companyId);
         const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
         if (denied) return { error: "Missing permission: tasks:assign" };
         const run = await svc.runRoutine(routine.id, body ?? {});
@@ -238,9 +259,8 @@ export function routineRoutes(db: Db) {
         const { params, body, actor } = ctx;
         const trigger = await svc.getTrigger(params.id);
         if (!trigger) { ctx.set.status = 404; return { error: "Routine trigger not found" }; }
-        const routine = await svc.get(trigger.routineId);
+        const routine = await assertCanManageExistingRoutine(actor, trigger.routineId);
         if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
-        assertCompanyAccess(actor, routine.companyId);
         const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
         if (denied) return { error: "Missing permission: tasks:assign" };
         const updated = await svc.updateTrigger(trigger.id, body, {
@@ -267,9 +287,8 @@ export function routineRoutes(db: Db) {
         const { params, actor, set } = ctx;
         const trigger = await svc.getTrigger(params.id);
         if (!trigger) { ctx.set.status = 404; return { error: "Routine trigger not found" }; }
-        const routine = await svc.get(trigger.routineId);
+        const routine = await assertCanManageExistingRoutine(actor, trigger.routineId);
         if (!routine) { ctx.set.status = 404; return { error: "Routine not found" }; }
-        assertCompanyAccess(actor, routine.companyId);
         await svc.deleteTrigger(trigger.id);
         set.status = 204;
         return "";
@@ -284,9 +303,8 @@ export function routineRoutes(db: Db) {
         const { params, actor, set } = ctx;
         const trigger = await svc.getTrigger(params.id);
         if (!trigger) { set.status = 404; return { error: "Routine trigger not found" }; }
-        const routine = await svc.get(trigger.routineId);
+        const routine = await assertCanManageExistingRoutine(actor, trigger.routineId);
         if (!routine) { set.status = 404; return { error: "Routine not found" }; }
-        assertCompanyAccess(actor, routine.companyId);
         const denied = await checkBoardCanAssignTasks(actor, routine.companyId, ctx);
         if (denied) return { error: "Missing permission: tasks:assign" };
         const result = await svc.rotateTriggerSecret(trigger.id, {
@@ -322,8 +340,8 @@ export function routineRoutes(db: Db) {
         }
         const result = await svc.firePublicTrigger(params.publicId as string, {
           authorizationHeader: request.headers.get("authorization"),
-          signatureHeader: request.headers.get("x-paperclip-signature"),
-          timestampHeader: request.headers.get("x-paperclip-timestamp"),
+          signatureHeader: request.headers.get("x-clawdev-signature"),
+          timestampHeader: request.headers.get("x-clawdev-timestamp"),
           idempotencyKey: request.headers.get("idempotency-key"),
           rawBody,
           payload: typeof body === "object" && body !== null ? (body as Record<string, unknown>) : null,

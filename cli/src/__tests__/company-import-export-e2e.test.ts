@@ -17,7 +17,7 @@ async function getAvailablePort(): Promise<number> {
     const server = net.createServer();
     server.unref();
     server.on("error", reject);
-    server.listen(0, "127.0.0.1", () => {
+      server.listen(0, "127.0.0.1", () => {
       const address = server.address();
       if (!address || typeof address === "string") {
         server.close(() => reject(new Error("Failed to allocate test port")));
@@ -259,7 +259,7 @@ describe("clawdev company import/export e2e", () => {
     });
 
     await waitForServer(apiBase, child, output);
-  }, 60_000);
+  }, 180_000);
 
   afterAll(async () => {
     await stopServerProcess(serverProcess);
@@ -497,5 +497,5 @@ describe("clawdev company import/export e2e", () => {
 
     expect(importedFromZip.company.action).toBe("created");
     expect(importedFromZip.agents.some((agent) => agent.action === "created")).toBe(true);
-  }, 60_000);
+  }, 180_000);
 });

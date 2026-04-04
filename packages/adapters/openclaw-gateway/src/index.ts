@@ -34,11 +34,11 @@ Gateway connect identity fields:
 Request behavior fields:
 - agentId (string, optional): configured OpenClaw agent ID to invoke
 - payloadTemplate (object, optional): additional fields merged into gateway agent params
-- workspaceRuntime (object, optional): desired runtime service intents; ClawDev forwards these in a standardized clawdev.workspaceRuntime block for remote execution environments
+- workspaceRuntime (object, optional): reserved workspace runtime metadata; workspace runtime services are manually controlled from the workspace UI and are not auto-started by heartbeats
 - timeoutSec (number, optional): adapter timeout in seconds (default 120)
 - waitTimeoutMs (number, optional): agent.wait timeout override (default timeoutSec * 1000)
 - autoPairOnFirstConnect (boolean, optional): on first "pairing required", attempt device.pair.list/device.pair.approve via shared auth, then retry once (default true)
-- clawdevApiUrl (string, optional): absolute ClawDev base URL advertised in wake text
+- paperclipApiUrl (string, optional): absolute Paperclip base URL advertised in wake text
 
 Session routing fields:
 - sessionKeyStrategy (string, optional): issue (default), fixed, or run
@@ -48,7 +48,7 @@ Standard outbound payload additions:
 - clawdev (object): standardized ClawDev context added to every gateway agent request
 - clawdev.workspace (object, optional): resolved execution workspace for this run
 - clawdev.workspaces (array, optional): additional workspace hints ClawDev exposed to the run
-- clawdev.workspaceRuntime (object, optional): normalized runtime service intent config for the workspace
+- clawdev.workspaceRuntime (object, optional): reserved workspace runtime metadata when explicitly supplied outside normal heartbeat execution
 
 Standard result metadata supported:
 - meta.runtimeServices (array, optional): normalized adapter-managed runtime service reports

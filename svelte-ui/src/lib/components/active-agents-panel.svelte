@@ -169,7 +169,7 @@
             ? 'border-cyan-500/25 bg-cyan-500/[0.04] shadow-[0_16px_40px_rgba(6,182,212,0.08)]'
             : 'border-border bg-background/70'}"
         >
-          <!-- Card header (matches Paperclip: border-b/60, items-start justify-between) -->
+          <!-- Card header -->
           <div class="border-b border-border/60 px-3 py-3">
             <div class="flex items-start justify-between gap-2">
               <div class="min-w-0">
@@ -184,7 +184,7 @@
                     <span class="inline-flex h-2.5 w-2.5 shrink-0 rounded-full bg-muted-foreground/35"></span>
                   {/if}
 
-                  <!-- Identity (avatar + name, gap-1.5 matching Paperclip's Identity component) -->
+                  <!-- Identity (avatar + name) -->
                   <span class="inline-flex min-w-0 items-center gap-1.5">
                     <span class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs text-muted-foreground">
                       {initials}
@@ -193,7 +193,7 @@
                   </span>
                 </div>
 
-                <!-- Status text (mt-2, matches Paperclip) -->
+                <!-- Status text -->
                 <div class="mt-2 flex items-center gap-2 text-[11px] text-muted-foreground">
                   <span>{isActive(run) ? 'Live now' : statusText(run)}</span>
                 </div>
@@ -209,7 +209,7 @@
               </a>
             </div>
 
-            <!-- Issue box (inside header, mt-3, matches Paperclip) -->
+            <!-- Issue box inside header -->
             {#if hasIssue(run)}
               <div class="mt-3 rounded-lg border border-border/60 bg-background/60 px-2.5 py-2 text-xs">
                 <a
@@ -222,7 +222,7 @@
             {/if}
           </div>
 
-          <!-- Transcript preview (Paperclip-style) -->
+          <!-- Transcript preview -->
           <div class="min-h-0 flex-1 overflow-y-auto p-3">
             <RunTranscriptPreview
               blocks={transcript}

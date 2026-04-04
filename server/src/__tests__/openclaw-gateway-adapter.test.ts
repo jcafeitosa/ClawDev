@@ -452,10 +452,11 @@ describe("openclaw gateway adapter execute", () => {
       const payload = gateway.getAgentPayload();
       expect(payload).toBeTruthy();
       expect(payload?.idempotencyKey).toBe("run-123");
-      expect(payload?.sessionKey).toBe("clawdev:issue:issue-123");
+      expect(payload?.sessionKey).toBe("paperclip:issue:issue-123");
       expect(String(payload?.message ?? "")).toContain("wake now");
-      expect(String(payload?.message ?? "")).toContain("CLAWDEV_RUN_ID=run-123");
-      expect(String(payload?.message ?? "")).toContain("CLAWDEV_TASK_ID=task-123");
+      expect(String(payload?.message ?? "")).toContain("PAPERCLIP_RUN_ID=run-123");
+      expect(String(payload?.message ?? "")).toContain("PAPERCLIP_TASK_ID=task-123");
+      expect(String(payload?.message ?? "")).toContain("X-Paperclip-Run-Id: $PAPERCLIP_RUN_ID");
 
       expect(logs.some((entry) => entry.includes("[openclaw-gateway:event] run=run-123 stream=assistant"))).toBe(true);
     } finally {

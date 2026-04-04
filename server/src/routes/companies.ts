@@ -12,7 +12,7 @@ import {
   updateCompanyBrandingSchema,
   updateCompanySchema,
 } from "@clawdev/shared";
-import { forbidden } from "../errors.js";
+import { forbidden, notFound } from "../errors.js";
 import {
   accessService,
   agentService,
@@ -79,7 +79,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       assertCompanyAccess(actor, ctx.params.companyId);
       if (actor.type !== "agent") assertBoard(actor);
       const company = await svc.getById(ctx.params.companyId);
-      if (!company) { ctx.set.status = 404; return { error: "Not found" }; }
+      if (!company) throw notFound("Company not found");
       return company;
     }, { params: t.Object({ companyId: t.String() }) })
 
@@ -87,8 +87,12 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       const actor: Actor = ctx.actor;
       assertBoard(actor);
       assertInstanceAdmin(actor);
-      const parsed = createCompanySchema.parse(ctx.body);
-      const company = await svc.create(parsed);
+      const parsed = createCompanySchema.safeParse(ctx.body);
+      if (!parsed.success) {
+        ctx.set.status = 400;
+        return { error: "Validation error", details: parsed.error.issues };
+      }
+      const company = await svc.create(parsed.data);
       await access.ensureMembership(company.id, "user", actor.userId ?? "local-board", "owner", "active");
       await logActivity(db, {
         companyId: company.id, actorType: "user", actorId: actor.userId ?? "board",
@@ -101,6 +105,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
           amount: company.budgetMonthlyCents, windowKind: "calendar_month_utc",
         }, actor.userId ?? "board");
       }
+      ctx.set.status = 201;
       return company;
     })
 
@@ -120,7 +125,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
         parsed = updateCompanySchema.parse(ctx.body);
       }
       const company = await svc.update(companyId, parsed);
-      if (!company) { ctx.set.status = 404; return { error: "Not found" }; }
+      if (!company) throw notFound("Company not found");
       await logActivity(db, {
         companyId, actorType: actorInfo.actorType, actorId: actorInfo.actorId,
         agentId: actorInfo.agentId, runId: actorInfo.runId,
@@ -135,7 +140,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       const parsed = updateCompanyBrandingSchema.parse(ctx.body);
       await assertCanUpdateBranding(actor, companyId);
       const company = await svc.update(companyId, parsed);
-      if (!company) { ctx.set.status = 404; return { error: "Not found" }; }
+      if (!company) throw notFound("Company not found");
       const actorInfo = getActorInfo(actor);
       await logActivity(db, {
         companyId, actorType: actorInfo.actorType, actorId: actorInfo.actorId,
@@ -151,7 +156,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       assertBoard(actor);
       assertCompanyAccess(actor, companyId);
       const company = await svc.archive(companyId);
-      if (!company) { ctx.set.status = 404; return { error: "Not found" }; }
+      if (!company) throw notFound("Company not found");
       await logActivity(db, {
         companyId, actorType: "user", actorId: actor.userId ?? "board",
         action: "company.archived", entityType: "company", entityId: companyId,
@@ -164,7 +169,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       assertBoard(actor);
       assertCompanyAccess(actor, ctx.params.companyId);
       const company = await svc.remove(ctx.params.companyId);
-      if (!company) { ctx.set.status = 404; return { error: "Not found" }; }
+      if (!company) throw notFound("Company not found");
       return { ok: true };
     }, { params: t.Object({ companyId: t.String() }) })
 

@@ -272,7 +272,7 @@
     return agents.find((a: any) => a.id === agentId) ?? null;
   }
 
-  // Issue status icon colors (matching Paperclip)
+  // Issue status icon colors
   const STATUS_COLORS: Record<string, string> = {
     backlog: '#64748b',
     todo: '#2563eb',
@@ -345,7 +345,7 @@
     </div>
   {/if}
 
-  <!-- ── Metric Cards (Paperclip style: simple, no glassmorphism) ──── -->
+  <!-- ── Metric Cards ─────────────────────────────────────────────── -->
   {#if !loading}
     <div class="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
       <!-- Agents Enabled -->
@@ -454,7 +454,7 @@
     <ActivityCharts {companyId} />
   {/if}
 
-  <!-- ── Recent Activity & Recent Tasks (Paperclip style) ──────────── -->
+  <!-- ── Recent Activity & Recent Tasks ───────────────────────────── -->
   <div class="grid md:grid-cols-2 gap-4">
     <!-- Recent Activity -->
     {#if recentActivity.length > 0 || recentActivityLoading}
@@ -536,7 +536,7 @@
               class="px-4 py-3 text-sm cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit block"
             >
               <div class="flex items-start gap-2 sm:items-center sm:gap-3">
-                <!-- Status icon (Paperclip style: circle with border) -->
+                <!-- Status icon -->
                 <span
                   class="shrink-0 inline-flex h-4 w-4 rounded-full border-2"
                   style="border-color: {color};{normalizedStatus === 'done' ? ` background-color: ${color};` : ''}"

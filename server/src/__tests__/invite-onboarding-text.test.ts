@@ -36,20 +36,20 @@ describe("buildInviteOnboardingTextDocument", () => {
       allowedHostnames: [],
     });
 
-    expect(text).toContain("ClawDev OpenClaw Gateway Onboarding");
+    expect(text).toContain("Paperclip OpenClaw Gateway Onboarding");
     expect(text).toContain("/api/invites/token-123/accept");
     expect(text).toContain("/api/join-requests/{requestId}/claim-api-key");
     expect(text).toContain("/api/invites/token-123/onboarding.txt");
-    expect(text).toContain("Suggested ClawDev base URLs to try");
+    expect(text).toContain("Suggested Paperclip base URLs to try");
     expect(text).toContain("http://localhost:3100");
     expect(text).toContain("host.docker.internal");
-    expect(text).toContain("clawdevApiUrl");
+    expect(text).toContain("paperclipApiUrl");
     expect(text).toContain("adapterType \"openclaw_gateway\"");
     expect(text).toContain("headers.x-openclaw-token");
     expect(text).toContain("Do NOT use /v1/responses or /hooks/*");
-    expect(text).toContain("set the first reachable candidate as agentDefaultsPayload.clawdevApiUrl");
-    expect(text).toContain("~/.openclaw/workspace/clawdev-claimed-api-key.json");
-    expect(text).toContain("CLAWDEV_API_KEY");
+    expect(text).toContain("set the first reachable candidate as agentDefaultsPayload.paperclipApiUrl");
+    expect(text).toContain("~/.openclaw/workspace/paperclip-claimed-api-key.json");
+    expect(text).toContain("PAPERCLIP_API_KEY");
     expect(text).toContain("saved token field");
     expect(text).toContain("Gateway token unexpectedly short");
   });
@@ -111,5 +111,33 @@ describe("buildInviteOnboardingTextDocument", () => {
 
     expect(text).toContain("Message from inviter");
     expect(text).toContain("prioritize flaky test triage first");
+  });
+
+  it("still renders onboarding text for an accepted invite", () => {
+    const req = buildReq("localhost:3100");
+    const invite = {
+      id: "invite-accepted",
+      companyId: "company-1",
+      inviteType: "company_join",
+      allowedJoinTypes: "agent",
+      tokenHash: "hash",
+      defaultsPayload: null,
+      expiresAt: new Date("2026-03-05T00:00:00.000Z"),
+      invitedByUserId: null,
+      revokedAt: null,
+      acceptedAt: new Date("2026-03-04T12:00:00.000Z"),
+      createdAt: new Date("2026-03-04T00:00:00.000Z"),
+      updatedAt: new Date("2026-03-04T00:00:00.000Z"),
+    } as const;
+
+    const text = buildInviteOnboardingTextDocument(req, "token-accepted", invite as any, {
+      deploymentMode: "local_trusted",
+      deploymentExposure: "private",
+      bindHost: "127.0.0.1",
+      allowedHostnames: [],
+    });
+
+    expect(text).toContain("Paperclip OpenClaw Gateway Onboarding");
+    expect(text).toContain("/api/invites/token-accepted/accept");
   });
 });

@@ -115,14 +115,9 @@ async function resolvePlugin(
   try {
     const byId = await registry.getById(pluginId);
     if (byId) return byId;
-  } catch (error) {
-    const maybeCode =
-      typeof error === "object" && error !== null && "code" in error
-        ? (error as { code?: unknown }).code
-        : undefined;
-    if (maybeCode !== "22P02") {
-      throw error;
-    }
+  } catch {
+    // Fall through to key lookup. Some database drivers surface invalid-id
+    // lookups as generic errors instead of the Postgres 22P02 code.
   }
 
   return registry.getByKey(pluginId);
@@ -284,23 +279,57 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     // Install plugin
     .post(
       "/install",
-      async ({ body, ...ctx }: any) => {
+      async (ctx: any) => {
         assertBoard(ctx.actor);
         const loader = pluginLoader(db);
-        const discovered = await loader.installPlugin({
-          packageName: body.source === "npm" ? body.specifier : undefined,
-          localPath: body.source === "local" ? body.specifier : undefined,
-        });
+        const installBody = (ctx.body ?? {}) as Record<string, unknown>;
+        const jsonError = (status: number, error: string) => new Response(
+          JSON.stringify({ error }),
+          { status, headers: { "content-type": "application/json; charset=utf-8" } },
+        );
+
+        if (!installBody.packageName || typeof installBody.packageName !== "string") {
+          return jsonError(400, "packageName is required and must be a string");
+        }
+
+        if (installBody.version !== undefined && typeof installBody.version !== "string") {
+          return jsonError(400, "version must be a string if provided");
+        }
+
+        if (installBody.isLocalPath !== undefined && typeof installBody.isLocalPath !== "boolean") {
+          return jsonError(400, "isLocalPath must be a boolean if provided");
+        }
+
+        const trimmedPackage = installBody.packageName.trim();
+        if (trimmedPackage.length === 0) {
+          return jsonError(400, "packageName cannot be empty");
+        }
+
+        if (!installBody.isLocalPath && /[<>:"|?*]/.test(trimmedPackage)) {
+          return jsonError(400, "packageName contains invalid characters");
+        }
+
+        let discovered;
+        try {
+          discovered = await loader.installPlugin(
+            installBody.isLocalPath
+              ? { localPath: trimmedPackage }
+              : { packageName: trimmedPackage, version: (installBody.version as string | undefined)?.trim() },
+          );
+        } catch (error) {
+          return jsonError(500, error instanceof Error ? error.message : String(error));
+        }
+
+        if (!discovered.manifest) {
+          return jsonError(500, "Plugin installed but manifest is missing");
+        }
+
         const pluginRecord = await registry.getByKey(discovered.manifest!.id);
         publishGlobalLiveEvent({ type: "plugin.ui.updated", payload: { pluginId: pluginRecord!.id } });
         return pluginRecord;
       },
       {
-        body: t.Object({
-          source: t.Union([t.Literal("npm"), t.Literal("local")]),
-          specifier: t.String(),
-          companyId: t.Optional(t.String()),
-        }),
+        body: t.Any(),
       },
     )
 
@@ -913,7 +942,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
 
     // Trigger job manually
     .post(
-      "/:pluginId/jobs/:jobName/trigger",
+      "/:pluginId/jobs/:jobId/trigger",
       async ({ params, set, ...ctx }: any) => {
         assertBoard(ctx.actor);
         if (!jobScheduler) {
@@ -922,10 +951,13 @@ export function pluginRoutes(deps: PluginRouteDeps) {
         }
 
         const plugin = await resolvePlugin(registry, params.pluginId);
-        if (!plugin) { set.status = 404; return { error: "Plugin not found" }; }
+        if (!plugin) {
+          set.status = 404;
+          return { error: "Plugin not found" };
+        }
 
         try {
-          const result = await jobScheduler.triggerJob(params.jobName, "manual");
+          const result = await jobScheduler.triggerJob(params.jobId, "manual");
           return result;
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
@@ -933,7 +965,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
           return { error: message };
         }
       },
-      { params: t.Object({ pluginId: t.String(), jobName: t.String() }) },
+      { params: t.Object({ pluginId: t.String(), jobId: t.String() }) },
     )
 
     // Webhook deliveries (list)

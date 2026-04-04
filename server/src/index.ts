@@ -28,7 +28,12 @@ import {
 import { createElysiaApp } from "./elysia-app.js";
 import { loadConfig } from "./config.js";
 import { logger } from "./middleware/logger.js";
-import { heartbeatService, reconcilePersistedRuntimeServicesOnStartup, routineService } from "./services/index.js";
+import {
+  heartbeatService,
+  reconcilePersistedRuntimeServicesOnStartup,
+  restartDesiredRuntimeServicesOnStartup,
+  routineService,
+} from "./services/index.js";
 import { createStorageServiceFromConfig } from "./storage/index.js";
 import { printStartupBanner } from "./startup-banner.js";
 import { getBoardClaimWarningUrl, initializeBoardClaimChallenge } from "./board-claim.js";
@@ -839,6 +844,13 @@ export async function startServer(): Promise<StartedServer> {
     pluginDeps: { jobScheduler, jobStore, workerManager, streamBus, toolDispatcher },
   });
 
+  logger.info(
+    {
+      hasPluginDetailRoute: Boolean((app as any)?.router?.history?.some?.((route: any) => route?.path === "/api/plugins/*" || route?.path === "/api/plugins/:pluginId")),
+    },
+    "Startup: plugin detail route registered",
+  );
+
   if (listenPort !== config.port) {
     logger.warn(`Requested port is busy; using next free port (requestedPort=${config.port}, selectedPort=${listenPort})`);
   }
@@ -865,6 +877,24 @@ export async function startServer(): Promise<StartedServer> {
     })
     .catch((err) => {
       logger.error({ err }, "startup reconciliation of persisted runtime services failed");
+    });
+  void restartDesiredRuntimeServicesOnStartup(db as any)
+    .then((result) => {
+      if (result.restarted > 0) {
+        logger.warn(
+          { restarted: result.restarted },
+          "restarted desired runtime services from persisted workspace config",
+        );
+      }
+      if (result.failed > 0) {
+        logger.warn(
+          { failed: result.failed },
+          "some desired runtime services could not be restarted on startup",
+        );
+      }
+    })
+    .catch((err) => {
+      logger.error({ err }, "startup restart of desired runtime services failed");
     });
   
   if (config.heartbeatSchedulerEnabled) {

@@ -1,3 +1,4 @@
+export { healthRoutes } from "./health.js";
 export { issueRoutes, companyIssueRoutes } from "./issues.js";
 export { commentRoutes } from "./comments.js";
 export { projectRoutes } from "./projects.js";

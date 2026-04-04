@@ -1,15 +1,15 @@
 ---
-name: clawdev-create-plugin
+name: paperclip-create-plugin
 description: >
-  Create new ClawDev plugins with the current alpha SDK/runtime. Use when
+  Create new Paperclip plugins with the current alpha SDK/runtime. Use when
   scaffolding a plugin package, adding a new example plugin, or updating plugin
   authoring docs. Covers the supported worker/UI surface, route conventions,
   scaffold flow, and verification steps.
 ---
 
-# Create a ClawDev Plugin
+# Create a Paperclip Plugin
 
-Use this skill when the task is to create, scaffold, or document a ClawDev plugin.
+Use this skill when the task is to create, scaffold, or document a Paperclip plugin.
 
 ## 1. Ground rules
 

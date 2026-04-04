@@ -96,6 +96,7 @@ describe("cli auth routes", () => {
       approvalPath: "/cli-auth/challenge-1?token=pcp_cli_auth_secret",
       pollPath: "/cli-auth/challenges/challenge-1",
       expiresAt: "2026-03-23T13:00:00.000Z",
+      suggestedPollIntervalMs: 1000,
     });
     expect(res.body.approvalUrl).toContain("/cli-auth/challenge-1?token=pcp_cli_auth_secret");
     },
@@ -125,6 +126,7 @@ describe("cli auth routes", () => {
     expect(res.status).toBe(200);
     expect(res.body.requiresSignIn).toBe(true);
     expect(res.body.canApprove).toBe(false);
+    expect(res.body.currentUserId).toBeNull();
     },
     15_000,
   );
@@ -174,6 +176,14 @@ describe("cli auth routes", () => {
       expect.objectContaining({
         companyId: "company-1",
         action: "board_api_key.created",
+        entityType: "user",
+        entityId: "user-1",
+        details: {
+          boardApiKeyId: "board-key-1",
+          requestedAccess: "board",
+          requestedCompanyId: "company-1",
+          challengeId: "challenge-1",
+        },
       }),
     );
     },
@@ -216,7 +226,9 @@ describe("cli auth routes", () => {
           typeof call[1] === "object" &&
           call[1] !== null &&
           (call[1] as Record<string, unknown>).companyId === "company-a" &&
-          (call[1] as Record<string, unknown>).action === "board_api_key.created",
+          (call[1] as Record<string, unknown>).action === "board_api_key.created" &&
+          (call[1] as Record<string, unknown>).entityType === "user" &&
+          (call[1] as Record<string, unknown>).entityId === "admin-1",
       ),
     ).toBe(true);
   });
@@ -243,11 +255,21 @@ describe("cli auth routes", () => {
       userId: "admin-2",
       boardApiKeyId: "board-key-3",
     });
+    expect(res.body).toEqual({
+      revoked: true,
+      keyId: "board-key-3",
+    });
     expect(mockLogActivity).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
         companyId: "company-z",
         action: "board_api_key.revoked",
+        entityType: "user",
+        entityId: "admin-2",
+        details: {
+          boardApiKeyId: "board-key-3",
+          revokedVia: "cli_auth_logout",
+        },
       }),
     );
   });

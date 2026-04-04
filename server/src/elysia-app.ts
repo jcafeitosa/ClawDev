@@ -38,6 +38,7 @@ import { readPersistedDevServerStatus, toDevServerHealthStatus } from "./dev-ser
 import { instanceSettingsService } from "./services/instance-settings.js";
 import { buildSystemReport } from "./services/system-report.js";
 import { serverVersion } from "./version.js";
+import { HttpError } from "./errors.js";
 
 // Middleware
 import { elysiaLogger, elysiaErrorHandler } from "./middleware/index.js";
@@ -77,6 +78,7 @@ import { pluginUiStaticRoutes } from "./routes/plugin-ui-static.js";
 // WebSocket
 import { liveEventsElysiaWs } from "./realtime/live-events-ws.js";
 import type { BetterAuthSessionResult } from "./auth/better-auth.js";
+import { assertBoard, type Actor } from "./middleware/authz.js";
 
 // Storage
 import type { StorageService } from "./storage/types.js";
@@ -96,6 +98,7 @@ import type { PluginToolDispatcher } from "./services/plugin-tool-dispatcher.js"
 import { pluginRoutes } from "./routes/plugins.js";
 import { assetRoutes } from "./routes/assets.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR } from "./services/plugin-loader.js";
+import { pluginRegistryService } from "./services/plugin-registry.js";
 import type { EmbeddingProviderConfig } from "./services/embedding-service.js";
 
 // ---------------------------------------------------------------------------
@@ -103,6 +106,78 @@ import type { EmbeddingProviderConfig } from "./services/embedding-service.js";
 // ---------------------------------------------------------------------------
 
 export type UiMode = "static" | "vite-dev" | "none";
+
+export async function rewriteApiNotFoundResponse(
+  request: Request,
+  status: number,
+  response: unknown,
+): Promise<Response | null> {
+  const pathname = new URL(request.url).pathname;
+  if (!pathname.startsWith("/api/")) return null;
+  if (status !== 404) return null;
+
+  if (response instanceof Response) {
+    const bodyText = await response.clone().text().catch(() => "");
+    if (bodyText !== "{\"error\":\"Not found\"}" && bodyText !== "Not found") {
+      return null;
+    }
+  }
+
+  const body =
+    pathname.startsWith("/api/plugins/") ? { error: "Plugin not found" } : { error: "API route not found" };
+
+  return new Response(JSON.stringify(body), {
+    status: 404,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
+
+export function buildAuthGetSessionResponse(actor: Actor): Response | null {
+  if (actor.type !== "board" || !actor.userId) return null;
+
+  return new Response(
+    JSON.stringify({
+      session: {
+        id: `paperclip:${actor.source}:${actor.userId}`,
+        userId: actor.userId,
+      },
+      user: {
+        id: actor.userId,
+        email: null,
+        name: actor.source === "local_implicit" ? "Local Board" : null,
+      },
+    }),
+    {
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8" },
+    },
+  );
+}
+
+async function buildPluginDetailResponse(
+  registry: ReturnType<typeof pluginRegistryService>,
+  workerManager: PluginWorkerManager | undefined,
+  pluginId: string,
+  actor: Actor,
+  set: { status?: number },
+) {
+  assertBoard(actor);
+  let plugin = await registry.getById(pluginId).catch(() => null);
+  if (!plugin) {
+    plugin = await registry.getByKey(pluginId).catch(() => null);
+  }
+  if (!plugin) {
+    set.status = 404;
+    return { error: "Plugin not found" };
+  }
+
+  const worker = workerManager?.getWorker?.(plugin.id);
+  const supportsConfigTest = worker
+    ? worker.supportedMethods?.includes("validateConfig")
+    : false;
+
+  return { ...plugin, supportsConfigTest };
+}
 
 export interface ElysiaAppOptions {
   db: Db;
@@ -145,7 +220,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     pluginDeps,
   } = opts;
 
-  const app = new Elysia({ prefix: "/api" })
+  let app: any = new Elysia({ prefix: "/api" })
     // -- Global middleware --
     .use(cors())
     .use(elysiaLogger)
@@ -162,6 +237,11 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
         ctx.set.status = blocked.status;
         return blocked.body;
       }
+    })
+    .onAfterHandle({ as: "global" }, async (...args: any[]) => {
+      const [ctx, response] = args as [any, any];
+      const rewritten = await rewriteApiNotFoundResponse(ctx.request, ctx.set.status ?? 200, response);
+      if (rewritten) return rewritten;
     })
     .use(
       swagger({
@@ -285,14 +365,37 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
 
   // -- Plugins (conditional — requires plugin deps) --
   if (pluginDeps) {
-    app.use(pluginRoutes({ db, ...pluginDeps }));
+    app = app.use(pluginRoutes({ db, ...pluginDeps }));
+    app = app.get(
+      "/plugins/:pluginId",
+      async ({ params, set, ...ctx }: any) => {
+        return buildPluginDetailResponse(
+          pluginRegistryService(db),
+          pluginDeps.workerManager,
+          params.pluginId,
+          ctx.actor,
+          set,
+        );
+      },
+      { params: t.Object({ pluginId: t.String() }) },
+    );
   }
 
   // -- Root-level app (non-/api routes + websocket + static UI) --
+  const resolveAuthActor = createActorResolver(db, {
+    deploymentMode,
+    resolveSession: resolveSessionFromHeaders,
+  });
+
   const authApp = new Elysia({ prefix: "/api/auth" })
     .get("/get-session", async ({ request }) => {
-      if (!authHandler) return new Response("Not found", { status: 404 });
-      return authHandler(request);
+      const { actor } = await resolveAuthActor({ request });
+      const response = buildAuthGetSessionResponse(actor);
+      if (response) return response;
+      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+        status: 401,
+        headers: { "content-type": "application/json; charset=utf-8" },
+      });
     })
     .all("/", async ({ request }) => {
       if (!authHandler) return new Response("Not found", { status: 404 });
@@ -303,13 +406,34 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
       return authHandler(request);
     });
 
-  const rootApp = new Elysia()
+  let rootApp: any = new Elysia()
     // Global error handler — ensures DB/runtime errors never leak to clients
-    .onError(({ error, set }) => {
-      const msg = (error as any)?.message ?? String(error);
-      set.status = 500;
-      set.headers["content-type"] = "application/json";
-      return JSON.stringify({ error: "Internal server error" });
+    .onError(({ code, error, set, request }) => {
+      switch (code) {
+        case "NOT_FOUND":
+          set.status = 404;
+          if (new URL(request.url).pathname.startsWith("/api/plugins/")) {
+            return { error: "Plugin not found" };
+          }
+          return new URL(request.url).pathname.startsWith("/api/")
+            ? { error: "API route not found" }
+            : { error: "Not found" };
+        case "VALIDATION":
+          set.status = 400;
+          return { error: "Validation error", details: (error as Error).message };
+        case "PARSE":
+          set.status = 400;
+          return { error: "Invalid request body" };
+        default:
+          if (error instanceof HttpError) {
+            set.status = error.status;
+            return error.details
+              ? { error: error.message, details: error.details }
+              : { error: error.message };
+          }
+          set.status = 500;
+          return { error: "Internal server error" };
+      }
     })
     // LLM reflection routes (mounted at /llms, outside /api)
     .use(llmRoutes(db))
@@ -344,6 +468,19 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
 
     const proxyToVite = async ({ request, set }: any) => {
       const url = new URL(request.url);
+      if (url.pathname.startsWith("/api/plugins/") && pluginDeps) {
+        const pluginId = url.pathname.slice("/api/plugins/".length);
+        if (pluginId) {
+          const { actor } = await resolveAuthActor({ request });
+          return buildPluginDetailResponse(
+            pluginRegistryService(db),
+            pluginDeps.workerManager,
+            pluginId,
+            actor,
+            set,
+          );
+        }
+      }
       if (!isUiRequest(url.pathname)) {
         set.status = 404;
         return { error: "Not found" };
@@ -386,7 +523,26 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
 
     rootApp
       .get("/", proxyToVite)
-      .get("/*", proxyToVite);
+      .get("/*", proxyToVite)
+      .get(
+        "/api/plugins/:pluginId",
+        async ({ request, params, set }: any) => {
+          if (!pluginDeps) {
+            set.status = 404;
+            return { error: "API route not found" };
+          }
+
+          const { actor } = await resolveAuthActor({ request });
+          return buildPluginDetailResponse(
+            pluginRegistryService(db),
+            pluginDeps.workerManager,
+            params.pluginId,
+            actor,
+            set,
+          );
+        },
+        { params: t.Object({ pluginId: t.String() }) },
+      );
 
   } else if (effectiveUiMode === "static") {
     // Static UI serving (SPA fallback) — production mode
@@ -419,6 +575,19 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
 
       const serveStaticUi = async ({ request, set }: any) => {
         const url = new URL(request.url);
+        if (url.pathname.startsWith("/api/plugins/") && pluginDeps) {
+          const pluginId = url.pathname.slice("/api/plugins/".length);
+          if (pluginId) {
+            const { actor } = await resolveAuthActor({ request });
+            return buildPluginDetailResponse(
+              pluginRegistryService(db),
+              pluginDeps.workerManager,
+              pluginId,
+              actor,
+              set,
+            );
+          }
+        }
         if (
           url.pathname.startsWith("/api/") ||
           url.pathname.startsWith("/llms/") ||
@@ -451,7 +620,6 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
   }
 
   rootApp.use(authApp);
-
   return rootApp;
 }
 

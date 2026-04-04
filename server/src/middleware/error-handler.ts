@@ -15,11 +15,13 @@ const log = logger.child({ service: "error-handler" });
 // ── Elysia handler (production) ─────────────────────────────────────────
 
 export const elysiaErrorHandler = new Elysia({ name: "error-handler" }).onError(
-  ({ code, error, set }) => {
+  ({ code, error, set, request }) => {
     switch (code) {
       case "NOT_FOUND":
         set.status = 404;
-        return { error: "Not found" };
+        return new URL(request.url).pathname.startsWith("/api/")
+          ? { error: "API route not found" }
+          : { error: "Not found" };
 
       case "VALIDATION":
         set.status = 400;

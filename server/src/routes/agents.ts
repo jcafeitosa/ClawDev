@@ -47,6 +47,7 @@ import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
 import { runClaudeLogin } from "@clawdev/adapter-claude-local/server";
+import { unprocessable } from "../errors.js";
 
 const LOCAL_ADAPTERS = new Set(["claude_local", "codex_local", "gemini_local", "opencode_local"]);
 const MANAGED_CONFIG_KEYS = [
@@ -240,10 +241,13 @@ export function agentRoutes(db: Db) {
   }
 
   async function resolveAgentForRequest(agentId: string, companyId?: string | null) {
+    if (typeof companyId !== "string" || companyId.trim().length === 0) {
+      throw unprocessable("Agent shortname lookup requires companyId query parameter");
+    }
+    const normalizedCompanyId = companyId.trim();
     const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId);
     if (isUuid) return await svc.getById(agentId);
-    if (!companyId) return null;
-    const resolved = await svc.resolveByReference(companyId, agentId);
+    const resolved = await svc.resolveByReference(normalizedCompanyId, agentId);
     return resolved.agent ?? null;
   }
 
@@ -381,7 +385,7 @@ export function agentRoutes(db: Db) {
           .limit(1);
         if (!rows[0]) {
           set.status = 404;
-          return { error: "Not found" };
+          return { error: "Agent not found" };
         }
         return rows[0];
       },
@@ -407,7 +411,9 @@ export function agentRoutes(db: Db) {
       async ({ params, query, ...ctx }: any) => {
         const actor = ctx.actor;
         const companyId = query.companyId as string | undefined;
-        if (!companyId) return { skills: [] };
+        if (!companyId || companyId.trim().length === 0) {
+          throw unprocessable("Agent shortname lookup requires companyId query parameter");
+        }
 
         const agent = await resolveAgentForRequest(params.id, companyId);
         if (!agent) return { skills: [] };
@@ -762,7 +768,7 @@ export function agentRoutes(db: Db) {
         const existing = await svc.getById(params.id);
         if (!existing) {
           set.status = 404;
-          return { error: "Not found" };
+          return { error: "Agent not found" };
         }
 
         const patch: Record<string, unknown> = {};
@@ -833,7 +839,7 @@ export function agentRoutes(db: Db) {
 
         if (!updated) {
           set.status = 404;
-          return { error: "Not found" };
+          return { error: "Agent not found" };
         }
         return updated;
       },
