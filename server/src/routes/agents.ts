@@ -727,10 +727,16 @@ export function agentRoutes(db: Db) {
           adapterConfig = materializedConfig;
         }
 
+        // Auto-set reportsTo: if requested by an agent, new agent reports to that agent
+        const reportsTo = typeof input.reportsTo === "string" && input.reportsTo
+          ? input.reportsTo
+          : actor?.actorType === "agent" ? actor.actorId : null;
+
         const payload = {
           name: input.name,
           role: input.role,
           title: input.title,
+          reportsTo,
           adapterType: input.adapterType,
           adapterConfig,
           budgetMonthlyCents: input.budgetMonthlyCents,
@@ -739,6 +745,7 @@ export function agentRoutes(db: Db) {
             name: input.name,
             role: input.role,
             title: input.title,
+            reportsTo,
             adapterType: input.adapterType,
             adapterConfig,
             budgetMonthlyCents: input.budgetMonthlyCents,
@@ -751,6 +758,7 @@ export function agentRoutes(db: Db) {
           status: "pending",
           payload,
           requestedByUserId: actor?.userId ?? null,
+          requestedByAgentId: actor?.actorType === "agent" ? actor.actorId : null,
         } as any);
 
         set.status = 201;
