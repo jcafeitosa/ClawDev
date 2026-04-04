@@ -6,6 +6,10 @@
   import { onMount } from 'svelte';
   import { page } from '$app/stores';
   import {
+    Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter,
+    Badge, Button, Input, Separator, Alert, AlertTitle, AlertDescription,
+  } from '$lib/components/ui/index.js';
+  import {
     Settings, Save, AlertTriangle, Trash2, Palette, Building2,
     Upload, X, Users, Archive, Image as ImageIcon, Link, Copy,
     Download, Package, Sparkles,
@@ -85,7 +89,6 @@
       });
       if (!res.ok) throw new Error(`Upload failed: ${res.status}`);
       toastStore.push({ title: 'Logo uploaded', tone: 'success' });
-      // Reload company data to get new logoUrl
       await refreshCompany();
     } catch (e) {
       console.error(e);
@@ -276,25 +279,23 @@
   </div>
 
   <!-- General section -->
-  <section class="rounded-xl border border-border bg-card overflow-hidden">
-    <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50">
-      <div class="rounded-lg bg-blue-500/10 p-2">
-        <Building2 class="h-4 w-4 text-blue-400" />
+  <Card class="border-border/60">
+    <CardHeader>
+      <div class="flex items-center gap-3">
+        <div class="rounded-lg bg-blue-500/10 p-2">
+          <Building2 class="h-4 w-4 text-blue-400" />
+        </div>
+        <div>
+          <CardTitle class="text-sm">General</CardTitle>
+          <CardDescription>Basic company information</CardDescription>
+        </div>
       </div>
-      <div>
-        <h2 class="text-sm font-semibold text-foreground">General</h2>
-        <p class="text-xs text-muted-foreground">Basic company information</p>
-      </div>
-    </div>
+    </CardHeader>
 
-    <div class="p-5 space-y-4">
+    <CardContent class="space-y-4">
       <div>
         <label for="company-name" class="block text-sm font-medium text-foreground mb-1">Company Name</label>
-        <input
-          id="company-name"
-          bind:value={companyName}
-          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
+        <Input id="company-name" bind:value={companyName} />
       </div>
 
       <div>
@@ -304,48 +305,46 @@
           bind:value={companyDescription}
           rows="3"
           placeholder="What does this company do?"
-          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y"
+          class="border-input dark:bg-input/30 h-auto w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] resize-y"
         ></textarea>
       </div>
 
       {#if companyId}
         <div>
           <span class="block text-sm font-medium text-foreground mb-1">Company ID</span>
-          <div class="rounded-lg border border-border bg-accent/25 px-4 py-2 text-sm text-muted-foreground font-mono select-all">
+          <div class="rounded-md border border-border bg-accent/25 px-3 py-2 text-sm text-muted-foreground font-mono select-all">
             {companyId}
           </div>
         </div>
       {/if}
+    </CardContent>
 
-      <div class="flex items-center gap-3 pt-2">
-        <button
-          onclick={saveGeneral}
-          disabled={saving || !companyName.trim()}
-          class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          <Save class="h-4 w-4" />
-          {saving ? 'Saving...' : 'Save Changes'}
-        </button>
-        {#if saved}
-          <span class="text-sm text-emerald-400">Saved successfully</span>
-        {/if}
-      </div>
-    </div>
-  </section>
+    <CardFooter class="gap-3">
+      <Button onclick={saveGeneral} disabled={saving || !companyName.trim()}>
+        <Save class="h-4 w-4" />
+        {saving ? 'Saving...' : 'Save Changes'}
+      </Button>
+      {#if saved}
+        <span class="text-sm text-emerald-400">Saved successfully</span>
+      {/if}
+    </CardFooter>
+  </Card>
 
   <!-- Appearance section -->
-  <section class="rounded-xl border border-border bg-card overflow-hidden">
-    <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50">
-      <div class="rounded-lg bg-purple-500/10 p-2">
-        <Palette class="h-4 w-4 text-purple-400" />
+  <Card class="border-border/60">
+    <CardHeader>
+      <div class="flex items-center gap-3">
+        <div class="rounded-lg bg-purple-500/10 p-2">
+          <Palette class="h-4 w-4 text-purple-400" />
+        </div>
+        <div>
+          <CardTitle class="text-sm">Appearance</CardTitle>
+          <CardDescription>Customize how your workspace looks</CardDescription>
+        </div>
       </div>
-      <div>
-        <h2 class="text-sm font-semibold text-foreground">Appearance</h2>
-        <p class="text-xs text-muted-foreground">Customize how your workspace looks</p>
-      </div>
-    </div>
+    </CardHeader>
 
-    <div class="p-5 space-y-6">
+    <CardContent class="space-y-6">
       <!-- Theme Toggle -->
       <div class="flex items-center justify-between">
         <div>
@@ -364,6 +363,8 @@
         </div>
       </div>
 
+      <Separator />
+
       <!-- Logo Upload -->
       <div class="space-y-3">
         <div>
@@ -377,7 +378,7 @@
               <img src={logoPreview} alt="Company logo" class="h-full w-full object-contain" />
             </div>
           {:else}
-            <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-white/[0.12] bg-accent/25">
+            <div class="flex h-16 w-16 shrink-0 items-center justify-center rounded-lg border border-dashed border-border bg-accent/25">
               <ImageIcon class="h-6 w-6 text-muted-foreground" />
             </div>
           {/if}
@@ -391,27 +392,21 @@
               class="hidden"
               id="logo-upload"
             />
-            <button
-              onclick={() => logoInput?.click()}
-              disabled={logoUploading}
-              class="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
-            >
+            <Button variant="outline" onclick={() => logoInput?.click()} disabled={logoUploading}>
               <Upload class="h-4 w-4" />
               {logoUploading ? 'Uploading...' : 'Upload Logo'}
-            </button>
+            </Button>
             {#if logoPreview}
-              <button
-                onclick={clearLogo}
-                disabled={logoUploading}
-                class="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/60 hover:text-red-400 disabled:opacity-50"
-              >
+              <Button variant="outline" onclick={clearLogo} disabled={logoUploading} class="text-muted-foreground hover:text-red-400">
                 <X class="h-4 w-4" />
                 Clear
-              </button>
+              </Button>
             {/if}
           </div>
         </div>
       </div>
+
+      <Separator />
 
       <!-- Brand Color Picker -->
       <div class="space-y-3">
@@ -422,7 +417,7 @@
 
         <div class="flex items-center gap-3">
           <div
-            class="h-10 w-10 shrink-0 rounded-lg border border-white/[0.12] cursor-pointer relative overflow-hidden"
+            class="h-10 w-10 shrink-0 rounded-lg border border-border cursor-pointer relative overflow-hidden"
             style="background-color: {brandColor};"
           >
             <input
@@ -431,47 +426,41 @@
               class="absolute inset-0 h-full w-full cursor-pointer opacity-0"
             />
           </div>
-          <input
+          <Input
             type="text"
             bind:value={brandColor}
-            maxlength="7"
+            maxlength={7}
             placeholder="#3B82F6"
-            class="w-28 rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground font-mono focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-28 font-mono"
           />
-          <button
-            onclick={saveBrandColor}
-            disabled={savingBrandColor}
-            class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-          >
+          <Button onclick={saveBrandColor} disabled={savingBrandColor}>
             <Save class="h-4 w-4" />
             {savingBrandColor ? 'Saving...' : 'Save'}
-          </button>
-          <button
-            onclick={clearBrandColor}
-            disabled={savingBrandColor}
-            class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
-          >
+          </Button>
+          <Button variant="outline" onclick={clearBrandColor} disabled={savingBrandColor} class="text-muted-foreground">
             <X class="h-3.5 w-3.5" />
             Reset
-          </button>
+          </Button>
         </div>
       </div>
-    </div>
-  </section>
+    </CardContent>
+  </Card>
 
   <!-- Hiring & Access section -->
-  <section class="rounded-xl border border-border bg-card overflow-hidden">
-    <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50">
-      <div class="rounded-lg bg-emerald-500/10 p-2">
-        <Users class="h-4 w-4 text-emerald-400" />
+  <Card class="border-border/60">
+    <CardHeader>
+      <div class="flex items-center gap-3">
+        <div class="rounded-lg bg-emerald-500/10 p-2">
+          <Users class="h-4 w-4 text-emerald-400" />
+        </div>
+        <div>
+          <CardTitle class="text-sm">Hiring & Access</CardTitle>
+          <CardDescription>Control how agents join and access is managed</CardDescription>
+        </div>
       </div>
-      <div>
-        <h2 class="text-sm font-semibold text-foreground">Hiring & Access</h2>
-        <p class="text-xs text-muted-foreground">Control how agents join and access is managed</p>
-      </div>
-    </div>
+    </CardHeader>
 
-    <div class="p-5 space-y-5">
+    <CardContent class="space-y-5">
       <!-- Board Approval Toggle -->
       <div class="flex items-center justify-between">
         <div class="pr-4">
@@ -484,7 +473,7 @@
           aria-checked={requireBoardApproval}
           aria-label="Require board approval for new agent hires"
           title="Require board approval for new agent hires"
-          class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-[#121218] {requireBoardApproval ? 'bg-blue-600' : 'bg-accent'}"
+          class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-background {requireBoardApproval ? 'bg-primary' : 'bg-accent'}"
         >
           <span
             class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg transform transition-transform duration-200 {requireBoardApproval ? 'translate-x-5' : 'translate-x-0'}"
@@ -492,115 +481,102 @@
         </button>
       </div>
 
-      <div class="flex items-center gap-3">
-        <button
-          onclick={saveHiring}
-          disabled={savingHiring}
-          class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          <Save class="h-4 w-4" />
-          {savingHiring ? 'Saving...' : 'Save Hiring Settings'}
-        </button>
-      </div>
+      <Button onclick={saveHiring} disabled={savingHiring}>
+        <Save class="h-4 w-4" />
+        {savingHiring ? 'Saving...' : 'Save Hiring Settings'}
+      </Button>
 
       <!-- Invite URL -->
       {#if inviteUrl}
-        <div class="pt-2 border-t border-border/50">
+        <Separator />
+        <div>
           <p class="text-sm font-medium text-foreground mb-1">Company Invite URL</p>
           <p class="text-xs text-muted-foreground mb-2">Share this link to invite people to your company</p>
           <div class="flex items-center gap-2">
-            <div class="flex-1 rounded-lg border border-border bg-accent/25 px-3 py-2 text-xs text-muted-foreground font-mono truncate select-all">
+            <div class="flex-1 rounded-md border border-border bg-accent/25 px-3 py-2 text-xs text-muted-foreground font-mono truncate select-all">
               {inviteUrl}
             </div>
-            <button
-              onclick={copyInviteUrl}
-              class="inline-flex items-center gap-1.5 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent/60 hover:text-foreground"
-            >
+            <Button variant="outline" size="sm" onclick={copyInviteUrl}>
               {#if inviteCopied}
                 <span class="text-emerald-400 text-xs">Copied</span>
               {:else}
                 <Copy class="h-4 w-4" />
                 <span class="text-xs">Copy</span>
               {/if}
-            </button>
+            </Button>
           </div>
         </div>
       {/if}
 
       <!-- Generate OpenClaw Invite Prompt -->
-      <div class="pt-2 border-t border-border/50">
+      <Separator />
+      <div>
         <p class="text-sm font-medium text-foreground mb-1">OpenClaw Invite Prompt</p>
         <p class="text-xs text-muted-foreground mb-2">Generate a prompt that can be used to invite agents via OpenClaw</p>
-        <button
-          onclick={generateInvitePrompt}
-          disabled={generatingInvitePrompt}
-          class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
-        >
+        <Button variant="outline" onclick={generateInvitePrompt} disabled={generatingInvitePrompt}>
           <Sparkles class="h-4 w-4" />
           {generatingInvitePrompt ? 'Generating...' : 'Generate OpenClaw Invite Prompt'}
-        </button>
+        </Button>
       </div>
-    </div>
-  </section>
+    </CardContent>
+  </Card>
 
   <!-- Company Packages section -->
-  <section class="rounded-xl border border-border bg-card overflow-hidden">
-    <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50">
-      <div class="rounded-lg bg-orange-500/10 p-2">
-        <Package class="h-4 w-4 text-orange-400" />
+  <Card class="border-border/60">
+    <CardHeader>
+      <div class="flex items-center gap-3">
+        <div class="rounded-lg bg-orange-500/10 p-2">
+          <Package class="h-4 w-4 text-orange-400" />
+        </div>
+        <div>
+          <CardTitle class="text-sm">Company Packages</CardTitle>
+          <CardDescription>Export or import your company configuration</CardDescription>
+        </div>
       </div>
-      <div>
-        <h2 class="text-sm font-semibold text-foreground">Company Packages</h2>
-        <p class="text-xs text-muted-foreground">Export or import your company configuration</p>
-      </div>
-    </div>
+    </CardHeader>
 
-    <div class="p-5 space-y-4">
+    <CardContent class="space-y-4">
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm font-medium text-foreground">Export Company</p>
           <p class="text-xs text-muted-foreground">Download your company configuration as a portable package</p>
         </div>
-        <a
-          href="/{companyPrefix}/export"
-          class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
-        >
+        <Button variant="outline" href="/{companyPrefix}/export">
           <Download class="h-4 w-4" />
           Export
-        </a>
+        </Button>
       </div>
 
-      <div class="border-t border-border/50"></div>
+      <Separator />
 
       <div class="flex items-center justify-between">
         <div>
           <p class="text-sm font-medium text-foreground">Import Company</p>
           <p class="text-xs text-muted-foreground">Import agents, configs, and data from a company package</p>
         </div>
-        <a
-          href="/{companyPrefix}/import"
-          class="inline-flex items-center gap-2 rounded-lg border border-border px-4 py-2 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
-        >
+        <Button variant="outline" href="/{companyPrefix}/import">
           <Upload class="h-4 w-4" />
           Import
-        </a>
+        </Button>
       </div>
-    </div>
-  </section>
+    </CardContent>
+  </Card>
 
   <!-- Danger Zone -->
-  <section class="rounded-xl border border-red-500/20 bg-card overflow-hidden">
-    <div class="flex items-center gap-3 px-5 py-4 border-b border-red-500/10">
-      <div class="rounded-lg bg-red-500/10 p-2">
-        <AlertTriangle class="h-4 w-4 text-red-400" />
+  <Card class="border-red-500/20">
+    <CardHeader>
+      <div class="flex items-center gap-3">
+        <div class="rounded-lg bg-red-500/10 p-2">
+          <AlertTriangle class="h-4 w-4 text-red-400" />
+        </div>
+        <div>
+          <CardTitle class="text-sm text-red-400">Danger Zone</CardTitle>
+          <CardDescription>Irreversible and destructive actions</CardDescription>
+        </div>
       </div>
-      <div>
-        <h2 class="text-sm font-semibold text-red-400">Danger Zone</h2>
-        <p class="text-xs text-muted-foreground">Irreversible and destructive actions</p>
-      </div>
-    </div>
+    </CardHeader>
 
-    <div class="p-5 space-y-4">
+    <CardContent class="space-y-4">
       <!-- Archive Company -->
       {#if !confirmArchive}
         <div class="flex items-center justify-between">
@@ -608,42 +584,31 @@
             <p class="text-sm font-medium text-foreground">Archive this company</p>
             <p class="text-xs text-muted-foreground">Deactivates the company and hides it from the dashboard. Data is preserved.</p>
           </div>
-          <button
-            onclick={() => (confirmArchive = true)}
-            class="inline-flex items-center gap-2 rounded-lg border border-amber-500/30 px-4 py-2 text-sm font-medium text-amber-400 transition-colors hover:bg-amber-500/10"
-          >
+          <Button variant="outline" onclick={() => (confirmArchive = true)} class="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
             <Archive class="h-4 w-4" />
             Archive Company
-          </button>
+          </Button>
         </div>
       {:else}
-        <div class="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
-          <p class="text-sm text-amber-400 font-medium">
-            Are you sure you want to archive this company?
-          </p>
-          <p class="text-xs text-muted-foreground">
-            The company will be deactivated and hidden. You can restore it later from the admin panel.
-          </p>
-          <div class="flex items-center gap-3">
-            <button
-              onclick={archiveCompany}
-              disabled={archiving}
-              class="inline-flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-amber-700 disabled:opacity-50"
-            >
-              <Archive class="h-4 w-4" />
-              {archiving ? 'Archiving...' : 'Yes, Archive Company'}
-            </button>
-            <button
-              onclick={() => (confirmArchive = false)}
-              class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        <Alert variant="warning">
+          <AlertTriangle class="h-4 w-4" />
+          <AlertTitle>Are you sure you want to archive this company?</AlertTitle>
+          <AlertDescription>
+            <p>The company will be deactivated and hidden. You can restore it later from the admin panel.</p>
+            <div class="flex items-center gap-3 mt-3">
+              <Button variant="destructive" onclick={archiveCompany} disabled={archiving} class="bg-amber-600 hover:bg-amber-700">
+                <Archive class="h-4 w-4" />
+                {archiving ? 'Archiving...' : 'Yes, Archive Company'}
+              </Button>
+              <Button variant="outline" onclick={() => (confirmArchive = false)}>
+                Cancel
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       {/if}
 
-      <div class="border-t border-red-500/10"></div>
+      <Separator class="bg-red-500/10" />
 
       <!-- Delete Company -->
       {#if !confirmDelete}
@@ -652,45 +617,36 @@
             <p class="text-sm font-medium text-foreground">Delete this company</p>
             <p class="text-xs text-muted-foreground">Once deleted, all data will be permanently removed</p>
           </div>
-          <button
-            onclick={() => (confirmDelete = true)}
-            class="inline-flex items-center gap-2 rounded-lg border border-red-500/30 px-4 py-2 text-sm font-medium text-red-400 transition-colors hover:bg-red-500/10"
-          >
+          <Button variant="outline" onclick={() => (confirmDelete = true)} class="border-red-500/30 text-red-400 hover:bg-red-500/10">
             <Trash2 class="h-4 w-4" />
             Delete Company
-          </button>
+          </Button>
         </div>
       {:else}
-        <div class="rounded-lg border border-red-500/20 bg-red-500/5 p-4 space-y-3">
-          <p class="text-sm text-red-400 font-medium">
-            Are you absolutely sure? This action cannot be undone.
-          </p>
-          <p class="text-xs text-muted-foreground">
-            Type <span class="font-mono font-medium text-foreground">{currentCompany?.name}</span> to confirm.
-          </p>
-          <input
-            bind:value={confirmText}
-            placeholder="Type company name to confirm"
-            class="w-full rounded-lg border border-red-500/20 bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
-          />
-          <div class="flex items-center gap-3">
-            <button
-              onclick={deleteCompany}
-              disabled={deleting || confirmText !== currentCompany?.name}
-              class="inline-flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
-            >
-              <Trash2 class="h-4 w-4" />
-              {deleting ? 'Deleting...' : 'Permanently Delete'}
-            </button>
-            <button
-              onclick={() => { confirmDelete = false; confirmText = ''; }}
-              class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
+        <Alert variant="destructive">
+          <AlertTriangle class="h-4 w-4" />
+          <AlertTitle>Are you absolutely sure? This action cannot be undone.</AlertTitle>
+          <AlertDescription>
+            <p>
+              Type <span class="font-mono font-medium text-foreground">{currentCompany?.name}</span> to confirm.
+            </p>
+            <Input
+              bind:value={confirmText}
+              placeholder="Type company name to confirm"
+              class="mt-2 border-red-500/20 focus-visible:border-red-500 focus-visible:ring-red-500/50"
+            />
+            <div class="flex items-center gap-3 mt-3">
+              <Button variant="destructive" onclick={deleteCompany} disabled={deleting || confirmText !== currentCompany?.name}>
+                <Trash2 class="h-4 w-4" />
+                {deleting ? 'Deleting...' : 'Permanently Delete'}
+              </Button>
+              <Button variant="outline" onclick={() => { confirmDelete = false; confirmText = ''; }}>
+                Cancel
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
       {/if}
-    </div>
-  </section>
+    </CardContent>
+  </Card>
 </div>

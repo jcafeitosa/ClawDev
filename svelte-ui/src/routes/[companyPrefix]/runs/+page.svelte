@@ -4,6 +4,10 @@
   import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
+  import {
+    Card, CardContent, Badge, Input, Skeleton,
+    Alert, AlertDescription,
+  } from '$lib/components/ui/index.js';
   import { Play, Search, ChevronRight, Timer, Zap, UserCheck, XCircle, CheckCircle2, Loader2, CircleDot } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Runs' }]));
@@ -93,7 +97,7 @@
     return `/api/companies/${companyId}/heartbeat-runs${qs ? `?${qs}` : ''}`;
   }
 
-  /** Agent name cache: agentId → name */
+  /** Agent name cache: agentId -> name */
   let agentNames = $state<Record<string, string>>({});
 
   async function loadAgentNames() {
@@ -147,19 +151,19 @@
   };
 
   const STATUS_BADGE_COLORS: Record<string, string> = {
-    running: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-    success: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-    failed: 'bg-red-500/10 text-red-400 border-red-500/30',
-    cancelled: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
+    running: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    success: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    failed: 'bg-red-500/15 text-red-400 border-red-500/30',
+    cancelled: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
   };
 
   const SOURCE_BADGE_COLORS: Record<string, string> = {
-    timer: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-    on_demand: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-    assignment: 'bg-purple-500/10 text-purple-400 border-purple-500/30',
-    manual: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
-    cron: 'bg-orange-500/10 text-orange-400 border-orange-500/30',
-    webhook: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/30',
+    timer: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    on_demand: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    assignment: 'bg-purple-500/15 text-purple-400 border-purple-500/30',
+    manual: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
+    cron: 'bg-orange-500/15 text-orange-400 border-orange-500/30',
+    webhook: 'bg-cyan-500/15 text-cyan-400 border-cyan-500/30',
   };
 
   function statusDotClass(status: string): string {
@@ -167,11 +171,11 @@
   }
 
   function statusBadgeClass(status: string): string {
-    return STATUS_BADGE_COLORS[normalizeStatus(status)] ?? 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30';
+    return STATUS_BADGE_COLORS[normalizeStatus(status)] ?? '';
   }
 
   function sourceBadgeClass(source: string): string {
-    return SOURCE_BADGE_COLORS[source.toLowerCase()] ?? 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30';
+    return SOURCE_BADGE_COLORS[source.toLowerCase()] ?? '';
   }
 
   function sourceLabel(run: Run): string {
@@ -181,7 +185,6 @@
   function formatDuration(run: Run): string {
     const ms = run.durationMs ?? run.duration;
     if (!ms && ms !== 0) {
-      // Calculate from start/end
       if (run.startedAt && run.completedAt) {
         const d = new Date(run.completedAt).getTime() - new Date(run.startedAt).getTime();
         return formatMs(d);
@@ -242,7 +245,7 @@
           onclick={() => { statusFilter = filter; }}
           class="rounded-lg px-3 py-1.5 text-sm font-medium transition
             {statusFilter === filter
-              ? 'bg-[#2563EB] text-white'
+              ? 'bg-primary text-primary-foreground'
               : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
         >
           {filterLabel(filter)}
@@ -253,11 +256,11 @@
 
     <div class="relative">
       <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-      <input
+      <Input
         type="text"
         placeholder="Search runs..."
         bind:value={searchQuery}
-        class="w-full sm:w-64 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
+        class="w-full sm:w-64 pl-9"
       />
     </div>
   </div>
@@ -266,21 +269,18 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(8) as _}
-        <div class="h-[60px] animate-pulse rounded-xl bg-card border border-border"></div>
+        <Skeleton class="h-[60px] rounded-xl" />
       {/each}
     </div>
 
   <!-- Error -->
   {:else if error}
-    <div class="rounded-xl border border-red-500/20 bg-red-500/10 p-6 text-center">
-      <p class="text-sm text-red-400">{error}</p>
-      <button
-        onclick={() => loadRuns()}
-        class="mt-3 text-sm text-[#2563EB] hover:underline"
-      >
-        Retry
-      </button>
-    </div>
+    <Alert variant="destructive">
+      <AlertDescription>
+        <p>{error}</p>
+        <button onclick={() => loadRuns()} class="mt-2 text-sm text-primary hover:underline">Retry</button>
+      </AlertDescription>
+    </Alert>
 
   <!-- Empty -->
   {:else if filteredRuns.length === 0}
@@ -298,55 +298,57 @@
 
   <!-- Runs list -->
   {:else}
-    <div class="rounded-xl border border-border bg-card overflow-hidden">
-      {#each filteredRuns as run, i (run.id)}
-        <a
-          href="/{prefix}/runs/{run.id}"
-          class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-accent/40
-            {i < filteredRuns.length - 1 ? 'border-b border-border/50' : ''}"
-        >
-          <!-- Status dot -->
-          <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(run.status)}"></span>
+    <Card class="border-border/60 overflow-hidden p-0">
+      <CardContent class="p-0">
+        {#each filteredRuns as run, i (run.id)}
+          <a
+            href="/{prefix}/runs/{run.id}"
+            class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-accent/40
+              {i < filteredRuns.length - 1 ? 'border-b border-border/50' : ''}"
+          >
+            <!-- Status dot -->
+            <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(run.status)}"></span>
 
-          <!-- Status badge -->
-          <span class="inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {statusBadgeClass(run.status)}">
-            {normalizeStatus(run.status)}
-          </span>
+            <!-- Status badge -->
+            <Badge class={statusBadgeClass(run.status)}>
+              {normalizeStatus(run.status)}
+            </Badge>
 
-          <!-- Run ID (first 8 chars, mono) -->
-          <span class="text-xs font-mono text-muted-foreground shrink-0 w-20 truncate">
-            {run.id.slice(0, 8)}
-          </span>
-
-          <!-- Agent name -->
-          <span class="text-sm text-foreground truncate flex-1 min-w-0">
-            {resolveAgentName(run)}
-          </span>
-
-          <!-- Source badge -->
-          {#if sourceLabel(run)}
-            <span class="hidden sm:inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {sourceBadgeClass(sourceLabel(run))}">
-              {sourceLabel(run).replace(/_/g, ' ')}
+            <!-- Run ID (first 8 chars, mono) -->
+            <span class="text-xs font-mono text-muted-foreground shrink-0 w-20 truncate">
+              {run.id.slice(0, 8)}
             </span>
-          {/if}
 
-          <!-- Duration -->
-          {#if formatDuration(run)}
-            <span class="hidden md:inline-block text-xs text-muted-foreground font-mono shrink-0 tabular-nums w-16 text-right">
-              {formatDuration(run)}
+            <!-- Agent name -->
+            <span class="text-sm text-foreground truncate flex-1 min-w-0">
+              {resolveAgentName(run)}
             </span>
-          {/if}
 
-          <!-- Time ago -->
-          <span class="text-xs text-muted-foreground shrink-0 tabular-nums w-16 text-right">
-            {runTimestamp(run)}
-          </span>
+            <!-- Source badge -->
+            {#if sourceLabel(run)}
+              <Badge class="hidden sm:inline-flex {sourceBadgeClass(sourceLabel(run))}">
+                {sourceLabel(run).replace(/_/g, ' ')}
+              </Badge>
+            {/if}
 
-          <!-- Arrow -->
-          <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-        </a>
-      {/each}
-    </div>
+            <!-- Duration -->
+            {#if formatDuration(run)}
+              <span class="hidden md:inline-block text-xs text-muted-foreground font-mono shrink-0 tabular-nums w-16 text-right">
+                {formatDuration(run)}
+              </span>
+            {/if}
+
+            <!-- Time ago -->
+            <span class="text-xs text-muted-foreground shrink-0 tabular-nums w-16 text-right">
+              {runTimestamp(run)}
+            </span>
+
+            <!-- Arrow -->
+            <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          </a>
+        {/each}
+      </CardContent>
+    </Card>
 
     <!-- Count -->
     <p class="text-xs text-muted-foreground text-right">

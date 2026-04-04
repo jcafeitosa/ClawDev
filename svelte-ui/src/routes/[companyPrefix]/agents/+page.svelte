@@ -7,6 +7,7 @@
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
   import { Plus, Bot, List, GitBranch, SlidersHorizontal } from 'lucide-svelte';
+  import { Card, Badge, Skeleton, Avatar, AvatarFallback, Alert, AlertDescription, Button } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Agents' }]));
 
@@ -230,6 +231,20 @@
     { value: 'error',  label: 'Error'  },
   ];
 
+  function agentInitials(name: string): string {
+    return name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
+  }
+
+  const STATUS_AVATAR_BG: Record<string, string> = {
+    idle:             'bg-emerald-500/15',
+    active:           'bg-emerald-500/15',
+    running:          'bg-cyan-500/15',
+    paused:           'bg-amber-500/15',
+    error:            'bg-red-500/15',
+    terminated:       'bg-zinc-500/15',
+    pending_approval: 'bg-amber-500/15',
+  };
+
   // Close filters dropdown on outside click
   function handleWindowClick(e: MouseEvent) {
     if (filtersOpen && !(e.target as HTMLElement).closest('[data-filters-dropdown]')) {
@@ -258,12 +273,12 @@
         goto(agentHref);
       }
     }}
-    class="flex items-center gap-3 px-3 py-2 hover:bg-accent/30 transition-colors w-full text-left no-underline text-inherit"
+    class="flex items-center gap-3 px-3 py-2.5 hover:bg-accent/30 transition-colors duration-200 w-full text-left no-underline text-inherit cursor-pointer"
   >
-    <!-- Status dot -->
-    <span class="relative flex h-2.5 w-2.5 shrink-0">
-      <span class="absolute inline-flex h-full w-full rounded-full {statusDotClass(agent.status)}"></span>
-    </span>
+    <!-- Avatar with initials -->
+    <Avatar size="sm" class={STATUS_AVATAR_BG[agent.status] ?? 'bg-zinc-500/15'}>
+      <AvatarFallback class="text-[10px] font-semibold">{agentInitials(agent.name)}</AvatarFallback>
+    </Avatar>
 
     <!-- Name + subtitle -->
     <div class="flex-1 min-w-0">
@@ -288,9 +303,9 @@
             <span class="text-[11px] font-medium text-blue-400">Live{liveInfo.liveCount > 1 ? ` (${liveInfo.liveCount})` : ''}</span>
           </a>
         {:else}
-          <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium {statusBadgeClass(agent.status)}">
+          <Badge variant="ghost" class="text-[11px] {statusBadgeClass(agent.status)}">
             {statusDisplayText(agent.status)}
-          </span>
+          </Badge>
         {/if}
       </span>
 
@@ -300,7 +315,7 @@
           <a
             href="/{$page.params.companyPrefix}/runs/{liveInfo.runId}"
             onclick={(e) => e.stopPropagation()}
-            class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors"
+            class="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 hover:bg-blue-500/20 transition-colors duration-200"
           >
             <span class="relative flex h-2 w-2">
               <span class="animate-pulse absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
@@ -316,9 +331,9 @@
           {timeAgo(agent.lastHeartbeatAt)}
         </span>
         <span class="w-20 flex justify-end">
-          <span class="inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium {statusBadgeClass(agent.status)}">
+          <Badge variant="ghost" class="text-[11px] {statusBadgeClass(agent.status)}">
             {statusDisplayText(agent.status)}
-          </span>
+          </Badge>
         </span>
       </div>
     </div>
@@ -415,13 +430,10 @@
       </div>
 
       <!-- New Agent -->
-      <a
-        href="/{$page.params.companyPrefix}/agents/new"
-        class="inline-flex items-center gap-1.5 rounded border border-border px-3 py-1.5 text-sm font-medium text-foreground transition hover:bg-accent/50"
-      >
+      <Button variant="outline" href="/{$page.params.companyPrefix}/agents/new" class="gap-1.5 cursor-pointer">
         <Plus class="h-3.5 w-3.5" />
         New Agent
-      </a>
+      </Button>
     </div>
   </div>
 
@@ -434,15 +446,23 @@
 
   <!-- Loading skeleton -->
   {#if loading}
-    <div class="space-y-2">
-      {#each Array(6) as _}
-        <div class="h-10 animate-pulse rounded bg-card border border-border"></div>
+    <Card class="border-border/60 backdrop-blur-sm p-0 gap-0">
+      {#each Array(6) as _, i}
+        <div class="flex items-center gap-3 px-3 py-2.5">
+          <Skeleton class="h-6 w-6 rounded-full" />
+          <Skeleton class="h-4 w-32" />
+          <div class="flex-1"></div>
+          <Skeleton class="h-5 w-16 rounded-full" />
+        </div>
+        {#if i < 5}<div class="border-t border-border/40"></div>{/if}
       {/each}
-    </div>
+    </Card>
 
   <!-- Error -->
   {:else if error}
-    <p class="text-sm text-destructive">{error}</p>
+    <Alert variant="destructive">
+      <AlertDescription>{error}</AlertDescription>
+    </Alert>
 
   <!-- No agents at all -->
   {:else if agents.length === 0}
@@ -462,11 +482,11 @@
   <!-- List view -->
   {:else if viewMode === 'list'}
     {#if filteredAgents.length > 0}
-      <div class="border border-border">
+      <Card class="border-border/60 backdrop-blur-sm p-0 gap-0 divide-y divide-border/40">
         {#each filteredAgents as agent (agent.id)}
           {@render agentRowContent(agent)}
         {/each}
-      </div>
+      </Card>
     {:else}
       <p class="text-sm text-muted-foreground text-center py-8">No agents match the selected filter.</p>
     {/if}
@@ -474,9 +494,9 @@
   <!-- Org tree view -->
   {:else}
     {#if agentTree.length > 0}
-      <div class="border border-border py-1">
+      <Card class="border-border/60 backdrop-blur-sm p-0 gap-0 py-1">
         {@render treeNodes(agentTree, 0)}
-      </div>
+      </Card>
     {:else}
       <p class="text-sm text-muted-foreground text-center py-8">No organizational hierarchy defined.</p>
     {/if}

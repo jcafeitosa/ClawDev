@@ -6,6 +6,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Upload, Eye, Loader2, FileArchive, CheckCircle2, AlertTriangle } from 'lucide-svelte';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Separator } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Import' }]));
 
@@ -128,14 +129,16 @@
 
   <!-- File info -->
   {#if fileInfo && !done}
-    <div class="flex items-center gap-3 rounded-lg border border-border bg-card p-4">
-      <FileArchive class="h-5 w-5 text-blue-400" />
-      <div class="min-w-0 flex-1">
-        <p class="text-sm font-medium text-foreground truncate">{fileInfo.name}</p>
-        <p class="text-xs text-muted-foreground">{fileInfo.size}</p>
-      </div>
-      <button onclick={resetFile} class="text-xs text-muted-foreground hover:text-foreground transition-colors">Remove</button>
-    </div>
+    <Card>
+      <CardContent class="flex items-center gap-3 pt-4">
+        <FileArchive class="h-5 w-5 text-blue-400" />
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-medium text-foreground truncate">{fileInfo.name}</p>
+          <p class="text-xs text-muted-foreground">{fileInfo.size}</p>
+        </div>
+        <Button variant="ghost" size="sm" onclick={resetFile}>Remove</Button>
+      </CardContent>
+    </Card>
   {/if}
 
   <!-- Preview button -->
@@ -157,8 +160,11 @@
 
   <!-- Preview data -->
   {#if previewData && !done}
-    <div class="rounded-lg border border-border bg-card p-4 space-y-3">
-      <h3 class="text-sm font-medium text-foreground">Import Preview</h3>
+    <Card>
+      <CardHeader>
+        <CardTitle class="text-sm">Import Preview</CardTitle>
+      </CardHeader>
+      <CardContent class="space-y-3">
 
       <!-- Entity counts -->
       {#if previewData.counts || previewData.entities}
@@ -175,13 +181,11 @@
 
       <!-- Conflicts warning -->
       {#if previewData.conflicts && previewData.conflicts > 0}
-        <div class="flex items-start gap-2 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
-          <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
-          <div>
-            <p class="text-sm font-medium text-amber-300">{previewData.conflicts} potential conflicts</p>
-            <p class="text-xs text-amber-400/70">Entities that already exist in your workspace</p>
-          </div>
-        </div>
+        <Alert class="border-amber-500/20 bg-amber-500/10">
+          <AlertTriangle class="h-4 w-4 text-amber-400" />
+          <AlertTitle class="text-amber-300">{previewData.conflicts} potential conflicts</AlertTitle>
+          <AlertDescription class="text-amber-400/70">Entities that already exist in your workspace</AlertDescription>
+        </Alert>
       {/if}
 
       <!-- Collision strategy selector -->
@@ -197,16 +201,13 @@
           <option value="rename">Rename - import as new with suffix</option>
         </select>
       </div>
-    </div>
+      </CardContent>
+    </Card>
   {/if}
 
   <!-- Import button -->
   {#if file && !done}
-    <button
-      onclick={doImport}
-      disabled={importing}
-      class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-green-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-green-700 disabled:opacity-50"
-    >
+    <Button class="w-full bg-green-600 hover:bg-green-700" onclick={doImport} disabled={importing}>
       {#if importing}
         <Loader2 class="h-4 w-4 animate-spin" />
         Importing...
@@ -214,16 +215,17 @@
         <Upload class="h-4 w-4" />
         Apply Import
       {/if}
-    </button>
+    </Button>
   {/if}
 
   <!-- Import results -->
   {#if done && importResults}
-    <div class="rounded-lg border border-green-500/20 bg-green-500/5 p-5 space-y-4">
-      <div class="flex items-center gap-3">
-        <CheckCircle2 class="h-6 w-6 text-green-400" />
-        <h3 class="text-lg font-semibold text-foreground">Import Complete</h3>
-      </div>
+    <Card class="border-green-500/20 bg-green-500/5">
+      <CardContent class="pt-5 space-y-4">
+        <div class="flex items-center gap-3">
+          <CheckCircle2 class="h-6 w-6 text-green-400" />
+          <h3 class="text-lg font-semibold text-foreground">Import Complete</h3>
+        </div>
 
       <div class="space-y-1">
         {#if importResults.created !== undefined}
@@ -254,7 +256,8 @@
 
       <!-- Per-entity breakdown if available -->
       {#if importResults.details}
-        <div class="border-t border-border/50 pt-3 space-y-1">
+        <Separator />
+        <div class="space-y-1">
           <h4 class="text-xs font-medium text-muted-foreground">Breakdown</h4>
           {#each Object.entries(importResults.details) as [entity, detail]}
             <div class="flex items-center justify-between text-sm">
@@ -267,25 +270,22 @@
         </div>
       {/if}
 
-      <button
-        onclick={resetFile}
-        class="inline-flex w-full items-center justify-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
-      >
+      <Button variant="outline" class="w-full" onclick={resetFile}>
         Import Another File
-      </button>
-    </div>
+      </Button>
+      </CardContent>
+    </Card>
   {:else if done}
     <!-- Fallback if no structured results -->
-    <div class="flex flex-col items-center gap-3 rounded-lg border border-green-500/20 bg-green-500/5 p-6">
-      <CheckCircle2 class="h-8 w-8 text-green-400" />
-      <h3 class="text-lg font-semibold text-foreground">Import Complete</h3>
-      <p class="text-sm text-muted-foreground">Your data has been imported successfully</p>
-      <button
-        onclick={resetFile}
-        class="mt-2 inline-flex items-center gap-2 rounded-lg border border-border bg-card px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60"
-      >
-        Import Another File
-      </button>
-    </div>
+    <Card class="border-green-500/20 bg-green-500/5">
+      <CardContent class="flex flex-col items-center gap-3 pt-6">
+        <CheckCircle2 class="h-8 w-8 text-green-400" />
+        <h3 class="text-lg font-semibold text-foreground">Import Complete</h3>
+        <p class="text-sm text-muted-foreground">Your data has been imported successfully</p>
+        <Button variant="outline" class="mt-2" onclick={resetFile}>
+          Import Another File
+        </Button>
+      </CardContent>
+    </Card>
   {/if}
 </div>

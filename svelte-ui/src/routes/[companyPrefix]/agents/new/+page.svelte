@@ -11,6 +11,7 @@
   import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
   import { AGENT_ADAPTER_OPTIONS } from '$lib/constants/agent-adapters';
   import { Bot, User, Settings, Zap, FileText, ChevronDown } from 'lucide-svelte';
+  import { Card, CardContent, CardHeader, CardTitle, Button, Input, Label, Alert, AlertDescription, Badge, Skeleton, Separator } from '$components/ui/index.js';
 
   // ---------------------------------------------------------------------------
   // Constants
@@ -171,15 +172,17 @@
 </script>
 
 <div class="mx-auto max-w-3xl p-6 space-y-8">
-  <div>
-    <h1 class="text-xl font-bold text-[#F8FAFC]">Create Agent</h1>
-    <p class="mt-1 text-sm text-[#64748B]">
-      Configure a new agent for your company.
-      {#if isFirstAgent}
-        <span class="text-amber-400">This will be the first agent — defaulting to CEO role.</span>
-      {/if}
-    </p>
-  </div>
+  <Card class="border-border/60 backdrop-blur-sm">
+    <CardHeader>
+      <CardTitle class="text-xl">Create Agent</CardTitle>
+      <p class="text-sm text-muted-foreground">
+        Configure a new agent for your company.
+        {#if isFirstAgent}
+          <Badge variant="ghost" class="ml-1 text-amber-400 bg-amber-500/10">First agent — defaults to CEO</Badge>
+        {/if}
+      </p>
+    </CardHeader>
+    <CardContent>
 
   <form onsubmit={(e) => { e.preventDefault(); create(); }} class="space-y-10">
     <!-- ===================================================================== -->
@@ -195,22 +198,22 @@
         <!-- Name + Icon row -->
         <div class="flex items-start gap-4">
           <div>
-            <div class={labelCls}>Icon</div>
+            <Label>Icon</Label>
             <div class="mt-1.5">
               <AgentIconPicker value={icon} onSelect={(name) => icon = name} />
             </div>
           </div>
           <div class="flex-1">
-            <label for="agent-name" class={labelCls}>
+            <Label for="agent-name">
               Name <span class="text-red-400">*</span>
-            </label>
-            <input
+            </Label>
+            <Input
               id="agent-name"
               type="text"
               bind:value={name}
               required
               placeholder="e.g. Atlas, Sentinel, Spark"
-              class="{inputCls} mt-1.5"
+              class="mt-1.5"
             />
             <p class={helpCls}>A unique name for this agent within the company.</p>
           </div>
@@ -218,20 +221,20 @@
 
         <!-- Title -->
         <div>
-          <label for="agent-title" class={labelCls}>Title</label>
-          <input
+          <Label for="agent-title">Title</Label>
+          <Input
             id="agent-title"
             type="text"
             bind:value={title}
             placeholder="e.g. Senior Engineer, Design Lead"
-            class="{inputCls} mt-1.5"
+            class="mt-1.5"
           />
           <p class={helpCls}>A job title or designation for this agent.</p>
         </div>
 
         <!-- Role -->
         <div>
-          <label for="agent-role" class={labelCls}>Role</label>
+          <Label for="agent-role">Role</Label>
           <div class="relative mt-1.5">
             <select
               id="agent-role"
@@ -249,7 +252,7 @@
 
         <!-- Reports To -->
         <div>
-          <div class={labelCls}>Reports To</div>
+          <Label>Reports To</Label>
           <div class="mt-1.5">
             {#if companyId}
               <ReportsToPicker
@@ -266,7 +269,7 @@
 
         <!-- Description -->
         <div>
-          <label for="agent-description" class={labelCls}>Description</label>
+          <Label for="agent-description">Description</Label>
           <textarea
             id="agent-description"
             bind:value={description}
@@ -291,7 +294,7 @@
       <div class="space-y-5">
         <!-- Adapter Type -->
         <div>
-          <label for="adapter-type" class={labelCls}>Adapter Type</label>
+          <Label for="adapter-type">Adapter Type</Label>
           <div class="relative mt-1.5">
             <select
               id="adapter-type"
@@ -322,9 +325,10 @@
       </div>
 
       {#if skillsLoading}
-        <div class="flex items-center gap-2 text-sm text-[#64748B] py-4">
-          <div class="h-4 w-4 animate-spin rounded-full border-2 border-[#2563EB] border-t-transparent"></div>
-          Loading skills...
+        <div class="space-y-2 py-2">
+          {#each Array(3) as _}
+            <Skeleton class="h-12 w-full rounded-lg" />
+          {/each}
         </div>
       {:else if availableSkills.length === 0}
         <p class="text-sm text-[#64748B] py-2">No skills available in this company. You can add skills later.</p>
@@ -365,7 +369,7 @@
       </div>
 
       <div>
-        <label for="system-prompt" class={labelCls}>System Prompt</label>
+        <Label for="system-prompt">System Prompt</Label>
         <textarea
           id="system-prompt"
           bind:value={systemPrompt}
@@ -386,25 +390,26 @@
     <!-- Error + Submit                                                         -->
     <!-- ===================================================================== -->
     {#if error}
-      <div class="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3">
-        <p class="text-sm text-red-400">{error}</p>
-      </div>
+      <Alert variant="destructive">
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
     {/if}
 
-    <div class="flex items-center justify-end gap-3 pt-2 border-t border-white/[0.06]">
-      <a
-        href="/{$page.params.companyPrefix}/agents"
-        class="rounded-lg border border-white/[0.08] px-4 py-2.5 text-sm font-medium text-[#CBD5E1] transition hover:bg-white/[0.05]"
-      >
+    <Separator />
+
+    <div class="flex items-center justify-end gap-3">
+      <Button variant="outline" href="/{$page.params.companyPrefix}/agents" class="cursor-pointer">
         Cancel
-      </a>
-      <button
+      </Button>
+      <Button
         type="submit"
         disabled={creating || !name.trim()}
-        class="rounded-lg bg-[#2563EB] px-6 py-2.5 text-sm font-medium text-white transition hover:bg-[#1d4ed8] disabled:opacity-50 disabled:cursor-not-allowed"
+        class="cursor-pointer"
       >
         {creating ? 'Creating...' : 'Create Agent'}
-      </button>
+      </Button>
     </div>
   </form>
+    </CardContent>
+  </Card>
 </div>

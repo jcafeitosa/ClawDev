@@ -11,6 +11,7 @@
     Plus, FileCode2, FileText, Folder, FolderOpen, Eye, Code2,
     Boxes, Shield, ShieldCheck, Wrench
   } from 'lucide-svelte';
+  import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
 
   // ---------------------------------------------------------------------------
   // Types
@@ -452,7 +453,7 @@
       {#if loading}
         <div class="space-y-2 p-4">
           {#each Array(5) as _}
-            <div class="h-9 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800"></div>
+            <Skeleton class="h-9 rounded" />
           {/each}
         </div>
       {:else if filteredSkills.length === 0}
@@ -590,7 +591,7 @@
       {#if loading}
         <div class="p-6 space-y-4">
           {#each Array(4) as _}
-            <div class="h-6 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800"></div>
+            <Skeleton class="h-6 rounded" />
           {/each}
         </div>
       {:else}
@@ -631,7 +632,8 @@
         </div>
 
         <!-- Metadata row -->
-        <div class="mt-4 space-y-3 border-t border-zinc-200 dark:border-zinc-800 pt-4 text-sm">
+        <Separator class="my-4" />
+        <div class="space-y-3 text-sm">
           <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
             <div class="flex items-center gap-2">
               <span class="text-[11px] uppercase tracking-[0.18em] text-zinc-400 dark:text-zinc-500">Source</span>
@@ -732,8 +734,8 @@
       <div class="min-h-[560px] px-5 py-5">
         {#if fileLoading}
           <div class="space-y-3">
-            {#each Array(6) as _}
-              <div class="h-4 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800 {Math.random() > 0.5 ? 'w-3/4' : 'w-1/2'}"></div>
+            {#each Array(6) as _, i}
+              <Skeleton class="h-4 rounded {i % 2 === 0 ? 'w-3/4' : 'w-1/2'}" />
             {/each}
           </div>
         {:else if !fileContent}

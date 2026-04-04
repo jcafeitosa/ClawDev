@@ -7,6 +7,7 @@
   import { onMount } from "svelte";
   import { BookOpen, Clock3, ExternalLink, FileText, History, PencilLine, Plus, RefreshCcw, Save, Search, Download, Copy, Trash2, Check } from "lucide-svelte";
   import { EmptyState, PageSkeleton } from "$components/index.js";
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Skeleton, Separator } from "$components/ui/index.js";
 
   type DocumentRow = {
     id: string;
@@ -349,18 +350,20 @@
 
   <div class="grid gap-6 lg:grid-cols-[320px_minmax(0,1fr)]">
     <aside class="space-y-4">
-      <div class="rounded-2xl border border-border bg-card p-4">
-        <label for="document-search" class="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
-          <Search class="h-3.5 w-3.5" />
-          Search
-        </label>
+      <Card>
+        <CardContent class="pt-4">
+          <label for="document-search" class="mb-2 flex items-center gap-2 text-xs font-medium uppercase tracking-[0.24em] text-muted-foreground">
+            <Search class="h-3.5 w-3.5" />
+            Search
+          </label>
         <input
           id="document-search"
           bind:value={query}
           placeholder={`Search ${companyName} documents`}
           class="w-full rounded-xl border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         />
-      </div>
+        </CardContent>
+      </Card>
 
       {#if showCreate}
         <form
@@ -436,22 +439,23 @@
         </form>
       {/if}
 
-      <div class="rounded-2xl border border-border bg-card p-4">
-        <div class="mb-3 flex items-center justify-between">
+      <Card>
+        <CardHeader class="flex-row items-center justify-between">
           <div>
-            <h2 class="text-sm font-semibold text-foreground">Documents</h2>
+            <CardTitle class="text-sm">Documents</CardTitle>
             <p class="text-xs text-muted-foreground">{documents.length} total</p>
           </div>
-          <span class="inline-flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs text-muted-foreground">
+          <Badge variant="outline">
             <BookOpen class="h-3.5 w-3.5" />
             {prefix || "company"}
-          </span>
-        </div>
+          </Badge>
+        </CardHeader>
+        <CardContent>
 
         {#if loading}
           <div class="space-y-3">
             {#each Array(5) as _}
-              <div class="h-16 animate-pulse rounded-xl bg-accent/40"></div>
+              <Skeleton class="h-16 rounded-xl" />
             {/each}
           </div>
         {:else if listError}
@@ -502,15 +506,16 @@
                       </div>
                     {/if}
                   </div>
-                  <span class="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                  <Badge variant="outline" class="text-[10px] uppercase tracking-[0.2em]">
                     {doc.format}
-                  </span>
+                  </Badge>
                 </div>
               </button>
             {/each}
           </div>
         {/if}
-      </div>
+        </CardContent>
+      </Card>
     </aside>
 
     <main class="space-y-6">
@@ -519,13 +524,14 @@
       {:else if detailError}
         <EmptyState title="Document failed to load" description={detailError} icon="⚠️" />
       {:else if selectedDocument}
-        <div class="rounded-2xl border border-border bg-card p-5">
-          <div class="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <div class="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
-                <FileText class="h-3.5 w-3.5" />
-                Document detail
-              </div>
+        <Card>
+          <CardContent class="pt-5">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <div class="flex items-center gap-2 text-xs uppercase tracking-[0.24em] text-muted-foreground">
+                  <FileText class="h-3.5 w-3.5" />
+                  Document detail
+                </div>
               <h2 class="mt-2 text-2xl font-semibold text-foreground">
                 {selectedDocument.title ?? "Untitled document"}
               </h2>
@@ -661,14 +667,18 @@
               </div>
             </div>
           {/if}
-        </div>
+          </CardContent>
+        </Card>
 
         <div class="grid gap-6 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
-          <div class="rounded-2xl border border-border bg-card p-5">
-            <div class="mb-4 flex items-center gap-2">
-              <History class="h-4 w-4 text-blue-500" />
-              <h3 class="text-sm font-semibold text-foreground">Revisions</h3>
-            </div>
+          <Card>
+            <CardHeader>
+              <CardTitle class="text-sm flex items-center gap-2">
+                <History class="h-4 w-4 text-blue-500" />
+                Revisions
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
             {#if revisions.length === 0}
               <EmptyState title="No revisions" description="This document has not been revised yet." icon="📝" />
             {:else}
@@ -690,21 +700,25 @@
                           {revision.changeSummary ?? "No summary"} · {formatDate(revision.createdAt)}
                         </p>
                       </div>
-                      <span class="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.2em] text-muted-foreground">
+                      <Badge variant="outline" class="text-[10px] uppercase tracking-[0.2em]">
                         {revision.id.slice(0, 8)}
-                      </span>
+                      </Badge>
                     </div>
                   </button>
                 {/each}
               </div>
             {/if}
-          </div>
+            </CardContent>
+          </Card>
 
-          <div class="rounded-2xl border border-border bg-card p-5">
-            <div class="mb-4 flex items-center gap-2">
-              <Clock3 class="h-4 w-4 text-blue-500" />
-              <h3 class="text-sm font-semibold text-foreground">Revision preview</h3>
-            </div>
+          <Card>
+            <CardHeader>
+              <CardTitle class="text-sm flex items-center gap-2">
+                <Clock3 class="h-4 w-4 text-blue-500" />
+                Revision preview
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
             {#if selectedRevision}
               <div class="space-y-3">
                 <div class="flex items-center justify-between text-xs text-muted-foreground">
@@ -751,7 +765,8 @@
             {:else}
               <EmptyState title="Select a revision" description="Pick a revision on the left to inspect the full body." icon="📄" />
             {/if}
-          </div>
+            </CardContent>
+          </Card>
         </div>
       {:else}
         <EmptyState title="No document selected" description="Choose a document from the list or create a new one." icon="📄">

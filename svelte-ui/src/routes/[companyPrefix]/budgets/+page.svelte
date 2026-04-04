@@ -16,6 +16,7 @@
     Clock,
     X,
   } from 'lucide-svelte';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Progress, Skeleton, Separator } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Budget Policies' }]));
 
@@ -246,62 +247,63 @@
   {#if loading}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       {#each Array(3) as _}
-        <div class="h-28 animate-pulse rounded-xl border border-border bg-card"></div>
+        <Skeleton class="h-28 rounded-xl" />
       {/each}
     </div>
   {:else}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <!-- Total Budget -->
-      <div class="rounded-xl border border-border bg-card p-5">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="rounded-lg bg-blue-500/10 p-2">
-            <Wallet class="h-5 w-5 text-blue-400" />
+      <Card>
+        <CardContent class="pt-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="rounded-lg bg-blue-500/10 p-2">
+              <Wallet class="h-5 w-5 text-blue-400" />
+            </div>
+            <span class="text-sm font-medium text-muted-foreground">Total Budget</span>
           </div>
-          <span class="text-sm font-medium text-muted-foreground">Total Budget</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{formatCents(totalBudget)}</p>
-        <p class="mt-1 text-xs text-muted-foreground">{policies.length} active {policies.length === 1 ? 'policy' : 'policies'}</p>
-      </div>
+          <p class="text-2xl font-bold text-foreground">{formatCents(totalBudget)}</p>
+          <p class="mt-1 text-xs text-muted-foreground">{policies.length} active {policies.length === 1 ? 'policy' : 'policies'}</p>
+        </CardContent>
+      </Card>
 
       <!-- Current Spend -->
-      <div class="rounded-xl border border-border bg-card p-5">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="rounded-lg bg-emerald-500/10 p-2">
-            <DollarSign class="h-5 w-5 text-emerald-400" />
-          </div>
-          <span class="text-sm font-medium text-muted-foreground">Current Spend</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{formatCents(currentSpend)}</p>
-        {#if totalBudget > 0}
-          <div class="mt-2">
-            <div class="h-1.5 rounded-full bg-accent overflow-hidden">
-              <div
-                class="h-full rounded-full transition-all {spendBarColor(spendPercent)}"
-                style="width: {Math.min(100, spendPercent)}%"
-              ></div>
+      <Card>
+        <CardContent class="pt-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="rounded-lg bg-emerald-500/10 p-2">
+              <DollarSign class="h-5 w-5 text-emerald-400" />
             </div>
-            <p class="mt-1 text-xs text-muted-foreground">{spendPercent}% of total budget</p>
+            <span class="text-sm font-medium text-muted-foreground">Current Spend</span>
           </div>
-        {/if}
-      </div>
+          <p class="text-2xl font-bold text-foreground">{formatCents(currentSpend)}</p>
+          {#if totalBudget > 0}
+            <div class="mt-2">
+              <Progress value={Math.min(100, spendPercent)} class="h-1.5" />
+              <p class="mt-1 text-xs text-muted-foreground">{spendPercent}% of total budget</p>
+            </div>
+          {/if}
+        </CardContent>
+      </Card>
 
       <!-- Remaining -->
-      <div class="rounded-xl border border-border bg-card p-5">
-        <div class="flex items-center gap-3 mb-3">
-          <div class="rounded-lg bg-orange-500/10 p-2">
-            <TrendingDown class="h-5 w-5 text-orange-400" />
+      <Card>
+        <CardContent class="pt-5">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="rounded-lg bg-orange-500/10 p-2">
+              <TrendingDown class="h-5 w-5 text-orange-400" />
+            </div>
+            <span class="text-sm font-medium text-muted-foreground">Remaining</span>
           </div>
-          <span class="text-sm font-medium text-muted-foreground">Remaining</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{formatCents(remaining)}</p>
-        {#if pendingIncidents.length > 0}
-          <p class="mt-1 text-xs text-amber-400">
-            {pendingIncidents.length} pending {pendingIncidents.length === 1 ? 'incident' : 'incidents'}
-          </p>
-        {:else}
-          <p class="mt-1 text-xs text-emerald-400">No incidents</p>
-        {/if}
-      </div>
+          <p class="text-2xl font-bold text-foreground">{formatCents(remaining)}</p>
+          {#if pendingIncidents.length > 0}
+            <p class="mt-1 text-xs text-amber-400">
+              {pendingIncidents.length} pending {pendingIncidents.length === 1 ? 'incident' : 'incidents'}
+            </p>
+          {:else}
+            <p class="mt-1 text-xs text-emerald-400">No incidents</p>
+          {/if}
+        </CardContent>
+      </Card>
     </div>
   {/if}
 
@@ -447,14 +449,14 @@
 
   <!-- Pending Incidents -->
   {#if !loading && pendingIncidents.length > 0}
-    <div class="rounded-xl border border-amber-500/20 bg-card overflow-hidden">
+    <Alert class="border-amber-500/20 bg-card overflow-hidden p-0">
       <div class="flex items-center gap-3 px-5 py-4 border-b border-amber-500/10">
         <div class="rounded-lg bg-amber-500/10 p-2">
           <AlertTriangle class="h-4 w-4 text-amber-400" />
         </div>
         <div>
-          <h2 class="text-sm font-semibold text-amber-400">Budget Incidents</h2>
-          <p class="text-xs text-muted-foreground">{pendingIncidents.length} pending {pendingIncidents.length === 1 ? 'incident' : 'incidents'} requiring attention</p>
+          <AlertTitle class="text-amber-400">Budget Incidents</AlertTitle>
+          <AlertDescription>{pendingIncidents.length} pending {pendingIncidents.length === 1 ? 'incident' : 'incidents'} requiring attention</AlertDescription>
         </div>
       </div>
 
@@ -486,14 +488,14 @@
           </div>
         {/each}
       </div>
-    </div>
+    </Alert>
   {/if}
 
   <!-- Policies list -->
   {#if loading}
     <div class="space-y-3">
       {#each Array(4) as _}
-        <div class="h-24 animate-pulse rounded-xl border border-border bg-card"></div>
+        <Skeleton class="h-24 rounded-xl" />
       {/each}
     </div>
   {:else if policies.length === 0}
@@ -512,10 +514,10 @@
       </button>
     </div>
   {:else}
-    <div class="rounded-xl border border-border bg-card overflow-hidden">
-      <div class="px-5 py-4 border-b border-border/50">
-        <h2 class="text-sm font-semibold text-foreground">Active Policies</h2>
-      </div>
+    <Card class="overflow-hidden">
+      <CardHeader class="border-b border-border/50">
+        <CardTitle class="text-sm">Active Policies</CardTitle>
+      </CardHeader>
 
       <div class="divide-y divide-white/[0.05]">
         {#each policies as policy (policy.id)}
@@ -526,18 +528,18 @@
               <div class="min-w-0 flex-1 space-y-2">
                 <div class="flex items-center gap-2 flex-wrap">
                   <!-- Scope badge -->
-                  <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium {scopeBadgeColor(policy.scopeType)}">
+                  <Badge variant="outline" class="text-xs {scopeBadgeColor(policy.scopeType)}">
                     {scopeIcon(policy.scopeType)}
-                  </span>
+                  </Badge>
                   {#if policy.scopeLabel}
                     <span class="text-sm font-medium text-foreground truncate">{policy.scopeLabel}</span>
                   {:else if policy.scopeId}
                     <span class="text-sm font-mono text-muted-foreground truncate">{policy.scopeId}</span>
                   {/if}
                   <!-- Window badge -->
-                  <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-xs font-medium {windowBadgeColor(policy.windowKind)}">
+                  <Badge variant="outline" class="text-xs {windowBadgeColor(policy.windowKind)}">
                     {windowLabel(policy.windowKind)}
-                  </span>
+                  </Badge>
                 </div>
 
                 <!-- Spend progress -->
@@ -586,6 +588,6 @@
           </div>
         {/each}
       </div>
-    </div>
+    </Card>
   {/if}
 </div>

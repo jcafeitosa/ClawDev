@@ -12,6 +12,7 @@
   } from 'lucide-svelte';
   import SwipeToArchive from '$lib/components/swipe-to-archive.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
+  import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
 
   // ---------------------------------------------------------------------------
   // Constants (ported from React inbox.ts)
@@ -795,11 +796,11 @@
     <div class="space-y-1">
       {#each Array(8) as _}
         <div class="flex items-center gap-4 px-4 py-3">
-          <div class="h-4 w-4 animate-pulse rounded-full bg-accent/60"></div>
-          <div class="h-9 w-9 animate-pulse rounded-lg bg-accent/60"></div>
+          <Skeleton class="h-4 w-4 rounded-full" />
+          <Skeleton class="h-9 w-9 rounded-lg" />
           <div class="flex-1 space-y-2">
-            <div class="h-4 w-2/3 animate-pulse rounded bg-accent/60"></div>
-            <div class="h-3 w-1/3 animate-pulse rounded bg-accent/60"></div>
+            <Skeleton class="h-4 w-2/3" />
+            <Skeleton class="h-3 w-1/3" />
           </div>
         </div>
       {/each}

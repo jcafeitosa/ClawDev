@@ -1210,7 +1210,7 @@
           {#if issue.identifier}
             <div class="inline-flex items-center gap-1.5 shrink-0">
               <span class="size-2.5 rounded-full {statusDotColor(issue.status)}"></span>
-              <span class="text-sm font-mono text-zinc-500 dark:text-zinc-400">{issue.identifier}</span>
+              <span class="text-sm font-mono text-muted-foreground">{issue.identifier}</span>
               <button
                 class="p-0.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
                 title="Copy identifier"
@@ -1233,7 +1233,7 @@
         </div>
         <!-- Ancestor breadcrumb -->
         {#if issue.ancestors && issue.ancestors.length > 0}
-          <nav class="flex items-center gap-1 text-xs text-zinc-500 dark:text-zinc-400 mt-1.5 overflow-x-auto">
+          <nav class="flex items-center gap-1 text-xs text-muted-foreground mt-1.5 overflow-x-auto">
             {#if issue.project}
               <a href="/{prefix}/projects/{issue.project.id}" class="inline-flex items-center gap-1 hover:text-primary transition-colors shrink-0">
                 <span class="size-2 rounded-full bg-primary shrink-0"></span>
@@ -1277,15 +1277,15 @@
           {markingRead ? "Marking..." : "Mark Read"}
         </Button>
         {#if showDeleteConfirm}
-          <div class="flex items-center gap-1.5 rounded-md border border-red-300 dark:border-red-800 bg-red-50 dark:bg-red-950/40 px-2.5 py-1">
-            <span class="text-xs text-red-700 dark:text-red-400">Delete this issue?</span>
+          <Alert variant="destructive" class="flex items-center gap-1.5 py-1 px-2.5">
+            <span class="text-xs">Delete this issue?</span>
             <Button variant="destructive" size="sm" onclick={deleteIssue} disabled={deleting}>
               {deleting ? "Deleting..." : "Confirm"}
             </Button>
             <Button variant="outline" size="sm" onclick={() => showDeleteConfirm = false}>
               Cancel
             </Button>
-          </div>
+          </Alert>
         {:else}
           <Button variant="outline" size="sm" class="text-red-600 border-red-300 hover:bg-red-50 dark:text-red-400 dark:border-red-800 dark:hover:bg-red-950/40" onclick={() => showDeleteConfirm = true}>
             <Trash2 class="size-3.5 mr-1" />
@@ -1315,29 +1315,31 @@
       <LiveRunWidget {issueId} companyId={companyId} companyPrefix={prefix} />
     {/if}
 
-    <div class="mt-4 mb-6 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
-      <div class="mb-3">
-        <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Plugin launchers</p>
-        <p class="text-xs text-zinc-500 dark:text-zinc-400">Contextual issue actions exposed by installed plugins.</p>
-      </div>
-      {#snippet noIssueLaunchers()}
-        <div class="text-sm text-zinc-500 dark:text-zinc-400">No issue launchers installed.</div>
-      {/snippet}
-      <PluginLauncherOutlet
-        placementZones={["detailTab", "taskDetailView", "toolbarButton", "contextMenuItem", "commentContextMenuItem"]}
-        context={{
-          companyId,
-          companyPrefix: prefix ?? null,
-          projectId: issue.projectId ?? null,
-          entityId: issue.id,
-          entityType: "issue",
-          parentEntityId: issue.parentId ?? null,
-          userId: null,
-        }}
-        itemClassName="flex flex-wrap gap-2"
-        fallback={noIssueLaunchers}
-      />
-    </div>
+    <Card class="mt-4 mb-6 rounded-xl border-border/60 backdrop-blur-sm">
+      <CardHeader>
+        <CardTitle class="text-sm">Plugin launchers</CardTitle>
+        <p class="text-xs text-muted-foreground">Contextual issue actions exposed by installed plugins.</p>
+      </CardHeader>
+      <CardContent>
+        {#snippet noIssueLaunchers()}
+          <div class="text-sm text-muted-foreground">No issue launchers installed.</div>
+        {/snippet}
+        <PluginLauncherOutlet
+          placementZones={["detailTab", "taskDetailView", "toolbarButton", "contextMenuItem", "commentContextMenuItem"]}
+          context={{
+            companyId,
+            companyPrefix: prefix ?? null,
+            projectId: issue.projectId ?? null,
+            entityId: issue.id,
+            entityType: "issue",
+            parentEntityId: issue.parentId ?? null,
+            userId: null,
+          }}
+          itemClassName="flex flex-wrap gap-2"
+          fallback={noIssueLaunchers}
+        />
+      </CardContent>
+    </Card>
 
     <!-- Inline Edit Form -->
     {#if editing}
@@ -1345,14 +1347,14 @@
         <CardContent class="pt-4">
           <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div class="md:col-span-2">
-              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Title</Label>
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Title</Label>
               <Input bind:value={editTitle} placeholder="Issue title" />
             </div>
             <div>
-              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Status</Label>
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Status</Label>
               <select
                 bind:value={editStatus}
-                class="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"
               >
                 {#each ISSUE_STATUSES as s}
                   <option value={s}>{s.replace(/_/g, " ")}</option>
@@ -1360,10 +1362,10 @@
               </select>
             </div>
             <div>
-              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Priority</Label>
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Priority</Label>
               <select
                 bind:value={editPriority}
-                class="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"
               >
                 <option value="">None</option>
                 {#each ISSUE_PRIORITIES as p}
@@ -1372,10 +1374,10 @@
               </select>
             </div>
             <div>
-              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Assignee Agent</Label>
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Assignee Agent</Label>
               <select
                 bind:value={editAssigneeAgentId}
-                class="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"
               >
                 <option value="">Unassigned</option>
                 {#each agents as agent}
@@ -1385,11 +1387,11 @@
             </div>
             <div class="md:col-span-2">
               <div class="flex items-center justify-between gap-3 mb-1.5">
-                <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 block">Labels</Label>
-                <span class="text-[11px] text-zinc-500 dark:text-zinc-400">{editLabelIds.length} selected</span>
+                <Label class="text-xs font-medium text-muted-foreground block">Labels</Label>
+                <span class="text-[11px] text-muted-foreground">{editLabelIds.length} selected</span>
               </div>
               {#if labels.length === 0}
-                <p class="text-xs text-zinc-500 dark:text-zinc-400">No labels available.</p>
+                <p class="text-xs text-muted-foreground">No labels available.</p>
               {:else}
                 <div class="flex flex-wrap gap-2">
                   {#each labels as label}
@@ -1411,7 +1413,8 @@
               {/if}
             </div>
           </div>
-          <div class="flex items-center gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+          <Separator class="mt-4" />
+          <div class="flex items-center gap-2 pt-3">
             <Button size="sm" onclick={saveEdit} disabled={savingEdit || !editTitle.trim()}>
               {savingEdit ? "Saving..." : "Save Changes"}
             </Button>
@@ -1456,7 +1459,7 @@
                   {:else if issue.description}
                     <MarkdownBody content={issue.description} />
                   {:else}
-                    <p class="text-sm text-zinc-500 dark:text-zinc-400 italic">No description provided.</p>
+                    <p class="text-sm text-muted-foreground italic">No description provided.</p>
                   {/if}
                 </CardContent>
               </Card>
@@ -1494,17 +1497,17 @@
                 </CardHeader>
                 <CardContent>
                   {#if attachments.length === 0}
-                    <p class="text-sm text-zinc-500 dark:text-zinc-400 italic">No attachments.</p>
+                    <p class="text-sm text-muted-foreground italic">No attachments.</p>
                   {:else}
-                    <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                    <Card class="overflow-hidden rounded-lg py-0 gap-0 divide-y divide-border">
                       {#each attachments as att}
-                        <div class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                        <div class="flex items-center justify-between p-3 text-sm hover:bg-accent/50 transition-colors duration-150">
                           <div class="flex items-center gap-2 min-w-0">
                             <FileText class="size-4 text-zinc-400 shrink-0" />
                             <div class="min-w-0">
                               <p class="font-medium truncate">{att.filename}</p>
                               {#if att.size != null}
-                                <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{formatFileSize(att.size)}</p>
+                                <p class="text-xs text-muted-foreground mt-0.5">{formatFileSize(att.size)}</p>
                               {/if}
                             </div>
                           </div>
@@ -1524,7 +1527,7 @@
                           </div>
                         </div>
                       {/each}
-                    </div>
+                    </Card>
                   {/if}
                 </CardContent>
               </Card>
@@ -1577,7 +1580,7 @@
                   <CardContent class="pt-4">
                     <div class="space-y-3">
                       <div>
-                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Title</Label>
+                        <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Title</Label>
                         <Input bind:value={newSubIssueTitle} placeholder="Sub-issue title..." />
                       </div>
                       <div class="flex items-center gap-2">
@@ -1596,15 +1599,15 @@
               {#if subIssues.length === 0}
                 <EmptyState title="No sub-issues" description="Break this issue into smaller tasks by creating sub-issues." icon="🧩" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <Card class="overflow-hidden rounded-lg py-0 gap-0 divide-y divide-border">
                   {#each subIssues as sub}
                     <a
                       href="/{prefix}/issues/{sub.id}"
-                      class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                      class="flex items-center justify-between p-3 text-sm cursor-pointer hover:bg-accent/50 transition-colors duration-150"
                     >
                       <div class="flex items-center gap-3 min-w-0">
                         {#if sub.identifier}
-                          <span class="text-xs font-mono text-zinc-500 dark:text-zinc-400 shrink-0">{sub.identifier}</span>
+                          <span class="text-xs font-mono text-muted-foreground shrink-0">{sub.identifier}</span>
                         {/if}
                         <span class="truncate font-medium">{sub.title}</span>
                       </div>
@@ -1616,7 +1619,7 @@
                       </div>
                     </a>
                   {/each}
-                </div>
+                </Card>
               {/if}
             </div>
           </TabsContent>
@@ -1628,11 +1631,11 @@
             <div class="mt-4 space-y-4">
               <!-- Cost Summary -->
               {#if runs.length > 0 && (costSummary.hasCost || costSummary.hasTokens)}
-                <div class="rounded-lg border border-border px-3 py-2">
-                  <div class="mb-1 text-sm font-medium text-muted-foreground">Cost Summary</div>
+                <Card class="rounded-lg px-3 py-2 gap-1 border-border/60 backdrop-blur-sm">
+                  <div class="text-sm font-medium text-muted-foreground">Cost Summary</div>
                   <div class="flex flex-wrap gap-3 text-xs tabular-nums text-muted-foreground">
                     {#if costSummary.hasCost}
-                      <span class="font-medium text-foreground">${costSummary.cost.toFixed(4)}</span>
+                      <Badge variant="secondary" class="text-xs font-medium">${costSummary.cost.toFixed(4)}</Badge>
                     {/if}
                     {#if costSummary.hasTokens}
                       <span>
@@ -1642,7 +1645,7 @@
                       </span>
                     {/if}
                   </div>
-                </div>
+                </Card>
               {/if}
 
               <!-- Activity feed -->
@@ -1655,7 +1658,7 @@
                 </CardHeader>
                 <CardContent>
                   {#if activityEntries.length === 0}
-                    <p class="text-sm text-zinc-500 dark:text-zinc-400 italic">No activity recorded yet.</p>
+                    <p class="text-sm text-muted-foreground italic">No activity recorded yet.</p>
                   {:else}
                     <div class="space-y-1.5">
                       {#each activityEntries as entry}
@@ -1683,13 +1686,13 @@
                 </CardHeader>
                 <CardContent>
                   {#if runs.length === 0}
-                    <p class="text-sm text-zinc-500 dark:text-zinc-400 italic">No runs recorded.</p>
+                    <p class="text-sm text-muted-foreground italic">No runs recorded.</p>
                   {:else}
-                    <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                    <Card class="overflow-hidden rounded-lg py-0 gap-0 divide-y divide-border">
                       {#each runs as run}
                         <a
                           href="/{prefix}/runs/{run.id}"
-                          class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                          class="flex items-center justify-between p-3 text-sm cursor-pointer hover:bg-accent/50 transition-colors duration-150"
                         >
                           <div class="flex items-center gap-3 min-w-0">
                             <StatusBadge status={run.status} />
@@ -1697,10 +1700,10 @@
                               {run.agentName ?? run.agentId?.slice(0, 8) ?? 'Unknown agent'}
                             </span>
                             {#if run.summary}
-                              <span class="text-zinc-500 truncate">&mdash; {run.summary}</span>
+                              <span class="text-muted-foreground truncate">&mdash; {run.summary}</span>
                             {/if}
                           </div>
-                          <div class="flex items-center gap-2 shrink-0 text-xs text-zinc-500">
+                          <div class="flex items-center gap-2 shrink-0 text-xs text-muted-foreground">
                             {#if run.startedAt}
                               <TimeAgo date={run.startedAt} />
                             {/if}
@@ -1708,7 +1711,7 @@
                           </div>
                         </a>
                       {/each}
-                    </div>
+                    </Card>
                   {/if}
                 </CardContent>
               </Card>
@@ -1739,14 +1742,14 @@
                   <CardContent class="pt-4">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div class="md:col-span-2">
-                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Title</Label>
+                        <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Title</Label>
                         <Input bind:value={wpTitle} placeholder="Work product title" />
                       </div>
                       <div>
-                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Kind</Label>
+                        <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Kind</Label>
                         <select
                           bind:value={wpKind}
-                          class="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                          class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"
                         >
                           {#each WP_KINDS as k}
                             <option value={k}>{k.replace(/_/g, " ")}</option>
@@ -1754,10 +1757,10 @@
                         </select>
                       </div>
                       <div>
-                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Status</Label>
+                        <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Status</Label>
                         <select
                           bind:value={wpStatus}
-                          class="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                          class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"
                         >
                           {#each WP_STATUSES as s}
                             <option value={s}>{s.replace(/_/g, " ")}</option>
@@ -1765,11 +1768,12 @@
                         </select>
                       </div>
                       <div class="md:col-span-2">
-                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">URL (optional)</Label>
+                        <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">URL (optional)</Label>
                         <Input bind:value={wpUrl} placeholder="https://..." />
                       </div>
                     </div>
-                    <div class="flex items-center gap-2 mt-4 pt-3 border-t border-zinc-100 dark:border-zinc-800">
+                    <Separator class="mt-4" />
+                    <div class="flex items-center gap-2 pt-3">
                       <Button size="sm" onclick={submitWorkProduct} disabled={submittingWp || !wpTitle.trim()}>
                         {submittingWp ? "Adding..." : "Add Work Product"}
                       </Button>
@@ -1785,18 +1789,18 @@
               {#if !issue.workProducts || issue.workProducts.length === 0}
                 <EmptyState title="No work products" description="No work products have been attached to this issue yet." icon="📦" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <Card class="overflow-hidden rounded-lg py-0 gap-0 divide-y divide-border">
                   {#each issue.workProducts as wp}
                     {#if editingWpId === wp.id}
                       <!-- Inline edit row -->
-                      <div class="p-3 space-y-3 bg-zinc-50 dark:bg-zinc-800/30">
+                      <div class="p-3 space-y-3 bg-accent/30">
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                           <div class="md:col-span-2">
                             <Input bind:value={editWpTitle} placeholder="Title" class="text-sm" />
                           </div>
                           <select
                             bind:value={editWpKind}
-                            class="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                            class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"
                           >
                             {#each WP_KINDS as k}
                               <option value={k}>{k.replace(/_/g, " ")}</option>
@@ -1804,7 +1808,7 @@
                           </select>
                           <select
                             bind:value={editWpStatus}
-                            class="flex h-9 w-full rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm shadow-xs dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100"
+                            class="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-xs transition-colors focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"
                           >
                             {#each WP_STATUSES as s}
                               <option value={s}>{s.replace(/_/g, " ")}</option>
@@ -1823,11 +1827,11 @@
                       </div>
                     {:else}
                       <!-- Display row -->
-                      <div class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                      <div class="flex items-center justify-between p-3 text-sm hover:bg-accent/50 transition-colors duration-150">
                         <div class="min-w-0">
                           <p class="font-medium truncate">{wp.title ?? "Untitled"}</p>
                           {#if wp.kind}
-                            <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5">{wp.kind.replace(/_/g, " ")}</p>
+                            <p class="text-xs text-muted-foreground mt-0.5">{wp.kind.replace(/_/g, " ")}</p>
                           {/if}
                         </div>
                         <div class="flex items-center gap-2 shrink-0">
@@ -1850,7 +1854,7 @@
                       </div>
                     {/if}
                   {/each}
-                </div>
+                </Card>
               {/if}
             </div>
           </TabsContent>
@@ -1862,7 +1866,7 @@
             <div class="mt-4 space-y-4">
               <div class="flex flex-wrap items-center justify-between gap-3">
                 <div class="space-y-1">
-                  <p class="text-xs uppercase tracking-[0.18em] text-zinc-500 dark:text-zinc-400">Document workspace</p>
+                  <p class="text-xs uppercase tracking-[0.18em] text-muted-foreground">Document workspace</p>
                   <p class="text-sm text-muted-foreground">Work on issue-scoped documents here or jump to the company library for cross-issue browsing.</p>
                 </div>
                 <div class="flex items-center gap-2">
@@ -1887,15 +1891,15 @@
                   <CardContent class="pt-4">
                     <div class="space-y-3">
                       <div>
-                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Document Key</Label>
+                        <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Document Key</Label>
                         <Input bind:value={newDocKey} placeholder="e.g. notes, spec, requirements..." />
                       </div>
                       <div>
-                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Title (optional)</Label>
+                        <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Title (optional)</Label>
                         <Input bind:value={newDocTitle} placeholder="Optional display title" />
                       </div>
                       <div>
-                        <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Content (optional)</Label>
+                        <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Content (optional)</Label>
                         <Textarea bind:value={newDocContent} placeholder="Document content (Markdown supported)..." rows={4} />
                       </div>
                       <div class="flex items-center gap-2">
@@ -2018,15 +2022,15 @@
                         {:else if editingDocKey === doc.key}
                           <div class="space-y-3" onblurcapture={(event) => void handleDocumentEditorBlur(event, doc)}>
                             <div>
-                              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Title</Label>
+                              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Title</Label>
                               <Input bind:value={editingDocTitle} placeholder="Optional title" />
                             </div>
                             <div>
-                              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Content</Label>
+                              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Content</Label>
                               <Textarea bind:value={editingDocContent} placeholder="Markdown content..." rows={6} />
                             </div>
                             <div>
-                              <Label class="text-xs font-medium text-zinc-500 dark:text-zinc-400 mb-1.5 block">Change summary</Label>
+                              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Change summary</Label>
                               <Input bind:value={editingDocSummary} placeholder="Describe the change" />
                             </div>
                             <div class="flex items-center gap-2">
@@ -2041,10 +2045,10 @@
                         {:else if doc.content || doc.body}
                           <MarkdownBody content={doc.content ?? doc.body ?? ""} />
                         {:else}
-                          <p class="text-sm text-zinc-500 italic">No content.</p>
+                          <p class="text-sm text-muted-foreground italic">No content.</p>
                         {/if}
                         {#if doc.updatedAt}
-                          <div class="mt-3 pt-2 border-t border-zinc-100 dark:border-zinc-800">
+                          <div class="mt-3 pt-2 border-t border-border">
                             <TimeAgo date={doc.updatedAt} class="text-xs" />
                           </div>
                         {/if}
@@ -2107,8 +2111,8 @@
             <TabsContent value={`plugin:${tab.pluginId}:${tab.id}`}>
               <div class="mt-4 space-y-3">
                 <div>
-                  <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{tab.label}</p>
-                  <p class="text-xs text-zinc-500 dark:text-zinc-400">Plugin-contributed issue detail tab.</p>
+                  <p class="text-sm font-medium text-foreground">{tab.label}</p>
+                  <p class="text-xs text-muted-foreground">Plugin-contributed issue detail tab.</p>
                 </div>
                 <PluginRenderer
                   pluginId={tab.pluginId}
@@ -2123,23 +2127,24 @@
 
         <!-- Linked Approvals (collapsible, shown when present) -->
         {#if linkedApprovals.length > 0}
-          <div class="mt-4 rounded-lg border border-border">
+          <Card class="mt-4 rounded-lg border-border/60 py-0 gap-0">
             <button
               type="button"
               onclick={() => approvalsOpen = !approvalsOpen}
-              class="flex w-full items-center justify-between px-3 py-2 text-left"
+              class="flex w-full items-center justify-between px-3 py-2 text-left cursor-pointer"
             >
               <span class="text-sm font-medium text-muted-foreground">
                 Linked Approvals ({linkedApprovals.length})
               </span>
-              <ChevronRight class="h-4 w-4 text-muted-foreground transition-transform {approvalsOpen ? 'rotate-90' : ''}" />
+              <ChevronRight class="h-4 w-4 text-muted-foreground transition-transform duration-150 {approvalsOpen ? 'rotate-90' : ''}" />
             </button>
             {#if approvalsOpen}
-              <div class="border-t border-border divide-y divide-border">
+              <Separator />
+              <div class="divide-y divide-border">
                 {#each linkedApprovals as approval}
                   <a
                     href="/{prefix}/approvals/{approval.id}"
-                    class="flex items-center justify-between px-3 py-2 text-xs transition-colors hover:bg-accent/20"
+                    class="flex items-center justify-between px-3 py-2 text-xs cursor-pointer transition-colors duration-150 hover:bg-accent/50"
                   >
                     <div class="flex items-center gap-2">
                       <StatusBadge status={approval.status} />
@@ -2153,76 +2158,75 @@
                 {/each}
               </div>
             {/if}
-          </div>
+          </Card>
         {/if}
       </div>
 
       <!-- Properties drawer panel -->
       {#if showPropertiesPanel}
         <aside class="w-full lg:w-80 shrink-0">
-          <div class="rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900 sticky top-4">
+          <Card class="sticky top-4 rounded-lg border-border/60 backdrop-blur-sm gap-0 py-0">
             <!-- Panel header -->
-            <div class="flex items-center justify-between px-4 py-3 border-b border-zinc-100 dark:border-zinc-800">
-              <span class="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Properties</span>
-              <button
+            <CardHeader class="flex flex-row items-center justify-between px-4 py-3 border-b border-border">
+              <CardTitle class="text-sm">Properties</CardTitle>
+              <Button
+                variant="ghost"
+                size="icon-xs"
                 onclick={() => showPropertiesPanel = false}
-                class="rounded p-1 text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
                 title="Close properties panel"
+                class="cursor-pointer"
               >
                 <X class="size-4" />
-              </button>
-            </div>
+              </Button>
+            </CardHeader>
 
             <div class="p-4 space-y-0.5">
               <!-- Status -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Status</span>
-                <div class="flex items-center gap-2">
-                  <span class="size-2.5 rounded-full {statusDotColor(issue.status)}"></span>
-                  <span class="capitalize text-zinc-900 dark:text-zinc-100">{issue.status.replace(/_/g, " ")}</span>
-                </div>
+                <span class="text-muted-foreground">Status</span>
+                <Badge variant="outline" class="gap-1.5 capitalize">
+                  <span class="size-2 rounded-full {statusDotColor(issue.status)}"></span>
+                  {issue.status.replace(/_/g, " ")}
+                </Badge>
               </div>
 
               <!-- Priority -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Priority</span>
-                <div class="flex items-center gap-1.5">
+                <span class="text-muted-foreground">Priority</span>
+                <Badge variant="outline" class="gap-1.5 capitalize">
                   <PriorityIcon priority={issue.priority} />
-                  <span class="capitalize text-zinc-900 dark:text-zinc-100">{priorityConfig(issue.priority).label}</span>
-                </div>
+                  {priorityConfig(issue.priority).label}
+                </Badge>
               </div>
 
               <!-- Labels -->
               <div class="flex items-start justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400 pt-0.5">Labels</span>
+                <span class="text-muted-foreground pt-0.5">Labels</span>
                 <div class="text-right">
                   {#if issue.labels && issue.labels.length > 0}
                     <div class="flex flex-wrap gap-1.5 justify-end">
                       {#each issue.labels as label}
-                        <span
-                          class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs font-medium"
-                          style={labelStyle(label.color)}
-                        >
+                        <Badge variant="outline" class="gap-1 text-xs font-medium" style={labelStyle(label.color)}>
                           <Tag class="size-3" />
                           {label.name}
-                        </span>
+                        </Badge>
                       {/each}
                     </div>
                   {:else}
-                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">No labels</span>
+                    <span class="text-muted-foreground text-xs">No labels</span>
                   {/if}
                 </div>
               </div>
 
               <!-- Assignee -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Assignee</span>
+                <span class="text-muted-foreground">Assignee</span>
                 <div class="text-right">
                   {#if issue.assigneeAgentId}
                     {@const name = agentName(issue.assigneeAgentId)}
                     <a
                       href="/{prefix}/agents/{issue.assigneeAgentId}"
-                      class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors"
+                      class="inline-flex items-center gap-2 text-foreground hover:text-primary transition-colors"
                     >
                       <span class="inline-flex items-center justify-center size-5 rounded-full bg-primary/15 text-[10px] font-bold text-primary shrink-0">
                         {agentInitials(name ?? "AG")}
@@ -2231,31 +2235,31 @@
                       <ChevronRight class="size-3 text-zinc-400" />
                     </a>
                   {:else if issue.assigneeUserId}
-                    <span class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                    <span class="inline-flex items-center gap-2 text-foreground">
                       <User class="size-3.5 text-zinc-400" />
                       <span class="text-sm">{issue.assigneeUserId.slice(0, 12)}</span>
                     </span>
                   {:else}
-                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">Unassigned</span>
+                    <span class="text-muted-foreground text-xs">Unassigned</span>
                   {/if}
                 </div>
               </div>
 
               <!-- Project -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Project</span>
+                <span class="text-muted-foreground">Project</span>
                 <div class="text-right">
                   {#if issue.project}
                     <a
                       href="/{prefix}/projects/{issue.project.id}"
-                      class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors"
+                      class="inline-flex items-center gap-2 text-foreground hover:text-primary transition-colors"
                     >
                       <span class="size-2.5 rounded-full bg-primary shrink-0"></span>
                       <span class="text-sm">{issue.project.name}</span>
                       <ChevronRight class="size-3 text-zinc-400" />
                     </a>
                   {:else}
-                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">No project</span>
+                    <span class="text-muted-foreground text-xs">No project</span>
                   {/if}
                 </div>
               </div>
@@ -2263,10 +2267,10 @@
               <!-- Goal -->
               {#if issue.goal}
                 <div class="flex items-center justify-between py-2 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Goal</span>
+                  <span class="text-muted-foreground">Goal</span>
                   <a
                     href="/{prefix}/goals/{issue.goal.id}"
-                    class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors"
+                    class="inline-flex items-center gap-2 text-foreground hover:text-primary transition-colors"
                   >
                     <span class="text-sm truncate max-w-[160px]">{issue.goal.title}</span>
                     <ChevronRight class="size-3 text-zinc-400" />
@@ -2276,12 +2280,12 @@
 
               <!-- Parent issue -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Parent</span>
+                <span class="text-muted-foreground">Parent</span>
                 <div class="text-right">
                   {#if parentAncestor}
                     <a
                       href="/{prefix}/issues/{parentAncestor.id}"
-                      class="text-sm text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors truncate max-w-[180px] block"
+                      class="text-sm text-foreground hover:text-primary transition-colors truncate max-w-[180px] block"
                       title={parentAncestor.title}
                     >
                       {parentAncestor.identifier ?? parentAncestor.title}
@@ -2289,28 +2293,28 @@
                   {:else if issue.parentId}
                     <a
                       href="/{prefix}/issues/{issue.parentId}"
-                      class="text-sm text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors font-mono"
+                      class="text-sm text-foreground hover:text-primary transition-colors font-mono"
                     >
                       {issue.parentId.slice(0, 8)}...
                     </a>
                   {:else}
-                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">No parent</span>
+                    <span class="text-muted-foreground text-xs">No parent</span>
                   {/if}
                 </div>
               </div>
 
               <!-- Separator before metadata -->
-              <div class="border-t border-zinc-100 dark:border-zinc-800 my-2"></div>
+              <Separator class="my-2" />
 
               <!-- Created by -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Created by</span>
+                <span class="text-muted-foreground">Created by</span>
                 <div class="text-right">
                   {#if issue.createdByAgentId}
                     {@const name = agentName(issue.createdByAgentId)}
                     <a
                       href="/{prefix}/agents/{issue.createdByAgentId}"
-                      class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100 hover:text-primary transition-colors"
+                      class="inline-flex items-center gap-2 text-foreground hover:text-primary transition-colors"
                     >
                       <span class="inline-flex items-center justify-center size-5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-[10px] font-bold text-zinc-600 dark:text-zinc-300 shrink-0">
                         {agentInitials(name ?? "AG")}
@@ -2318,48 +2322,48 @@
                       <span class="text-sm">{name ?? issue.createdByAgentId.slice(0, 8)}</span>
                     </a>
                   {:else if issue.createdByUserId}
-                    <span class="inline-flex items-center gap-2 text-zinc-900 dark:text-zinc-100">
+                    <span class="inline-flex items-center gap-2 text-foreground">
                       <User class="size-3.5 text-zinc-400" />
                       <span class="text-sm">{issue.createdByUserId.slice(0, 12)}</span>
                     </span>
                   {:else}
-                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">System</span>
+                    <span class="text-muted-foreground text-xs">System</span>
                   {/if}
                 </div>
               </div>
 
               <!-- Started -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Started</span>
-                <span class="text-zinc-900 dark:text-zinc-100 text-sm">
+                <span class="text-muted-foreground">Started</span>
+                <span class="text-foreground text-sm">
                   {#if issue.startedAt}
                     {formatDate(issue.startedAt)}
                   {:else}
-                    <span class="text-zinc-400 dark:text-zinc-500 text-xs">Not started</span>
+                    <span class="text-muted-foreground text-xs">Not started</span>
                   {/if}
                 </span>
               </div>
 
               <!-- Created -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Created</span>
-                <span class="text-zinc-900 dark:text-zinc-100 text-sm">{formatDate(issue.createdAt)}</span>
+                <span class="text-muted-foreground">Created</span>
+                <span class="text-foreground text-sm">{formatDate(issue.createdAt)}</span>
               </div>
 
               <!-- Updated -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">Updated</span>
+                <span class="text-muted-foreground">Updated</span>
                 <TimeAgo date={issue.updatedAt} class="text-sm" />
               </div>
 
               <!-- Separator before ID -->
-              <div class="border-t border-zinc-100 dark:border-zinc-800 my-2"></div>
+              <Separator class="my-2" />
 
               <!-- ID -->
               <div class="flex items-center justify-between py-2 text-sm">
-                <span class="text-zinc-500 dark:text-zinc-400">ID</span>
+                <span class="text-muted-foreground">ID</span>
                 <button
-                  class="font-mono text-xs text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors cursor-pointer truncate max-w-[180px]"
+                  class="font-mono text-xs text-muted-foreground hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors cursor-pointer truncate max-w-[180px]"
                   title="Click to copy: {issue.id}"
                   onclick={() => {
                     navigator.clipboard.writeText(issue?.id ?? '');
@@ -2370,7 +2374,7 @@
                 </button>
               </div>
             </div>
-          </div>
+          </Card>
         </aside>
       {/if}
     </div>

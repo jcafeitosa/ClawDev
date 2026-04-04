@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Users, Plus, UserMinus, Mail, Shield, Clock, Search, X, ChevronDown } from 'lucide-svelte';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Skeleton, Separator, Avatar, AvatarFallback } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Members' }]));
 
@@ -263,16 +264,16 @@
 
   <!-- Invite form -->
   {#if showInviteForm}
-    <section class="rounded-xl border border-border bg-card overflow-hidden">
-      <div class="flex items-center gap-3 px-5 py-4 border-b border-border/50">
+    <Card class="overflow-hidden">
+      <CardHeader class="flex-row items-center gap-3 border-b border-border/50">
         <div class="rounded-lg bg-blue-500/10 p-2">
           <Mail class="h-4 w-4 text-blue-400" />
         </div>
         <div>
-          <h2 class="text-sm font-semibold text-foreground">Invite Team Member</h2>
+          <CardTitle class="text-sm">Invite Team Member</CardTitle>
           <p class="text-xs text-muted-foreground">Send an invitation to join this company</p>
         </div>
-      </div>
+      </CardHeader>
 
       <form
         onsubmit={(e) => { e.preventDefault(); inviteMember(); }}
@@ -331,14 +332,14 @@
 
         <!-- Error / Success -->
         {#if inviteError}
-          <div class="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
-            <p class="text-sm text-red-400">{inviteError}</p>
-          </div>
+          <Alert variant="destructive">
+            <AlertDescription>{inviteError}</AlertDescription>
+          </Alert>
         {/if}
         {#if inviteSuccess}
-          <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-4 py-3">
-            <p class="text-sm text-emerald-400">Invitation sent successfully!</p>
-          </div>
+          <Alert>
+            <AlertDescription class="text-emerald-400">Invitation sent successfully!</AlertDescription>
+          </Alert>
         {/if}
 
         <!-- Submit -->
@@ -360,7 +361,7 @@
           </button>
         </div>
       </form>
-    </section>
+    </Card>
   {/if}
 
   <!-- Tabs + Search -->
@@ -424,14 +425,15 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(5) as _}
-        <div class="h-[72px] animate-pulse rounded-xl bg-card border border-border"></div>
+        <Skeleton class="h-[72px] rounded-xl" />
       {/each}
     </div>
 
   <!-- Error -->
   {:else if error}
-    <div class="rounded-xl border border-red-500/20 bg-red-500/10 p-6 text-center">
-      <p class="text-sm text-red-400">{error}</p>
+    <Alert variant="destructive">
+      <AlertTitle>Failed to load members</AlertTitle>
+      <AlertDescription>{error}</AlertDescription>
       <button
         onclick={() => {
           loading = true;
@@ -446,7 +448,7 @@
       >
         Retry
       </button>
-    </div>
+    </Alert>
 
   <!-- Empty -->
   {:else if filteredMembers.length === 0}
@@ -470,7 +472,7 @@
 
   <!-- Members list -->
   {:else}
-    <div class="rounded-xl border border-border bg-card overflow-hidden">
+    <Card class="overflow-hidden">
       {#each filteredMembers as member, i (member.id)}
         <div
           class="flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
@@ -478,17 +480,17 @@
         >
           <!-- Avatar -->
           <div class="shrink-0">
-            {#if member.avatarUrl}
-              <img
-                src={member.avatarUrl}
-                alt={member.name ?? member.email}
-                class="h-9 w-9 rounded-full object-cover"
-              />
-            {:else}
-              <div class="flex h-9 w-9 items-center justify-center rounded-full bg-accent text-xs font-semibold text-foreground">
-                {memberInitials(member)}
-              </div>
-            {/if}
+            <Avatar class="h-9 w-9">
+              {#if member.avatarUrl}
+                <img
+                  src={member.avatarUrl}
+                  alt={member.name ?? member.email}
+                  class="h-9 w-9 rounded-full object-cover"
+                />
+              {:else}
+                <AvatarFallback>{memberInitials(member)}</AvatarFallback>
+              {/if}
+            </Avatar>
           </div>
 
           <!-- Name & email -->
@@ -497,12 +499,12 @@
               <span class="text-sm font-semibold text-foreground truncate">
                 {member.name ?? member.email}
               </span>
-              <span class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {roleBadgeColor(member.role)}">
+              <Badge variant="outline" class="text-[10px] {roleBadgeColor(member.role)}">
                 {member.role}
-              </span>
-              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium leading-none {statusBadgeColor(member.status)}">
+              </Badge>
+              <Badge variant="secondary" class="text-[10px] {statusBadgeColor(member.status)}">
                 {member.status}
-              </span>
+              </Badge>
             </div>
             {#if member.name}
               <p class="text-xs text-muted-foreground mt-0.5 truncate">{member.email}</p>
@@ -552,7 +554,7 @@
           </div>
         </div>
       {/each}
-    </div>
+    </Card>
 
     <!-- Summary -->
     <p class="text-xs text-muted-foreground text-center">

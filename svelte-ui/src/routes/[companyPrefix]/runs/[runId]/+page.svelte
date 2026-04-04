@@ -9,6 +9,7 @@
   import TimeAgo from '$lib/components/time-ago.svelte';
   import PageSkeleton from '$lib/components/page-skeleton.svelte';
   import MarkdownBody from '$lib/components/markdown-body.svelte';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
   import {
     buildTranscriptFromLog,
     compactWs,
@@ -691,9 +692,9 @@
           <div class="flex items-center gap-2 flex-wrap">
             <StatusBadge status={run.status ?? 'unknown'} />
             {#if sourceLabel(run.invocationSource)}
-              <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold {sourceColor(run.invocationSource)}">
+              <Badge variant="secondary" class="text-[10px] {sourceColor(run.invocationSource)}">
                 {sourceLabel(run.invocationSource)}
-              </span>
+              </Badge>
             {/if}
             {#if run.status === 'running' || run.status === 'queued'}
               <button class="text-destructive text-xs h-6 px-2 rounded-md hover:bg-destructive/10 transition-colors" onclick={cancelRun}>

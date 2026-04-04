@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { FolderKanban, Plus, Calendar, CircleDot, FolderOpen } from 'lucide-svelte';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Input, Skeleton, Separator } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Projects' }]));
 
@@ -64,64 +65,56 @@
       <h1 class="text-2xl font-bold text-foreground">Projects</h1>
       <p class="mt-1 text-sm text-muted-foreground">Manage your team's projects and track progress</p>
     </div>
-    <button
-      onclick={() => (showCreate = !showCreate)}
-      class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700"
-    >
+    <Button onclick={() => (showCreate = !showCreate)}>
       <Plus class="h-4 w-4" />
       New Project
-    </button>
+    </Button>
   </div>
 
   <!-- Create form -->
   {#if showCreate}
-    <form
-      onsubmit={(e) => { e.preventDefault(); createProject(); }}
-      class="rounded-xl border border-border bg-card p-5 space-y-4"
-    >
-      <div>
-        <label for="proj-name" class="block text-sm font-medium text-foreground mb-1">Project Name</label>
-        <input
-          id="proj-name"
-          bind:value={newName}
-          placeholder="e.g. API Redesign"
-          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
-      </div>
-      <div>
-        <label for="proj-desc" class="block text-sm font-medium text-foreground mb-1">Description</label>
-        <textarea
-          id="proj-desc"
-          bind:value={newDescription}
-          placeholder="Brief description..."
-          rows="2"
-          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-        ></textarea>
-      </div>
-      <div class="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={creating || !newName.trim()}
-          class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+    <Card>
+      <CardContent class="pt-5">
+        <form
+          onsubmit={(e) => { e.preventDefault(); createProject(); }}
+          class="space-y-4"
         >
-          {creating ? 'Creating...' : 'Create Project'}
-        </button>
-        <button
-          type="button"
-          onclick={() => (showCreate = false)}
-          class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
+          <div>
+            <label for="proj-name" class="block text-sm font-medium text-foreground mb-1">Project Name</label>
+            <Input
+              id="proj-name"
+              bind:value={newName}
+              placeholder="e.g. API Redesign"
+            />
+          </div>
+          <div>
+            <label for="proj-desc" class="block text-sm font-medium text-foreground mb-1">Description</label>
+            <textarea
+              id="proj-desc"
+              bind:value={newDescription}
+              placeholder="Brief description..."
+              rows="2"
+              class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+            ></textarea>
+          </div>
+          <div class="flex items-center gap-3">
+            <Button type="submit" disabled={creating || !newName.trim()}>
+              {creating ? 'Creating...' : 'Create Project'}
+            </Button>
+            <Button variant="outline" type="button" onclick={() => (showCreate = false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   {/if}
 
   <!-- Loading skeleton -->
   {#if loading}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
       {#each Array(6) as _}
-        <div class="h-40 animate-pulse rounded-xl border border-border bg-card"></div>
+        <Skeleton class="h-40 rounded-xl" />
       {/each}
     </div>
   {:else if projects.length === 0}
@@ -132,13 +125,10 @@
       </div>
       <h3 class="text-lg font-medium text-foreground">No projects yet</h3>
       <p class="mt-1 text-sm text-muted-foreground">Create your first project to get started</p>
-      <button
-        onclick={() => (showCreate = true)}
-        class="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-      >
+      <Button class="mt-4" onclick={() => (showCreate = true)}>
         <Plus class="h-4 w-4" />
         New Project
-      </button>
+      </Button>
     </div>
   {:else}
     <!-- Project cards grid -->
@@ -146,47 +136,47 @@
       {#each projects as project (project.id)}
         <a
           href="/{prefix}/projects/{project.id}"
-          class="group rounded-xl border border-border bg-card p-5 transition-colors hover:bg-accent/40 hover:border-white/[0.12]"
+          class="group block no-underline"
         >
-          <div class="flex items-start gap-3 mb-3">
-            <div class="rounded-lg bg-blue-600/10 p-2">
-              <FolderKanban class="h-5 w-5 text-blue-500" />
-            </div>
-            <div class="min-w-0 flex-1">
-              <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-blue-400 transition-colors">
-                {project.name}
-              </h3>
-              {#if project.description}
-                <p class="mt-1 text-xs text-muted-foreground line-clamp-2">{project.description}</p>
+          <Card class="transition-colors hover:bg-accent/40 hover:border-white/[0.12]">
+            <CardContent class="pt-5">
+              <div class="flex items-start gap-3 mb-3">
+                <div class="rounded-lg bg-blue-600/10 p-2">
+                  <FolderKanban class="h-5 w-5 text-blue-500" />
+                </div>
+                <div class="min-w-0 flex-1">
+                  <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-blue-400 transition-colors">
+                    {project.name}
+                  </h3>
+                  {#if project.description}
+                    <p class="mt-1 text-xs text-muted-foreground line-clamp-2">{project.description}</p>
+                  {/if}
+                </div>
+              </div>
+
+              <div class="flex items-center gap-4 text-xs text-muted-foreground">
+                {#if project.targetDate}
+                  <span class="inline-flex items-center gap-1">
+                    <Calendar class="h-3.5 w-3.5" />
+                    {formatDate(project.targetDate)}
+                  </span>
+                {/if}
+                {#if project.issueCount !== undefined}
+                  <span class="inline-flex items-center gap-1">
+                    <CircleDot class="h-3.5 w-3.5" />
+                    {project.issueCount} issue{project.issueCount === 1 ? '' : 's'}
+                  </span>
+                {/if}
+              </div>
+
+              {#if project.status}
+                <Separator class="my-3" />
+                <Badge variant={project.status === 'active' ? 'default' : 'secondary'}>
+                  {project.status}
+                </Badge>
               {/if}
-            </div>
-          </div>
-
-          <div class="flex items-center gap-4 text-xs text-muted-foreground">
-            {#if project.targetDate}
-              <span class="inline-flex items-center gap-1">
-                <Calendar class="h-3.5 w-3.5" />
-                {formatDate(project.targetDate)}
-              </span>
-            {/if}
-            {#if project.issueCount !== undefined}
-              <span class="inline-flex items-center gap-1">
-                <CircleDot class="h-3.5 w-3.5" />
-                {project.issueCount} issue{project.issueCount === 1 ? '' : 's'}
-              </span>
-            {/if}
-          </div>
-
-          {#if project.status}
-            <div class="mt-3 pt-3 border-t border-border/50">
-              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
-                {project.status === 'active' ? 'bg-emerald-500/10 text-emerald-400' :
-                 project.status === 'archived' ? 'bg-zinc-500/10 text-zinc-400' :
-                 'bg-blue-500/10 text-blue-400'}">
-                {project.status}
-              </span>
-            </div>
-          {/if}
+            </CardContent>
+          </Card>
         </a>
       {/each}
     </div>

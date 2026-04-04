@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { Plus, Search, List, LayoutGrid, Filter, ArrowUpDown, Layers, ChevronRight, X, Check, User } from 'lucide-svelte';
   import KanbanBoard from '$lib/components/board/kanban-board.svelte';
+  import { Badge, Button, Input, Skeleton, Alert, AlertTitle, AlertDescription, Separator, Card } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Issues' }]));
 
@@ -385,13 +386,13 @@
 
     <!-- Live badge -->
     {#if hasActiveRun(issue)}
-      <span class="inline-flex shrink-0 items-center gap-1 rounded-full bg-blue-500/10 px-1.5 py-0.5">
+      <Badge variant="ghost" class="shrink-0 gap-1 bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400">
         <span class="relative flex h-2 w-2">
           <span class="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75"></span>
           <span class="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
         </span>
-        <span class="text-[11px] font-medium text-blue-600 dark:text-blue-400">Live</span>
-      </span>
+        Live
+      </Badge>
     {/if}
 
     <!-- Title -->
@@ -401,21 +402,22 @@
     <span class="ml-auto hidden shrink-0 items-center gap-2 sm:flex sm:gap-3">
       <!-- Priority -->
       {#if issue.priority && PRIORITY_LABELS[issue.priority]}
-        <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none {PRIORITY_COLORS[issue.priority] ?? ''}">
+        <Badge variant="outline" class="text-[10px] font-bold leading-none rounded px-1.5 py-0.5 {PRIORITY_COLORS[issue.priority] ?? ''}">
           {PRIORITY_LABELS[issue.priority]}
-        </span>
+        </Badge>
       {/if}
 
       <!-- Labels (up to 3) -->
       {#if issue.labels?.length}
         <span class="hidden items-center gap-1 overflow-hidden md:flex md:max-w-[200px]">
           {#each issue.labels.slice(0, 3) as label}
-            <span
-              class="inline-flex items-center rounded-full border px-1.5 py-0.5 text-[10px] font-medium"
+            <Badge
+              variant="outline"
+              class="text-[10px] font-medium px-1.5 py-0.5"
               style="border-color: {label.color ?? '#3b82f6'}; color: {label.color ?? '#3b82f6'}; background-color: {label.color ?? '#3b82f6'}1f;"
             >
               {label.name}
-            </span>
+            </Badge>
           {/each}
           {#if issue.labels.length > 3}
             <span class="text-[10px] text-muted-foreground">+{issue.labels.length - 3}</span>
@@ -477,20 +479,17 @@
   <div class="flex items-center justify-between gap-2 sm:gap-3">
     <!-- Left: New Issue + Search -->
     <div class="flex min-w-0 items-center gap-2 sm:gap-3">
-      <a
-        href="/{currentPrefix}/issues/new"
-        class="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-3 py-1.5 text-sm font-medium transition hover:bg-accent/60"
-      >
+      <Button variant="outline" size="sm" href="/{currentPrefix}/issues/new" class="cursor-pointer">
         <Plus class="h-4 w-4" />
         <span class="hidden sm:inline">New Issue</span>
-      </a>
+      </Button>
       <div class="relative">
-        <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
-        <input
+        <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground z-10" />
+        <Input
           type="text"
           placeholder="Search issues..."
           bind:value={searchQuery}
-          class="w-48 rounded-md border border-border bg-card py-1.5 pl-8 pr-3 text-sm placeholder:text-muted-foreground focus:border-ring focus:outline-none sm:w-64 md:w-80"
+          class="w-48 pl-8 sm:w-64 md:w-80"
         />
       </div>
     </div>
@@ -558,13 +557,17 @@
                   <button
                     type="button"
                     onclick={() => updateView({ statuses: isActive ? [] : [...preset.statuses] })}
-                    class="rounded-full border px-2.5 py-1 text-xs transition-colors {isActive ? 'border-primary bg-primary text-primary-foreground' : 'border-border text-muted-foreground hover:border-foreground/30 hover:text-foreground'}"
-                  >{preset.label}</button>
+                    class="cursor-pointer"
+                  >
+                    <Badge variant={isActive ? 'default' : 'outline'} class="px-2.5 py-1 text-xs transition-colors duration-150 {isActive ? '' : 'text-muted-foreground hover:border-foreground/30 hover:text-foreground'} cursor-pointer">
+                      {preset.label}
+                    </Badge>
+                  </button>
                 {/each}
               </div>
             </div>
 
-            <div class="border-t border-border"></div>
+            <Separator />
 
             <!-- Status + Priority/Assignee -->
             <div class="grid grid-cols-1 gap-x-4 gap-y-3 sm:grid-cols-2">
@@ -709,9 +712,9 @@
       <div class="flex gap-3 overflow-x-auto pb-4">
         {#each Array(5) as _}
           <div class="w-72 shrink-0 space-y-2 rounded-xl border border-border/50 bg-accent/25 p-3">
-            <div class="h-4 w-24 animate-pulse rounded bg-accent/75"></div>
+            <Skeleton class="h-4 w-24" />
             {#each Array(3) as __}
-              <div class="h-24 animate-pulse rounded-lg bg-accent/50"></div>
+              <Skeleton class="h-24 rounded-lg" />
             {/each}
           </div>
         {/each}
@@ -719,16 +722,17 @@
     {:else}
       <div class="space-y-2">
         {#each Array(8) as _}
-          <div class="h-[52px] animate-pulse rounded-xl border border-border bg-card"></div>
+          <Skeleton class="h-[52px] rounded-xl" />
         {/each}
       </div>
     {/if}
 
   {:else if error}
-    <div class="rounded-xl border border-red-500/20 bg-red-500/10 p-6 text-center">
-      <p class="text-sm text-red-400">{error}</p>
-      <button onclick={loadIssues} class="mt-3 text-sm text-blue-500 hover:underline">Retry</button>
-    </div>
+    <Alert variant="destructive">
+      <AlertTitle>Failed to load issues</AlertTitle>
+      <AlertDescription>{error}</AlertDescription>
+      <Button variant="link" size="sm" class="mt-2 cursor-pointer" onclick={loadIssues}>Retry</Button>
+    </Alert>
 
   {:else if viewState.viewMode === 'board'}
     <KanbanBoard issues={filteredIssues} prefix={currentPrefix ?? ''} onStatusChange={handleStatusChange} />
@@ -751,11 +755,11 @@
       {#each groupedIssues as group (group.key)}
         {@const isCollapsed = viewState.collapsedGroups.includes(group.key)}
         {#if group.key === '__all'}
-          <div class="overflow-hidden rounded-xl border border-border bg-card">
+          <Card class="overflow-hidden rounded-xl py-0 gap-0">
             {#each group.issues as issue, i (issue.id)}
               {@render issueRow(issue, i, group.issues.length)}
             {/each}
-          </div>
+          </Card>
         {:else}
           <div>
             <div class="flex items-center gap-1.5 py-1.5 pl-1 pr-3">
@@ -781,11 +785,11 @@
               </a>
             </div>
             {#if !isCollapsed}
-              <div class="overflow-hidden rounded-xl border border-border bg-card">
+              <Card class="overflow-hidden rounded-xl py-0 gap-0">
                 {#each group.issues as issue, i (issue.id)}
                   {@render issueRow(issue, i, group.issues.length)}
                 {/each}
-              </div>
+              </Card>
             {/if}
           </div>
         {/if}

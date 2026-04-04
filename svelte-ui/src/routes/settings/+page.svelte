@@ -1,5 +1,9 @@
 <script lang="ts">
   import { api } from '$lib/api';
+  import {
+    Card, CardHeader, CardTitle, CardDescription, CardContent,
+    Badge, Button, Skeleton, Separator, Alert, AlertTitle, AlertDescription,
+  } from '$lib/components/ui/index.js';
   import { Activity, ArrowRight, KeyRound, Plug, Shield, Settings2, Server, SlidersHorizontal, Zap } from 'lucide-svelte';
 
   interface HealthData {
@@ -124,39 +128,33 @@
 </svelte:head>
 
 <div class="mx-auto max-w-6xl space-y-6 p-6">
-  <div class="flex items-center justify-between gap-4 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+  <div class="flex items-center justify-between gap-4 border-b border-border pb-3">
     <div>
-      <p class="text-xs uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">Instance settings</p>
-      <h1 class="text-2xl font-semibold text-zinc-900 dark:text-zinc-50">Control panel</h1>
-      <p class="mt-1 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
+      <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Instance settings</p>
+      <h1 class="text-2xl font-semibold text-foreground">Control panel</h1>
+      <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
         General configuration, experimental flags, heartbeats, plugins, users, status, and API keys live here.
       </p>
     </div>
     <div class="flex items-center gap-2">
-      <a
-        href="/settings/status"
-        class="inline-flex items-center gap-2 rounded-md border border-zinc-200 px-3 py-2 text-sm font-medium text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
-      >
+      <Button variant="outline" href="/settings/status">
         <Server class="h-4 w-4" />
         Open status
-      </a>
-      <a
-        href="/settings/general"
-        class="inline-flex items-center gap-2 rounded-md bg-zinc-900 px-3 py-2 text-sm font-medium text-white transition hover:bg-zinc-800 dark:bg-zinc-100 dark:text-zinc-900 dark:hover:bg-zinc-200"
-      >
+      </Button>
+      <Button href="/settings/general">
         <ArrowRight class="h-4 w-4" />
         Get started
-      </a>
+      </Button>
     </div>
   </div>
 
-  <div class="flex gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+  <div class="flex gap-3 border-b border-border pb-3">
     {#each tabs as tab}
       <a
         href={tab.href}
-        class="text-sm {tab.href === '/settings/general'
-          ? 'font-medium text-indigo-600 dark:text-indigo-400'
-          : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}"
+        class="text-sm transition-colors {tab.href === '/settings/general'
+          ? 'font-medium text-primary'
+          : 'text-muted-foreground hover:text-foreground'}"
       >
         {tab.label}
       </a>
@@ -166,116 +164,129 @@
   {#if loading}
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
       {#each Array(4) as _}
-        <div class="h-28 animate-pulse rounded-xl bg-zinc-100 dark:bg-zinc-800"></div>
+        <Skeleton class="h-28 rounded-xl" />
       {/each}
     </div>
   {:else if error && !health}
-    <div class="rounded-xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/40 dark:text-amber-200">
-      {error}
-    </div>
+    <Alert variant="warning">
+      <AlertTitle>Error</AlertTitle>
+      <AlertDescription>{error}</AlertDescription>
+    </Alert>
   {:else if health}
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-      <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">Status</p>
-            <p class="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{health.status}</p>
+      <Card class="border-border/60">
+        <CardContent class="pt-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Status</p>
+              <p class="mt-2 text-2xl font-semibold text-foreground">{health.status}</p>
+            </div>
+            <Activity class="h-5 w-5 text-muted-foreground" />
           </div>
-          <Activity class="h-5 w-5 text-zinc-400" />
-        </div>
-      </div>
-      <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">Version</p>
-            <p class="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{health.version}</p>
+        </CardContent>
+      </Card>
+      <Card class="border-border/60">
+        <CardContent class="pt-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Version</p>
+              <p class="mt-2 text-2xl font-semibold text-foreground">{health.version}</p>
+            </div>
+            <Server class="h-5 w-5 text-muted-foreground" />
           </div>
-          <Server class="h-5 w-5 text-zinc-400" />
-        </div>
-      </div>
-      <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">Bootstrap</p>
-            <p class="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-              {health.bootstrapStatus === 'ready' ? 'Ready' : 'Pending'}
-            </p>
+        </CardContent>
+      </Card>
+      <Card class="border-border/60">
+        <CardContent class="pt-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Bootstrap</p>
+              <p class="mt-2 text-2xl font-semibold text-foreground">
+                {health.bootstrapStatus === 'ready' ? 'Ready' : 'Pending'}
+              </p>
+            </div>
+            <Zap class="h-5 w-5 text-muted-foreground" />
           </div>
-          <Zap class="h-5 w-5 text-zinc-400" />
-        </div>
-      </div>
-      <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div class="flex items-center justify-between">
-          <div>
-            <p class="text-xs uppercase tracking-[0.24em] text-zinc-500 dark:text-zinc-400">Auth</p>
-            <p class="mt-2 text-2xl font-semibold text-zinc-900 dark:text-zinc-50">
-              {health.authReady ? 'Ready' : 'Locked'}
-            </p>
+        </CardContent>
+      </Card>
+      <Card class="border-border/60">
+        <CardContent class="pt-6">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Auth</p>
+              <p class="mt-2 text-2xl font-semibold text-foreground">
+                {health.authReady ? 'Ready' : 'Locked'}
+              </p>
+            </div>
+            <Shield class="h-5 w-5 text-muted-foreground" />
           </div>
-          <Shield class="h-5 w-5 text-zinc-400" />
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     </div>
 
     <div class="grid gap-4 lg:grid-cols-[1.35fr_0.65fr]">
-      <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-        <div class="mb-4 flex items-center justify-between">
-          <div>
-            <h2 class="text-base font-semibold text-zinc-900 dark:text-zinc-50">Settings sections</h2>
-            <p class="text-sm text-zinc-500 dark:text-zinc-400">Jump directly to the area you need to manage.</p>
-          </div>
-        </div>
-        <div class="grid gap-3 sm:grid-cols-2">
-          {#each shortcuts as item}
-            <a
-              href={item.href}
-              class="group rounded-xl border border-zinc-200 p-4 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/50"
-            >
-              <div class="flex items-start justify-between gap-3">
-                <div>
-                  <div class="flex items-center gap-2">
-                    <item.icon class="h-4 w-4 text-zinc-400" />
-                    <h3 class="font-medium text-zinc-900 dark:text-zinc-50">{item.title}</h3>
+      <Card class="border-border/60">
+        <CardHeader>
+          <CardTitle>Settings sections</CardTitle>
+          <CardDescription>Jump directly to the area you need to manage.</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div class="grid gap-3 sm:grid-cols-2">
+            {#each shortcuts as item}
+              <a
+                href={item.href}
+                class="group rounded-xl border border-border/60 p-4 transition-all hover:border-border hover:bg-accent/50"
+              >
+                <div class="flex items-start justify-between gap-3">
+                  <div>
+                    <div class="flex items-center gap-2">
+                      <item.icon class="h-4 w-4 text-muted-foreground" />
+                      <h3 class="font-medium text-foreground">{item.title}</h3>
+                    </div>
+                    <p class="mt-2 text-sm text-muted-foreground">{item.description}</p>
                   </div>
-                  <p class="mt-2 text-sm text-zinc-500 dark:text-zinc-400">{item.description}</p>
+                  <ArrowRight class="mt-1 h-4 w-4 text-muted-foreground/40 transition group-hover:translate-x-0.5 group-hover:text-muted-foreground" />
                 </div>
-                <ArrowRight class="mt-1 h-4 w-4 text-zinc-300 transition group-hover:translate-x-0.5 group-hover:text-zinc-500 dark:group-hover:text-zinc-200" />
-              </div>
-            </a>
-          {/each}
-        </div>
-      </div>
-
-      <div class="space-y-4">
-        <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 class="text-base font-semibold text-zinc-900 dark:text-zinc-50">Feature flags</h2>
-          <div class="mt-4 space-y-3">
-            {#each Object.entries(health.features).slice(0, 6) as [key, enabled]}
-              <div class="flex items-center justify-between gap-4">
-                <span class="text-sm text-zinc-600 dark:text-zinc-400">{featureLabel(key)}</span>
-                <span class="text-sm font-medium {enabled ? 'text-emerald-600 dark:text-emerald-400' : 'text-zinc-400'}">
-                  {enabled ? 'Enabled' : 'Disabled'}
-                </span>
-              </div>
+              </a>
             {/each}
           </div>
-        </div>
+        </CardContent>
+      </Card>
 
-        <div class="rounded-xl border border-zinc-200 bg-white p-5 shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
-          <h2 class="text-base font-semibold text-zinc-900 dark:text-zinc-50">Operational counts</h2>
-          <div class="mt-4 grid gap-3">
+      <div class="space-y-4">
+        <Card class="border-border/60">
+          <CardHeader>
+            <CardTitle>Feature flags</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-3">
+            {#each Object.entries(health.features).slice(0, 6) as [key, enabled]}
+              <div class="flex items-center justify-between gap-4">
+                <span class="text-sm text-muted-foreground">{featureLabel(key)}</span>
+                <Badge variant={enabled ? 'default' : 'secondary'} class={enabled ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30' : ''}>
+                  {enabled ? 'Enabled' : 'Disabled'}
+                </Badge>
+              </div>
+            {/each}
+          </CardContent>
+        </Card>
+
+        <Card class="border-border/60">
+          <CardHeader>
+            <CardTitle>Operational counts</CardTitle>
+          </CardHeader>
+          <CardContent class="space-y-3">
             {#if health.diagnostics?.counts}
               {#each Object.entries(health.diagnostics.counts).slice(0, 6) as [key, value]}
-                <div class="flex items-center justify-between gap-4 rounded-lg bg-zinc-50 px-3 py-2 dark:bg-zinc-900/60">
-                  <span class="text-sm text-zinc-600 dark:text-zinc-400">{countLabel(key)}</span>
-                  <span class="font-mono text-sm font-medium text-zinc-900 dark:text-zinc-50">{value}</span>
+                <div class="flex items-center justify-between gap-4 rounded-lg bg-accent/40 px-3 py-2">
+                  <span class="text-sm text-muted-foreground">{countLabel(key)}</span>
+                  <span class="font-mono text-sm font-medium text-foreground">{value}</span>
                 </div>
               {/each}
             {:else}
-              <p class="text-sm text-zinc-500 dark:text-zinc-400">No diagnostic counts available.</p>
+              <p class="text-sm text-muted-foreground">No diagnostic counts available.</p>
             {/if}
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </div>
   {/if}

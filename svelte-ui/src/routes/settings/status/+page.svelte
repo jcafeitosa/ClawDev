@@ -1,5 +1,9 @@
 <script lang="ts">
   import { api } from '$lib/api';
+  import {
+    Card, CardHeader, CardTitle, CardContent,
+    Badge, Button, Skeleton, Separator, Alert, AlertTitle, AlertDescription,
+  } from '$lib/components/ui/index.js';
   import { Activity, CheckCircle, XCircle, AlertTriangle, ExternalLink, Server, Cpu, Shield } from 'lucide-svelte';
 
   interface HealthData {
@@ -97,253 +101,247 @@
 
 <div class="mx-auto max-w-3xl space-y-6 p-6">
   <!-- Tab bar -->
-  <div class="flex gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-800">
+  <div class="flex gap-3 border-b border-border pb-3">
     {#each tabs as tab}
       <a
         href={tab.href}
-        class="text-sm {tab.href === '/settings/status'
-          ? 'font-medium text-indigo-600 dark:text-indigo-400'
-          : 'text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300'}"
+        class="text-sm transition-colors {tab.href === '/settings/status'
+          ? 'font-medium text-primary'
+          : 'text-muted-foreground hover:text-foreground'}"
       >{tab.label}</a>
     {/each}
   </div>
 
   <div class="flex items-center gap-3">
-    <Server class="h-6 w-6 text-zinc-400" />
-    <h1 class="text-xl font-bold text-zinc-900 dark:text-zinc-50">Instance Status</h1>
+    <Server class="h-6 w-6 text-muted-foreground" />
+    <h1 class="text-xl font-bold text-foreground">Instance Status</h1>
   </div>
 
   {#if loading}
     <div class="space-y-4">
       {#each Array(3) as _}
-        <div class="h-40 animate-pulse rounded-lg bg-zinc-100 dark:bg-zinc-800"></div>
+        <Skeleton class="h-40 rounded-xl" />
       {/each}
     </div>
   {:else if error && !health}
-    <div class="rounded-lg border border-red-300 bg-red-50 p-6 dark:border-red-800 dark:bg-red-950">
-      <div class="flex items-center gap-2 text-red-700 dark:text-red-300">
-        <XCircle class="h-5 w-5" />
-        <p class="text-sm font-medium">Failed to load instance status</p>
-      </div>
-      <p class="mt-1 text-xs text-red-600 dark:text-red-400">{error}</p>
-    </div>
+    <Alert variant="destructive">
+      <XCircle class="h-4 w-4" />
+      <AlertTitle>Failed to load instance status</AlertTitle>
+      <AlertDescription>{error}</AlertDescription>
+    </Alert>
   {:else if health}
     <!-- Deployment Info -->
-    <div class="rounded-lg border border-zinc-200 dark:border-zinc-800">
-      <div class="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-        <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          <Cpu class="h-4 w-4 text-zinc-400" />
+    <Card class="border-border/60">
+      <CardHeader>
+        <CardTitle class="flex items-center gap-2 text-sm">
+          <Cpu class="h-4 w-4 text-muted-foreground" />
           Deployment Info
-        </h2>
-      </div>
-      <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
-        <!-- Status -->
-        <div class="flex items-center justify-between px-5 py-3">
-          <span class="text-sm text-zinc-600 dark:text-zinc-400">Status</span>
-          {#if health.status === 'ok'}
-            <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-              <CheckCircle class="h-3 w-3" /> OK
-            </span>
-          {:else}
-            <span class="inline-flex items-center gap-1 rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-medium text-red-700 dark:bg-red-900/40 dark:text-red-300">
-              <XCircle class="h-3 w-3" /> Error
-            </span>
-          {/if}
-        </div>
-        <!-- Version -->
-        <div class="flex items-center justify-between px-5 py-3">
-          <span class="text-sm text-zinc-600 dark:text-zinc-400">Version</span>
-          <span class="font-mono text-sm text-zinc-900 dark:text-zinc-100">{health.version}</span>
-        </div>
-        <!-- Deployment Mode -->
-        <div class="flex items-center justify-between px-5 py-3">
-          <span class="text-sm text-zinc-600 dark:text-zinc-400">Deployment Mode</span>
-          <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium
-            {health.deploymentMode === 'authenticated'
-              ? 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300'
-              : 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300'}">
-            {health.deploymentMode}
-          </span>
-        </div>
-        <!-- Deployment Exposure -->
-        <div class="flex items-center justify-between px-5 py-3">
-          <span class="text-sm text-zinc-600 dark:text-zinc-400">Deployment Exposure</span>
-          <span class="inline-flex rounded-full px-2.5 py-0.5 text-xs font-medium
-            {health.deploymentExposure === 'private'
-              ? 'bg-zinc-100 text-zinc-700 dark:bg-zinc-800 dark:text-zinc-300'
-              : 'bg-violet-100 text-violet-700 dark:bg-violet-900/40 dark:text-violet-300'}">
-            {health.deploymentExposure}
-          </span>
-        </div>
-        <!-- Auth Ready -->
-        <div class="flex items-center justify-between px-5 py-3">
-          <span class="text-sm text-zinc-600 dark:text-zinc-400">Auth Ready</span>
-          {#if health.authReady}
-            <span class="inline-flex items-center gap-1 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Ready
-            </span>
-          {:else}
-            <span class="inline-flex items-center gap-1 text-xs font-medium text-red-600 dark:text-red-400">
-              <span class="h-2 w-2 rounded-full bg-red-500"></span> Not Ready
-            </span>
-          {/if}
-        </div>
-        <!-- Bootstrap Status -->
-        <div class="flex items-center justify-between px-5 py-3">
-          <span class="text-sm text-zinc-600 dark:text-zinc-400">Bootstrap Status</span>
-          {#if health.bootstrapStatus === 'ready'}
-            <span class="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-0.5 text-xs font-medium text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
-              <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Ready
-            </span>
-          {:else}
-            <span class="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
-              <span class="h-2 w-2 rounded-full bg-amber-500"></span> Bootstrap Pending
-            </span>
-          {/if}
-        </div>
-      </div>
-    </div>
-
-    <!-- Features -->
-    <div class="rounded-lg border border-zinc-200 dark:border-zinc-800">
-      <div class="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-        <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          <Shield class="h-4 w-4 text-zinc-400" />
-          Features
-        </h2>
-      </div>
-      <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
-        {#each Object.entries(health.features) as [key, enabled]}
-          <div class="flex items-center justify-between px-5 py-3">
-            <span class="text-sm text-zinc-600 dark:text-zinc-400">{featureLabel(key)}</span>
-            {#if enabled}
-              <span class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-                <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Enabled
-              </span>
+        </CardTitle>
+      </CardHeader>
+      <CardContent class="p-0">
+        <div class="divide-y divide-border">
+          <div class="flex items-center justify-between px-6 py-3">
+            <span class="text-sm text-muted-foreground">Status</span>
+            {#if health.status === 'ok'}
+              <Badge class="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                <CheckCircle class="h-3 w-3" /> OK
+              </Badge>
             {:else}
-              <span class="inline-flex items-center gap-1.5 text-xs font-medium text-zinc-400 dark:text-zinc-500">
-                <span class="h-2 w-2 rounded-full bg-zinc-300 dark:bg-zinc-600"></span> Disabled
-              </span>
+              <Badge variant="destructive">
+                <XCircle class="h-3 w-3" /> Error
+              </Badge>
             {/if}
           </div>
-        {/each}
-      </div>
-    </div>
+          <div class="flex items-center justify-between px-6 py-3">
+            <span class="text-sm text-muted-foreground">Version</span>
+            <span class="font-mono text-sm text-foreground">{health.version}</span>
+          </div>
+          <div class="flex items-center justify-between px-6 py-3">
+            <span class="text-sm text-muted-foreground">Deployment Mode</span>
+            <Badge variant="secondary" class={health.deploymentMode === 'authenticated'
+              ? 'bg-blue-500/15 text-blue-400 border-blue-500/30'
+              : 'bg-amber-500/15 text-amber-400 border-amber-500/30'}>
+              {health.deploymentMode}
+            </Badge>
+          </div>
+          <div class="flex items-center justify-between px-6 py-3">
+            <span class="text-sm text-muted-foreground">Deployment Exposure</span>
+            <Badge variant="secondary" class={health.deploymentExposure === 'private'
+              ? ''
+              : 'bg-violet-500/15 text-violet-400 border-violet-500/30'}>
+              {health.deploymentExposure}
+            </Badge>
+          </div>
+          <div class="flex items-center justify-between px-6 py-3">
+            <span class="text-sm text-muted-foreground">Auth Ready</span>
+            {#if health.authReady}
+              <Badge class="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Ready
+              </Badge>
+            {:else}
+              <Badge variant="destructive">
+                <span class="h-2 w-2 rounded-full bg-red-500"></span> Not Ready
+              </Badge>
+            {/if}
+          </div>
+          <div class="flex items-center justify-between px-6 py-3">
+            <span class="text-sm text-muted-foreground">Bootstrap Status</span>
+            {#if health.bootstrapStatus === 'ready'}
+              <Badge class="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Ready
+              </Badge>
+            {:else}
+              <Badge class="bg-amber-500/15 text-amber-400 border-amber-500/30">
+                <span class="h-2 w-2 rounded-full bg-amber-500"></span> Bootstrap Pending
+              </Badge>
+            {/if}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+
+    <!-- Features -->
+    <Card class="border-border/60">
+      <CardHeader>
+        <CardTitle class="flex items-center gap-2 text-sm">
+          <Shield class="h-4 w-4 text-muted-foreground" />
+          Features
+        </CardTitle>
+      </CardHeader>
+      <CardContent class="p-0">
+        <div class="divide-y divide-border">
+          {#each Object.entries(health.features) as [key, enabled]}
+            <div class="flex items-center justify-between px-6 py-3">
+              <span class="text-sm text-muted-foreground">{featureLabel(key)}</span>
+              {#if enabled}
+                <Badge class="bg-emerald-500/15 text-emerald-400 border-emerald-500/30">
+                  <span class="h-2 w-2 rounded-full bg-emerald-500"></span> Enabled
+                </Badge>
+              {:else}
+                <Badge variant="secondary">
+                  <span class="h-2 w-2 rounded-full bg-secondary-foreground/30"></span> Disabled
+                </Badge>
+              {/if}
+            </div>
+          {/each}
+        </div>
+      </CardContent>
+    </Card>
 
     {#if health.diagnostics}
-      <div class="rounded-lg border border-zinc-200 dark:border-zinc-800">
-        <div class="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-          <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            <Activity class="h-4 w-4 text-zinc-400" />
+      <Card class="border-border/60">
+        <CardHeader>
+          <CardTitle class="flex items-center gap-2 text-sm">
+            <Activity class="h-4 w-4 text-muted-foreground" />
             Surface Inventory
-          </h2>
-        </div>
-        <div class="grid gap-4 p-5 md:grid-cols-2">
-          <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Route Groups</h3>
-            <div class="mt-3 space-y-3">
-              {#each health.diagnostics.routeGroups as group}
-                <div class="rounded-md border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
-                  <div class="flex items-center justify-between gap-3">
-                    <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{group.label}</p>
-                    <span class="rounded-full bg-zinc-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">{group.modules.length} modules</span>
-                  </div>
-                  <p class="mt-2 text-xs leading-5 text-zinc-500 dark:text-zinc-400">{group.modules.join(', ')}</p>
-                </div>
-              {/each}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div class="grid gap-4 md:grid-cols-2">
+            <div class="rounded-lg border border-border/60 bg-accent/30 p-4">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Route Groups</h3>
+              <div class="mt-3 space-y-3">
+                {#each health.diagnostics.routeGroups as group}
+                  <Card class="border-border/60">
+                    <CardContent class="p-3">
+                      <div class="flex items-center justify-between gap-3">
+                        <p class="text-sm font-medium text-foreground">{group.label}</p>
+                        <Badge variant="secondary" class="text-[10px]">{group.modules.length} modules</Badge>
+                      </div>
+                      <p class="mt-2 text-xs leading-5 text-muted-foreground">{group.modules.join(', ')}</p>
+                    </CardContent>
+                  </Card>
+                {/each}
+              </div>
             </div>
-          </div>
 
-          <div class="rounded-lg border border-zinc-200 bg-zinc-50 p-4 dark:border-zinc-800 dark:bg-zinc-950/40">
-            <h3 class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Entity Counts</h3>
-            <div class="mt-3 divide-y divide-zinc-200 overflow-hidden rounded-md border border-zinc-200 bg-white dark:divide-zinc-800 dark:border-zinc-800 dark:bg-zinc-900">
-              {#each Object.entries(health.diagnostics.counts) as [key, value]}
-                <div class="flex items-center justify-between px-3 py-2">
-                  <span class="text-sm text-zinc-600 dark:text-zinc-400">{countLabel(key)}</span>
-                  <span class="font-mono text-sm text-zinc-900 dark:text-zinc-100">{value}</span>
-                </div>
-              {/each}
+            <div class="rounded-lg border border-border/60 bg-accent/30 p-4">
+              <h3 class="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Entity Counts</h3>
+              <div class="mt-3 divide-y divide-border overflow-hidden rounded-md border border-border/60">
+                {#each Object.entries(health.diagnostics.counts) as [key, value]}
+                  <div class="flex items-center justify-between bg-card px-3 py-2">
+                    <span class="text-sm text-muted-foreground">{countLabel(key)}</span>
+                    <span class="font-mono text-sm text-foreground">{value}</span>
+                  </div>
+                {/each}
+              </div>
             </div>
           </div>
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     {/if}
 
     <!-- Dev Server (if present) -->
     {#if health.devServer}
-      <div class="rounded-lg border border-zinc-200 dark:border-zinc-800">
-        <div class="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-          <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-            <Activity class="h-4 w-4 text-zinc-400" />
+      <Card class="border-border/60">
+        <CardHeader>
+          <CardTitle class="flex items-center gap-2 text-sm">
+            <Activity class="h-4 w-4 text-muted-foreground" />
             Dev Server
-          </h2>
-        </div>
-        <div class="divide-y divide-zinc-100 dark:divide-zinc-800">
-          <div class="flex items-center justify-between px-5 py-3">
-            <span class="text-sm text-zinc-600 dark:text-zinc-400">Status</span>
-            <span class="font-mono text-sm text-zinc-900 dark:text-zinc-100">{health.devServer.status}</span>
+          </CardTitle>
+        </CardHeader>
+        <CardContent class="p-0">
+          <div class="divide-y divide-border">
+            <div class="flex items-center justify-between px-6 py-3">
+              <span class="text-sm text-muted-foreground">Status</span>
+              <span class="font-mono text-sm text-foreground">{health.devServer.status}</span>
+            </div>
+            {#if health.devServer.pid}
+              <div class="flex items-center justify-between px-6 py-3">
+                <span class="text-sm text-muted-foreground">PID</span>
+                <span class="font-mono text-sm text-foreground">{health.devServer.pid}</span>
+              </div>
+            {/if}
+            {#if health.devServer.port}
+              <div class="flex items-center justify-between px-6 py-3">
+                <span class="text-sm text-muted-foreground">Port</span>
+                <span class="font-mono text-sm text-foreground">{health.devServer.port}</span>
+              </div>
+            {/if}
           </div>
-          {#if health.devServer.pid}
-            <div class="flex items-center justify-between px-5 py-3">
-              <span class="text-sm text-zinc-600 dark:text-zinc-400">PID</span>
-              <span class="font-mono text-sm text-zinc-900 dark:text-zinc-100">{health.devServer.pid}</span>
-            </div>
-          {/if}
-          {#if health.devServer.port}
-            <div class="flex items-center justify-between px-5 py-3">
-              <span class="text-sm text-zinc-600 dark:text-zinc-400">Port</span>
-              <span class="font-mono text-sm text-zinc-900 dark:text-zinc-100">{health.devServer.port}</span>
-            </div>
-          {/if}
-        </div>
-      </div>
+        </CardContent>
+      </Card>
     {/if}
 
     <!-- Quick Actions -->
-    <div class="rounded-lg border border-zinc-200 dark:border-zinc-800">
-      <div class="border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
-        <h2 class="flex items-center gap-2 text-sm font-semibold text-zinc-900 dark:text-zinc-100">
-          <ExternalLink class="h-4 w-4 text-zinc-400" />
+    <Card class="border-border/60">
+      <CardHeader>
+        <CardTitle class="flex items-center gap-2 text-sm">
+          <ExternalLink class="h-4 w-4 text-muted-foreground" />
           Quick Actions
-        </h2>
-      </div>
-      <div class="space-y-2 p-5">
+        </CardTitle>
+      </CardHeader>
+      <CardContent class="space-y-3">
         {#if health.bootstrapStatus === 'bootstrap_pending'}
-          <div class="flex items-start gap-3 rounded-lg border border-amber-200 bg-amber-50 p-4 dark:border-amber-800 dark:bg-amber-950">
-            <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" />
-            <div>
-              <p class="text-sm font-medium text-amber-800 dark:text-amber-200">Bootstrap Pending</p>
-              <p class="mt-0.5 text-xs text-amber-700 dark:text-amber-300">
+          <Alert variant="warning">
+            <AlertTriangle class="h-4 w-4" />
+            <AlertTitle>Bootstrap Pending</AlertTitle>
+            <AlertDescription>
+              <p>
                 No instance admin has been set up yet.
                 {#if health.bootstrapInviteActive}
                   A bootstrap invite is currently active.
                 {/if}
               </p>
-              <a href="/setup" class="mt-2 inline-flex items-center gap-1 text-xs font-medium text-amber-700 underline hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100">
+              <a href="/setup" class="mt-2 inline-flex items-center gap-1 text-xs font-medium underline hover:no-underline">
                 Go to Setup <ExternalLink class="h-3 w-3" />
               </a>
-            </div>
-          </div>
+            </AlertDescription>
+          </Alert>
         {/if}
         <div class="flex flex-wrap gap-3">
-          <a href="/settings/general" class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            Instance Configuration
-          </a>
-          <a href="/settings/experimental" class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            Feature Flags
-          </a>
-          <a href="/settings/api-keys" class="inline-flex items-center gap-1.5 rounded-lg border border-zinc-200 px-3 py-2 text-sm text-zinc-700 hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800">
-            API Keys
-          </a>
+          <Button variant="outline" href="/settings/general">Instance Configuration</Button>
+          <Button variant="outline" href="/settings/experimental">Feature Flags</Button>
+          <Button variant="outline" href="/settings/api-keys">API Keys</Button>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
 
     <!-- Auto-refresh indicator -->
-    <p class="text-center text-xs text-zinc-400 dark:text-zinc-500">
+    <p class="text-center text-xs text-muted-foreground/60">
       Auto-refreshes every 30 seconds
       {#if error}
-        <span class="text-amber-500"> &middot; Last refresh failed: {error}</span>
+        <span class="text-amber-500"> -- Last refresh failed: {error}</span>
       {/if}
     </p>
   {/if}

@@ -4,6 +4,10 @@
   import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
+  import {
+    Card, CardContent, Badge, Button, Input, Skeleton,
+    Alert, AlertDescription,
+  } from '$lib/components/ui/index.js';
   import { Plus, RefreshCw, ChevronRight, Search, Clock, Play, Pause, Archive } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Routines' }]));
@@ -153,10 +157,10 @@
   };
 
   const STATUS_BADGE_COLORS: Record<string, string> = {
-    active: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30',
-    paused: 'bg-yellow-500/10 text-yellow-400 border-yellow-500/30',
-    archived: 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30',
-    running: 'bg-blue-500/10 text-blue-400 border-blue-500/30',
+    active: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30',
+    paused: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/30',
+    archived: 'bg-zinc-500/15 text-zinc-400 border-zinc-500/30',
+    running: 'bg-blue-500/15 text-blue-400 border-blue-500/30',
   };
 
   function statusDotClass(status: string): string {
@@ -164,16 +168,7 @@
   }
 
   function statusBadgeClass(status: string): string {
-    return STATUS_BADGE_COLORS[status] ?? 'bg-zinc-500/10 text-zinc-400 border-zinc-500/30';
-  }
-
-  function filterIcon(f: string): typeof Play {
-    switch (f) {
-      case 'active': return Play;
-      case 'paused': return Pause;
-      case 'archived': return Archive;
-      default: return RefreshCw;
-    }
+    return STATUS_BADGE_COLORS[status] ?? '';
   }
 
   function timeAgo(dateStr: string | null | undefined): string {
@@ -206,78 +201,70 @@
       <h1 class="text-2xl font-bold text-foreground">Routines</h1>
       <p class="mt-1 text-sm text-muted-foreground">Scheduled recurring tasks and automations</p>
     </div>
-    <button
-      onclick={() => (showCreate = !showCreate)}
-      class="inline-flex items-center gap-2 rounded-lg bg-[#2563EB] px-4 py-2 text-sm font-medium text-white transition hover:bg-[#1d4ed8] active:scale-[0.98]"
-    >
+    <Button onclick={() => (showCreate = !showCreate)}>
       <Plus class="w-4 h-4" />
       New Routine
-    </button>
+    </Button>
   </div>
 
   <!-- Create form -->
   {#if showCreate}
-    <form
-      onsubmit={(e) => { e.preventDefault(); createRoutine(); }}
-      class="rounded-xl border border-border bg-card p-5 space-y-4"
-    >
-      <div>
-        <label for="routine-title" class="block text-sm font-medium text-foreground mb-1">Title</label>
-        <input
-          id="routine-title"
-          bind:value={newTitle}
-          placeholder="e.g. Nightly code review sweep"
-          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-        />
-      </div>
-      <div>
-        <label for="routine-desc" class="block text-sm font-medium text-foreground mb-1">
-          Description <span class="text-muted-foreground font-normal">(optional)</span>
-        </label>
-        <textarea
-          id="routine-desc"
-          bind:value={newDescription}
-          rows={3}
-          placeholder="What does this routine do?"
-          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
-        ></textarea>
-      </div>
-      <div>
-        <label for="routine-agent" class="block text-sm font-medium text-foreground mb-1">
-          Assignee Agent <span class="text-muted-foreground font-normal">(optional)</span>
-        </label>
-        <select
-          id="routine-agent"
-          bind:value={newAssigneeAgentId}
-          disabled={agentsLoading}
-          class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+    <Card class="border-border/60">
+      <CardContent class="pt-6">
+        <form
+          onsubmit={(e) => { e.preventDefault(); createRoutine(); }}
+          class="space-y-4"
         >
-          <option value="">No agent assigned</option>
-          {#each agents as agent}
-            <option value={agent.id}>{agent.name}</option>
-          {/each}
-        </select>
-        {#if agentsLoading}
-          <p class="text-xs text-muted-foreground mt-1">Loading agents...</p>
-        {/if}
-      </div>
-      <div class="flex items-center gap-3">
-        <button
-          type="submit"
-          disabled={creating || !newTitle.trim()}
-          class="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-        >
-          {creating ? 'Creating...' : 'Create Routine'}
-        </button>
-        <button
-          type="button"
-          onclick={() => { showCreate = false; newTitle = ''; newDescription = ''; newAssigneeAgentId = ''; }}
-          class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40"
-        >
-          Cancel
-        </button>
-      </div>
-    </form>
+          <div>
+            <label for="routine-title" class="block text-sm font-medium text-foreground mb-1">Title</label>
+            <Input
+              id="routine-title"
+              bind:value={newTitle}
+              placeholder="e.g. Nightly code review sweep"
+            />
+          </div>
+          <div>
+            <label for="routine-desc" class="block text-sm font-medium text-foreground mb-1">
+              Description <span class="text-muted-foreground font-normal">(optional)</span>
+            </label>
+            <textarea
+              id="routine-desc"
+              bind:value={newDescription}
+              rows={3}
+              placeholder="What does this routine do?"
+              class="border-input dark:bg-input/30 h-auto w-full min-w-0 rounded-md border bg-transparent px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] resize-none"
+            ></textarea>
+          </div>
+          <div>
+            <label for="routine-agent" class="block text-sm font-medium text-foreground mb-1">
+              Assignee Agent <span class="text-muted-foreground font-normal">(optional)</span>
+            </label>
+            <select
+              id="routine-agent"
+              bind:value={newAssigneeAgentId}
+              disabled={agentsLoading}
+              class="border-input dark:bg-input/30 h-9 w-full min-w-0 rounded-md border bg-transparent px-3 py-1 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px]"
+            >
+              <option value="">No agent assigned</option>
+              {#each agents as agent}
+                <option value={agent.id}>{agent.name}</option>
+              {/each}
+            </select>
+            {#if agentsLoading}
+              <p class="text-xs text-muted-foreground mt-1">Loading agents...</p>
+            {/if}
+          </div>
+          <div class="flex items-center gap-3">
+            <Button type="submit" disabled={creating || !newTitle.trim()}>
+              {creating ? 'Creating...' : 'Create Routine'}
+            </Button>
+            <Button variant="outline" type="button" onclick={() => { showCreate = false; newTitle = ''; newDescription = ''; newAssigneeAgentId = ''; }}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      </CardContent>
+    </Card>
   {/if}
 
   <!-- Filter pills + Search -->
@@ -288,7 +275,7 @@
           onclick={() => { activeFilter = filter; }}
           class="rounded-lg px-3 py-1.5 text-sm font-medium transition
             {activeFilter === filter
-              ? 'bg-[#2563EB] text-white'
+              ? 'bg-primary text-primary-foreground'
               : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
         >
           {filterLabel(filter)}
@@ -299,11 +286,11 @@
 
     <div class="relative">
       <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-      <input
+      <Input
         type="text"
         placeholder="Search routines..."
         bind:value={searchQuery}
-        class="w-full sm:w-64 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
+        class="w-full sm:w-64 pl-9"
       />
     </div>
   </div>
@@ -312,21 +299,18 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(5) as _}
-        <div class="h-20 animate-pulse rounded-xl border border-border bg-card"></div>
+        <Skeleton class="h-20 rounded-xl" />
       {/each}
     </div>
 
   <!-- Error -->
   {:else if error}
-    <div class="rounded-xl border border-red-500/20 bg-red-500/10 p-6 text-center">
-      <p class="text-sm text-red-400">{error}</p>
-      <button
-        onclick={() => loadRoutines()}
-        class="mt-3 text-sm text-[#2563EB] hover:underline"
-      >
-        Retry
-      </button>
-    </div>
+    <Alert variant="destructive">
+      <AlertDescription>
+        <p>{error}</p>
+        <button onclick={() => loadRoutines()} class="mt-2 text-sm text-primary hover:underline">Retry</button>
+      </AlertDescription>
+    </Alert>
 
   <!-- Empty -->
   {:else if filteredRoutines.length === 0}
@@ -337,13 +321,10 @@
       {#if routines.length === 0}
         <h3 class="text-lg font-medium text-foreground">No routines defined</h3>
         <p class="mt-1 text-sm text-muted-foreground">Create a routine to automate recurring tasks</p>
-        <button
-          onclick={() => (showCreate = true)}
-          class="mt-4 inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-        >
+        <Button onclick={() => (showCreate = true)} class="mt-4">
           <Plus class="h-4 w-4" />
           New Routine
-        </button>
+        </Button>
       {:else}
         <p class="text-muted-foreground text-sm">No routines match the current filters.</p>
       {/if}
@@ -351,55 +332,55 @@
 
   <!-- Routines list -->
   {:else}
-    <div class="rounded-xl border border-border bg-card overflow-hidden">
-      {#each filteredRoutines as routine, i (routine.id)}
-        <a
-          href="/{prefix}/routines/{routine.id}"
-          class="group flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
-            {i < filteredRoutines.length - 1 ? 'border-b border-border/50' : ''}"
-        >
-          <!-- Status dot -->
-          <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(routine.status)}"></span>
+    <Card class="border-border/60 overflow-hidden p-0">
+      <CardContent class="p-0">
+        {#each filteredRoutines as routine, i (routine.id)}
+          <a
+            href="/{prefix}/routines/{routine.id}"
+            class="group flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
+              {i < filteredRoutines.length - 1 ? 'border-b border-border/50' : ''}"
+          >
+            <!-- Status dot -->
+            <span class="w-2 h-2 rounded-full shrink-0 {statusDotClass(routine.status)}"></span>
 
-          <!-- Content -->
-          <div class="min-w-0 flex-1">
-            <div class="flex items-center gap-3 mb-0.5">
-              <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-blue-400 transition-colors">
-                {routine.title}
-              </h3>
-              <span class="inline-flex shrink-0 items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {statusBadgeClass(routine.status)}">
-                {routine.status}
-              </span>
+            <!-- Content -->
+            <div class="min-w-0 flex-1">
+              <div class="flex items-center gap-3 mb-0.5">
+                <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
+                  {routine.title}
+                </h3>
+                <Badge class={statusBadgeClass(routine.status)}>
+                  {routine.status}
+                </Badge>
+              </div>
+
+              <div class="flex items-center gap-3 mt-1">
+                {#if routine.assigneeAgentId || routine.agentName}
+                  <span class="text-xs text-muted-foreground font-mono truncate max-w-[120px]">
+                    {routine.agentName ?? truncateId(routine.assigneeAgentId)}
+                  </span>
+                {/if}
+
+                {#if scheduleDisplay(routine)}
+                  <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
+                    <Clock class="w-3 h-3 shrink-0" />
+                    <span class="font-mono">{scheduleDisplay(routine)}</span>
+                  </span>
+                {/if}
+              </div>
             </div>
 
-            <div class="flex items-center gap-3 mt-1">
-              <!-- Assignee agent ID -->
-              {#if routine.assigneeAgentId || routine.agentName}
-                <span class="text-xs text-muted-foreground font-mono truncate max-w-[120px]">
-                  {routine.agentName ?? truncateId(routine.assigneeAgentId)}
-                </span>
-              {/if}
+            <!-- Last run -->
+            <span class="text-xs text-muted-foreground shrink-0 tabular-nums w-20 text-right">
+              {timeAgo(routine.lastRunAt)}
+            </span>
 
-              <!-- Schedule -->
-              {#if scheduleDisplay(routine)}
-                <span class="inline-flex items-center gap-1 text-xs text-muted-foreground">
-                  <Clock class="w-3 h-3 shrink-0" />
-                  <span class="font-mono">{scheduleDisplay(routine)}</span>
-                </span>
-              {/if}
-            </div>
-          </div>
-
-          <!-- Last run -->
-          <span class="text-xs text-muted-foreground shrink-0 tabular-nums w-20 text-right">
-            {timeAgo(routine.lastRunAt)}
-          </span>
-
-          <!-- Arrow -->
-          <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-        </a>
-      {/each}
-    </div>
+            <!-- Arrow -->
+            <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
+          </a>
+        {/each}
+      </CardContent>
+    </Card>
 
     <!-- Count -->
     <p class="text-xs text-muted-foreground text-right">

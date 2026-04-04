@@ -8,6 +8,7 @@
     Activity, Bot, CircleDot, FolderKanban, MessageSquare, GitBranch,
     Zap, User, FileText, Filter, Target, ShieldCheck, Loader2
   } from 'lucide-svelte';
+  import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Activity' }]));
 
@@ -195,10 +196,10 @@
     <div class="space-y-3">
       {#each Array(8) as _}
         <div class="flex items-center gap-4 rounded-xl border border-border bg-card p-4">
-          <div class="h-9 w-9 animate-pulse rounded-lg bg-accent/60"></div>
+          <Skeleton class="h-9 w-9 rounded-lg" />
           <div class="flex-1 space-y-2">
-            <div class="h-4 w-3/4 animate-pulse rounded bg-accent/60"></div>
-            <div class="h-3 w-1/4 animate-pulse rounded bg-accent/60"></div>
+            <Skeleton class="h-4 w-3/4" />
+            <Skeleton class="h-3 w-1/4" />
           </div>
         </div>
       {/each}
@@ -220,7 +221,7 @@
         <div>
           <div class="sticky top-0 z-10 flex items-center gap-3 py-2">
             <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</span>
-            <div class="h-px flex-1 bg-accent/75"></div>
+            <Separator class="flex-1" />
           </div>
 
           <div class="space-y-1">
@@ -261,18 +262,14 @@
     <!-- Load More -->
     {#if hasMore}
       <div class="flex justify-center pt-2 pb-4">
-        <button
-          onclick={loadMore}
-          disabled={loadingMore}
-          class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-5 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
-        >
+        <Button variant="outline" onclick={loadMore} disabled={loadingMore}>
           {#if loadingMore}
             <Loader2 class="h-4 w-4 animate-spin" />
             Loading...
           {:else}
             Load More
           {/if}
-        </button>
+        </Button>
       </div>
     {/if}
   {/if}

@@ -1,5 +1,8 @@
 <script lang="ts">
   import { api } from '$lib/api';
+  import {
+    Card, CardContent, Skeleton, Alert, AlertDescription,
+  } from '$lib/components/ui/index.js';
 
   let settings = $state({
     enableIsolatedWorkspaces: false,
@@ -8,6 +11,16 @@
   let loading = $state(true);
   let saving = $state(false);
   let error = $state<string | null>(null);
+
+  const tabs = [
+    { href: '/settings/general', label: 'General' },
+    { href: '/settings/experimental', label: 'Experimental' },
+    { href: '/settings/heartbeats', label: 'Heartbeats' },
+    { href: '/settings/plugins', label: 'Plugins' },
+    { href: '/settings/users', label: 'Users' },
+    { href: '/settings/status', label: 'Status' },
+    { href: '/settings/api-keys', label: 'API Keys' },
+  ];
 
   const features = [
     {
@@ -65,40 +78,52 @@
 </script>
 
 <div class="mx-auto max-w-2xl space-y-6 p-6">
-  <div class="flex gap-3 border-b border-zinc-200 pb-3 dark:border-zinc-800">
-    <a href="/settings/general" class="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">General</a>
-    <a href="/settings/experimental" class="text-sm font-medium text-indigo-600 dark:text-indigo-400">Experimental</a>
-    <a href="/settings/heartbeats" class="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Heartbeats</a>
-    <a href="/settings/plugins" class="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Plugins</a>
-    <a href="/settings/users" class="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Users</a>
-    <a href="/settings/status" class="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">Status</a>
-    <a href="/settings/api-keys" class="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">API Keys</a>
+  <div class="flex gap-3 border-b border-border pb-3">
+    {#each tabs as tab}
+      <a
+        href={tab.href}
+        class="text-sm transition-colors {tab.href === '/settings/experimental'
+          ? 'font-medium text-primary'
+          : 'text-muted-foreground hover:text-foreground'}"
+      >{tab.label}</a>
+    {/each}
   </div>
-  <h1 class="text-xl font-bold text-zinc-900 dark:text-zinc-50">Experimental Features</h1>
+
+  <h1 class="text-xl font-bold text-foreground">Experimental Features</h1>
+
   {#if loading}
-    <div class="space-y-4">{#each Array(2) as _}<div class="h-16 animate-pulse rounded bg-zinc-100 dark:bg-zinc-800"></div>{/each}</div>
-  {:else}
     <div class="space-y-3">
-      {#if error}
-        <div class="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/30 dark:text-red-300">
-          {error}
-        </div>
-      {/if}
+      {#each Array(2) as _}
+        <Skeleton class="h-16 rounded-xl" />
+      {/each}
+    </div>
+  {:else}
+    {#if error}
+      <Alert variant="destructive">
+        <AlertDescription>{error}</AlertDescription>
+      </Alert>
+    {/if}
+
+    <div class="space-y-3">
       {#each features as f}
-        <div class="flex items-center justify-between rounded-lg border border-zinc-200 p-4 dark:border-zinc-800">
-          <div>
-            <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{f.label}</p>
-            <p class="text-xs text-zinc-500">{f.desc}</p>
-          </div>
-          <button
-            onclick={() => toggle(f.key)}
-            aria-label="Toggle {f.label}"
-            disabled={saving}
-            class="relative h-6 w-11 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 {settings[f.key] ? 'bg-indigo-600' : 'bg-zinc-300 dark:bg-zinc-700'}"
-          >
-            <span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform {settings[f.key] ? 'translate-x-5' : ''}"></span>
-          </button>
-        </div>
+        <Card class="border-border/60">
+          <CardContent class="pt-6">
+            <div class="flex items-center justify-between">
+              <div>
+                <p class="text-sm font-medium text-foreground">{f.label}</p>
+                <p class="text-xs text-muted-foreground">{f.desc}</p>
+              </div>
+              <button
+                onclick={() => toggle(f.key)}
+                aria-label="Toggle {f.label}"
+                disabled={saving}
+                class="relative h-6 w-11 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-60 {settings[f.key] ? 'bg-primary' : 'bg-accent'}"
+              >
+                <span class="absolute top-0.5 left-0.5 h-5 w-5 rounded-full bg-white transition-transform {settings[f.key] ? 'translate-x-5' : ''}"></span>
+              </button>
+            </div>
+          </CardContent>
+        </Card>
       {/each}
     </div>
   {/if}

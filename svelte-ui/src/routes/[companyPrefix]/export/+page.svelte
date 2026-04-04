@@ -6,6 +6,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Download, Eye, Loader2, Package, CheckCircle2 } from 'lucide-svelte';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Progress, Skeleton, Separator } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Export' }]));
 
@@ -101,23 +102,25 @@
     {selected.size === sections.length ? 'Deselect all' : 'Select all'}
   </button>
 
-  <div class="space-y-2">
-    {#each sections as s}
-      <label class="flex items-center gap-3 rounded-lg border border-border bg-card p-3 cursor-pointer transition-colors hover:bg-accent/40 {selected.has(s) ? 'border-blue-500/30' : ''}">
-        <input
-          type="checkbox"
-          checked={selected.has(s)}
-          onchange={() => toggle(s)}
-          class="rounded border-white/20 bg-accent/60 text-blue-500 focus:ring-blue-500/30"
-        />
-        <Package class="h-4 w-4 text-muted-foreground" />
-        <span class="text-sm capitalize text-foreground">{s}</span>
-        {#if previewData && previewData[s] !== undefined}
-          <span class="ml-auto text-xs text-muted-foreground">{previewData[s]} items</span>
-        {/if}
-      </label>
-    {/each}
-  </div>
+  <Card>
+    <CardContent class="pt-4 space-y-2">
+      {#each sections as s}
+        <label class="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer transition-colors hover:bg-accent/40 {selected.has(s) ? 'border-blue-500/30' : ''}">
+          <input
+            type="checkbox"
+            checked={selected.has(s)}
+            onchange={() => toggle(s)}
+            class="rounded border-white/20 bg-accent/60 text-blue-500 focus:ring-blue-500/30"
+          />
+          <Package class="h-4 w-4 text-muted-foreground" />
+          <span class="text-sm capitalize text-foreground">{s}</span>
+          {#if previewData && previewData[s] !== undefined}
+            <Badge variant="secondary" class="ml-auto">{previewData[s]} items</Badge>
+          {/if}
+        </label>
+      {/each}
+    </CardContent>
+  </Card>
 
   <!-- Preview button and data -->
   {#if selected.size > 0 && !previewData}
@@ -137,23 +140,26 @@
   {/if}
 
   {#if previewData}
-    <div class="rounded-lg border border-border bg-card p-4 space-y-2">
-      <h3 class="text-sm font-medium text-foreground">Export Preview</h3>
-      <div class="space-y-1">
+    <Card>
+      <CardHeader>
+        <CardTitle class="text-sm">Export Preview</CardTitle>
+      </CardHeader>
+      <CardContent class="space-y-1">
         {#each [...selected] as s}
           <div class="flex items-center justify-between text-sm">
             <span class="capitalize text-muted-foreground">{s}</span>
             <span class="font-medium text-foreground">{previewData[s] ?? 0} items</span>
           </div>
         {/each}
-        <div class="mt-2 flex items-center justify-between border-t border-border/50 pt-2 text-sm">
+        <Separator class="my-2" />
+        <div class="flex items-center justify-between text-sm">
           <span class="font-medium text-muted-foreground">Total</span>
           <span class="font-bold text-foreground">
             {Object.entries(previewData).filter(([k]) => selected.has(k)).reduce((sum, [, v]) => sum + (typeof v === 'number' ? v : 0), 0)} items
           </span>
         </div>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   {/if}
 
   <!-- Progress indicator -->
@@ -163,21 +169,12 @@
         <span>Exporting...</span>
         <span>{Math.round(exportProgress)}%</span>
       </div>
-      <div class="h-2 w-full overflow-hidden rounded-full bg-accent/60">
-        <div
-          class="h-full rounded-full bg-blue-500 transition-all duration-300 ease-out"
-          style="width: {exportProgress}%"
-        ></div>
-      </div>
+      <Progress value={exportProgress} class="h-2" />
     </div>
   {/if}
 
   <!-- Export button -->
-  <button
-    onclick={doExport}
-    disabled={exporting || selected.size === 0}
-    class="inline-flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
-  >
+  <Button class="w-full" onclick={doExport} disabled={exporting || selected.size === 0}>
     {#if exportDone && !exporting}
       <CheckCircle2 class="h-4 w-4" />
       Export Complete - Download Again
@@ -188,5 +185,5 @@
       <Download class="h-4 w-4" />
       Export ZIP
     {/if}
-  </button>
+  </Button>
 </div>

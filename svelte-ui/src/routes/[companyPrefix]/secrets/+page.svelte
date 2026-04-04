@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { KeyRound, Plus, RotateCw, Trash2, ShieldAlert, Clock, Tag, Search, X, Eye, EyeOff } from 'lucide-svelte';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Skeleton, Separator } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Secrets' }]));
 
@@ -299,9 +300,9 @@
 
         <!-- Error -->
         {#if createError}
-          <div class="rounded-lg border border-red-500/20 bg-red-500/10 px-4 py-3">
-            <p class="text-sm text-red-400">{createError}</p>
-          </div>
+          <Alert variant="destructive">
+            <AlertDescription>{createError}</AlertDescription>
+          </Alert>
         {/if}
 
         <!-- Submit -->
@@ -343,14 +344,15 @@
   {#if loading}
     <div class="space-y-3">
       {#each Array(5) as _}
-        <div class="h-[72px] animate-pulse rounded-xl bg-card border border-border"></div>
+        <Skeleton class="h-[72px] rounded-xl" />
       {/each}
     </div>
 
   <!-- Error -->
   {:else if error}
-    <div class="rounded-xl border border-red-500/20 bg-red-500/10 p-6 text-center">
-      <p class="text-sm text-red-400">{error}</p>
+    <Alert variant="destructive">
+      <AlertTitle>Failed to load secrets</AlertTitle>
+      <AlertDescription>{error}</AlertDescription>
       <button
         onclick={() => {
           loading = true;
@@ -365,7 +367,7 @@
       >
         Retry
       </button>
-    </div>
+    </Alert>
 
   <!-- Empty -->
   {:else if filteredSecrets.length === 0}
@@ -389,7 +391,7 @@
 
   <!-- Secrets list -->
   {:else}
-    <div class="rounded-xl border border-border bg-card overflow-hidden">
+    <Card class="overflow-hidden">
       {#each filteredSecrets as secret, i (secret.id)}
         <div
           class="flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
@@ -405,9 +407,9 @@
             <div class="flex items-center gap-2.5">
               <span class="text-sm font-semibold text-foreground font-mono truncate">{secret.name}</span>
               {#if secret.provider}
-                <span class="inline-flex items-center rounded-md border px-1.5 py-0.5 text-[10px] font-medium leading-none {providerBadgeColor(secret.provider)}">
+                <Badge variant="outline" class="text-[10px] {providerBadgeColor(secret.provider)}">
                   {secret.provider}
-                </span>
+                </Badge>
               {/if}
             </div>
             {#if secret.description}
@@ -483,7 +485,7 @@
           </div>
         </div>
       {/each}
-    </div>
+    </Card>
 
     <!-- Summary -->
     <p class="text-xs text-muted-foreground text-center">

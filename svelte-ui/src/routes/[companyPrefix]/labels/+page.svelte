@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Tag, Plus, Trash2, X } from 'lucide-svelte';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Input, Skeleton, Separator } from '$components/ui/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Labels' }]));
 
@@ -239,13 +240,11 @@
 
   <!-- Loading skeleton -->
   {#if loading}
-    <div class="rounded-xl border border-border bg-card overflow-hidden">
-      <div class="p-5 space-y-3">
-        {#each Array(6) as _}
-          <div class="h-12 animate-pulse rounded-lg bg-accent/60"></div>
-        {/each}
-      </div>
-    </div>
+    <Card class="overflow-hidden p-5 space-y-3">
+      {#each Array(6) as _}
+        <Skeleton class="h-12 rounded-lg" />
+      {/each}
+    </Card>
 
   <!-- Empty state -->
   {:else if labels.length === 0}
@@ -266,12 +265,12 @@
 
   <!-- Labels list -->
   {:else}
-    <div class="rounded-xl border border-border bg-card overflow-hidden">
-      <div class="px-5 py-4 border-b border-border/50">
-        <h2 class="text-sm font-semibold text-foreground">
+    <Card class="overflow-hidden">
+      <CardHeader class="border-b border-border/50">
+        <CardTitle class="text-sm">
           {labels.length} {labels.length === 1 ? 'label' : 'labels'}
-        </h2>
-      </div>
+        </CardTitle>
+      </CardHeader>
 
       <div class="divide-y divide-border/50">
         {#each labels as label (label.id)}
@@ -280,9 +279,9 @@
             <div class="flex items-center gap-3 min-w-0">
               <span class="h-3 w-3 shrink-0 rounded-full {dotClass(label.color)}"></span>
               <span class="text-sm font-medium text-foreground truncate">{label.name}</span>
-              <span class="inline-flex items-center rounded-md border px-2 py-0.5 text-[10px] font-medium leading-none {labelBadgeBg(label.color)}">
+              <Badge variant="outline" class="text-[10px] {labelBadgeBg(label.color)}">
                 {colorPreset(label.color).name}
-              </span>
+              </Badge>
             </div>
 
             <!-- Right: usage count + delete -->
@@ -324,6 +323,6 @@
           </div>
         {/each}
       </div>
-    </div>
+    </Card>
   {/if}
 </div>
