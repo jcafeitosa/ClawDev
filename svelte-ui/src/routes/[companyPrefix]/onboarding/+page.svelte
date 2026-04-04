@@ -15,7 +15,7 @@
       query.set("step", "2");
     }
 
-    void goto(`/setup${query.toString() ? `?${query.toString()}` : ""}`, {
+    void goto(`/onboarding${query.toString() ? `?${query.toString()}` : ""}`, {
       replaceState: true,
     });
   });

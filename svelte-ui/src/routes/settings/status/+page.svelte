@@ -320,7 +320,7 @@
                   A bootstrap invite is currently active.
                 {/if}
               </p>
-              <a href="/setup" class="mt-2 inline-flex items-center gap-1 text-xs font-medium underline hover:no-underline">
+              <a href="/onboarding" class="mt-2 inline-flex items-center gap-1 text-xs font-medium underline hover:no-underline">
                 Go to Setup <ExternalLink class="h-3 w-3" />
               </a>
             </AlertDescription>

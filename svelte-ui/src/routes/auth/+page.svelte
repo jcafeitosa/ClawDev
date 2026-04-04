@@ -37,7 +37,7 @@
   $effect(() => {
     if ($session.data) {
       if (bootstrapPending) {
-        goto(nextPath || "/setup");
+        goto(nextPath || "/onboarding");
       } else {
         goto(nextPath || "/");
       }
@@ -61,7 +61,7 @@
           return;
         }
       }
-      goto(bootstrapPending ? (nextPath || "/setup") : (nextPath || "/"));
+      goto(bootstrapPending ? (nextPath || "/onboarding") : (nextPath || "/"));
     } catch (err) {
       error = err instanceof Error ? err.message : "An error occurred";
     } finally {

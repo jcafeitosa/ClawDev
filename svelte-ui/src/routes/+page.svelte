@@ -12,7 +12,7 @@
       const health = await healthRes.json();
 
       if (health.bootstrapStatus === "bootstrap_pending") {
-        goto("/setup", { replaceState: true });
+        goto("/onboarding", { replaceState: true });
         return;
       }
 
@@ -24,7 +24,7 @@
 
       // 3. First-time setup: no companies → onboarding wizard
       if (!health.hasCompanies) {
-        goto("/setup", { replaceState: true });
+        goto("/onboarding", { replaceState: true });
         return;
       }
 
@@ -34,10 +34,10 @@
       if (Array.isArray(companies) && companies.length > 0) {
         goto(`/${companies[0].slug ?? companies[0].id}/dashboard`, { replaceState: true });
       } else {
-        goto("/setup", { replaceState: true });
+        goto("/onboarding", { replaceState: true });
       }
     } catch {
-      goto("/setup", { replaceState: true });
+      goto("/onboarding", { replaceState: true });
     }
   });
 </script>

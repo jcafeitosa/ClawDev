@@ -386,7 +386,7 @@
       );
       return;
     }
-    void goto(`/setup?next=${encodeURIComponent(currentUrl)}`);
+    void goto(`/onboarding?next=${encodeURIComponent(currentUrl)}`);
   }
 
   /** Produce a deterministic color from a project's color field, or a hash-based fallback */
