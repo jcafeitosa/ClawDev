@@ -241,9 +241,12 @@
         const body = await res.json().catch(() => null);
         throw new Error(body?.message ?? `Failed to detect ${adapterType} model (${res.status})`);
       }
-      const detected = await res.json();
+      const text = await res.text();
+      const detected = text ? JSON.parse(text) : null;
       if (detected?.model) {
         setField("model", detected.model);
+      } else {
+        adapterModelsError = "No model detected — adapter may not support auto-detection.";
       }
     } catch (err) {
       adapterModelsError = err instanceof Error ? err.message : "Failed to detect model";
@@ -355,13 +358,21 @@
               value={normalizeClaudeModel(config.model)}
               onchange={(e) => setField("model", e.currentTarget.value)}
             >
-              <option value="claude-opus-4-6">Claude Opus 4.6</option>
-              <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-              <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+              {#if adapterModels.length > 0}
+                {#each adapterModels as m (m.id)}
+                  <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                {/each}
+              {:else}
+                <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+              {/if}
             </select>
             <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
-          <p class={helpCls}>The Anthropic model to use for this agent. Claude local does not accept `auto`; the default is Sonnet 4.6.</p>
+          <p class={helpCls}>
+            {#if adapterModelsLoading}Loading models...{:else}The Anthropic model to use. {adapterModels.length} models available.{/if}
+          </p>
         </div>
 
         <div>
@@ -404,18 +415,20 @@
             <select
               id="cfg-model"
               class={selectCls}
-              value={config.model ?? "gpt-5.4-mini"}
+              value={config.model ?? ""}
               onchange={(e) => setField("model", e.currentTarget.value)}
             >
-              <option value="gpt-5.4-mini">GPT-5.4 Mini</option>
-              <option value="gpt-5.4">GPT-5.4</option>
-              <option value="gpt-5.3-codex">GPT-5.3 Codex</option>
-              <option value="o3">o3</option>
-              <option value="o4-mini">o4-mini</option>
+              {#if adapterModels.length > 0}
+                {#each adapterModels as m (m.id)}
+                  <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                {/each}
+              {:else}
+                <option value="">Select model...</option>
+              {/if}
             </select>
             <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
-          <p class={helpCls}>The OpenAI model to use for code generation. Codex local defaults to GPT-5.4 Mini.</p>
+          <p class={helpCls}>{adapterModelsLoading ? 'Loading models...' : `${adapterModels.length} models available.`}</p>
         </div>
 
       <!-- copilot_local -->
@@ -556,15 +569,20 @@
             <select
               id="cfg-model"
               class={selectCls}
-              value={config.model ?? "gemini-2.5-pro"}
+              value={config.model ?? ""}
               onchange={(e) => setField("model", e.currentTarget.value)}
             >
-              <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
-              <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+              {#if adapterModels.length > 0}
+                {#each adapterModels as m (m.id)}
+                  <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                {/each}
+              {:else}
+                <option value="">Select model...</option>
+              {/if}
             </select>
             <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
-          <p class={helpCls}>The Google Gemini model to use.</p>
+          <p class={helpCls}>{adapterModelsLoading ? 'Loading models...' : `${adapterModels.length} models available.`}</p>
         </div>
 
         <div class="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3">
