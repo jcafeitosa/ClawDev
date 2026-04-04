@@ -232,7 +232,9 @@ export const liveEventsStore = {
   },
   /** Reconnect when company changes */
   reconnect(companyId: string) {
-    if (connectedCompanyId === companyId && connected) return;
+    // Skip if already connected or connecting to same company
+    if (connectedCompanyId === companyId && (connected || ws)) return;
+    if (pendingCompanyId === companyId) return;
     connect(companyId);
   },
   disconnect,

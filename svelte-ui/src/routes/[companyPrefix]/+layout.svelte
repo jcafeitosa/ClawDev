@@ -15,12 +15,24 @@
   import { onMount, onDestroy } from "svelte";
 
   let { children } = $props();
+  let healthInterval: ReturnType<typeof setInterval> | undefined;
+  let companiesInterval: ReturnType<typeof setInterval> | undefined;
 
   onMount(() => {
     themeStore.init();
     sidebarStore.init();
     keyboardShortcutsStore.init();
     loadCompanies();
+
+    // Periodic health check (detect server restarts / downtime)
+    healthInterval = setInterval(() => {
+      fetch("/api/health").catch(() => {});
+    }, 30_000);
+
+    // Periodic company list refresh (detect new companies / renames)
+    companiesInterval = setInterval(() => {
+      loadCompanies();
+    }, 60_000);
   });
 
   // Reconnect live events when company changes
@@ -31,6 +43,8 @@
 
   onDestroy(() => {
     keyboardShortcutsStore.destroy();
+    if (healthInterval) clearInterval(healthInterval);
+    if (companiesInterval) clearInterval(companiesInterval);
   });
 
   // Sync company from route param

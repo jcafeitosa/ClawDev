@@ -19,6 +19,7 @@ import {
   companies,
   companySkills,
   heartbeatRuns,
+  issues as issuesTable,
 } from "@clawdev/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
 import { agentMineInboxQuerySchema } from "@clawdev/shared";
@@ -1841,6 +1842,8 @@ export function agentRoutes(db: Db) {
         const minCountParam = query.minCount as string | undefined;
         const minCount = minCountParam ? Math.max(0, Math.min(20, parseInt(minCountParam, 10) || 0)) : 0;
 
+        const issueIdExpr = sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`;
+
         const columns = {
           id: heartbeatRuns.id,
           status: heartbeatRuns.status,
@@ -1858,13 +1861,18 @@ export function agentRoutes(db: Db) {
           stderrExcerpt: heartbeatRuns.stderrExcerpt,
           exitCode: heartbeatRuns.exitCode,
           error: heartbeatRuns.error,
-          issueId: sql<string | null>`${heartbeatRuns.contextSnapshot} ->> 'issueId'`.as("issueId"),
+          issueId: issueIdExpr.as("issueId"),
+          issueIdentifier: issuesTable.identifier,
+          issueTitle: issuesTable.title,
         };
+
+        const issueJoinCond = sql`${issuesTable.id} = (${heartbeatRuns.contextSnapshot} ->> 'issueId')::uuid`;
 
         const liveRuns = await db
           .select(columns)
           .from(heartbeatRuns)
           .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
+          .leftJoin(issuesTable, issueJoinCond)
           .where(
             and(
               eq(heartbeatRuns.companyId, params.companyId),
@@ -1879,6 +1887,7 @@ export function agentRoutes(db: Db) {
             .select(columns)
             .from(heartbeatRuns)
             .innerJoin(agents, eq(heartbeatRuns.agentId, agents.id))
+            .leftJoin(issuesTable, issueJoinCond)
             .where(
               and(
                 eq(heartbeatRuns.companyId, params.companyId),

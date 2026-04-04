@@ -8,8 +8,16 @@
 
   import TimeAgo from '$lib/components/time-ago.svelte';
   import ActivityCharts from '$lib/components/charts/activity-charts.svelte';
+  import GaugeChart from '$lib/components/charts/gauge-chart.svelte';
+  import PieChart from '$lib/components/charts/pie-chart.svelte';
+  import LineChart from '$lib/components/charts/line-chart.svelte';
   import ActiveAgentsPanel from '$lib/components/active-agents-panel.svelte';
-  import { Skeleton } from '$lib/components/ui/index.js';
+  import {
+    Skeleton,
+    Card, CardContent, CardHeader, CardTitle,
+    Alert, AlertTitle, AlertDescription,
+    Progress,
+  } from '$lib/components/ui/index.js';
 
   import {
     Bot,
@@ -18,6 +26,18 @@
     CircleDot,
     ShieldCheck,
     PauseCircle,
+    Building2,
+    FolderKanban,
+    Target,
+    ArrowRight,
+    MessageSquare,
+    Plus,
+    Pencil,
+    Play,
+    Pause,
+    XCircle,
+    Key,
+    FileText,
   } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Dashboard' }]));
@@ -77,6 +97,25 @@
   let monthUtilizationPercent = $derived(
     monthBudgetCents > 0 ? Math.min(Math.round((monthSpend / monthBudgetCents) * 100), 100) : 0,
   );
+
+  // Cost trend: extract daily data from costSummary if available, else generate from runs
+  let costDailyData = $derived.by(() => {
+    const daily = costSummary?.daily ?? costSummary?.dailyCosts ?? [];
+    if (Array.isArray(daily) && daily.length > 0) {
+      return daily.map((d: any) => ({
+        label: new Date(d.date ?? d.day).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+        value: Number(d.cost ?? d.total ?? d.amount ?? 0),
+      }));
+    }
+    // Fallback: generate last 7 days with 0
+    const result: { label: string; value: number }[] = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      result.push({ label: d.toLocaleDateString('en', { month: 'short', day: 'numeric' }), value: 0 });
+    }
+    return result;
+  });
   let pendingApprovals = $derived(
     dashboardApprovals > 0
       ? dashboardApprovals
@@ -260,6 +299,70 @@
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
   }
 
+  type IconComponent = typeof CircleDot;
+
+  function getActivityIcon(item: any): { icon: IconComponent; color: string } {
+    const action: string = item.action ?? '';
+    const entityType: string = item.entityType ?? '';
+
+    if (action.includes('created') || action.includes('hire_created'))
+      return { icon: Plus, color: 'text-emerald-500' };
+    if (action.includes('approved'))
+      return { icon: ShieldCheck, color: 'text-emerald-500' };
+    if (action.includes('rejected') || action.includes('terminated'))
+      return { icon: XCircle, color: 'text-red-500' };
+    if (action.includes('paused'))
+      return { icon: Pause, color: 'text-amber-500' };
+    if (action.includes('resumed'))
+      return { icon: Play, color: 'text-emerald-500' };
+    if (action.includes('status_changed'))
+      return { icon: ArrowRight, color: 'text-blue-500' };
+    if (action.includes('comment'))
+      return { icon: MessageSquare, color: 'text-violet-500' };
+    if (action.includes('key_created'))
+      return { icon: Key, color: 'text-amber-500' };
+    if (action.includes('document'))
+      return { icon: FileText, color: 'text-blue-500' };
+    if (action.includes('updated'))
+      return { icon: Pencil, color: 'text-blue-500' };
+
+    if (entityType === 'issue') return { icon: CircleDot, color: 'text-blue-500' };
+    if (entityType === 'agent') return { icon: Bot, color: 'text-cyan-500' };
+    if (entityType === 'company') return { icon: Building2, color: 'text-violet-500' };
+    if (entityType === 'approval') return { icon: ShieldCheck, color: 'text-amber-500' };
+    if (entityType === 'project') return { icon: FolderKanban, color: 'text-indigo-500' };
+    if (entityType === 'goal') return { icon: Target, color: 'text-pink-500' };
+    if (entityType === 'cost') return { icon: DollarSign, color: 'text-emerald-500' };
+
+    return { icon: CircleDot, color: 'text-muted-foreground' };
+  }
+
+  function getDotRing(item: any): string {
+    const action: string = item.action ?? '';
+    if (action.includes('created') || action.includes('approved') || action.includes('resumed'))
+      return 'ring-emerald-500/20 bg-emerald-500/10';
+    if (action.includes('rejected') || action.includes('terminated'))
+      return 'ring-red-500/20 bg-red-500/10';
+    if (action.includes('paused') || action.includes('key_created'))
+      return 'ring-amber-500/20 bg-amber-500/10';
+    if (action.includes('status_changed') || action.includes('updated') || action.includes('document'))
+      return 'ring-blue-500/20 bg-blue-500/10';
+    if (action.includes('comment'))
+      return 'ring-violet-500/20 bg-violet-500/10';
+    return 'ring-border bg-background';
+  }
+
+  function getStatusChangeDetail(item: any): string | null {
+    const action: string = item.action ?? '';
+    if (action !== 'issue.status_changed') return null;
+    const details = item.details ?? {};
+    const from = details.oldStatus ?? details.from ?? '';
+    const to = details.newStatus ?? details.to ?? details.status ?? '';
+    if (from && to) return `${from} → ${to}`;
+    if (to) return `→ ${to}`;
+    return null;
+  }
+
   function getInitials(name: string): string {
     if (!name) return '?';
     const parts = name.trim().split(/\s+/);
@@ -306,18 +409,13 @@
 
   <!-- ── No agents warning ──────────────────────────────────────────── -->
   {#if !loading && agents.length === 0}
-    <div class="flex items-center justify-between gap-3 rounded-md border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-500/25 dark:bg-amber-950/60">
-      <div class="flex items-center gap-2.5">
-        <Bot class="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
-        <p class="text-sm text-amber-900 dark:text-amber-100">You have no agents.</p>
-      </div>
-      <a
-        href="/{prefix}/agents/new"
-        class="text-sm font-medium text-amber-700 hover:text-amber-900 dark:text-amber-300 dark:hover:text-amber-100 underline underline-offset-2 shrink-0"
-      >
-        Create one here
-      </a>
-    </div>
+    <Alert variant="warning">
+      <Bot class="h-4 w-4" />
+      <AlertTitle>No agents configured</AlertTitle>
+      <AlertDescription>
+        <p>You have no agents. <a href="/{prefix}/agents/new" class="font-medium underline underline-offset-2 hover:text-amber-900 dark:hover:text-amber-100">Create one here</a></p>
+      </AlertDescription>
+    </Alert>
   {/if}
 
   <!-- ── Active Agents Panel ─────────────────────────────────────────── -->
@@ -327,175 +425,257 @@
 
   <!-- ── Budget Incident Alert ──────────────────────────────────────── -->
   {#if pendingIncidents.length > 0}
-    <div class="flex items-start justify-between gap-3 rounded-xl border border-red-500/20 bg-[linear-gradient(180deg,rgba(255,80,80,0.12),rgba(255,255,255,0.02))] px-4 py-3">
-      <div class="flex items-start gap-2.5">
-        <PauseCircle class="mt-0.5 h-4 w-4 shrink-0 text-red-300" />
-        <div>
-          <p class="text-sm font-medium text-red-50">
-            {pendingIncidents.length} active budget incident{pendingIncidents.length === 1 ? '' : 's'}
-          </p>
-          <p class="text-xs text-red-100/70">
-            {pendingIncidents.length} agents paused — monthly budget exceeded.
-          </p>
-        </div>
-      </div>
-      <a href="/{prefix}/costs" class="text-sm underline underline-offset-2 text-red-100">
-        Open budgets
-      </a>
-    </div>
+    <Alert variant="destructive">
+      <PauseCircle class="h-4 w-4" />
+      <AlertTitle>{pendingIncidents.length} active budget incident{pendingIncidents.length === 1 ? '' : 's'}</AlertTitle>
+      <AlertDescription>
+        <p>{pendingIncidents.length} agents paused — monthly budget exceeded. <a href="/{prefix}/costs" class="font-medium underline underline-offset-2">Open budgets</a></p>
+      </AlertDescription>
+    </Alert>
   {/if}
 
-  <!-- ── Metric Cards ─────────────────────────────────────────────── -->
+  <!-- ── Metric Cards (shadcn Card) ────────────────────────────────── -->
   {#if !loading}
-    <div class="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
       <!-- Agents Enabled -->
       <a href="/{prefix}/agents" class="no-underline text-inherit block h-full">
-        <div class="h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer">
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex-1 min-w-0">
-              <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">
-                {enabledAgents}
-              </p>
-              <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
-                Agents Enabled
-              </p>
-              <div class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
-                {runningAgents} running, {pausedAgents} paused, {errorAgents} errors
+        <Card class="h-full transition-colors hover:bg-accent/50 cursor-pointer border-border/60 !py-0 !gap-0">
+          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{enabledAgents}</p>
+                <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">Agents Enabled</p>
+                <p class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">{runningAgents} running, {pausedAgents} paused, {errorAgents} errors</p>
               </div>
+              <Bot class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
             </div>
-            <Bot class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </a>
 
       <!-- Tasks In Progress -->
       <a href="/{prefix}/issues" class="no-underline text-inherit block h-full">
-        <div class="h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer">
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex-1 min-w-0">
-              <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">
-                {tasksInProgress}
-              </p>
-              <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
-                Tasks In Progress
-              </p>
-              <div class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
-                {openIssues} open, {blockedIssues} blocked
+        <Card class="h-full transition-colors hover:bg-accent/50 cursor-pointer border-border/60 !py-0 !gap-0">
+          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{tasksInProgress}</p>
+                <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">Tasks In Progress</p>
+                <p class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">{openIssues} open, {blockedIssues} blocked</p>
               </div>
+              <CircleDot class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
             </div>
-            <CircleDot class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </a>
 
       <!-- Month Spend -->
       <a href="/{prefix}/costs" class="no-underline text-inherit block h-full">
-        <div class="h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer">
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex-1 min-w-0">
-              <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">
-                {formatCents(monthSpend)}
-              </p>
-              <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
-                Month Spend
-              </p>
-              <div class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
+        <Card class="h-full transition-colors hover:bg-accent/50 cursor-pointer border-border/60 !py-0 !gap-0">
+          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{formatCents(monthSpend)}</p>
+                <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">Month Spend</p>
+                <p class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
+                  {#if monthBudgetCents > 0}{monthUtilizationPercent}% of {formatCents(monthBudgetCents)} budget{:else}Unlimited budget{/if}
+                </p>
                 {#if monthBudgetCents > 0}
-                  {monthUtilizationPercent}% of {formatCents(monthBudgetCents)} budget
-                {:else}
-                  Unlimited budget
+                  <Progress value={monthUtilizationPercent} class="mt-2 h-1.5" />
                 {/if}
               </div>
+              <DollarSign class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
             </div>
-            <DollarSign class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </a>
 
       <!-- Pending Approvals -->
       <a href="/{prefix}/approvals" class="no-underline text-inherit block h-full">
-        <div class="h-full px-4 py-4 sm:px-5 sm:py-5 rounded-lg transition-colors hover:bg-accent/50 cursor-pointer">
-          <div class="flex items-start justify-between gap-3">
-            <div class="flex-1 min-w-0">
-              <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">
-                {pendingApprovals + budgetPendingApprovals}
-              </p>
-              <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">
-                Pending Approvals
-              </p>
-              <div class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
-                {#if budgetPendingApprovals > 0}
-                  {budgetPendingApprovals} budget overrides awaiting board review
-                {:else}
-                  Awaiting board review
-                {/if}
+        <Card class="h-full transition-colors hover:bg-accent/50 cursor-pointer border-border/60 !py-0 !gap-0">
+          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1 min-w-0">
+                <p class="text-2xl sm:text-3xl font-semibold tracking-tight tabular-nums">{pendingApprovals + budgetPendingApprovals}</p>
+                <p class="text-xs sm:text-sm font-medium text-muted-foreground mt-1">Pending Approvals</p>
+                <p class="text-xs text-muted-foreground/70 mt-1.5 hidden sm:block">
+                  {#if budgetPendingApprovals > 0}{budgetPendingApprovals} budget overrides awaiting board review{:else}Awaiting board review{/if}
+                </p>
               </div>
+              <ShieldCheck class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
             </div>
-            <ShieldCheck class="h-4 w-4 text-muted-foreground/50 shrink-0 mt-1.5" />
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </a>
     </div>
   {:else}
     <!-- Loading skeleton for metric cards -->
-    <div class="grid grid-cols-2 xl:grid-cols-4 gap-1 sm:gap-2">
+    <div class="grid grid-cols-2 xl:grid-cols-4 gap-2 sm:gap-3">
       {#each Array(4) as _}
-        <div class="px-4 py-4 sm:px-5 sm:py-5 rounded-lg">
-          <Skeleton class="h-8 w-16" />
-          <Skeleton class="h-4 w-24 mt-2" />
-          <Skeleton class="h-3 w-32 mt-2" />
-        </div>
+        <Card class="border-border/60 !py-0 !gap-0">
+          <CardContent class="px-4 py-4 sm:px-5 sm:py-5 !px-4">
+            <Skeleton class="h-8 w-16" />
+            <Skeleton class="h-4 w-24 mt-2" />
+            <Skeleton class="h-3 w-32 mt-2" />
+          </CardContent>
+        </Card>
       {/each}
     </div>
   {/if}
 
-  <!-- ── Activity Charts ────────────────────────────────────────────── -->
+  <!-- ── Activity Charts (existing stacked bars) ────────────────────── -->
   {#if companyId}
     <ActivityCharts {companyId} />
   {/if}
 
+  <!-- ── New ECharts: Gauge + Pie + Line ─────────────────────────── -->
+  {#if !loading}
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      <!-- Budget Gauge -->
+      <Card class="border-border/60 !py-0 !gap-0 rounded-xl">
+        <CardHeader class="px-4 py-3 !pb-0">
+          <CardTitle class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Budget Usage</CardTitle>
+        </CardHeader>
+        <CardContent class="px-4 pb-4">
+          {#if monthBudgetCents > 0}
+            <GaugeChart value={monthSpend} max={monthBudgetCents} label="of budget" height="180px" colorMode="ascending" />
+          {:else}
+            <div class="flex h-[180px] items-center justify-center">
+              <p class="text-sm text-muted-foreground/60 italic">No budget set</p>
+            </div>
+          {/if}
+        </CardContent>
+      </Card>
+
+      <!-- Agent Status Pie -->
+      <Card class="border-border/60 !py-0 !gap-0 rounded-xl">
+        <CardHeader class="px-4 py-3 !pb-0">
+          <CardTitle class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Agent Status</CardTitle>
+        </CardHeader>
+        <CardContent class="px-4 pb-4">
+          {#if agents.length > 0}
+            <PieChart
+              data={[
+                { name: 'Running', value: runningAgents, color: '#3b82f6' },
+                { name: 'Idle', value: pausedAgents, color: '#22c55e' },
+                { name: 'Error', value: errorAgents, color: '#ef4444' },
+              ].filter(d => d.value > 0)}
+              height="180px"
+            />
+          {:else}
+            <div class="flex h-[180px] items-center justify-center">
+              <p class="text-sm text-muted-foreground/60 italic">No agents</p>
+            </div>
+          {/if}
+        </CardContent>
+      </Card>
+
+      <!-- Cost Trend Line -->
+      <Card class="border-border/60 !py-0 !gap-0 rounded-xl">
+        <CardHeader class="px-4 py-3 !pb-0">
+          <CardTitle class="text-sm font-semibold text-muted-foreground uppercase tracking-wide">Cost Trend</CardTitle>
+        </CardHeader>
+        <CardContent class="px-4 pb-4">
+          {#if costDailyData.length > 0}
+            <LineChart
+              labels={costDailyData.map(d => d.label)}
+              series={[{ name: 'Daily Spend', data: costDailyData.map(d => d.value), color: '#3b82f6', area: true }]}
+              height="180px"
+              yAxisLabel="$"
+            />
+          {:else}
+            <div class="flex h-[180px] items-center justify-center">
+              <p class="text-sm text-muted-foreground/60 italic">No cost data yet</p>
+            </div>
+          {/if}
+        </CardContent>
+      </Card>
+    </div>
+  {/if}
+
   <!-- ── Recent Activity & Recent Tasks ───────────────────────────── -->
   <div class="grid md:grid-cols-2 gap-4">
-    <!-- Recent Activity -->
+    <!-- Recent Activity (Timeline) -->
     {#if recentActivity.length > 0 || recentActivityLoading}
       <div class="min-w-0">
         <h3 class="text-sm font-semibold text-muted-foreground uppercase tracking-wide mb-3">
           Recent Activity
         </h3>
         {#if recentActivityLoading}
-          <div class="border border-border divide-y divide-border overflow-hidden">
-            {#each Array(5) as _}
-              <div class="px-4 py-2 flex items-center gap-3">
-                <Skeleton class="h-5 w-5 rounded-full shrink-0" />
-                <Skeleton class="h-3 w-3/4" />
+          <!-- Skeleton timeline -->
+          <div class="relative">
+            {#each Array(5) as _, i}
+              <div class="flex">
+                <div class="flex flex-col items-center shrink-0 w-6">
+                  <Skeleton class="h-6 w-6 rounded-full" />
+                  {#if i < 4}<div class="w-px flex-1 bg-border/30"></div>{/if}
+                </div>
+                <div class="flex-1 ml-3 px-3 py-1.5 mb-1">
+                  <Skeleton class="h-3 w-3/4 mb-1.5" />
+                  <Skeleton class="h-2.5 w-1/2" />
+                </div>
               </div>
             {/each}
           </div>
         {:else}
-          <div class="border border-border divide-y divide-border overflow-hidden">
-            {#each recentActivity as item}
+          <div class="relative">
+            {#each recentActivity as item, idx}
               {@const actorDisplay = getActorDisplay(item)}
               {@const verb = parseActionVerb(item.action ?? item.description ?? item.message ?? '')}
               {@const entity = getEntityDisplay(item)}
               {@const activityHref = getActivityHref(item)}
+              {@const activityIcon = getActivityIcon(item)}
+              {@const dotRing = getDotRing(item)}
+              {@const statusDetail = getStatusChangeDetail(item)}
+              {@const isLast = idx === recentActivity.length - 1}
+              {@const actorInitials = getInitials(actorDisplay)}
+
               <a
                 href={activityHref || `/${prefix}/activity`}
-                class="px-4 py-2 text-sm cursor-pointer hover:bg-accent/50 transition-colors no-underline text-inherit block"
+                class="group relative flex no-underline text-inherit"
               >
-                <div class="flex gap-3">
-                  <p class="flex-1 min-w-0 truncate">
-                    <span class="text-sm font-medium">{actorDisplay}</span>
-                    <span class="text-muted-foreground ml-1">{verb}</span>
-                    {#if entity.label}
-                      <span class="font-medium ml-1">{entity.label}</span>
-                    {/if}
-                    {#if entity.subtitle}
-                      <span class="text-muted-foreground ml-1">— {entity.subtitle}</span>
-                    {/if}
-                  </p>
-                  <span class="text-xs text-muted-foreground shrink-0 pt-0.5">
-                    <TimeAgo date={item.createdAt ?? item.timestamp ?? item.date} />
-                  </span>
+                <!-- Left column: dot + connector line -->
+                <div class="flex flex-col items-center shrink-0 w-6">
+                  <!-- Dot -->
+                  <div class="z-10 flex h-6 w-6 items-center justify-center rounded-full ring-2 {dotRing} shadow-sm transition-transform group-hover:scale-110">
+                    <svelte:component this={activityIcon.icon} size={12} class={activityIcon.color} />
+                  </div>
+                  <!-- Connector line below dot -->
+                  {#if !isLast}
+                    <div class="w-px flex-1 bg-border/50"></div>
+                  {/if}
+                </div>
+
+                <!-- Content (vertically centered with dot) -->
+                <div class="flex-1 min-w-0 ml-3 rounded-lg px-3 pt-0.5 pb-2 mb-1 transition-colors group-hover:bg-accent/50">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0 flex-1">
+                      <p class="text-[13px] leading-6">
+                        <span class="inline-flex items-center gap-1">
+                          <span class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[8px] font-bold text-muted-foreground shrink-0">
+                            {actorInitials}
+                          </span>
+                          <span class="font-medium">{actorDisplay}</span>
+                        </span>
+                        <span class="text-muted-foreground ml-0.5">{verb}</span>
+                        {#if entity.label}
+                          <span class="font-semibold ml-0.5 text-foreground/90">{entity.label}</span>
+                        {/if}
+                      </p>
+                      {#if entity.subtitle}
+                        <p class="mt-0.5 text-[12px] text-muted-foreground truncate">{entity.subtitle}</p>
+                      {/if}
+                      {#if statusDetail}
+                        <p class="mt-1 inline-flex items-center gap-1 rounded-full border border-blue-500/20 bg-blue-500/[0.06] px-2 py-0.5 text-[10px] font-medium text-blue-700 dark:text-blue-300">
+                          <ArrowRight size={10} />
+                          {statusDetail}
+                        </p>
+                      {/if}
+                    </div>
+                    <span class="shrink-0 text-[11px] text-muted-foreground/60 pt-0.5">
+                      <TimeAgo date={item.createdAt ?? item.timestamp ?? item.date} />
+                    </span>
+                  </div>
                 </div>
               </a>
             {/each}

@@ -33,7 +33,7 @@
     fetchInFlight = true;
     try {
       const [liveRes, recentRes] = await Promise.all([
-        api(`/api/companies/${companyId}/live-runs?minCount=0`),
+        api(`/api/companies/${companyId}/live-runs?minCount=4`),
         api(`/api/companies/${companyId}/heartbeat-runs?limit=5`),
       ]);
 

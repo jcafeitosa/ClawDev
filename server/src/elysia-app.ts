@@ -553,7 +553,12 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     ];
     const uiDist = candidates.find((p) => fs.existsSync(path.join(p, "index.html")));
     if (uiDist) {
-      const indexHtml = applyUiBranding(fs.readFileSync(path.join(uiDist, "index.html"), "utf-8"));
+      // Use 200.html (SPA fallback with absolute paths) for non-root routes.
+      // index.html has relative paths that break on nested URLs like /{companyPrefix}/dashboard.
+      const fallbackPath = fs.existsSync(path.join(uiDist, "200.html"))
+        ? path.join(uiDist, "200.html")
+        : path.join(uiDist, "index.html");
+      const indexHtml = applyUiBranding(fs.readFileSync(fallbackPath, "utf-8"));
 
       const mimeTypes: Record<string, string> = {
         ".html": "text/html; charset=utf-8",

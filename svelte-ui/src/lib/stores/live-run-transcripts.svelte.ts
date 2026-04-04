@@ -4,6 +4,7 @@ import { api } from "$lib/api";
 import {
   buildTranscriptFromLog,
   normalizeTranscript,
+  parseClaudeStdoutLine,
   type TranscriptBlock,
   type TranscriptEntry,
 } from "$lib/transcript/run-transcript";
@@ -30,6 +31,8 @@ let transcriptOffsetByRun = new Map<string, number>();
 let entriesByRun = $state(new Map<string, TranscriptEntry[]>());
 let seenEntryKeysByRun = new Map<string, Set<string>>();
 let liveEventsUnsubscribe: (() => void) | null = null;
+/** Buffer for incomplete stdout lines per run (WebSocket chunks can split mid-line) */
+let stdoutBufByRun = new Map<string, string>();
 
 function isTerminalStatus(status: string | null | undefined): boolean {
   return status === "failed" || status === "timed_out" || status === "cancelled" || status === "succeeded";
@@ -107,7 +110,14 @@ async function readRunTranscript(run: RunLike) {
 async function refreshTranscripts() {
   if (!active) return;
   const activeRuns = runs.filter((run) => !isTerminalStatus(run.status));
-  await Promise.all(activeRuns.map((run) => readRunTranscript(run)));
+  // Also load transcript once for recently finished runs that have no entries yet
+  const finishedRunsNeedingLoad = runs.filter(
+    (run) => isTerminalStatus(run.status) && !(entriesByRun.get(run.id)?.length),
+  );
+  await Promise.all([
+    ...activeRuns.map((run) => readRunTranscript(run)),
+    ...finishedRunsNeedingLoad.map((run) => readRunTranscript(run)),
+  ]);
 }
 
 function pruneState(knownRunIds: Set<string>) {
@@ -131,6 +141,11 @@ function pruneState(knownRunIds: Set<string>) {
     }
   }
 
+  // Clean up stdout buffers for removed runs
+  for (const runId of stdoutBufByRun.keys()) {
+    if (!knownRunIds.has(runId)) stdoutBufByRun.delete(runId);
+  }
+
   for (const runId of transcriptOffsetByRun.keys()) {
     if (!knownRunIds.has(runId)) {
       transcriptOffsetByRun.delete(runId);
@@ -144,7 +159,32 @@ function appendLiveEventEntry(runId: string, event: LiveEvent) {
   if (event.type === "heartbeat.run.log") {
     const chunk = typeof payload.chunk === "string" ? payload.chunk : "";
     if (!chunk) return;
-    appendEntries(runId, [{ kind: "stdout", ts: typeof payload.ts === "string" ? payload.ts : event.createdAt, text: chunk }]);
+    const ts = typeof payload.ts === "string" ? payload.ts : event.createdAt;
+    const stream = typeof payload.stream === "string" ? payload.stream : "stdout";
+
+    if (stream === "stderr") {
+      appendEntries(runId, [{ kind: "stderr", ts, text: chunk }]);
+      return;
+    }
+    if (stream === "system") {
+      appendEntries(runId, [{ kind: "system", ts, text: chunk }]);
+      return;
+    }
+
+    // stdout: chunk contains raw Claude output lines (JSON-per-line).
+    // Buffer incomplete lines across WebSocket messages.
+    const buf = (stdoutBufByRun.get(runId) ?? "") + chunk;
+    const parts = buf.split(/\r?\n/);
+    stdoutBufByRun.set(runId, parts.pop() ?? "");
+
+    const parsed: TranscriptEntry[] = [];
+    for (const line of parts) {
+      const trimmed = line.trim();
+      if (trimmed) parsed.push(...parseClaudeStdoutLine(trimmed, ts));
+    }
+    if (parsed.length > 0) {
+      appendEntries(runId, parsed);
+    }
     return;
   }
 

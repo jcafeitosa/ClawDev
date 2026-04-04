@@ -6,6 +6,7 @@
   import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { openNewIssueDialog } from "$components/new-issue-dialog.svelte";
   import { cn } from "$utils/index.js";
+  import { slide } from "svelte/transition";
   import {
     LayoutDashboard,
     Inbox,
@@ -33,7 +34,11 @@
     BookOpen,
     Moon,
     Sun,
+    Pin,
+    PinOff,
   } from "lucide-svelte";
+
+  let expanded = $derived(sidebarStore.expanded);
 
   const routePrefix = $derived($page.params.companyPrefix ?? "");
   const routeCompany = $derived.by(() => {
@@ -127,25 +132,22 @@
   }
 
   // ---------------------------------------------------------------------------
-  // Badge data fetches
+  // Badge data fetches — periodic polling like Paperclip
   // ---------------------------------------------------------------------------
   let inboxUnread = $state(0);
   let issueCount = $state<number | null>(null);
   let activeRunCount = $state<number | null>(null);
   let hasAgentErrors = $state(false);
+  let badgeInterval: ReturnType<typeof setInterval> | undefined;
 
-  $effect(() => {
+  function fetchBadges() {
     if (!companyId) return;
+    // Inbox unread count
     fetch(`/api/companies/${companyId}/inbox?status=unread&limit=0`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((data) => {
-        if (data?.total != null) inboxUnread = data.total;
-      })
+      .then((data) => { if (data?.total != null) inboxUnread = data.total; })
       .catch(() => {});
-  });
-
-  $effect(() => {
-    if (!companyId) return;
+    // Issue count
     fetch(`/api/companies/${companyId}/issues?limit=0`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -153,13 +155,7 @@
         else if (Array.isArray(data)) issueCount = data.length;
       })
       .catch(() => {});
-  });
-
-  // Active run count with periodic refresh
-  let runBadgeInterval: ReturnType<typeof setInterval> | undefined;
-
-  function fetchActiveRunCount() {
-    if (!companyId) return;
+    // Active run count
     fetch(`/api/companies/${companyId}/live-runs?minCount=0`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
@@ -173,9 +169,9 @@
 
   $effect(() => {
     if (!companyId) return;
-    fetchActiveRunCount();
-    runBadgeInterval = setInterval(fetchActiveRunCount, 15_000);
-    return () => { if (runBadgeInterval) clearInterval(runBadgeInterval); };
+    fetchBadges();
+    badgeInterval = setInterval(fetchBadges, 10_000);
+    return () => { if (badgeInterval) clearInterval(badgeInterval); };
   });
 
   // ---------------------------------------------------------------------------
@@ -427,15 +423,19 @@
   }
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <aside
   data-slot="sidebar"
+  style="width: {sidebarStore.isMobile ? '240px' : `${sidebarStore.width}px`}; transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1);"
   class={cn(
-    "flex h-full w-60 shrink-0 flex-col border-r",
+    "flex h-full shrink-0 flex-col border-r overflow-hidden",
     "bg-[var(--clawdev-bg-base)] text-[var(--clawdev-text-primary)] border-[var(--clawdev-bg-surface-border)]",
-    sidebarStore.isMobile && "fixed inset-y-0 left-0 z-50 shadow-xl",
+    sidebarStore.isMobile && "fixed inset-y-0 left-0 z-50 shadow-xl w-60",
     sidebarStore.isMobile && !sidebarStore.open && "-translate-x-full",
     "transition-transform duration-200",
   )}
+  onmouseenter={() => { if (!sidebarStore.isMobile) sidebarStore.setHovering(true); }}
+  onmouseleave={() => { if (!sidebarStore.isMobile) sidebarStore.setHovering(false); }}
 >
   <!-- Header: Company avatar + name with optional switcher -->
   <div class="flex h-14 items-center justify-between px-4 border-b border-[var(--clawdev-bg-surface-border)]">
@@ -464,8 +464,10 @@
               ></span>
             {/if}
           </div>
-          <span class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">{companyName}</span>
-          <ChevronDown class={cn("size-3.5 shrink-0 text-[var(--clawdev-text-muted)] transition-transform duration-150", companySwitcherOpen && "rotate-180")} />
+          {#if expanded}
+            <span transition:slide={{ axis: "x", duration: 200 }} class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)] whitespace-nowrap">{companyName}</span>
+            <ChevronDown class={cn("size-3.5 shrink-0 text-[var(--clawdev-text-muted)] transition-transform duration-150", companySwitcherOpen && "rotate-180")} />
+          {/if}
         </button>
 
         {#if companySwitcherOpen}
@@ -522,18 +524,22 @@
             ></span>
           {/if}
         </div>
-        <span class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)]">{companyName}</span>
+        {#if expanded}
+          <span transition:slide={{ axis: "x", duration: 200 }} class="text-sm font-semibold truncate text-[var(--clawdev-text-primary)] whitespace-nowrap">{companyName}</span>
+        {/if}
       {/if}
     </div>
     <div class="flex items-center gap-1">
-      <button
-        onclick={openSearch}
-        class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-        aria-label="Search (Ctrl+K)"
-        title="Search (Ctrl+K)"
-      >
-        <Search class="size-4" />
-      </button>
+      {#if expanded}
+        <button
+          onclick={openSearch}
+          class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+          aria-label="Search (Ctrl+K)"
+          title="Search (Ctrl+K)"
+        >
+          <Search class="size-4" />
+        </button>
+      {/if}
       {#if sidebarStore.isMobile}
         <button
           class="text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] p-1 rounded-md"
@@ -551,18 +557,24 @@
     <div class="space-y-2">
       <button
         onclick={() => openNewIssueDialog()}
-        class="flex h-8 w-full items-center justify-center gap-2 rounded-md bg-[var(--clawdev-primary)] px-3 text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors"
+        class={cn(
+          "flex h-8 w-full items-center gap-2 rounded-md bg-[var(--clawdev-primary)] text-sm font-medium text-white hover:bg-[var(--clawdev-primary-hover)] transition-colors",
+          expanded ? "justify-center px-3" : "justify-center px-0",
+        )}
+        title="New Issue"
       >
-        <Plus class="size-3.5" />
-        New Issue
+        <Plus class="size-3.5 shrink-0" />
+        {#if expanded}<span transition:slide={{ axis: "x", duration: 200 }} class="whitespace-nowrap">New Issue</span>{/if}
       </button>
-      <button
-        onclick={openOnboardingFlow}
-        class="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 text-sm font-medium text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-      >
-        <Rocket class="size-3.5" />
-        Onboarding
-      </button>
+      {#if expanded}
+        <button
+          onclick={openOnboardingFlow}
+          class="flex h-8 w-full items-center justify-center gap-2 rounded-md border border-[rgba(255,255,255,0.08)] bg-[rgba(255,255,255,0.03)] px-3 text-sm font-medium text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
+        >
+          <Rocket class="size-3.5" />
+          Onboarding
+        </button>
+      {/if}
     </div>
   </div>
 
@@ -571,60 +583,81 @@
     <!-- Standard nav sections (Overview, Work) -->
     {#each sections as section (section.key)}
       <div class="mt-3 first:mt-0">
-        <button
-          onclick={() => toggleSection(section.key)}
-          class="flex w-full items-center gap-1 px-1.5 py-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm group"
-          aria-expanded={sectionOpen[section.key]}
-        >
-          <ChevronRight
-            class={cn(
-              "size-3 shrink-0 transition-transform duration-150",
-              sectionOpen[section.key] && "rotate-90",
-            )}
-          />
-          <span class="select-none">{section.label}</span>
-        </button>
+        {#if expanded}
+          <button
+            onclick={() => toggleSection(section.key)}
+            class="flex w-full items-center gap-1 px-1.5 py-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm group"
+            aria-expanded={sectionOpen[section.key]}
+          >
+            <ChevronRight
+              class={cn(
+                "size-3 shrink-0 transition-transform duration-150",
+                sectionOpen[section.key] && "rotate-90",
+              )}
+            />
+            <span class="select-none">{section.label}</span>
+          </button>
+        {:else}
+          <div class="h-px mx-2 my-2 bg-[var(--clawdev-bg-surface-border)]"></div>
+        {/if}
 
-        {#if sectionOpen[section.key]}
+        {#if sectionOpen[section.key] || !expanded}
           <div class="mt-0.5 space-y-px">
             {#each section.items as item (item.href)}
               <a
                 href={`/${prefix}/${item.href}`}
+                title={expanded ? undefined : item.label}
                 class={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                  "relative flex items-center gap-2.5 rounded-md py-1.5 text-sm transition-colors",
+                  expanded ? "px-2.5" : "px-2.5 justify-center",
                   isActive(item.href)
                     ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
                     : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
                 )}
               >
                 <item.icon class="size-4 shrink-0" />
-                <span class="flex-1 truncate">{item.label}</span>
+                {#if expanded}<span transition:slide={{ axis: "x", duration: 200 }} class="flex-1 truncate whitespace-nowrap">{item.label}</span>{/if}
 
-                <!-- Beta badge (e.g. Routines) -->
-                {#if item.betaBadge}
-                  <span class="ml-0.5 inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase leading-tight bg-[rgba(245,158,11,0.15)] text-[#f59e0b]">
-                    Beta
-                  </span>
-                {/if}
+                {#if expanded}
+                  <!-- Beta badge (e.g. Routines) -->
+                  {#if item.betaBadge}
+                    <span class="ml-0.5 inline-flex items-center rounded px-1 py-px text-[9px] font-semibold uppercase leading-tight bg-[rgba(245,158,11,0.15)] text-[#f59e0b]">
+                      Beta
+                    </span>
+                  {/if}
 
-                <!-- Live badge (Dashboard) -->
-                {#if item.badge}
-                  {@const badgeValue = item.badge()}
-                  {#if badgeValue != null}
-                    {#if item.badgeStyle === "live"}
-                      <span class="ml-auto flex items-center gap-1 text-[11px] font-medium tabular-nums text-[#60a5fa]">
-                        <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#3b82f6] animate-pulse"></span>
-                        {typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue}
-                      </span>
-                    {:else if item.badgeStyle === "count"}
-                      <!-- Inbox-style count badge -->
-                      <span class="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums bg-[#ef4444] text-white">
-                        {typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue}
-                      </span>
-                    {:else}
-                      <span class="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-medium tabular-nums bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-muted)]">
-                        {typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue}
-                      </span>
+                  <!-- Live/count badges (expanded) -->
+                  {#if item.badge}
+                    {@const badgeValue = item.badge()}
+                    {#if badgeValue != null}
+                      {#if item.badgeStyle === "live"}
+                        <span class="ml-auto flex items-center gap-1 text-[11px] font-medium tabular-nums text-[#60a5fa]">
+                          <span class="inline-block h-1.5 w-1.5 rounded-full bg-[#3b82f6] animate-pulse"></span>
+                          {typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue}
+                        </span>
+                      {:else if item.badgeStyle === "count"}
+                        <span class="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-bold tabular-nums bg-[#ef4444] text-white">
+                          {typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue}
+                        </span>
+                      {:else}
+                        <span class="ml-auto flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[10px] font-medium tabular-nums bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-muted)]">
+                          {typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue}
+                        </span>
+                      {/if}
+                    {/if}
+                  {/if}
+                {:else}
+                  <!-- Collapsed: show dot indicator for active badges -->
+                  {#if item.badge}
+                    {@const badgeValue = item.badge()}
+                    {#if badgeValue != null}
+                      {#if item.badgeStyle === "live"}
+                        <span class="absolute top-0.5 right-0.5 h-2 w-2 rounded-full bg-[#3b82f6] animate-pulse"></span>
+                      {:else if item.badgeStyle === "count"}
+                        <span class="absolute -top-0.5 -right-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full text-[8px] font-bold bg-[#ef4444] text-white">
+                          {typeof badgeValue === "number" ? formatBadge(badgeValue) : badgeValue}
+                        </span>
+                      {/if}
                     {/if}
                   {/if}
                 {/if}
@@ -636,201 +669,125 @@
     {/each}
 
     <!-- ================================================================== -->
-    <!-- PROJECTS section with individual items                              -->
+    <!-- PROJECTS section                                                    -->
     <!-- ================================================================== -->
-    <div class="mt-3">
-      <div class="flex items-center justify-between px-1.5 py-1">
-        <button
-          onclick={() => toggleSection("projects")}
-          class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm"
-          aria-expanded={sectionOpen["projects"]}
-        >
-          <ChevronRight
-            class={cn(
-              "size-3 shrink-0 transition-transform duration-150",
-              sectionOpen["projects"] && "rotate-90",
-            )}
-          />
-          <span class="select-none">Projects</span>
-        </button>
-        <a
-          href={`/${prefix}/projects?new=true`}
-          class="flex h-5 w-5 items-center justify-center rounded text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-          title="New project"
-          aria-label="New project"
-        >
-          <Plus class="size-3" />
+    {#if expanded}
+      <div class="mt-3">
+        <div class="flex items-center justify-between px-1.5 py-1">
+          <button
+            onclick={() => toggleSection("projects")}
+            class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm"
+            aria-expanded={sectionOpen["projects"]}
+          >
+            <ChevronRight class={cn("size-3 shrink-0 transition-transform duration-150", sectionOpen["projects"] && "rotate-90")} />
+            <span class="select-none">Projects</span>
+          </button>
+          <a href={`/${prefix}/projects?new=true`} class="flex h-5 w-5 items-center justify-center rounded text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors" title="New project"><Plus class="size-3" /></a>
+        </div>
+        {#if sectionOpen["projects"]}
+          <div class="mt-0.5 space-y-px">
+            {#if allProjects.length === 0}
+              <div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">No projects yet</div>
+            {:else}
+              {#each visibleProjects as proj (proj.id)}
+                <a href={`/${prefix}/projects/${proj.urlKey ?? proj.slug ?? proj.id}`} class={cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors", $page.url.pathname.includes(`/projects/${proj.urlKey ?? proj.slug ?? proj.id}`) ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium" : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]")}>
+                  <span class="h-2 w-2 rounded-full shrink-0" style:background={projectColor(proj)}></span>
+                  <span class="flex-1 truncate">{proj.name}</span>
+                </a>
+              {/each}
+              {#if hasMoreProjects}
+                <button onclick={() => { projectsExpanded = !projectsExpanded; }} class="flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--clawdev-text-muted)]/60 hover:text-[var(--clawdev-text-muted)] transition-colors w-full">
+                  {projectsExpanded ? "Show fewer" : `Show ${allProjects.length - PROJECTS_COLLAPSED_LIMIT} more...`}
+                </button>
+              {/if}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <!-- Collapsed: just a FolderKanban icon for projects -->
+      <div class="mt-2 flex justify-center">
+        <a href={`/${prefix}/projects`} title="Projects" class="flex h-8 w-8 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)] transition-colors">
+          <FolderKanban class="size-4" />
         </a>
       </div>
-
-      {#if sectionOpen["projects"]}
-        <div class="mt-0.5 space-y-px">
-          {#if allProjects.length === 0}
-            <div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">
-              No projects yet
-            </div>
-          {:else}
-            {#each visibleProjects as proj (proj.id)}
-              <a
-                href={`/${prefix}/projects/${proj.urlKey ?? proj.slug ?? proj.id}`}
-                class={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                  $page.url.pathname.includes(`/projects/${proj.urlKey ?? proj.slug ?? proj.id}`)
-                    ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
-                    : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
-                )}
-              >
-                <span
-                  class="h-2 w-2 rounded-full shrink-0"
-                  style:background={projectColor(proj)}
-                ></span>
-                <span class="flex-1 truncate">{proj.name}</span>
-              </a>
-            {/each}
-
-            {#if hasMoreProjects}
-              <button
-                onclick={() => { projectsExpanded = !projectsExpanded; }}
-                class="flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--clawdev-text-muted)]/60 hover:text-[var(--clawdev-text-muted)] transition-colors w-full"
-              >
-                {#if projectsExpanded}
-                  Show fewer
-                {:else}
-                  Show {allProjects.length - PROJECTS_COLLAPSED_LIMIT} more...
-                {/if}
-              </button>
-            {/if}
-          {/if}
-        </div>
-      {/if}
-    </div>
+    {/if}
 
     <!-- ================================================================== -->
     <!-- AGENTS section with individual items                                -->
     <!-- ================================================================== -->
-    <div class="mt-3">
-      <div class="flex items-center justify-between px-1.5 py-1">
-        <button
-          onclick={() => toggleSection("agents")}
-          class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm"
-          aria-expanded={sectionOpen["agents"]}
-        >
-          <ChevronRight
-            class={cn(
-              "size-3 shrink-0 transition-transform duration-150",
-              sectionOpen["agents"] && "rotate-90",
-            )}
-          />
-          <span class="select-none">Agents</span>
-        </button>
-        <a
-          href={`/${prefix}/agents/new`}
-          class="flex h-5 w-5 items-center justify-center rounded text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-          title="New agent"
-          aria-label="New agent"
-        >
-          <Plus class="size-3" />
+    {#if expanded}
+      <div class="mt-3">
+        <div class="flex items-center justify-between px-1.5 py-1">
+          <button onclick={() => toggleSection("agents")} class="flex items-center gap-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm" aria-expanded={sectionOpen["agents"]}>
+            <ChevronRight class={cn("size-3 shrink-0 transition-transform duration-150", sectionOpen["agents"] && "rotate-90")} />
+            <span class="select-none">Agents</span>
+          </button>
+          <a href={`/${prefix}/agents/new`} class="flex h-5 w-5 items-center justify-center rounded text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors" title="New agent"><Plus class="size-3" /></a>
+        </div>
+        {#if sectionOpen["agents"]}
+          <div class="mt-0.5 space-y-px">
+            {#if allAgents.length === 0}
+              <div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">No agents yet</div>
+            {:else}
+              {#each visibleAgents as agent (agent.id)}
+                <a href={`/${prefix}/agents/${agent.slug ?? agent.urlKey ?? agent.id}`} class={cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors", $page.url.pathname.includes(`/agents/${agent.slug ?? agent.urlKey ?? agent.id}`) ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium" : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]")}>
+                  <div class="relative shrink-0">
+                    {#if agent.icon}<span class="flex h-5 w-5 items-center justify-center text-sm" title={agent.name}>{agent.icon}</span>{:else}<span class="flex h-5 w-5 items-center justify-center rounded bg-[rgba(255,255,255,0.08)] text-[9px] font-bold text-[var(--clawdev-text-muted)] uppercase">{agentInitials(agent)}</span>{/if}
+                    {#if agentStatusColor(agent)}<span class={cn("absolute -bottom-px -right-px block h-2 w-2 rounded-full border border-[var(--clawdev-bg-base)]", agent.status === "running" && "animate-pulse")} style:background-color={agentStatusColor(agent)}></span>{/if}
+                  </div>
+                  <span class="flex-1 truncate">{agent.name}</span>
+                </a>
+              {/each}
+              {#if hasMoreAgents}
+                <button onclick={() => { agentsExpanded = !agentsExpanded; }} class="flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--clawdev-text-muted)]/60 hover:text-[var(--clawdev-text-muted)] transition-colors w-full">
+                  {agentsExpanded ? "Show fewer" : `Show ${allAgents.length - AGENTS_COLLAPSED_LIMIT} more...`}
+                </button>
+              {/if}
+            {/if}
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <!-- Collapsed: just a Bot icon -->
+      <div class="mt-2 flex justify-center">
+        <a href={`/${prefix}/agents`} title="Agents" class="flex h-8 w-8 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)] transition-colors">
+          <Bot class="size-4" />
         </a>
       </div>
-
-      {#if sectionOpen["agents"]}
-        <div class="mt-0.5 space-y-px">
-          {#if allAgents.length === 0}
-            <div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">
-              No agents yet
-            </div>
-          {:else}
-            {#each visibleAgents as agent (agent.id)}
-              <a
-                href={`/${prefix}/agents/${agent.slug ?? agent.urlKey ?? agent.id}`}
-                class={cn(
-                  "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                  $page.url.pathname.includes(`/agents/${agent.slug ?? agent.urlKey ?? agent.id}`)
-                    ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
-                    : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
-                )}
-              >
-                <!-- Agent icon with status dot -->
-                <div class="relative shrink-0">
-                  {#if agent.icon}
-                    <span class="flex h-5 w-5 items-center justify-center text-sm" title={agent.name}>
-                      {agent.icon}
-                    </span>
-                  {:else}
-                    <span class="flex h-5 w-5 items-center justify-center rounded bg-[rgba(255,255,255,0.08)] text-[9px] font-bold text-[var(--clawdev-text-muted)] uppercase">
-                      {agentInitials(agent)}
-                    </span>
-                  {/if}
-                  {#if agentStatusColor(agent)}
-                    <span
-                      class={cn(
-                        "absolute -bottom-px -right-px block h-2 w-2 rounded-full border border-[var(--clawdev-bg-base)]",
-                        agent.status === "running" && "animate-pulse",
-                      )}
-                      style:background-color={agentStatusColor(agent)}
-                    ></span>
-                  {/if}
-                </div>
-                <span class="flex-1 truncate">{agent.name}</span>
-              </a>
-            {/each}
-
-            {#if hasMoreAgents}
-              <button
-                onclick={() => { agentsExpanded = !agentsExpanded; }}
-                class="flex items-center gap-2 px-2.5 py-1 text-xs text-[var(--clawdev-text-muted)]/60 hover:text-[var(--clawdev-text-muted)] transition-colors w-full"
-              >
-                {#if agentsExpanded}
-                  Show fewer
-                {:else}
-                  Show {allAgents.length - AGENTS_COLLAPSED_LIMIT} more...
-                {/if}
-              </button>
-            {/if}
-          {/if}
-        </div>
-      {/if}
-    </div>
+    {/if}
 
     <!-- ================================================================== -->
     <!-- MORE section (less-used pages)                                      -->
     <!-- ================================================================== -->
-    <div class="mt-3">
-      <button
-        onclick={() => toggleSection(moreSection.key)}
-        class="flex w-full items-center gap-1 px-1.5 py-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm group"
-        aria-expanded={sectionOpen[moreSection.key]}
-      >
-        <ChevronRight
-          class={cn(
-            "size-3 shrink-0 transition-transform duration-150",
-            sectionOpen[moreSection.key] && "rotate-90",
-          )}
-        />
-        <span class="select-none">{moreSection.label}</span>
-      </button>
-
-      {#if sectionOpen[moreSection.key]}
-        <div class="mt-0.5 space-y-px">
-          {#each moreSection.items as item (item.href)}
-            <a
-              href={`/${prefix}/${item.href}`}
-              class={cn(
-                "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                isActive(item.href)
-                  ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium"
-                  : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]",
-              )}
-            >
-              <item.icon class="size-4 shrink-0" />
-              <span class="flex-1 truncate">{item.label}</span>
-            </a>
-          {/each}
-        </div>
-      {/if}
-    </div>
+    {#if expanded}
+      <div class="mt-3">
+        <button onclick={() => toggleSection(moreSection.key)} class="flex w-full items-center gap-1 px-1.5 py-1 text-[10px] font-semibold text-[var(--clawdev-text-muted)] uppercase tracking-widest hover:text-[var(--clawdev-text-primary)] transition-colors rounded-sm group" aria-expanded={sectionOpen[moreSection.key]}>
+          <ChevronRight class={cn("size-3 shrink-0 transition-transform duration-150", sectionOpen[moreSection.key] && "rotate-90")} />
+          <span class="select-none">{moreSection.label}</span>
+        </button>
+        {#if sectionOpen[moreSection.key]}
+          <div class="mt-0.5 space-y-px">
+            {#each moreSection.items as item (item.href)}
+              <a href={`/${prefix}/${item.href}`} class={cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors", isActive(item.href) ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium" : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]")}>
+                <item.icon class="size-4 shrink-0" />
+                <span class="flex-1 truncate">{item.label}</span>
+              </a>
+            {/each}
+          </div>
+        {/if}
+      </div>
+    {:else}
+      <!-- Collapsed: separator + settings icon only -->
+      <div class="mt-2 flex justify-center">
+        <a href={`/${prefix}/settings`} title="Settings" class="flex h-8 w-8 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)] transition-colors">
+          <Settings class="size-4" />
+        </a>
+      </div>
+    {/if}
   </nav>
 
+  {#if expanded}
   <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-3">
     <div class="text-[10px] font-semibold uppercase tracking-widest text-[var(--clawdev-text-muted)]">
       Extensions
@@ -861,49 +818,34 @@
     />
   </div>
 
+  {/if}
+
   <!-- Footer -->
-  <div class="border-t border-[var(--clawdev-bg-surface-border)] px-4 py-3 space-y-1.5">
-    <a
-      href="https://github.com/jcafeitosa/ClawDev/blob/main/doc/SPEC-implementation.md"
-      target="_blank"
-      rel="noopener noreferrer"
-      class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors"
-    >
-      <BookOpen class="size-3.5" />
-      Documentation
-    </a>
-    <div class="flex items-center justify-between">
-      <a
-        href="/settings/general"
-        class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors"
-      >
-        <Cog class="size-3.5" />
-        Instance Settings
+  <div class="border-t border-[var(--clawdev-bg-surface-border)] py-3 space-y-1.5 {expanded ? 'px-4' : 'px-2 flex flex-col items-center'}">
+    {#if expanded}
+      <a href="https://github.com/jcafeitosa/ClawDev/blob/main/doc/SPEC-implementation.md" target="_blank" rel="noopener noreferrer" class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors">
+        <BookOpen class="size-3.5" />
+        Documentation
       </a>
-      <div class="flex items-center gap-1">
-        <a
-          href="/companies"
-          class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-          aria-label="Create or manage companies"
-          title="Create or manage companies"
-        >
-          <Plus class="size-3.5" />
+      <div class="flex items-center justify-between">
+        <a href="/settings/general" class="flex items-center gap-2 text-xs text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] transition-colors">
+          <Cog class="size-3.5" />
+          Instance Settings
         </a>
-        <button
-        onclick={toggleTheme}
-        class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors"
-        aria-label={isDark ? "Switch to light mode" : "Switch to dark mode"}
-        title={isDark ? "Switch to light mode" : "Switch to dark mode"}
-      >
-        {#if isDark}
-          <Sun class="size-3.5" />
-        {:else}
-          <Moon class="size-3.5" />
-        {/if}
-      </button>
+        <div class="flex items-center gap-1">
+          <a href="/companies" class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors" title="Create or manage companies"><Plus class="size-3.5" /></a>
+          <button onclick={toggleTheme} class="flex h-6 w-6 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors" title={isDark ? "Switch to light mode" : "Switch to dark mode"}>
+            {#if isDark}<Sun class="size-3.5" />{:else}<Moon class="size-3.5" />{/if}
+          </button>
+        </div>
       </div>
-    </div>
-    <div class="text-[10px] text-[var(--clawdev-text-muted)]/50 select-none">ClawDev v0.3.1</div>
+      <div class="text-[10px] text-[var(--clawdev-text-muted)]/50 select-none">ClawDev v0.3.1</div>
+    {:else}
+      <!-- Collapsed footer: just theme toggle -->
+      <button onclick={toggleTheme} class="flex h-7 w-7 items-center justify-center rounded-md text-[var(--clawdev-text-muted)] hover:text-[var(--clawdev-text-primary)] hover:bg-[rgba(255,255,255,0.06)] transition-colors" title={isDark ? "Switch to light mode" : "Switch to dark mode"}>
+        {#if isDark}<Sun class="size-3.5" />{:else}<Moon class="size-3.5" />{/if}
+      </button>
+    {/if}
   </div>
 </aside>
 

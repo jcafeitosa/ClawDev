@@ -3828,15 +3828,19 @@ export function heartbeatService(db: Db) {
 
   return {
     list: async (companyId: string, agentId?: string, limit?: number) => {
+      const issueJoinCond = sql`${issues.id} = (${heartbeatRuns.contextSnapshot} ->> 'issueId')::uuid`;
       const query = db
         .select({
           ...heartbeatRunListColumns,
           agentName: agents.name,
           agentIcon: agents.icon,
           agentRole: agents.role,
+          issueIdentifier: issues.identifier,
+          issueTitle: issues.title,
         })
         .from(heartbeatRuns)
         .leftJoin(agents, eq(agents.id, heartbeatRuns.agentId))
+        .leftJoin(issues, issueJoinCond)
         .where(
           agentId
             ? and(eq(heartbeatRuns.companyId, companyId), eq(heartbeatRuns.agentId, agentId))

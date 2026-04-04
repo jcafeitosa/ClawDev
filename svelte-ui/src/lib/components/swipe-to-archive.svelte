@@ -51,8 +51,8 @@
 >
   <!-- Archive reveal background -->
   <div
-    class="absolute inset-y-0 right-0 flex items-center justify-end px-5 transition-colors
-           {triggered ? 'bg-red-600' : 'bg-red-600/30'}"
+    class="absolute inset-y-0 right-0 flex items-center justify-end overflow-hidden transition-colors
+           {offset > 0 ? (triggered ? 'bg-red-600 px-5' : 'bg-red-600/30 px-5') : ''}"
     style="width: {Math.max(offset, 0)}px;"
   >
     {#if offset > 30}

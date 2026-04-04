@@ -23,6 +23,14 @@ export { default as Avatar } from "./avatar.svelte";
 export { default as AvatarImage } from "./avatar-image.svelte";
 export { default as AvatarFallback } from "./avatar-fallback.svelte";
 
+// Alert
+export { default as Alert } from "./alert.svelte";
+export { default as AlertTitle } from "./alert-title.svelte";
+export { default as AlertDescription } from "./alert-description.svelte";
+
+// Progress
+export { default as Progress } from "./progress.svelte";
+
 // Tooltip
 export { default as Tooltip } from "./tooltip.svelte";
 export { default as TooltipContent } from "./tooltip-content.svelte";
