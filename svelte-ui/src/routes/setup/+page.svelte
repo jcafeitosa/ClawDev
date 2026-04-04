@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { ChevronLeft, Check, Rocket, Building2, Settings, Bot, X, ArrowRight, CheckCircle2, Zap } from "lucide-svelte";
+  import { ChevronLeft, Check, Rocket, Building2, Settings, Bot, X, ArrowRight, CheckCircle2, Zap, FolderKanban, CircleDot } from "lucide-svelte";
   import { authClient } from "$lib/auth-client";
   import { api } from "$lib/api";
   import { goto } from "$app/navigation";
@@ -252,28 +252,75 @@
     }
   }
 
+  // Store created entities for launch summary
+  let createdGoalId = $state<string | null>(null);
+  let createdProjectId = $state<string | null>(null);
+  let createdIssue = $state<{ id: string; identifier?: string } | null>(null);
+
   async function handleTaskStep() {
     if (!createdCompany || loading) return;
     error = null;
     loading = true;
     try {
-      const body: Record<string, unknown> = {
+      const companyId = createdCompany.id;
+
+      // 1. Create goal from company mission (if provided)
+      if (companyMission && !createdGoalId) {
+        const goalRes = await api(`/api/companies/${companyId}/goals`, {
+          method: "POST",
+          body: JSON.stringify({
+            title: companyMission.split("\n")[0]?.trim() || companyMission,
+            description: companyMission.split("\n").slice(1).join("\n").trim() || undefined,
+            level: "company",
+            status: "active",
+          }),
+        });
+        if (goalRes.ok) {
+          const goal = await goalRes.json();
+          createdGoalId = goal.id;
+        }
+      }
+
+      // 2. Create "Onboarding" project linked to goal
+      if (!createdProjectId) {
+        const projectPayload: Record<string, unknown> = {
+          name: "Onboarding",
+          status: "in_progress",
+        };
+        if (createdGoalId) {
+          projectPayload.goalIds = [createdGoalId];
+        }
+        const projectRes = await api(`/api/companies/${companyId}/projects`, {
+          method: "POST",
+          body: JSON.stringify(projectPayload),
+        });
+        if (projectRes.ok) {
+          const project = await projectRes.json();
+          createdProjectId = project.id;
+        }
+      }
+
+      // 3. Create issue linked to project + goal + assigned to agent
+      const issueBody: Record<string, unknown> = {
         title: taskTitle,
         description: taskDescription || undefined,
         status: "todo",
       };
-      if (createdAgent) {
-        body.assigneeAgentId = createdAgent.id;
-      }
-      const res = await api(`/api/companies/${createdCompany.id}/issues`, {
+      if (createdAgent) issueBody.assigneeAgentId = createdAgent.id;
+      if (createdProjectId) issueBody.projectId = createdProjectId;
+      if (createdGoalId) issueBody.goalId = createdGoalId;
+
+      const res = await api(`/api/companies/${companyId}/issues`, {
         method: "POST",
-        body: JSON.stringify(body),
+        body: JSON.stringify(issueBody),
       });
       if (!res.ok) {
         const resBody = await res.json().catch(() => null);
         error = resBody?.message ?? `Failed to create task (${res.status})`;
         return;
       }
+      const issue = await res.json();
+      createdIssue = { id: issue.id, identifier: issue.identifier };
       markCompleted(3);
       currentStep = 4;
     } catch (err) {
@@ -293,12 +340,13 @@
   }
 
   function goToDashboard() {
-    const target = nextPath || (createdCompany ? `/${companyPrefix()}/dashboard` : "/");
-    if (target) {
-      goto(target, { replaceState: true });
-    } else {
-      goto("/", { replaceState: true });
+    // Navigate to created issue if available (like Paperclip), else dashboard
+    if (createdIssue?.identifier && createdCompany) {
+      goto(`/${companyPrefix()}/issues/${createdIssue.identifier}`, { replaceState: true });
+      return;
     }
+    const target = nextPath || (createdCompany ? `/${companyPrefix()}/dashboard` : "/");
+    goto(target || "/", { replaceState: true });
   }
 
   function handleClose() {
@@ -521,6 +569,9 @@
             {#if createdAgent}
               {createdAgent.name} is standing by as your CEO.
             {/if}
+            {#if createdIssue?.identifier}
+              Your first task <strong>{createdIssue.identifier}</strong> is assigned and the agent is being woken up.
+            {/if}
           </p>
 
           <div class="text-left border border-gray-100 rounded-lg divide-y divide-gray-100 mt-6">
@@ -537,6 +588,22 @@
                 <Bot class="h-4 w-4 text-gray-400" />
                 <span class="text-xs text-gray-500">CEO Agent</span>
                 <span class="text-sm font-medium text-gray-900 ml-auto">{createdAgent.name}</span>
+                <Check class="h-4 w-4 text-green-500" />
+              </div>
+            {/if}
+            {#if createdProjectId}
+              <div class="flex items-center gap-3 px-4 py-3">
+                <FolderKanban class="h-4 w-4 text-gray-400" />
+                <span class="text-xs text-gray-500">Project</span>
+                <span class="text-sm font-medium text-gray-900 ml-auto">Onboarding</span>
+                <Check class="h-4 w-4 text-green-500" />
+              </div>
+            {/if}
+            {#if createdIssue}
+              <div class="flex items-center gap-3 px-4 py-3">
+                <CircleDot class="h-4 w-4 text-gray-400" />
+                <span class="text-xs text-gray-500">Task</span>
+                <span class="text-sm font-medium text-gray-900 ml-auto">{createdIssue.identifier ?? "Created"}</span>
                 <Check class="h-4 w-4 text-green-500" />
               </div>
             {/if}
@@ -615,7 +682,7 @@
               onclick={goToDashboard}
             >
               <Rocket class="h-3.5 w-3.5" />
-              Go to Dashboard
+              {createdIssue?.identifier ? `Open ${createdIssue.identifier}` : "Go to Dashboard"}
             </button>
           {/if}
         </div>
