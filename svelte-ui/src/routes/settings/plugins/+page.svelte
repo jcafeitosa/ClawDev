@@ -57,6 +57,16 @@
   let errorDetailsPlugin = $state<Plugin | null>(null);
   let errorDetailsDialogOpen = $state(false);
 
+  const settingsTabs = [
+    { href: '/settings/general', label: 'General' },
+    { href: '/settings/experimental', label: 'Experimental' },
+    { href: '/settings/heartbeats', label: 'Heartbeats' },
+    { href: '/settings/plugins', label: 'Plugins' },
+    { href: '/settings/users', label: 'Users' },
+    { href: '/settings/status', label: 'Status' },
+    { href: '/settings/api-keys', label: 'API Keys' },
+  ];
+
   function firstNonEmptyLine(value: string | null | undefined): string | null {
     if (!value) return null;
     const line = value
@@ -237,6 +247,19 @@
 </script>
 
 <PageLayout title="Plugins" description="Manage the global plugin runtime, install examples, and inspect plugin health.">
+  {#snippet tabs()}
+    <div class="flex gap-3 border-b border-border pb-3">
+      {#each settingsTabs as tab}
+        <a
+          href={tab.href}
+          class="text-sm transition-colors {tab.href === '/settings/plugins'
+            ? 'font-medium text-primary'
+            : 'text-muted-foreground hover:text-foreground'}"
+        >{tab.label}</a>
+      {/each}
+    </div>
+  {/snippet}
+
   {#snippet actions()}
     <Button variant="outline" onclick={() => loadPlugins()} disabled={loading || refreshing}>
       <RefreshCcw class="h-4 w-4 {refreshing ? 'animate-spin' : ''}" />

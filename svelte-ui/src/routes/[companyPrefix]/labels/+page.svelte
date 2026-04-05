@@ -5,7 +5,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Tag, Plus, Trash2, X } from 'lucide-svelte';
-  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Input, Skeleton, Separator } from '$components/ui/index.js';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Input, Skeleton, Separator, Alert, AlertTitle, AlertDescription } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Labels' }]));
@@ -40,6 +40,7 @@
   // State
   // ---------------------------------------------------------------------------
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let labels = $state<Label[]>([]);
 
   let showCreate = $state(false);
@@ -60,6 +61,7 @@
   $effect(() => {
     if (!companyId) return;
     loading = true;
+    error = null;
     api(`/api/companies/${companyId}/labels`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -68,7 +70,9 @@
       .then((d) => {
         labels = Array.isArray(d) ? d : d.labels ?? [];
       })
-      .catch(console.error)
+      .catch((e) => {
+        error = e.message ?? 'Failed to load labels';
+      })
       .finally(() => (loading = false));
   });
 
@@ -233,11 +237,32 @@
 
   <!-- Loading skeleton -->
   {#if loading}
-    <Card class="overflow-hidden p-5 space-y-3">
+    <div class="glass-card p-5 space-y-3">
       {#each Array(6) as _}
         <Skeleton class="h-12 rounded-lg" />
       {/each}
-    </Card>
+    </div>
+
+  <!-- Error state -->
+  {:else if error}
+    <Alert variant="destructive">
+      <AlertTitle>Failed to load labels</AlertTitle>
+      <AlertDescription>{error}</AlertDescription>
+      <button
+        onclick={() => {
+          loading = true;
+          error = null;
+          api(`/api/companies/${companyId}/labels`)
+            .then((r) => r.json())
+            .then((d) => { labels = Array.isArray(d) ? d : d.labels ?? []; })
+            .catch((e) => { error = e.message; })
+            .finally(() => { loading = false; });
+        }}
+        class="cursor-pointer mt-3 text-sm text-primary hover:underline transition-colors duration-150"
+      >
+        Retry
+      </button>
+    </Alert>
 
   <!-- Empty state -->
   {:else if labels.length === 0}
@@ -258,12 +283,12 @@
 
   <!-- Labels list -->
   {:else}
-    <Card class="overflow-hidden">
-      <CardHeader class="border-b border-border/50">
-        <CardTitle class="text-sm">
+    <div class="glass-card p-0 overflow-hidden">
+      <div class="px-5 py-4 border-b border-border/50">
+        <h3 class="text-sm font-semibold text-foreground">
           {labels.length} {labels.length === 1 ? 'label' : 'labels'}
-        </CardTitle>
-      </CardHeader>
+        </h3>
+      </div>
 
       <div class="divide-y divide-border/50">
         {#each labels as label (label.id)}
@@ -306,7 +331,7 @@
               {:else}
                 <button
                   onclick={() => (confirmDeleteId = label.id)}
-                  class="rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
+                  class="cursor-pointer rounded-lg p-1.5 text-muted-foreground transition-colors hover:bg-red-500/10 hover:text-red-400"
                   title="Delete label"
                 >
                   <Trash2 class="h-4 w-4" />
@@ -316,6 +341,6 @@
           </div>
         {/each}
       </div>
-    </Card>
+    </div>
   {/if}
 </PageLayout>

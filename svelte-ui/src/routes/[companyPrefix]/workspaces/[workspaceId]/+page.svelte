@@ -1,9 +1,10 @@
-  <script lang="ts">
+<script lang="ts">
   import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
+  import { PageLayout } from '$components/layout/index.js';
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from '$components/index.js';
   import {
     Button,
@@ -273,7 +274,7 @@
   }
 
   function exitCodeColor(code: number | null | undefined): string {
-    if (code == null) return 'text-zinc-400';
+    if (code == null) return 'text-muted-foreground/70';
     return code === 0 ? 'text-green-500' : 'text-red-500';
   }
 
@@ -282,7 +283,7 @@
       case 'completed': case 'success': return 'bg-green-500/15 text-green-700 dark:text-green-400';
       case 'running': case 'in_progress': return 'bg-blue-500/15 text-blue-700 dark:text-blue-400';
       case 'failed': case 'error': return 'bg-red-500/15 text-red-700 dark:text-red-400';
-      default: return 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400';
+      default: return 'bg-muted-foreground/15 text-muted-foreground';
     }
   }
 
@@ -295,7 +296,7 @@
       case 'blocked':
         return 'bg-red-500/15 text-red-700 dark:text-red-300';
       default:
-        return 'bg-zinc-500/15 text-zinc-600 dark:text-zinc-400';
+        return 'bg-muted-foreground/15 text-muted-foreground';
     }
   }
 
@@ -382,34 +383,22 @@
     </EmptyState>
   </div>
 {:else}
-  <div class="p-6">
-    <!-- Header -->
-    <div class="flex items-start justify-between gap-4 mb-6">
-      <div class="min-w-0">
-        <div class="flex items-center gap-3 mb-1">
-          <h1 class="text-xl font-semibold text-zinc-900 dark:text-zinc-50 truncate">
-            Workspace
-          </h1>
-          <StatusBadge status={ws.status ?? 'unknown'} />
-        </div>
-        <p class="text-sm text-zinc-500 dark:text-zinc-400 font-mono truncate">{ws.cwd ?? ws.id}</p>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
+  <PageLayout title="Workspace" description={ws.cwd ?? ws.id} fullWidth>
+    {#snippet actions()}
+      <div class="flex items-center gap-2">
+        <StatusBadge status={ws.status ?? 'unknown'} />
         {#if ws.status !== 'archived'}
           <Button variant="outline" size="sm" class="gap-1.5" onclick={openCloseDialog}>
             <Archive class="w-3.5 h-3.5" />
             Close workspace
           </Button>
         {/if}
-        <a
-          href="/{companyPrefix}/workspaces"
-          class="inline-flex items-center gap-1.5 rounded-md border border-zinc-200 dark:border-zinc-700 px-3 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
-        >
-          <ArrowLeft class="w-3.5 h-3.5" />
+        <Button variant="outline" size="sm" href="/{companyPrefix}/workspaces">
+          <ArrowLeft class="w-3.5 h-3.5 mr-1" />
           Back
-        </a>
+        </Button>
       </div>
-    </div>
+    {/snippet}
 
     <!-- Main content + sidebar -->
     <div class="flex flex-col lg:flex-row gap-6">
@@ -427,84 +416,84 @@
           <TabsContent value="overview">
             <div class="mt-4 space-y-4">
               <!-- Property grid -->
-              <div class="rounded-lg border border-zinc-200 dark:border-zinc-800 divide-y divide-zinc-200 dark:divide-zinc-800">
+              <div class="rounded-lg border border-border divide-y divide-border">
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Mode</span>
-                  <span class="text-zinc-900 dark:text-zinc-100">{ws.mode ?? '--'}</span>
+                  <span class="text-muted-foreground">Mode</span>
+                  <span class="text-foreground">{ws.mode ?? '--'}</span>
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Strategy Type</span>
-                  <span class="text-zinc-900 dark:text-zinc-100">{ws.strategyType ?? '--'}</span>
+                  <span class="text-muted-foreground">Strategy Type</span>
+                  <span class="text-foreground">{ws.strategyType ?? '--'}</span>
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Provider Type</span>
-                  <span class="text-zinc-900 dark:text-zinc-100">{ws.providerType ?? '--'}</span>
+                  <span class="text-muted-foreground">Provider Type</span>
+                  <span class="text-foreground">{ws.providerType ?? '--'}</span>
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Status</span>
+                  <span class="text-muted-foreground">Status</span>
                   <StatusBadge status={ws.status ?? 'unknown'} />
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Agent</span>
+                  <span class="text-muted-foreground">Agent</span>
                   {#if ws.agentId}
                     <a href="/{companyPrefix}/agents/{ws.agentId}" class="text-primary hover:underline">
                       {ws.agentName ?? ws.agentId.slice(0, 8)}
                     </a>
                   {:else}
-                    <span class="text-zinc-400">--</span>
+                    <span class="text-muted-foreground/70">--</span>
                   {/if}
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Branch</span>
-                  <span class="font-mono text-zinc-900 dark:text-zinc-100">{ws.branch ?? '--'}</span>
+                  <span class="text-muted-foreground">Branch</span>
+                  <span class="font-mono text-foreground">{ws.branch ?? '--'}</span>
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Issue</span>
+                  <span class="text-muted-foreground">Issue</span>
                   {#if ws.issueId}
                     <a href="/{companyPrefix}/issues/{ws.issueId}" class="text-primary hover:underline">
                       {ws.issueIdentifier ?? ws.issueId.slice(0, 8)}
                     </a>
                   {:else}
-                    <span class="text-zinc-400">--</span>
+                    <span class="text-muted-foreground/70">--</span>
                   {/if}
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Project</span>
+                  <span class="text-muted-foreground">Project</span>
                   {#if ws.projectId}
                     <a href="/{companyPrefix}/projects/{ws.projectId}" class="text-primary hover:underline">
                       {ws.projectName ?? ws.projectId.slice(0, 8)}
                     </a>
                   {:else}
-                    <span class="text-zinc-400">--</span>
+                    <span class="text-muted-foreground/70">--</span>
                   {/if}
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Last Used</span>
+                  <span class="text-muted-foreground">Last Used</span>
                   {#if ws.lastUsedAt}
                     <TimeAgo date={ws.lastUsedAt} class="text-xs" />
                   {:else}
-                    <span class="text-zinc-400">--</span>
+                    <span class="text-muted-foreground/70">--</span>
                   {/if}
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Created</span>
+                  <span class="text-muted-foreground">Created</span>
                   {#if ws.createdAt}
                     <TimeAgo date={ws.createdAt} class="text-xs" />
                   {:else}
-                    <span class="text-zinc-400">--</span>
+                    <span class="text-muted-foreground/70">--</span>
                   {/if}
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">Updated</span>
+                  <span class="text-muted-foreground">Updated</span>
                   {#if ws.updatedAt}
                     <TimeAgo date={ws.updatedAt} class="text-xs" />
                   {:else}
-                    <span class="text-zinc-400">--</span>
+                    <span class="text-muted-foreground/70">--</span>
                   {/if}
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
-                  <span class="text-zinc-500 dark:text-zinc-400">ID</span>
-                  <span class="font-mono text-xs text-zinc-500 break-all">{ws.id}</span>
+                  <span class="text-muted-foreground">ID</span>
+                  <span class="font-mono text-xs text-muted-foreground break-all">{ws.id}</span>
                 </div>
               </div>
             </div>
@@ -519,9 +508,9 @@
               {:else if operations.length === 0}
                 <EmptyState title="No operations" description="No workspace operations have been recorded yet." icon="🔧" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <div class="border rounded-lg divide-y divide-border dark:border-border">
                   <!-- Table header -->
-                  <div class="grid grid-cols-[100px_1fr_90px_60px_80px_100px] items-center px-4 py-2 text-xs font-medium text-zinc-500 dark:text-zinc-400 uppercase tracking-wider bg-zinc-50 dark:bg-zinc-900/50 rounded-t-lg">
+                  <div class="grid grid-cols-[100px_1fr_90px_60px_80px_100px] items-center px-4 py-2 text-xs font-medium text-muted-foreground uppercase tracking-wider bg-muted/50 rounded-t-lg">
                     <span>Phase</span>
                     <span>Command</span>
                     <span>Status</span>
@@ -530,10 +519,10 @@
                     <span class="text-right">Time</span>
                   </div>
                   {#each operations as op}
-                    <div class="grid grid-cols-[100px_1fr_90px_60px_80px_100px] items-center px-4 py-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
-                      <span class="text-zinc-700 dark:text-zinc-300 font-medium text-xs capitalize">{op.phase ?? '--'}</span>
-                      <span class="font-mono text-xs text-zinc-600 dark:text-zinc-400 truncate pr-2" title={op.command ?? ''}>
-                        <Terminal class="w-3 h-3 inline mr-1 text-zinc-400" />
+                    <div class="grid grid-cols-[100px_1fr_90px_60px_80px_100px] items-center px-4 py-3 text-sm hover:bg-muted/50">
+                      <span class="text-foreground/80 font-medium text-xs capitalize">{op.phase ?? '--'}</span>
+                      <span class="font-mono text-xs text-muted-foreground truncate pr-2" title={op.command ?? ''}>
+                        <Terminal class="w-3 h-3 inline mr-1 text-muted-foreground/70" />
                         {truncateCommand(op.command)}
                       </span>
                       {#if op.status}
@@ -541,20 +530,20 @@
                           {op.status.replace(/_/g, ' ')}
                         </span>
                       {:else}
-                        <span class="text-zinc-400 text-xs">--</span>
+                        <span class="text-muted-foreground/70 text-xs">--</span>
                       {/if}
                       <span class="font-mono text-xs {exitCodeColor(op.exitCode)}">
                         {op.exitCode != null ? op.exitCode : '--'}
                       </span>
-                      <span class="text-xs text-zinc-500">
-                        <Clock class="w-3 h-3 inline mr-0.5 text-zinc-400" />
+                      <span class="text-xs text-muted-foreground">
+                        <Clock class="w-3 h-3 inline mr-0.5 text-muted-foreground/70" />
                         {formatDuration(op.durationMs)}
                       </span>
                       <span class="text-right">
                         {#if op.startedAt}
                           <TimeAgo date={op.startedAt} class="text-xs" />
                         {:else}
-                          <span class="text-xs text-zinc-400">--</span>
+                          <span class="text-xs text-muted-foreground/70">--</span>
                         {/if}
                       </span>
                     </div>
@@ -568,23 +557,23 @@
             <TabsContent value="services">
               <div class="mt-4 space-y-3">
                 {#each runtimeServices as svc}
-                  <div class="rounded-lg border border-zinc-200 dark:border-zinc-800 p-4">
+                  <div class="rounded-lg border border-border p-4">
                     <div class="flex items-center gap-3 mb-2">
                       {#if svc.type === 'postgres' || svc.type === 'postgresql'}
                         <Database class="w-5 h-5 text-blue-500" />
                       {:else}
-                        <Server class="w-5 h-5 text-zinc-400" />
+                        <Server class="w-5 h-5 text-muted-foreground/70" />
                       {/if}
                       <div>
-                        <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{svc.name}</p>
-                        <p class="text-xs text-zinc-500">{svc.type}</p>
+                        <p class="text-sm font-medium text-foreground">{svc.name}</p>
+                        <p class="text-xs text-muted-foreground">{svc.type}</p>
                       </div>
                       {#if svc.status}
                         <StatusBadge status={svc.status} class="ml-auto" />
                       {/if}
                     </div>
                     {#if svc.port}
-                      <div class="text-xs text-zinc-500 font-mono">Port: {svc.port}</div>
+                      <div class="text-xs text-muted-foreground font-mono">Port: {svc.port}</div>
                     {/if}
                   </div>
                 {/each}
@@ -888,5 +877,5 @@
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  </div>
+  </PageLayout>
 {/if}

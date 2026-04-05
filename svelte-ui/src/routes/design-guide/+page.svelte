@@ -65,31 +65,31 @@
   ];
 </script>
 
-<div class="design-guide">
+<div class="min-h-screen bg-[#050508] text-[#F8FAFC]">
   <!-- Header -->
-  <header class="dg-header">
-    <div class="dg-header-inner">
+  <header class="sticky top-0 z-10 border-b border-white/6 bg-[#050508]/85 backdrop-blur-xl">
+    <div class="mx-auto max-w-[960px] px-8 py-4 max-sm:px-4">
       <div class="flex items-center gap-3">
         <div class="flex h-9 w-9 items-center justify-center rounded-lg bg-[#2563EB]/15">
           <Zap class="size-5 text-[#60a5fa]" />
         </div>
         <div>
-          <h1 class="text-2xl font-bold text-[#F8FAFC] tracking-tight">Design Guide</h1>
+          <h1 class="text-2xl font-bold tracking-tight text-[#F8FAFC]">Design Guide</h1>
           <p class="text-sm text-[#64748b]">ClawDev UI Components</p>
         </div>
       </div>
     </div>
   </header>
 
-  <main class="dg-main">
+  <main class="mx-auto max-w-[960px] px-8 py-8 max-sm:px-4">
     <!-- 1. Buttons -->
-    <section class="dg-section">
-      <h2 class="dg-section-title">Buttons</h2>
-      <p class="dg-section-desc">All button variants and sizes. Click any button to increment the counter.</p>
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Buttons</h2>
+      <p class="mb-6 text-sm text-[#64748b]">All button variants and sizes. Click any button to increment the counter.</p>
 
-      <div class="dg-subsection">
-        <h3 class="dg-subsection-title">Variants</h3>
-        <div class="flex flex-wrap gap-3 items-center">
+      <div class="mt-6">
+        <h3 class="mb-3 text-[0.8125rem] font-semibold uppercase tracking-widest text-[#94A3B8]">Variants</h3>
+        <div class="flex flex-wrap items-center gap-3">
           {#each buttonVariants as { variant, label }}
             <Button {variant} onclick={() => { clickCount++; showToast('info', `${label} button clicked (${clickCount})`); }}>
               {label}
@@ -98,9 +98,9 @@
         </div>
       </div>
 
-      <div class="dg-subsection">
-        <h3 class="dg-subsection-title">Sizes</h3>
-        <div class="flex flex-wrap gap-3 items-end">
+      <div class="mt-6">
+        <h3 class="mb-3 text-[0.8125rem] font-semibold uppercase tracking-widest text-[#94A3B8]">Sizes</h3>
+        <div class="flex flex-wrap items-end gap-3">
           {#each buttonSizes as { size, label }}
             <Button {size} onclick={() => clickCount++}>
               {label}
@@ -110,12 +110,12 @@
             <Zap class="size-4" />
           </Button>
         </div>
-        <p class="dg-counter">Click count: <strong>{clickCount}</strong></p>
+        <p class="mt-3 text-[0.8125rem] text-[#64748b]">Click count: <strong class="tabular-nums text-[#F8FAFC]">{clickCount}</strong></p>
       </div>
 
-      <div class="dg-subsection">
-        <h3 class="dg-subsection-title">With Icons</h3>
-        <div class="flex flex-wrap gap-3 items-center">
+      <div class="mt-6">
+        <h3 class="mb-3 text-[0.8125rem] font-semibold uppercase tracking-widest text-[#94A3B8]">With Icons</h3>
+        <div class="flex flex-wrap items-center gap-3">
           <Button variant="default" onclick={() => showToast('success', 'Copied!')}>
             <Copy class="size-4" />
             Copy
@@ -135,19 +135,19 @@
     <Separator class="border-white/[0.06]" />
 
     <!-- 2. Badges -->
-    <section class="dg-section">
-      <h2 class="dg-section-title">Badges</h2>
-      <p class="dg-section-desc">Badge component with multiple variants.</p>
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Badges</h2>
+      <p class="mb-6 text-sm text-[#64748b]">Badge component with multiple variants.</p>
 
-      <div class="flex flex-wrap gap-3 items-center">
+      <div class="flex flex-wrap items-center gap-3">
         {#each badgeVariants as { variant, label }}
           <Badge {variant}>{label}</Badge>
         {/each}
       </div>
 
-      <div class="dg-subsection">
-        <h3 class="dg-subsection-title">Colored Badges</h3>
-        <div class="flex flex-wrap gap-3 items-center">
+      <div class="mt-6">
+        <h3 class="mb-3 text-[0.8125rem] font-semibold uppercase tracking-widest text-[#94A3B8]">Colored Badges</h3>
+        <div class="flex flex-wrap items-center gap-3">
           <Badge class="bg-blue-500/15 text-blue-400 border-blue-500/20">Feature</Badge>
           <Badge class="bg-emerald-500/15 text-emerald-400 border-emerald-500/20">Shipped</Badge>
           <Badge class="bg-amber-500/15 text-amber-400 border-amber-500/20">In Progress</Badge>
@@ -161,11 +161,11 @@
     <Separator class="border-white/[0.06]" />
 
     <!-- 3. Status Badges -->
-    <section class="dg-section">
-      <h2 class="dg-section-title">Status Badges</h2>
-      <p class="dg-section-desc">Contextual status indicators used across issues, agents, runs, and approvals.</p>
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Status Badges</h2>
+      <p class="mb-6 text-sm text-[#64748b]">Contextual status indicators used across issues, agents, runs, and approvals.</p>
 
-      <div class="flex flex-wrap gap-3 items-center">
+      <div class="flex flex-wrap items-center gap-3">
         {#each statusValues as status}
           <StatusBadge {status} />
         {/each}
@@ -175,12 +175,12 @@
     <Separator class="border-white/[0.06]" />
 
     <!-- 4. Cards -->
-    <section class="dg-section">
-      <h2 class="dg-section-title">Cards</h2>
-      <p class="dg-section-desc">Card compound component with header, content, and footer slots.</p>
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Cards</h2>
+      <p class="mb-6 text-sm text-[#64748b]">Card compound component with header, content, and footer slots.</p>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Card class="rounded-xl border-white/[0.08] bg-[#0a0a0f]">
+      <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
+        <Card class="glass-card">
           <CardHeader>
             <CardTitle class="text-[#F8FAFC]">Agent Performance</CardTitle>
             <CardDescription class="text-[#64748b]">Overview of agent metrics for the past 7 days.</CardDescription>
@@ -190,14 +190,14 @@
               <span class="text-3xl font-bold text-[#F8FAFC]">94.2%</span>
               <span class="text-sm text-emerald-400">+2.1%</span>
             </div>
-            <p class="text-sm text-[#94A3B8] mt-1">Success rate across all runs</p>
+            <p class="mt-1 text-sm text-[#94A3B8]">Success rate across all runs</p>
           </CardContent>
           <CardFooter class="text-xs text-[#64748b]">
             Last updated 3 minutes ago
           </CardFooter>
         </Card>
 
-        <Card class="rounded-xl border-white/[0.08] bg-[#0a0a0f]">
+        <Card class="glass-card">
           <CardHeader>
             <CardTitle class="text-[#F8FAFC]">Active Issues</CardTitle>
             <CardDescription class="text-[#64748b]">Current open issues requiring attention.</CardDescription>
@@ -217,16 +217,24 @@
           </CardFooter>
         </Card>
       </div>
+
+      <div class="mt-6">
+        <h3 class="mb-3 text-[0.8125rem] font-semibold uppercase tracking-widest text-[#94A3B8]">Glass Card</h3>
+        <p class="mb-4 text-sm text-[#64748b]">The <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">glass-card</code> utility class from <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">app.css</code> provides the standard elevated surface with border, gradient background, backdrop blur, and hover lift.</p>
+        <div class="glass-card p-6">
+          <p class="text-sm text-[#94A3B8]">This container uses the <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">glass-card</code> class. Hover to see the lift effect.</p>
+        </div>
+      </div>
     </section>
 
     <Separator class="border-white/[0.06]" />
 
     <!-- 5. Form Elements -->
-    <section class="dg-section">
-      <h2 class="dg-section-title">Form Elements</h2>
-      <p class="dg-section-desc">Input, Textarea, Checkbox, and Select form controls.</p>
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Form Elements</h2>
+      <p class="mb-6 text-sm text-[#64748b]">Input, Textarea, Checkbox, and Select form controls.</p>
 
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div class="grid grid-cols-1 gap-6 md:grid-cols-2">
         <div class="space-y-4">
           <div class="space-y-2">
             <Label class="text-[#cbd5e1]">Text Input</Label>
@@ -251,7 +259,7 @@
 
           <div class="space-y-2">
             <Label class="text-[#cbd5e1]">Select</Label>
-            <select class="dg-select">
+            <select class="h-10 w-full rounded-lg border border-white/8 bg-[#121218] px-3 text-sm text-[#F8FAFC] outline-none transition-all focus:border-[#2563eb] focus:ring-2 focus:ring-[#2563eb]/15">
               <option value="">Choose an option...</option>
               <option value="agent">Agent</option>
               <option value="project">Project</option>
@@ -287,19 +295,19 @@
     <Separator class="border-white/[0.06]" />
 
     <!-- 6. Typography -->
-    <section class="dg-section">
-      <h2 class="dg-section-title">Typography</h2>
-      <p class="dg-section-desc">Heading levels, body text, and code formatting.</p>
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Typography</h2>
+      <p class="mb-6 text-sm text-[#64748b]">Heading levels, body text, and code formatting.</p>
 
       <div class="space-y-4">
-        <h1 class="text-4xl font-bold text-[#F8FAFC] tracking-tight">Heading 1 — The Quick Brown Fox</h1>
-        <h2 class="text-3xl font-semibold text-[#F8FAFC] tracking-tight">Heading 2 — Agent Orchestration</h2>
+        <h1 class="text-4xl font-bold tracking-tight text-[#F8FAFC]">Heading 1 — The Quick Brown Fox</h1>
+        <h2 class="text-3xl font-semibold tracking-tight text-[#F8FAFC]">Heading 2 — Agent Orchestration</h2>
         <h3 class="text-2xl font-semibold text-[#e2e8f0]">Heading 3 — Run Management</h3>
         <h4 class="text-xl font-medium text-[#cbd5e1]">Heading 4 — Configuration Details</h4>
 
         <Separator class="border-white/[0.06]" />
 
-        <p class="text-base text-[#94A3B8] leading-relaxed max-w-2xl">
+        <p class="max-w-2xl text-base leading-relaxed text-[#94A3B8]">
           Body text renders in the muted color for comfortable reading on dark backgrounds.
           ClawDev uses a carefully tuned palette that balances contrast and visual hierarchy
           across all interface elements.
@@ -311,9 +319,9 @@
 
         <div class="space-y-2">
           <p class="text-sm text-[#cbd5e1]">
-            Inline code: <code class="dg-code">{"const agent = new Agent({ model: 'claude-4' })"}</code>
+            Inline code: <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">{"const agent = new Agent({ model: 'claude-4' })"}</code>
           </p>
-          <pre class="dg-pre"><code>{`async function runAgent(agentId: string) {
+          <pre class="overflow-x-auto rounded-xl border border-white/6 bg-[#0a0a0f] px-5 py-4 font-mono text-[0.8125rem] leading-[1.7] text-[#cbd5e1]"><code>{`async function runAgent(agentId: string) {
   const result = await api.runs.create({
     agentId,
     input: "Analyze the latest metrics",
@@ -328,42 +336,42 @@
     <Separator class="border-white/[0.06]" />
 
     <!-- 7. Colors -->
-    <section class="dg-section">
-      <h2 class="dg-section-title">Colors</h2>
-      <p class="dg-section-desc">Core color palette used throughout ClawDev.</p>
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Colors</h2>
+      <p class="mb-6 text-sm text-[#64748b]">Core color palette used throughout ClawDev.</p>
 
-      <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
+      <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
         {#each colors as color}
           <button
-            class="dg-color-card group"
+            class="glass-card group cursor-pointer overflow-hidden text-left"
             onclick={() => {
               navigator.clipboard.writeText(color.hex);
               showToast('success', `Copied ${color.hex}`);
             }}
           >
-            <div class="dg-color-swatch {color.class}"></div>
+            <div class="h-14 w-full {color.class}"></div>
             <div class="px-3 py-2.5">
               <p class="text-sm font-medium text-[#F8FAFC]">{color.name}</p>
-              <p class="text-xs text-[#64748b] font-mono group-hover:text-[#94A3B8] transition-colors">{color.hex}</p>
+              <p class="font-mono text-xs text-[#64748b] transition-colors group-hover:text-[#94A3B8]">{color.hex}</p>
             </div>
           </button>
         {/each}
       </div>
 
-      <div class="dg-subsection">
-        <h3 class="dg-subsection-title">Surface Colors</h3>
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div class="mt-6">
+        <h3 class="mb-3 text-[0.8125rem] font-semibold uppercase tracking-widest text-[#94A3B8]">Surface Colors</h3>
+        <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
           {#each [
             { name: 'Base', bg: '#050508' },
             { name: 'Surface', bg: '#0a0a0f' },
             { name: 'Elevated', bg: '#121218' },
             { name: 'Border', bg: 'rgba(255,255,255,0.08)' },
           ] as surface}
-            <div class="rounded-lg border border-white/[0.08] overflow-hidden">
+            <div class="overflow-hidden rounded-lg border border-white/8">
               <div class="h-12" style:background={surface.bg}></div>
-              <div class="px-3 py-2 bg-[#0a0a0f]">
+              <div class="bg-[#0a0a0f] px-3 py-2">
                 <p class="text-xs font-medium text-[#cbd5e1]">{surface.name}</p>
-                <p class="text-[10px] text-[#64748b] font-mono">{surface.bg}</p>
+                <p class="font-mono text-[10px] text-[#64748b]">{surface.bg}</p>
               </div>
             </div>
           {/each}
@@ -374,9 +382,9 @@
     <Separator class="border-white/[0.06]" />
 
     <!-- 8. Toast Triggers -->
-    <section class="dg-section">
-      <h2 class="dg-section-title">Toasts</h2>
-      <p class="dg-section-desc">Trigger notification toasts with different tones.</p>
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Toasts</h2>
+      <p class="mb-6 text-sm text-[#64748b]">Trigger notification toasts with different tones.</p>
 
       <div class="flex flex-wrap gap-3">
         <Button variant="outline" class="border-blue-500/30 text-blue-400 hover:bg-blue-500/10" onclick={() => showToast('info', 'Info notification')}>
@@ -398,16 +406,16 @@
       </div>
     </section>
 
-    <!-- Skeleton Preview -->
     <Separator class="border-white/[0.06]" />
 
-    <section class="dg-section">
-      <h2 class="dg-section-title">Skeleton</h2>
-      <p class="dg-section-desc">Loading placeholders for content that is being fetched.</p>
+    <!-- Skeleton Preview -->
+    <section class="py-8">
+      <h2 class="mb-1 text-[1.375rem] font-bold tracking-tight text-[#F8FAFC]">Skeleton</h2>
+      <p class="mb-6 text-sm text-[#64748b]">Loading placeholders for content that is being fetched.</p>
 
       <div class="flex items-center gap-4">
         <Skeleton class="h-12 w-12 rounded-full" />
-        <div class="space-y-2 flex-1">
+        <div class="flex-1 space-y-2">
           <Skeleton class="h-4 w-3/4" />
           <Skeleton class="h-3 w-1/2" />
         </div>
@@ -417,144 +425,3 @@
     <div class="h-16"></div>
   </main>
 </div>
-
-<style>
-  .design-guide {
-    min-height: 100vh;
-    background: #050508;
-    color: #F8FAFC;
-  }
-
-  .dg-header {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-    background: rgba(5, 5, 8, 0.85);
-    backdrop-filter: blur(12px);
-  }
-
-  .dg-header-inner {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 1rem 2rem;
-  }
-
-  .dg-main {
-    max-width: 960px;
-    margin: 0 auto;
-    padding: 2rem;
-  }
-
-  .dg-section {
-    padding: 2rem 0;
-  }
-
-  .dg-section-title {
-    font-size: 1.375rem;
-    font-weight: 700;
-    color: #F8FAFC;
-    margin: 0 0 0.375rem;
-    letter-spacing: -0.01em;
-  }
-
-  .dg-section-desc {
-    font-size: 0.875rem;
-    color: #64748b;
-    margin: 0 0 1.5rem;
-  }
-
-  .dg-subsection {
-    margin-top: 1.5rem;
-  }
-
-  .dg-subsection-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: #94A3B8;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin: 0 0 0.75rem;
-  }
-
-  .dg-counter {
-    font-size: 0.8125rem;
-    color: #64748b;
-    margin-top: 0.75rem;
-  }
-
-  .dg-counter strong {
-    color: #F8FAFC;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .dg-select {
-    width: 100%;
-    height: 40px;
-    padding: 0 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: #121218;
-    color: #F8FAFC;
-    font-size: 0.875rem;
-    outline: none;
-    transition: border-color 0.2s, box-shadow 0.2s;
-    appearance: auto;
-  }
-
-  .dg-select:focus {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
-  }
-
-  .dg-code {
-    padding: 0.15em 0.4em;
-    border-radius: 6px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
-    font-size: 0.8125em;
-    color: #60a5fa;
-  }
-
-  .dg-pre {
-    padding: 1rem 1.25rem;
-    border-radius: 12px;
-    background: #0a0a0f;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    overflow-x: auto;
-    font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
-    font-size: 0.8125rem;
-    line-height: 1.7;
-    color: #cbd5e1;
-    margin: 0;
-  }
-
-  .dg-color-card {
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    background: #0a0a0f;
-    overflow: hidden;
-    cursor: pointer;
-    transition: border-color 0.2s, transform 0.15s;
-    text-align: left;
-  }
-
-  .dg-color-card:hover {
-    border-color: rgba(255, 255, 255, 0.16);
-    transform: translateY(-1px);
-  }
-
-  .dg-color-swatch {
-    height: 56px;
-    width: 100%;
-  }
-
-  @media (max-width: 640px) {
-    .dg-header-inner,
-    .dg-main {
-      padding-left: 1rem;
-      padding-right: 1rem;
-    }
-  }
-</style>

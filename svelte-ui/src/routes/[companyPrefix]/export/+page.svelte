@@ -6,7 +6,8 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Download, Eye, Loader2, Package, CheckCircle2 } from 'lucide-svelte';
-  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Progress, Skeleton, Separator } from '$components/ui/index.js';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Progress, Skeleton, Separator, Alert, AlertTitle, AlertDescription } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Export' }]));
 
@@ -17,6 +18,8 @@
   let previewData = $state<Record<string, number> | null>(null);
   let exportProgress = $state(0);
   let exportDone = $state(false);
+
+  let exportError = $state<string | null>(null);
 
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
@@ -44,10 +47,13 @@
       if (res.ok) {
         const d = await res.json();
         previewData = d.counts ?? d;
+        exportError = null;
       } else {
+        exportError = 'Failed to load preview';
         toastStore.push({ title: 'Failed to load preview', tone: 'error' });
       }
     } catch {
+      exportError = 'Failed to load preview';
       toastStore.push({ title: 'Failed to load preview', tone: 'error' });
     } finally {
       previewing = false;
@@ -82,9 +88,11 @@
       URL.revokeObjectURL(url);
 
       exportDone = true;
+      exportError = null;
       toastStore.push({ title: 'Export downloaded', tone: 'success' });
     } catch {
       clearInterval(progressInterval);
+      exportError = 'Export failed. Please try again.';
       toastStore.push({ title: 'Export failed', tone: 'error' });
     } finally {
       exporting = false;
@@ -92,18 +100,23 @@
   }
 </script>
 
-<div class="mx-auto max-w-lg p-6 space-y-6">
-  <div>
-    <h1 class="text-xl font-bold text-foreground">Export Company</h1>
-    <p class="mt-1 text-sm text-muted-foreground">Select what to include in the export:</p>
-  </div>
+<PageLayout title="Export Company" description="Select what to include in the export">
+  <div class="mx-auto max-w-lg space-y-6">
 
-  <button onclick={toggleAll} class="text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors">
+  <button onclick={toggleAll} class="cursor-pointer text-xs font-medium text-blue-400 hover:text-blue-300 transition-colors">
     {selected.size === sections.length ? 'Deselect all' : 'Select all'}
   </button>
 
-  <Card>
-    <CardContent class="pt-4 space-y-2">
+  <!-- Error state -->
+  {#if exportError}
+    <Alert variant="destructive">
+      <AlertTitle>Export Error</AlertTitle>
+      <AlertDescription>{exportError}</AlertDescription>
+    </Alert>
+  {/if}
+
+  <div class="glass-card p-0 overflow-hidden">
+    <div class="p-4 space-y-2">
       {#each sections as s}
         <label class="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer transition-colors hover:bg-accent/40 {selected.has(s) ? 'border-blue-500/30' : ''}">
           <input
@@ -119,8 +132,8 @@
           {/if}
         </label>
       {/each}
-    </CardContent>
-  </Card>
+    </div>
+  </div>
 
   <!-- Preview button and data -->
   {#if selected.size > 0 && !previewData}
@@ -186,4 +199,5 @@
       Export ZIP
     {/if}
   </Button>
-</div>
+  </div>
+</PageLayout>

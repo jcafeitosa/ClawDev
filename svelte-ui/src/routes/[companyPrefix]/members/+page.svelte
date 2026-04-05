@@ -465,7 +465,7 @@
 
   <!-- Members list -->
   {:else}
-    <Card class="overflow-hidden">
+    <div class="glass-card p-0 overflow-hidden">
       {#each filteredMembers as member, i (member.id)}
         <div
           class="flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
@@ -547,7 +547,7 @@
           </div>
         </div>
       {/each}
-    </Card>
+    </div>
 
     <!-- Summary -->
     <p class="text-xs text-muted-foreground text-center">

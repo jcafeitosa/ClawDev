@@ -619,20 +619,20 @@
       <!-- Edit form -->
       <div class="space-y-3 max-w-lg">
         <div>
-          <label for="edit-name" class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+          <label for="edit-name" class="block text-xs font-medium text-muted-foreground mb-1">Name</label>
           <input
             id="edit-name"
             type="text"
             bind:value={editName}
-            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
         <div>
-          <label for="edit-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+          <label for="edit-status" class="block text-xs font-medium text-muted-foreground mb-1">Status</label>
           <select
             id="edit-status"
             bind:value={editStatus}
-            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           >
             {#each PROJECT_STATUSES as s}
               <option value={s} class="capitalize">{s}</option>
@@ -640,12 +640,12 @@
           </select>
         </div>
         <div>
-          <label for="edit-target-date" class="block text-xs font-medium text-zinc-400 mb-1">Target Date</label>
+          <label for="edit-target-date" class="block text-xs font-medium text-muted-foreground mb-1">Target Date</label>
           <input
             id="edit-target-date"
             type="date"
             bind:value={editTargetDate}
-            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
         <div class="flex items-center gap-2 pt-1">
@@ -659,13 +659,13 @@
       </div>
     {/if}
 
-    <div class="mb-6 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
+    <div class="mb-6 rounded-xl border border-border bg-card p-4">
       <div class="mb-3">
-        <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">Plugin launchers</p>
-        <p class="text-xs text-zinc-500 dark:text-zinc-400">Contextual actions contributed by installed plugins.</p>
+        <p class="text-sm font-medium text-foreground">Plugin launchers</p>
+        <p class="text-xs text-muted-foreground">Contextual actions contributed by installed plugins.</p>
       </div>
       {#snippet noProjectLaunchers()}
-        <div class="text-sm text-zinc-500 dark:text-zinc-400">No project launchers installed.</div>
+        <div class="text-sm text-muted-foreground">No project launchers installed.</div>
       {/snippet}
       <PluginLauncherOutlet
         placementZones={["projectSidebarItem", "detailTab", "toolbarButton", "contextMenuItem"]}
@@ -707,7 +707,7 @@
                   {#each Object.entries(counts) as [status, count]}
                     <div class="flex items-center gap-1.5 text-xs">
                       <StatusBadge {status} />
-                      <span class="text-zinc-600 dark:text-zinc-400">{count}</span>
+                      <span class="text-muted-foreground">{count}</span>
                     </div>
                   {/each}
                 </div>
@@ -716,17 +716,17 @@
               {#if issues.length === 0}
                 <EmptyState title="No issues" description="No issues are linked to this project yet." icon="📋" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <div class="border rounded-lg divide-y divide-border border-border">
                   {#each issues as issue}
                     <a
                       href="/{prefix}/issues/{issue.id}"
-                      class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                      class="flex items-center justify-between p-3 text-sm hover:bg-muted/50 transition-colors cursor-pointer"
                     >
                       <div class="flex items-center gap-3 min-w-0">
                         <PriorityIcon priority={issue.priority} />
                         <StatusBadge status={issue.status} />
                         {#if issue.identifier}
-                          <span class="text-xs font-mono text-zinc-500 shrink-0">{issue.identifier}</span>
+                          <span class="text-xs font-mono text-muted-foreground shrink-0">{issue.identifier}</span>
                         {/if}
                         <span class="truncate">{issue.title}</span>
                       </div>
@@ -743,11 +743,11 @@
               {#if goals.length === 0}
                 <EmptyState title="No goals linked" description="No goals are linked to this project." icon="🎯" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <div class="border rounded-lg divide-y divide-border border-border">
                   {#each goals as goal}
                     <a
                       href="/{prefix}/goals/{goal.id}"
-                      class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                      class="flex items-center justify-between p-3 text-sm hover:bg-muted/50 transition-colors cursor-pointer"
                     >
                       <div class="flex items-center gap-3 min-w-0">
                         <StatusBadge status={goal.status} />
@@ -772,36 +772,36 @@
                     <CardContent class="pt-4">
                       <div class="space-y-3">
                         <div>
-                          <label for="ws-name" class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+                          <label for="ws-name" class="block text-xs font-medium text-muted-foreground mb-1">Name</label>
                           <input
                             id="ws-name"
                             type="text"
                             bind:value={newWsName}
                             placeholder="e.g. frontend-workspace"
-                            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </div>
                         <div>
-                          <label for="ws-cwd" class="block text-xs font-medium text-zinc-400 mb-1">Working Directory (CWD)</label>
+                          <label for="ws-cwd" class="block text-xs font-medium text-muted-foreground mb-1">Working Directory (CWD)</label>
                           <input
                             id="ws-cwd"
                             type="text"
                             bind:value={newWsCwd}
                             placeholder="/path/to/project"
-                            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm font-mono text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </div>
                         <div>
-                          <label for="ws-repo-url" class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
+                          <label for="ws-repo-url" class="block text-xs font-medium text-muted-foreground mb-1">Repo URL</label>
                           <input
                             id="ws-repo-url"
                             type="text"
                             bind:value={newWsRepoUrl}
                             placeholder="https://github.com/org/repo"
-                            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                           />
                         </div>
-                        <label class="flex items-center gap-2 text-xs text-zinc-400">
+                        <label class="flex items-center gap-2 text-xs text-muted-foreground">
                           <input type="checkbox" bind:checked={newWsPrimary} />
                           Set as primary workspace
                         </label>
@@ -835,39 +835,39 @@
               {:else if workspaces.length === 0 && !showCreateWorkspace}
                 <EmptyState title="No workspaces" description="No execution workspaces configured for this project." icon="🗂" />
               {:else if workspaces.length > 0}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <div class="border rounded-lg divide-y divide-border border-border">
                   {#each workspaces as ws}
-                    <div class="p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                    <div class="p-3 text-sm hover:bg-muted/50">
                       {#if editingWorkspaceId === ws.id}
                         <div class="space-y-3">
                           <div>
-                            <label for={`workspace-name-${ws.id}`} class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+                            <label for={`workspace-name-${ws.id}`} class="block text-xs font-medium text-muted-foreground mb-1">Name</label>
                             <input
                               id={`workspace-name-${ws.id}`}
                               type="text"
                               bind:value={editWsName}
-                              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                              class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             />
                           </div>
                           <div>
-                            <label for={`workspace-cwd-${ws.id}`} class="block text-xs font-medium text-zinc-400 mb-1">CWD</label>
+                            <label for={`workspace-cwd-${ws.id}`} class="block text-xs font-medium text-muted-foreground mb-1">CWD</label>
                             <input
                               id={`workspace-cwd-${ws.id}`}
                               type="text"
                               bind:value={editWsCwd}
-                              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm font-mono text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                              class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             />
                           </div>
                           <div>
-                            <label for={`workspace-repo-${ws.id}`} class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
+                            <label for={`workspace-repo-${ws.id}`} class="block text-xs font-medium text-muted-foreground mb-1">Repo URL</label>
                             <input
                               id={`workspace-repo-${ws.id}`}
                               type="text"
                               bind:value={editWsRepoUrl}
-                              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                              class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                             />
                           </div>
-                          <label class="flex items-center gap-2 text-xs text-zinc-400">
+                          <label class="flex items-center gap-2 text-xs text-muted-foreground">
                             <input type="checkbox" bind:checked={editWsPrimary} />
                             Primary workspace
                           </label>
@@ -897,10 +897,10 @@
                               {/if}
                             </div>
                             {#if ws.cwd}
-                              <p class="text-xs font-mono text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">{ws.cwd}</p>
+                              <p class="text-xs font-mono text-muted-foreground mt-0.5 truncate">{ws.cwd}</p>
                             {/if}
                             {#if ws.repoUrl}
-                              <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-0.5 truncate">{ws.repoUrl}</p>
+                              <p class="text-xs text-muted-foreground mt-0.5 truncate">{ws.repoUrl}</p>
                             {/if}
                           </div>
                           <div class="flex items-center gap-2 shrink-0">
@@ -945,21 +945,21 @@
                 </CardHeader>
                 <CardContent class="space-y-4">
                   <div>
-                    <label for="project-description" class="block text-xs font-medium text-zinc-400 mb-1">Description</label>
+                    <label for="project-description" class="block text-xs font-medium text-muted-foreground mb-1">Description</label>
                     <textarea
                       id="project-description"
                       bind:value={settingsDescription}
                       rows="3"
-                      class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     ></textarea>
                   </div>
                   <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label for="project-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+                      <label for="project-status" class="block text-xs font-medium text-muted-foreground mb-1">Status</label>
                       <select
                         id="project-status"
                         bind:value={settingsStatus}
-                        class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       >
                         {#each PROJECT_STATUSES as s}
                           <option value={s}>{s}</option>
@@ -967,12 +967,12 @@
                       </select>
                     </div>
                     <div>
-                      <label for="project-target-date" class="block text-xs font-medium text-zinc-400 mb-1">Target Date</label>
+                      <label for="project-target-date" class="block text-xs font-medium text-muted-foreground mb-1">Target Date</label>
                       <input
                         id="project-target-date"
                         type="date"
                         bind:value={settingsTargetDate}
-                        class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                        class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                       />
                     </div>
                   </div>
@@ -985,26 +985,26 @@
                 </CardHeader>
               <CardContent class="space-y-3">
                   <div>
-                    <label for="project-repo-url" class="block text-xs font-medium text-zinc-400 mb-1">Repo URL</label>
+                    <label for="project-repo-url" class="block text-xs font-medium text-muted-foreground mb-1">Repo URL</label>
                     <input
                       id="project-repo-url"
                       type="text"
                       bind:value={settingsRepoUrl}
                       placeholder="https://github.com/org/repo"
-                      class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                   </div>
                   <div>
-                    <label for="project-local-folder" class="block text-xs font-medium text-zinc-400 mb-1">Local Folder</label>
+                    <label for="project-local-folder" class="block text-xs font-medium text-muted-foreground mb-1">Local Folder</label>
                     <input
                       id="project-local-folder"
                       type="text"
                       bind:value={settingsLocalFolder}
                       placeholder="/absolute/path/to/workspace"
-                      class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm font-mono text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm font-mono text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     />
                     {#if project.codebase?.effectiveLocalFolder}
-                      <p class="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Effective folder: {project.codebase.effectiveLocalFolder}</p>
+                      <p class="mt-1 text-xs text-muted-foreground">Effective folder: {project.codebase.effectiveLocalFolder}</p>
                     {/if}
                   </div>
                 </CardContent>
@@ -1018,22 +1018,22 @@
                   {#if goals.length > 0}
                     <div class="flex flex-wrap gap-2">
                       {#each goals as goal}
-                        <span class="inline-flex items-center gap-1 rounded-md border border-zinc-700 px-2 py-1 text-xs">
+                        <span class="inline-flex items-center gap-1 rounded-md border border-border px-2 py-1 text-xs">
                           <a href="/{prefix}/goals/{goal.id}" class="hover:underline">{goal.title}</a>
-                          <button class="text-zinc-400 hover:text-zinc-100" onclick={() => unlinkGoal(goal.id)} aria-label="Remove goal">
+                          <button class="text-muted-foreground hover:text-foreground" onclick={() => unlinkGoal(goal.id)} aria-label="Remove goal">
                             <X class="size-3" />
                           </button>
                         </span>
                       {/each}
                     </div>
                   {:else}
-                    <p class="text-xs text-zinc-500 dark:text-zinc-400">No linked goals.</p>
+                    <p class="text-xs text-muted-foreground">No linked goals.</p>
                   {/if}
                   <div class="flex gap-2">
                     <select
                       id="project-goal-select"
                       bind:value={settingsGoalToAdd}
-                      class="min-w-0 flex-1 rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="min-w-0 flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     >
                       <option value="">Select a goal</option>
                       {#each allGoals.filter((g) => !goals.some((x) => x.id === g.id)) as g}
@@ -1057,11 +1057,11 @@
                     Enable isolated execution workspaces
                   </label>
                   <div>
-                    <label for="project-policy-default-mode" class="block text-xs font-medium text-zinc-400 mb-1">Default Mode</label>
+                    <label for="project-policy-default-mode" class="block text-xs font-medium text-muted-foreground mb-1">Default Mode</label>
                     <select
                       id="project-policy-default-mode"
                       bind:value={policyDefaultMode}
-                      class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+                      class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
                     >
                       {#each EXECUTION_WORKSPACE_DEFAULT_MODES as mode}
                         <option value={mode}>{mode}</option>
@@ -1070,25 +1070,25 @@
                   </div>
                   <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                      <label for="project-policy-base-ref" class="block text-xs font-medium text-zinc-400 mb-1">Base Ref</label>
-                      <input id="project-policy-base-ref" type="text" bind:value={policyBaseRef} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                      <label for="project-policy-base-ref" class="block text-xs font-medium text-muted-foreground mb-1">Base Ref</label>
+                      <input id="project-policy-base-ref" type="text" bind:value={policyBaseRef} class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
                     <div>
-                      <label for="project-policy-branch-template" class="block text-xs font-medium text-zinc-400 mb-1">Branch Template</label>
-                      <input id="project-policy-branch-template" type="text" bind:value={policyBranchTemplate} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                      <label for="project-policy-branch-template" class="block text-xs font-medium text-muted-foreground mb-1">Branch Template</label>
+                      <input id="project-policy-branch-template" type="text" bind:value={policyBranchTemplate} class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
                     <div>
-                      <label for="project-policy-worktree-parent-dir" class="block text-xs font-medium text-zinc-400 mb-1">Worktree Parent Dir</label>
-                      <input id="project-policy-worktree-parent-dir" type="text" bind:value={policyWorktreeParentDir} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                      <label for="project-policy-worktree-parent-dir" class="block text-xs font-medium text-muted-foreground mb-1">Worktree Parent Dir</label>
+                      <input id="project-policy-worktree-parent-dir" type="text" bind:value={policyWorktreeParentDir} class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                     </div>
                   </div>
                   <div>
-                    <label for="project-policy-provision-command" class="block text-xs font-medium text-zinc-400 mb-1">Provision Command</label>
-                    <input id="project-policy-provision-command" type="text" bind:value={policyProvisionCommand} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    <label for="project-policy-provision-command" class="block text-xs font-medium text-muted-foreground mb-1">Provision Command</label>
+                    <input id="project-policy-provision-command" type="text" bind:value={policyProvisionCommand} class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                   </div>
                   <div>
-                    <label for="project-policy-teardown-command" class="block text-xs font-medium text-zinc-400 mb-1">Teardown Command</label>
-                    <input id="project-policy-teardown-command" type="text" bind:value={policyTeardownCommand} class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
+                    <label for="project-policy-teardown-command" class="block text-xs font-medium text-muted-foreground mb-1">Teardown Command</label>
+                    <input id="project-policy-teardown-command" type="text" bind:value={policyTeardownCommand} class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary" />
                   </div>
                   <div class="flex items-center gap-2">
                     <Button size="sm" onclick={saveSettings} disabled={savingSettings}>
@@ -1104,8 +1104,8 @@
             <TabsContent value={`plugin:${tab.pluginId}:${tab.id}`}>
               <div class="mt-4 space-y-3">
                 <div>
-                  <p class="text-sm font-medium text-zinc-900 dark:text-zinc-100">{tab.label}</p>
-                  <p class="text-xs text-zinc-500 dark:text-zinc-400">Plugin-contributed project detail tab.</p>
+                  <p class="text-sm font-medium text-foreground">{tab.label}</p>
+                  <p class="text-xs text-muted-foreground">Plugin-contributed project detail tab.</p>
                 </div>
                 <PluginRenderer
                   pluginId={tab.pluginId}

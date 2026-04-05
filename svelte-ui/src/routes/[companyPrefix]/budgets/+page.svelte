@@ -60,6 +60,7 @@
   // State
   // ---------------------------------------------------------------------------
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let policies = $state<BudgetPolicy[]>([]);
   let incidents = $state<BudgetIncident[]>([]);
   let currentSpend = $state(0);
@@ -92,6 +93,7 @@
   $effect(() => {
     if (!companyId) return;
     loading = true;
+    error = null;
     api(`/api/companies/${companyId}/budgets/overview`)
       .then((r) => {
         if (!r.ok) throw new Error(`HTTP ${r.status}`);
@@ -103,7 +105,9 @@
         currentSpend = d.currentSpend ?? 0;
         totalBudget = d.totalBudget ?? 0;
       })
-      .catch(console.error)
+      .catch((e) => {
+        error = e.message ?? 'Failed to load budget data';
+      })
       .finally(() => (loading = false));
   });
 
@@ -236,6 +240,33 @@
     </Button>
   {/snippet}
 
+  <!-- Error state -->
+  {#if error && !loading}
+    <Alert variant="destructive">
+      <AlertTitle>Failed to load budget data</AlertTitle>
+      <AlertDescription>{error}</AlertDescription>
+      <button
+        onclick={() => {
+          loading = true;
+          error = null;
+          api(`/api/companies/${companyId}/budgets/overview`)
+            .then((r) => r.json())
+            .then((d) => {
+              policies = d.policies ?? [];
+              incidents = d.incidents ?? [];
+              currentSpend = d.currentSpend ?? 0;
+              totalBudget = d.totalBudget ?? 0;
+            })
+            .catch((e) => { error = e.message; })
+            .finally(() => { loading = false; });
+        }}
+        class="cursor-pointer mt-3 text-sm text-primary hover:underline transition-colors duration-150"
+      >
+        Retry
+      </button>
+    </Alert>
+  {/if}
+
   <!-- Overview metric cards -->
   {#if loading}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -243,11 +274,10 @@
         <Skeleton class="h-28 rounded-xl" />
       {/each}
     </div>
-  {:else}
+  {:else if !error}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <!-- Total Budget -->
-      <Card>
-        <CardContent class="pt-5">
+      <div class="glass-card p-5">
           <div class="flex items-center gap-3 mb-3">
             <div class="rounded-lg bg-blue-500/10 p-2">
               <Wallet class="h-5 w-5 text-blue-400" />
@@ -256,12 +286,10 @@
           </div>
           <p class="text-2xl font-bold text-foreground">{formatCents(totalBudget)}</p>
           <p class="mt-1 text-xs text-muted-foreground">{policies.length} active {policies.length === 1 ? 'policy' : 'policies'}</p>
-        </CardContent>
-      </Card>
+      </div>
 
       <!-- Current Spend -->
-      <Card>
-        <CardContent class="pt-5">
+      <div class="glass-card p-5">
           <div class="flex items-center gap-3 mb-3">
             <div class="rounded-lg bg-emerald-500/10 p-2">
               <DollarSign class="h-5 w-5 text-emerald-400" />
@@ -275,12 +303,10 @@
               <p class="mt-1 text-xs text-muted-foreground">{spendPercent}% of total budget</p>
             </div>
           {/if}
-        </CardContent>
-      </Card>
+      </div>
 
       <!-- Remaining -->
-      <Card>
-        <CardContent class="pt-5">
+      <div class="glass-card p-5">
           <div class="flex items-center gap-3 mb-3">
             <div class="rounded-lg bg-orange-500/10 p-2">
               <TrendingDown class="h-5 w-5 text-orange-400" />
@@ -295,8 +321,7 @@
           {:else}
             <p class="mt-1 text-xs text-emerald-400">No incidents</p>
           {/if}
-        </CardContent>
-      </Card>
+      </div>
     </div>
   {/if}
 
@@ -507,10 +532,10 @@
       </button>
     </div>
   {:else}
-    <Card class="overflow-hidden">
-      <CardHeader class="border-b border-border/50">
-        <CardTitle class="text-sm">Active Policies</CardTitle>
-      </CardHeader>
+    <div class="glass-card p-0 overflow-hidden">
+      <div class="px-5 py-4 border-b border-border/50">
+        <h3 class="text-sm font-semibold text-foreground">Active Policies</h3>
+      </div>
 
       <div class="divide-y divide-white/[0.05]">
         {#each policies as policy (policy.id)}
@@ -581,6 +606,6 @@
           </div>
         {/each}
       </div>
-    </Card>
+    </div>
   {/if}
 </PageLayout>

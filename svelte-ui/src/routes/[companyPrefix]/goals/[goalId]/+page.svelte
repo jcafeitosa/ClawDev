@@ -250,30 +250,30 @@
       <!-- Edit form -->
       <div class="space-y-3 max-w-lg">
         <div>
-          <label for="edit-title" class="block text-xs font-medium text-zinc-400 mb-1">Title</label>
+          <label for="edit-title" class="block text-xs font-medium text-muted-foreground mb-1">Title</label>
           <input
             id="edit-title"
             type="text"
             bind:value={editTitle}
-            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
         <div>
-          <label for="edit-description" class="block text-xs font-medium text-zinc-400 mb-1">Description</label>
+          <label for="edit-description" class="block text-xs font-medium text-muted-foreground mb-1">Description</label>
           <textarea
             id="edit-description"
             bind:value={editDescription}
             rows="3"
-            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+            class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
           ></textarea>
         </div>
         <div class="grid grid-cols-2 gap-3">
           <div>
-            <label for="edit-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+            <label for="edit-status" class="block text-xs font-medium text-muted-foreground mb-1">Status</label>
             <select
               id="edit-status"
               bind:value={editStatus}
-              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
               {#each GOAL_STATUSES as s}
                 <option value={s} class="capitalize">{s}</option>
@@ -281,11 +281,11 @@
             </select>
           </div>
           <div>
-            <label for="edit-level" class="block text-xs font-medium text-zinc-400 mb-1">Level</label>
+            <label for="edit-level" class="block text-xs font-medium text-muted-foreground mb-1">Level</label>
             <select
               id="edit-level"
               bind:value={editLevel}
-              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              class="w-full rounded-md border border-border bg-background px-3 py-1.5 text-sm text-foreground capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             >
               {#each GOAL_LEVELS as l}
                 <option value={l} class="capitalize">{l}</option>
@@ -325,16 +325,16 @@
                 <CardContent>
                   <div class="space-y-3">
                     <div class="flex items-center justify-between text-sm">
-                      <span class="text-zinc-500 dark:text-zinc-400">Overall progress</span>
+                      <span class="text-muted-foreground">Overall progress</span>
                       <span class="font-medium">{progressPercent(goal.progress)}</span>
                     </div>
-                    <div class="w-full bg-zinc-200 dark:bg-zinc-800 rounded-full h-2.5">
+                    <div class="w-full bg-muted rounded-full h-2.5">
                       <div
                         class="bg-primary h-2.5 rounded-full transition-all"
                         style="width: {progressPercent(goal.progress)}"
                       ></div>
                     </div>
-                    <div class="flex items-center gap-4 text-sm text-zinc-500 dark:text-zinc-400">
+                    <div class="flex items-center gap-4 text-sm text-muted-foreground">
                       <span>{childGoals.length} child goal{childGoals.length !== 1 ? "s" : ""}</span>
                       <span>{linkedIssues.length} linked issue{linkedIssues.length !== 1 ? "s" : ""}</span>
                     </div>
@@ -384,11 +384,11 @@
               {#if childGoals.length === 0}
                 <EmptyState title="No child goals" description="This goal has no sub-goals." icon="🌱" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <div class="border rounded-lg divide-y divide-border border-border">
                   {#each childGoals as child}
                     <a
                       href="/{prefix}/goals/{child.id}"
-                      class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                      class="flex items-center justify-between p-3 text-sm hover:bg-muted/50 transition-colors cursor-pointer"
                     >
                       <div class="flex items-center gap-3 min-w-0">
                         <StatusBadge status={child.status} />
@@ -398,7 +398,7 @@
                         {/if}
                       </div>
                       {#if child.progress != null}
-                        <span class="text-xs text-zinc-500 shrink-0">{progressPercent(child.progress)}</span>
+                        <span class="text-xs text-muted-foreground shrink-0">{progressPercent(child.progress)}</span>
                       {/if}
                     </a>
                   {/each}
@@ -412,17 +412,17 @@
               {#if linkedIssues.length === 0}
                 <EmptyState title="No linked issues" description="No issues are linked to this goal." icon="📋" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <div class="border rounded-lg divide-y divide-border border-border">
                   {#each linkedIssues as issue}
                     <a
                       href="/{prefix}/issues/{issue.id}"
-                      class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                      class="flex items-center justify-between p-3 text-sm hover:bg-muted/50 transition-colors cursor-pointer"
                     >
                       <div class="flex items-center gap-3 min-w-0">
                         <PriorityIcon priority={issue.priority} />
                         <StatusBadge status={issue.status} />
                         {#if issue.identifier}
-                          <span class="text-xs font-mono text-zinc-500 shrink-0">{issue.identifier}</span>
+                          <span class="text-xs font-mono text-muted-foreground shrink-0">{issue.identifier}</span>
                         {/if}
                         <span class="truncate">{issue.title}</span>
                       </div>

@@ -338,7 +338,7 @@
               <select
                 id="edit-status"
                 bind:value={editStatus}
-                class="w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                class="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
               >
                 <option value="active">Active</option>
                 <option value="paused">Paused</option>
@@ -390,7 +390,7 @@
                 </CardHeader>
                 <CardContent>
                   {#if cronTriggers.length === 0}
-                    <p class="text-sm text-zinc-500 dark:text-zinc-400">No scheduled triggers configured. This routine can only be run manually or via webhook.</p>
+                    <p class="text-sm text-muted-foreground">No scheduled triggers configured. This routine can only be run manually or via webhook.</p>
                   {:else}
                     <div class="space-y-2">
                       {#each cronTriggers as trigger}
@@ -398,7 +398,7 @@
                           <div class="flex items-center gap-2">
                             <span class="font-medium">{cronLabel(trigger.cronExpression)}</span>
                             {#if trigger.cronExpression}
-                              <span class="text-xs font-mono text-zinc-500">{trigger.cronExpression}</span>
+                              <span class="text-xs font-mono text-muted-foreground">{trigger.cronExpression}</span>
                             {/if}
                           </div>
                           <Badge variant={trigger.enabled ? "default" : "secondary"}>
@@ -425,7 +425,7 @@
                         <Badge variant="outline" class="text-xs capitalize">{lastRun.source}</Badge>
                       {/if}
                       {#if lastRun.durationMs}
-                        <span class="text-zinc-500">{(lastRun.durationMs / 1000).toFixed(1)}s</span>
+                        <span class="text-muted-foreground">{(lastRun.durationMs / 1000).toFixed(1)}s</span>
                       {/if}
                       <TimeAgo date={lastRun.startedAt} class="text-xs" />
                     </div>
@@ -440,12 +440,12 @@
               {#if runs.length === 0}
                 <EmptyState title="No executions yet" description="This routine hasn't been executed yet." icon="🏃" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <div class="border rounded-lg divide-y divide-border border-border">
                   {#each runs as run}
-                    <div class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50">
+                    <div class="flex items-center justify-between p-3 text-sm hover:bg-muted/50">
                       <div class="flex items-center gap-3 min-w-0">
                         <StatusBadge status={run.status} />
-                        <span class="font-mono text-xs text-zinc-500 shrink-0">{run.id.slice(0, 8)}</span>
+                        <span class="font-mono text-xs text-muted-foreground shrink-0">{run.id.slice(0, 8)}</span>
                         {#if run.source}
                           <Badge variant="outline" class="text-xs capitalize">{run.source}</Badge>
                         {/if}
@@ -457,7 +457,7 @@
                       </div>
                       <div class="flex items-center gap-3 shrink-0">
                         {#if run.durationMs}
-                          <span class="text-xs text-zinc-500">{(run.durationMs / 1000).toFixed(1)}s</span>
+                          <span class="text-xs text-muted-foreground">{(run.durationMs / 1000).toFixed(1)}s</span>
                         {/if}
                         <TimeAgo date={run.startedAt} class="text-xs" />
                       </div>
@@ -486,7 +486,7 @@
                         <select
                           id="trigger-kind"
                           bind:value={newTriggerKind}
-                          class="w-full rounded-md border border-zinc-200 dark:border-zinc-800 bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                          class="w-full rounded-md border border-border bg-transparent px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
                         >
                           <option value="cron">Cron</option>
                           <option value="webhook">Webhook</option>
@@ -496,7 +496,7 @@
                         <div>
                           <label for="trigger-cron" class="block text-sm font-medium mb-1">Cron Expression</label>
                           <Input id="trigger-cron" bind:value={newTriggerCron} placeholder="e.g. 0 9 * * 1-5" />
-                          <p class="text-xs text-zinc-500 dark:text-zinc-400 mt-1">Standard cron format: minute hour day month weekday</p>
+                          <p class="text-xs text-muted-foreground mt-1">Standard cron format: minute hour day month weekday</p>
                         </div>
                       {/if}
                       <div class="flex justify-end">
@@ -525,19 +525,19 @@
                               </Badge>
                             </div>
                             {#if trigger.kind === "cron" && trigger.cronExpression}
-                              <div class="flex items-center gap-2 text-sm text-zinc-500 dark:text-zinc-400">
+                              <div class="flex items-center gap-2 text-sm text-muted-foreground">
                                 <span>{cronLabel(trigger.cronExpression)}</span>
                                 <span class="font-mono text-xs">{trigger.cronExpression}</span>
                               </div>
                             {/if}
                             {#if trigger.kind === "webhook" && trigger.publicId}
-                              <div class="text-xs font-mono text-zinc-500 dark:text-zinc-400 break-all">
+                              <div class="text-xs font-mono text-muted-foreground break-all">
                                 Public ID: {trigger.publicId}
                               </div>
                             {/if}
                           </div>
                           <div class="flex items-center gap-3 shrink-0">
-                            <span class="text-xs text-zinc-500">
+                            <span class="text-xs text-muted-foreground">
                               <TimeAgo date={trigger.createdAt} />
                             </span>
                             {#if confirmingTriggerDeleteId === trigger.id}

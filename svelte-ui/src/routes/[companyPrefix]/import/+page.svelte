@@ -6,7 +6,8 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Upload, Eye, Loader2, FileArchive, CheckCircle2, AlertTriangle } from 'lucide-svelte';
-  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Separator } from '$components/ui/index.js';
+  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Separator, Skeleton } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Import' }]));
 
@@ -102,11 +103,8 @@
   }
 </script>
 
-<div class="mx-auto max-w-lg p-6 space-y-6">
-  <div>
-    <h1 class="text-xl font-bold text-foreground">Import Company Data</h1>
-    <p class="mt-1 text-sm text-muted-foreground">Upload a ZIP or JSON file to import data into your workspace</p>
-  </div>
+<PageLayout title="Import Company Data" description="Upload a ZIP or JSON file to import data into your workspace">
+  <div class="mx-auto max-w-lg space-y-6">
 
   <!-- Drop zone -->
   {#if !done}
@@ -288,4 +286,5 @@
       </CardContent>
     </Card>
   {/if}
-</div>
+  </div>
+</PageLayout>

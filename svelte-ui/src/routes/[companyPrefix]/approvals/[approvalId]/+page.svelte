@@ -312,7 +312,7 @@
       <Card class="mb-6">
         <CardContent class="pt-6">
           <div class="flex items-center justify-between">
-            <div class="text-sm text-zinc-500 dark:text-zinc-400">
+            <div class="text-sm text-muted-foreground">
               This approval was rejected. You can resubmit it for review.
             </div>
             <Button
@@ -365,12 +365,12 @@
                     <div class="space-y-3">
                       {#each payloadEntries as [key, value]}
                         <div class="text-sm">
-                          <span class="text-zinc-500 dark:text-zinc-400 font-medium">{key}</span>
+                          <span class="text-muted-foreground font-medium">{key}</span>
                           <div class="mt-0.5">
                             {#if typeof value === "object" && value !== null}
-                              <pre class="text-xs font-mono bg-zinc-50 dark:bg-zinc-800/50 rounded p-2 overflow-x-auto whitespace-pre-wrap">{formatPayloadValue(value)}</pre>
+                              <pre class="text-xs font-mono bg-muted/50 rounded p-2 overflow-x-auto whitespace-pre-wrap">{formatPayloadValue(value)}</pre>
                             {:else}
-                              <span class="text-zinc-900 dark:text-zinc-100">{formatPayloadValue(value)}</span>
+                              <span class="text-foreground">{formatPayloadValue(value)}</span>
                             {/if}
                           </div>
                         </div>
@@ -387,16 +387,16 @@
               {#if linkedIssues.length === 0}
                 <EmptyState title="No linked issues" description="No issues are linked to this approval." icon="📋" />
               {:else}
-                <div class="border rounded-lg divide-y divide-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+                <div class="border rounded-lg divide-y divide-border border-border">
                   {#each linkedIssues as issue}
                     <a
                       href="/{$page.params.companyPrefix}/issues/{issue.id}"
-                      class="flex items-center justify-between p-3 text-sm hover:bg-zinc-50 dark:hover:bg-zinc-800/50 transition-colors"
+                      class="flex items-center justify-between p-3 text-sm hover:bg-muted/50 transition-colors cursor-pointer"
                     >
                       <div class="flex items-center gap-3 min-w-0">
                         <StatusBadge status={issue.status} />
                         {#if issue.identifier}
-                          <span class="text-xs font-mono text-zinc-500 shrink-0">{issue.identifier}</span>
+                          <span class="text-xs font-mono text-muted-foreground shrink-0">{issue.identifier}</span>
                         {/if}
                         <span class="truncate">{issue.title}</span>
                       </div>

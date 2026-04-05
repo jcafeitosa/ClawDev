@@ -4,6 +4,7 @@
     Card, CardHeader, CardTitle, CardDescription, CardContent,
     Badge, Button, Skeleton, Separator, Alert, AlertTitle, AlertDescription,
   } from '$lib/components/ui/index.js';
+  import { PageLayout } from '$lib/components/layout/index.js';
   import { Activity, ArrowRight, KeyRound, Plug, Shield, Settings2, Server, SlidersHorizontal, Zap } from 'lucide-svelte';
 
   interface HealthData {
@@ -24,7 +25,7 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
 
-  const tabs = [
+  const settingsTabs = [
     { href: '/settings/general', label: 'General' },
     { href: '/settings/experimental', label: 'Experimental' },
     { href: '/settings/heartbeats', label: 'Heartbeats' },
@@ -127,39 +128,30 @@
   <title>Settings</title>
 </svelte:head>
 
-<div class="mx-auto max-w-6xl space-y-6 p-6">
-  <div class="flex items-center justify-between gap-4 border-b border-border pb-3">
-    <div>
-      <p class="text-xs uppercase tracking-[0.24em] text-muted-foreground">Instance settings</p>
-      <h1 class="text-2xl font-semibold text-foreground">Control panel</h1>
-      <p class="mt-1 max-w-2xl text-sm text-muted-foreground">
-        General configuration, experimental flags, heartbeats, plugins, users, status, and API keys live here.
-      </p>
-    </div>
-    <div class="flex items-center gap-2">
-      <Button variant="outline" href="/settings/status">
-        <Server class="h-4 w-4" />
-        Open status
-      </Button>
-      <Button href="/settings/general">
-        <ArrowRight class="h-4 w-4" />
-        Get started
-      </Button>
-    </div>
-  </div>
+<PageLayout title="Control Panel" description="General configuration, experimental flags, heartbeats, plugins, users, status, and API keys live here.">
+  {#snippet actions()}
+    <Button variant="outline" href="/settings/status">
+      <Server class="h-4 w-4" />
+      Open status
+    </Button>
+    <Button href="/settings/general">
+      <ArrowRight class="h-4 w-4" />
+      Get started
+    </Button>
+  {/snippet}
 
-  <div class="flex gap-3 border-b border-border pb-3">
-    {#each tabs as tab}
-      <a
-        href={tab.href}
-        class="text-sm transition-colors {tab.href === '/settings/general'
-          ? 'font-medium text-primary'
-          : 'text-muted-foreground hover:text-foreground'}"
-      >
-        {tab.label}
-      </a>
-    {/each}
-  </div>
+  {#snippet tabs()}
+    <div class="flex gap-3 border-b border-border pb-3">
+      {#each settingsTabs as tab}
+        <a
+          href={tab.href}
+          class="text-sm transition-colors text-muted-foreground hover:text-foreground"
+        >
+          {tab.label}
+        </a>
+      {/each}
+    </div>
+  {/snippet}
 
   {#if loading}
     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -290,4 +282,4 @@
       </div>
     </div>
   {/if}
-</div>
+</PageLayout>

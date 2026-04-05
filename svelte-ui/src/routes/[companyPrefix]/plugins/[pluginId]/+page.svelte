@@ -4,6 +4,8 @@
   import { api } from "$lib/api";
   import { PluginSlotOutlet } from "$lib/components/plugins";
   import PageSkeleton from "$lib/components/page-skeleton.svelte";
+  import { EmptyState } from "$components/index.js";
+  import { PageLayout } from "$components/layout/index.js";
   import StatusBadge from "$lib/components/status-badge.svelte";
   import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { pluginUiContributionsStore, type PluginUiContribution } from "$stores/plugin-ui-contributions.svelte.js";
@@ -126,7 +128,7 @@
     if (lower === "error") return "bg-red-600 text-red-100";
     if (lower === "warn" || lower === "warning") return "bg-yellow-600 text-yellow-100";
     if (lower === "info") return "bg-blue-600 text-blue-100";
-    return "bg-zinc-600 text-zinc-100";
+    return "bg-muted text-muted-foreground";
   }
 
   function setBreadcrumbsForPlugin(name?: string) {
@@ -262,48 +264,20 @@
   {#if loading}
     <PageSkeleton />
   {:else if !plugin}
-    <div class="rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400">
-      Plugin not found.
-    </div>
+    <EmptyState title="Plugin not found" description="The plugin you're looking for doesn't exist or you don't have access." icon="🧩">
+      <a href="/{prefix}/plugins" class="text-sm text-primary hover:underline">Back to plugins</a>
+    </EmptyState>
   {:else}
-    <div class="space-y-4">
-      <div class="flex items-start justify-between gap-4">
-        <div class="min-w-0 space-y-3">
-          <div class="flex items-center gap-3">
-            <a
-              href={`/${prefix}/plugins`}
-              class="inline-flex h-9 w-9 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 transition-colors hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900"
-            >
-              <ArrowLeft class="h-4 w-4" />
-            </a>
-            <div class="flex min-w-0 items-center gap-2">
-              <Puzzle class="h-6 w-6 text-zinc-500" />
-              <h1 class="truncate text-2xl font-semibold text-zinc-900 dark:text-zinc-50">{displayName}</h1>
-              <StatusBadge status={plugin.enabled ? "enabled" : "disabled"} />
-              {#if plugin.status}
-                <Badge variant={plugin.status === "ready" ? "default" : plugin.status === "error" ? "destructive" : "secondary"}>
-                  {plugin.status}
-                </Badge>
-              {/if}
-              <Badge variant="outline">v{version}</Badge>
-            </div>
-          </div>
-
-          <p class="max-w-3xl text-sm leading-6 text-zinc-600 dark:text-zinc-300">
-            {pluginDescription}
-          </p>
-
-          <div class="flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <span>Author: {author}</span>
-            <span>•</span>
-            <span>Plugin ID: <span class="font-mono">{plugin.id}</span></span>
-            {#if lastError}
-              <span class="text-amber-600 dark:text-amber-400">• Error: {lastError}</span>
-            {/if}
-          </div>
-        </div>
-
-        <div class="flex shrink-0 items-center gap-2">
+    <PageLayout title={displayName} description={pluginDescription} fullWidth>
+      {#snippet actions()}
+        <div class="flex items-center gap-2">
+          <StatusBadge status={plugin.enabled ? "enabled" : "disabled"} />
+          {#if plugin.status}
+            <Badge variant={plugin.status === "ready" ? "default" : plugin.status === "error" ? "destructive" : "secondary"}>
+              {plugin.status}
+            </Badge>
+          {/if}
+          <Badge variant="outline">v{version}</Badge>
           {#if pageSlots.length > 0}
             <Button variant="outline" size="sm" onclick={() => goto(`/${prefix}/plugins/${pluginId}/page`)}>
               Open Plugin Page
@@ -353,6 +327,17 @@
             </Button>
           {/if}
         </div>
+      {/snippet}
+
+      <div class="space-y-4">
+
+      <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        <span>Author: {author}</span>
+        <span class="text-border">|</span>
+        <span>Plugin ID: <span class="font-mono">{plugin.id}</span></span>
+        {#if lastError}
+          <span class="text-amber-600 dark:text-amber-400">| Error: {lastError}</span>
+        {/if}
       </div>
 
       <div class="rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
@@ -368,25 +353,25 @@
       </div>
 
       <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <Card class="border-zinc-200/80 dark:border-zinc-800">
+        <Card class="border-border/80">
           <CardHeader class="pb-3">
             <CardDescription>Status</CardDescription>
             <CardTitle class="text-lg capitalize">{plugin.status ?? "unknown"}</CardTitle>
           </CardHeader>
         </Card>
-        <Card class="border-zinc-200/80 dark:border-zinc-800">
+        <Card class="border-border/80">
           <CardHeader class="pb-3">
             <CardDescription>Health</CardDescription>
             <CardTitle class="text-lg">{health?.healthy ? "Healthy" : "Unhealthy"}</CardTitle>
           </CardHeader>
         </Card>
-        <Card class="border-zinc-200/80 dark:border-zinc-800">
+        <Card class="border-border/80">
           <CardHeader class="pb-3">
             <CardDescription>Logs</CardDescription>
             <CardTitle class="text-lg">{logs.length}</CardTitle>
           </CardHeader>
         </Card>
-        <Card class="border-zinc-200/80 dark:border-zinc-800">
+        <Card class="border-border/80">
           <CardHeader class="pb-3">
             <CardDescription>Capabilities</CardDescription>
             <CardTitle class="text-lg">{capabilities.length}</CardTitle>
@@ -414,10 +399,10 @@
                   context={pluginHostContext}
                   routePath={pageSlots[0]?.routePath ?? null}
                   class="space-y-3"
-                  itemClassName="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/50"
+                  itemClassName="rounded-lg border border-border bg-muted/50 px-3 py-2"
                 />
               {:else}
-                <p class="text-sm text-zinc-500 dark:text-zinc-400">This plugin does not declare a page slot.</p>
+                <p class="text-sm text-muted-foreground">This plugin does not declare a page slot.</p>
               {/if}
             </CardContent>
           </Card>
@@ -431,23 +416,23 @@
               <CardContent>
                 <dl class="space-y-2 text-sm">
                   <div class="flex justify-between gap-4">
-                    <dt class="text-zinc-500 dark:text-zinc-400">Name</dt>
-                    <dd class="font-medium text-zinc-900 dark:text-zinc-100">{plugin.name}</dd>
+                    <dt class="text-muted-foreground">Name</dt>
+                    <dd class="font-medium text-foreground">{plugin.name}</dd>
                   </div>
                   <div class="flex justify-between gap-4">
-                    <dt class="text-zinc-500 dark:text-zinc-400">Version</dt>
+                    <dt class="text-muted-foreground">Version</dt>
                     <dd class="font-mono">{version}</dd>
                   </div>
                   <div class="flex justify-between gap-4">
-                    <dt class="text-zinc-500 dark:text-zinc-400">Author</dt>
+                    <dt class="text-muted-foreground">Author</dt>
                     <dd>{author}</dd>
                   </div>
                   <div class="flex justify-between gap-4">
-                    <dt class="text-zinc-500 dark:text-zinc-400">Status</dt>
+                    <dt class="text-muted-foreground">Status</dt>
                     <dd><StatusBadge status={plugin.enabled ? "enabled" : "disabled"} /></dd>
                   </div>
                   <div class="flex justify-between gap-4">
-                    <dt class="text-zinc-500 dark:text-zinc-400">ID</dt>
+                    <dt class="text-muted-foreground">ID</dt>
                     <dd class="font-mono text-xs break-all">{plugin.id}</dd>
                   </div>
                 </dl>
@@ -455,14 +440,14 @@
                 <Separator class="my-4" />
 
                 <div class="space-y-3">
-                  <div class="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Categories</div>
+                  <div class="text-xs uppercase tracking-wide text-muted-foreground">Categories</div>
                   <div class="flex flex-wrap gap-2">
                     {#if categories.length > 0}
                       {#each categories as category}
                         <Badge variant="outline" class="capitalize">{category}</Badge>
                       {/each}
                     {:else}
-                      <span class="text-sm text-zinc-500 dark:text-zinc-400">None</span>
+                      <span class="text-sm text-muted-foreground">None</span>
                     {/if}
                   </div>
                 </div>
@@ -479,8 +464,8 @@
               </CardHeader>
               <CardContent class="space-y-4">
                 {#if healthLoading}
-                  <div class="flex items-center gap-2 text-sm text-zinc-500">
-                    <div class="size-4 border-2 border-zinc-400 border-t-transparent rounded-full animate-spin"></div>
+                  <div class="flex items-center gap-2 text-sm text-muted-foreground">
+                    <div class="size-4 border-2 border-muted-foreground/50 border-t-transparent rounded-full animate-spin"></div>
                     Checking health...
                   </div>
                 {:else if health}
@@ -489,23 +474,23 @@
                       <Badge variant={health?.healthy ? "default" : "destructive"}>
                         {health.healthy ? "Healthy" : "Unhealthy"}
                       </Badge>
-                      <span class="text-xs text-zinc-500 dark:text-zinc-400">
+                      <span class="text-xs text-muted-foreground">
                         {health.message ?? `Status: ${health.status ?? plugin.status ?? "unknown"}`}
                       </span>
                     </div>
 
                     <div class="space-y-2">
                       {#each healthChecks as check}
-                        <div class="flex items-start gap-2 rounded-lg border border-zinc-200 px-3 py-2 text-sm dark:border-zinc-800">
+                        <div class="flex items-start gap-2 rounded-lg border border-border px-3 py-2 text-sm">
                           {#if check.passed}
                             <span class="mt-1 inline-block size-3 rounded-full bg-emerald-500"></span>
                           {:else}
                             <span class="mt-1 inline-block size-3 rounded-full bg-red-500"></span>
                           {/if}
                           <div class="min-w-0">
-                            <div class="font-medium text-zinc-900 dark:text-zinc-100">{check.name}</div>
+                            <div class="font-medium text-foreground">{check.name}</div>
                             {#if check.message}
-                              <div class="text-xs text-zinc-500 dark:text-zinc-400">{check.message}</div>
+                              <div class="text-xs text-muted-foreground">{check.message}</div>
                             {/if}
                           </div>
                         </div>
@@ -513,11 +498,11 @@
                     </div>
 
                     {#if health.message && !healthChecks.length}
-                      <p class="text-xs text-zinc-500 dark:text-zinc-400">{health.message}</p>
+                      <p class="text-xs text-muted-foreground">{health.message}</p>
                     {/if}
                   </div>
                 {:else}
-                  <p class="text-sm text-zinc-500 dark:text-zinc-400">Health status unavailable.</p>
+                  <p class="text-sm text-muted-foreground">Health status unavailable.</p>
                 {/if}
               </CardContent>
             </Card>
@@ -529,21 +514,21 @@
               </CardHeader>
               <CardContent class="space-y-3 text-sm">
                 {#if uiContributionsLoading}
-                  <div class="text-sm text-zinc-500 dark:text-zinc-400">Loading UI contributions...</div>
+                  <div class="text-sm text-muted-foreground">Loading UI contributions...</div>
                 {:else if !pluginContribution}
-                  <p class="text-sm text-zinc-500 dark:text-zinc-400">This plugin does not declare any UI contributions.</p>
+                  <p class="text-sm text-muted-foreground">This plugin does not declare any UI contributions.</p>
                 {:else}
                   {#if pageSlots.length > 0}
                     <div class="space-y-2">
-                      <div class="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Page slots</div>
+                      <div class="text-xs uppercase tracking-wide text-muted-foreground">Page slots</div>
                       <div class="space-y-2">
                         {#each pageSlots as slot}
-                          <div class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+                          <div class="rounded-lg border border-border bg-muted/50 px-3 py-2">
                             <div class="flex items-start justify-between gap-3">
                               <div class="min-w-0">
-                                <p class="font-medium text-zinc-900 dark:text-zinc-100">{slot.displayName ?? "Plugin Page"}</p>
-                                <p class="font-mono text-xs text-zinc-500">/{prefix}/{slot.routePath}</p>
-                                <p class="mt-1 text-xs text-zinc-500">Export: {slot.exportName}</p>
+                                <p class="font-medium text-foreground">{slot.displayName ?? "Plugin Page"}</p>
+                                <p class="font-mono text-xs text-muted-foreground">/{prefix}/{slot.routePath}</p>
+                                <p class="mt-1 text-xs text-muted-foreground">Export: {slot.exportName}</p>
                               </div>
                               <Badge variant="outline" class="shrink-0">page</Badge>
                             </div>
@@ -555,14 +540,14 @@
 
                   {#if settingsSlots.length > 0}
                     <div class="space-y-2">
-                      <div class="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Settings slots</div>
+                      <div class="text-xs uppercase tracking-wide text-muted-foreground">Settings slots</div>
                       <div class="space-y-2">
                         {#each settingsSlots as slot}
-                          <div class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
+                          <div class="rounded-lg border border-border bg-muted/50 px-3 py-2">
                             <div class="flex items-start justify-between gap-3">
                               <div class="min-w-0">
-                                <p class="font-medium text-zinc-900 dark:text-zinc-100">{slot.displayName ?? "Plugin Settings"}</p>
-                                <p class="font-mono text-xs text-zinc-500">Export: {slot.exportName}</p>
+                                <p class="font-medium text-foreground">{slot.displayName ?? "Plugin Settings"}</p>
+                                <p class="font-mono text-xs text-muted-foreground">Export: {slot.exportName}</p>
                               </div>
                               <Badge variant="outline" class="shrink-0">settingsPage</Badge>
                             </div>
@@ -574,12 +559,12 @@
 
                   {#if pluginContribution.launchers?.length}
                     <div class="space-y-2">
-                      <div class="text-xs uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Launchers</div>
+                      <div class="text-xs uppercase tracking-wide text-muted-foreground">Launchers</div>
                       <div class="space-y-2">
                         {#each pluginContribution.launchers as launcher}
-                          <div class="rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/50">
-                            <p class="font-medium text-zinc-900 dark:text-zinc-100">{launcher.displayName}</p>
-                            <p class="mt-1 text-xs text-zinc-500">
+                          <div class="rounded-lg border border-border bg-muted/50 px-3 py-2">
+                            <p class="font-medium text-foreground">{launcher.displayName}</p>
+                            <p class="mt-1 text-xs text-muted-foreground">
                               Zone: {launcher.placementZone}{launcher.exportName ? ` · Export: ${launcher.exportName}` : ""}
                             </p>
                           </div>
@@ -607,7 +592,7 @@
                   {/each}
                 </div>
               {:else}
-                <p class="text-sm text-zinc-500 dark:text-zinc-400">No capabilities declared.</p>
+                <p class="text-sm text-muted-foreground">No capabilities declared.</p>
               {/if}
             </CardContent>
           </Card>
@@ -617,11 +602,11 @@
           {#if logsLoading}
             <div class="space-y-2">
               {#each Array(5) as _}
-                <Skeleton class="h-8 rounded bg-zinc-100 dark:bg-zinc-800" />
+                <Skeleton class="h-8 rounded" />
               {/each}
             </div>
           {:else if logs.length === 0}
-            <div class="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-zinc-500 dark:border-zinc-800 dark:text-zinc-400">
+            <div class="rounded-xl border border-dashed px-4 py-12 text-center text-sm text-muted-foreground border-border">
               No logs available for this plugin.
             </div>
           {:else}
@@ -630,18 +615,18 @@
                 Refresh Logs
               </Button>
             </div>
-            <div class="max-h-[600px] divide-y divide-zinc-200 overflow-y-auto rounded-lg border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+            <div class="max-h-[600px] divide-y divide-border overflow-y-auto rounded-lg border border-border">
               {#each logs as entry, i (entry.id ?? i)}
                 <div class="flex items-start gap-3 p-3 text-sm">
                   <span class={`inline-flex shrink-0 items-center rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${formatLevel(entry.level)}`}>
                     {entry.level}
                   </span>
                   {#if entry.timestamp || entry.createdAt}
-                    <span class="shrink-0 whitespace-nowrap tabular-nums text-xs text-zinc-500 dark:text-zinc-400">
+                    <span class="shrink-0 whitespace-nowrap tabular-nums text-xs text-muted-foreground">
                       {formatTime(entry.timestamp ?? entry.createdAt ?? null)}
                     </span>
                   {/if}
-                  <span class="break-all font-mono text-xs leading-relaxed text-zinc-700 dark:text-zinc-300">{entry.message}</span>
+                  <span class="break-all font-mono text-xs leading-relaxed text-foreground/80">{entry.message}</span>
                 </div>
               {/each}
             </div>
@@ -649,5 +634,6 @@
         </TabsContent>
       </Tabs>
     </div>
+    </PageLayout>
   {/if}
 </div>

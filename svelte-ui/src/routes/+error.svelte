@@ -1,6 +1,12 @@
 <script lang="ts">
+  import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { ArrowLeft, Home } from "lucide-svelte";
+
+  let status = $derived($page.status);
+  let message = $derived($page.error?.message ?? "Something went wrong");
+
+  let isNotFound = $derived(status === 404);
 </script>
 
 <div class="flex min-h-screen w-full items-center justify-center bg-[#050508] relative overflow-hidden">
@@ -16,15 +22,17 @@
         bg-gradient-to-br from-[#2563eb] via-[#60a5fa] to-[#1e40af] bg-clip-text text-transparent
         max-sm:text-[5rem]"
     >
-      404
+      {status}
     </span>
 
     <h1 class="mb-3 text-[1.75rem] font-bold tracking-tight text-[#f8fafc] max-sm:text-[1.375rem]">
-      Page Not Found
+      {isNotFound ? "Page Not Found" : "Something Went Wrong"}
     </h1>
 
     <p class="mb-10 text-base leading-relaxed text-[#64748b]">
-      The page you're looking for doesn't exist or has been moved.
+      {isNotFound
+        ? "The page you're looking for doesn't exist or has been moved."
+        : message}
     </p>
 
     <div class="flex gap-3 max-sm:w-full max-sm:flex-col">

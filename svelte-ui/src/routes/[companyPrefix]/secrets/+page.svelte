@@ -384,7 +384,7 @@
 
   <!-- Secrets list -->
   {:else}
-    <Card class="overflow-hidden">
+    <div class="glass-card p-0 overflow-hidden">
       {#each filteredSecrets as secret, i (secret.id)}
         <div
           class="flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
@@ -462,7 +462,7 @@
                 onclick={() => { confirmRotateId = secret.id; confirmDeleteId = null; }}
                 disabled={rotatingId === secret.id}
                 title="Rotate secret"
-                class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-amber-400 disabled:opacity-50"
+                class="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-amber-400 disabled:opacity-50"
               >
                 <RotateCw class="h-4 w-4 {rotatingId === secret.id ? 'animate-spin' : ''}" />
               </button>
@@ -470,7 +470,7 @@
                 onclick={() => { confirmDeleteId = secret.id; confirmRotateId = null; }}
                 disabled={deletingId === secret.id}
                 title="Delete secret"
-                class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-red-400 disabled:opacity-50"
+                class="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-red-400 disabled:opacity-50"
               >
                 <Trash2 class="h-4 w-4" />
               </button>
@@ -478,7 +478,7 @@
           </div>
         </div>
       {/each}
-    </Card>
+    </div>
 
     <!-- Summary -->
     <p class="text-xs text-muted-foreground text-center">

@@ -3,6 +3,7 @@
   import {
     Card, CardContent, Skeleton, Alert, AlertDescription,
   } from '$lib/components/ui/index.js';
+  import { PageLayout } from '$lib/components/layout/index.js';
 
   let settings = $state({
     enableIsolatedWorkspaces: false,
@@ -77,19 +78,19 @@
   }
 </script>
 
-<div class="mx-auto max-w-2xl space-y-6 p-6">
-  <div class="flex gap-3 border-b border-border pb-3">
-    {#each tabs as tab}
-      <a
-        href={tab.href}
-        class="text-sm transition-colors {tab.href === '/settings/experimental'
-          ? 'font-medium text-primary'
-          : 'text-muted-foreground hover:text-foreground'}"
-      >{tab.label}</a>
-    {/each}
-  </div>
-
-  <h1 class="text-xl font-bold text-foreground">Experimental Features</h1>
+<PageLayout title="Experimental Features" description="Beta flags and advanced platform behavior.">
+  {#snippet tabs()}
+    <div class="flex gap-3 border-b border-border pb-3">
+      {#each tabs as tab}
+        <a
+          href={tab.href}
+          class="text-sm transition-colors {tab.href === '/settings/experimental'
+            ? 'font-medium text-primary'
+            : 'text-muted-foreground hover:text-foreground'}"
+        >{tab.label}</a>
+      {/each}
+    </div>
+  {/snippet}
 
   {#if loading}
     <div class="space-y-3">
@@ -127,4 +128,4 @@
       {/each}
     </div>
   {/if}
-</div>
+</PageLayout>

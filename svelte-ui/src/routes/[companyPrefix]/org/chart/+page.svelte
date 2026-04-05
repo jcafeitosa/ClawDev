@@ -6,6 +6,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { PageLayout } from '$components/layout/index.js';
+  import { Skeleton } from '$lib/components/ui/index.js';
   import { Download, Upload, Network, ZoomIn, ZoomOut, Maximize } from 'lucide-svelte';
 
   // ── Constants ───────────────────────────────────────────────────
@@ -76,6 +77,7 @@
   // ── State ──────────────────────────────────────────────────────
   let agents = $state<any[]>([]);
   let loading = $state(true);
+  let error = $state<string | null>(null);
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
@@ -96,10 +98,17 @@
   $effect(() => {
     if (!companyId) return;
     loading = true;
+    error = null;
     api(`/api/companies/${companyId}/agents`)
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        return r.json();
+      })
       .then((d) => {
         agents = Array.isArray(d) ? d : d.agents ?? [];
+      })
+      .catch((e) => {
+        error = e.message ?? 'Failed to load agents';
       })
       .finally(() => {
         loading = false;
@@ -321,15 +330,40 @@
     <div class="flex-1 flex items-center justify-center">
       <div class="space-y-4 w-64">
         {#each Array(5) as _}
-          <div class="h-12 animate-pulse rounded-lg bg-muted"></div>
+          <Skeleton class="h-12 rounded-lg" />
         {/each}
         <p class="text-sm text-muted-foreground text-center">Loading org chart...</p>
       </div>
     </div>
+  {:else if error}
+    <div class="flex-1 flex flex-col items-center justify-center gap-4">
+      <div class="rounded-full bg-red-500/10 p-4">
+        <Network class="h-8 w-8 text-red-400" />
+      </div>
+      <h3 class="text-lg font-medium text-foreground">Failed to load org chart</h3>
+      <p class="text-sm text-muted-foreground">{error}</p>
+      <button
+        onclick={() => {
+          loading = true;
+          error = null;
+          api(`/api/companies/${companyId}/agents`)
+            .then((r) => r.json())
+            .then((d) => { agents = Array.isArray(d) ? d : d.agents ?? []; })
+            .catch((e) => { error = e.message; })
+            .finally(() => { loading = false; });
+        }}
+        class="cursor-pointer text-sm text-primary hover:underline transition-colors duration-150"
+      >
+        Retry
+      </button>
+    </div>
   {:else if agents.length === 0}
     <div class="flex-1 flex flex-col items-center justify-center gap-4">
-      <Network class="h-12 w-12 text-muted-foreground/40" />
-      <p class="text-sm text-muted-foreground">No agents found. Add agents to see the organization chart.</p>
+      <div class="rounded-full bg-accent/60 p-4">
+        <Network class="h-8 w-8 text-muted-foreground" />
+      </div>
+      <h3 class="text-lg font-medium text-foreground">No agents yet</h3>
+      <p class="text-sm text-muted-foreground">Add agents to see the organization chart.</p>
     </div>
   {:else}
     <!-- svelte-ignore a11y_no_noninteractive_element_interactions a11y_no_noninteractive_tabindex -->

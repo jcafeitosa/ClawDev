@@ -275,7 +275,7 @@
 <PageLayout title="Company Settings" description="Manage your company configuration">
 
   <!-- General section -->
-  <Card class="border-border/60">
+  <section class="glass-card p-0 overflow-hidden">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-blue-500/10 p-2">
@@ -324,10 +324,10 @@
         <span class="text-sm text-emerald-400">Saved successfully</span>
       {/if}
     </CardFooter>
-  </Card>
+  </section>
 
   <!-- Appearance section -->
-  <Card class="border-border/60">
+  <section class="glass-card p-0 overflow-hidden">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-purple-500/10 p-2">
@@ -350,11 +350,11 @@
         <div class="flex items-center gap-1 rounded-lg border border-border p-0.5">
           <button
             onclick={() => { document.documentElement.classList.remove('light'); document.documentElement.classList.add('dark'); }}
-            class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-accent text-foreground"
+            class="cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors bg-accent text-foreground"
           >Dark</button>
           <button
             onclick={() => { document.documentElement.classList.remove('dark'); document.documentElement.classList.add('light'); }}
-            class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-muted-foreground hover:text-foreground"
+            class="cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-muted-foreground hover:text-foreground"
           >Light</button>
         </div>
       </div>
@@ -440,10 +440,10 @@
         </div>
       </div>
     </CardContent>
-  </Card>
+  </section>
 
   <!-- Hiring & Access section -->
-  <Card class="border-border/60">
+  <section class="glass-card p-0 overflow-hidden">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-emerald-500/10 p-2">
@@ -515,10 +515,10 @@
         </Button>
       </div>
     </CardContent>
-  </Card>
+  </section>
 
   <!-- Company Packages section -->
-  <Card class="border-border/60">
+  <section class="glass-card p-0 overflow-hidden">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-orange-500/10 p-2">
@@ -556,10 +556,10 @@
         </Button>
       </div>
     </CardContent>
-  </Card>
+  </section>
 
   <!-- Danger Zone -->
-  <Card class="border-red-500/20">
+  <section class="glass-card p-0 overflow-hidden" style="border-color: rgba(239, 68, 68, 0.2)">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-red-500/10 p-2">
@@ -644,5 +644,5 @@
         </Alert>
       {/if}
     </CardContent>
-  </Card>
+  </section>
 </PageLayout>
