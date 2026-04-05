@@ -400,14 +400,14 @@
               <button
                 type="submit"
                 disabled={creating || !createBody.trim()}
-                class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+                class="cursor-pointer inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <Save class="h-4 w-4" />
                 {creating ? "Creating..." : "Create"}
               </button>
               <button
                 type="button"
-                class="rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent/40"
+                class="cursor-pointer rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent/40"
                 onclick={() => (showCreate = false)}
               >
                 Cancel
@@ -476,7 +476,7 @@
                         </span>
                         <a
                           href={`/${prefix}/issues/${doc.issueId}`}
-                          class="inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700"
+                          class="cursor-pointer inline-flex items-center gap-1 text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors duration-150"
                         >
                           {doc.issueIdentifier ?? "Open issue"}
                           <ExternalLink class="h-3 w-3" />
@@ -523,7 +523,7 @@
                     </span>
                     <a
                       href={`/${prefix}/issues/${selectedDocument.issueId}`}
-                      class="inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
+                      class="cursor-pointer inline-flex items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700 transition-colors duration-150 hover:bg-blue-100 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-300"
                     >
                       {selectedDocument.issueIdentifier ?? "Open issue"}
                       <ExternalLink class="h-3 w-3" />
@@ -539,7 +539,7 @@
             <div class="flex items-center gap-2">
               <button
                 type="button"
-                class="inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent/40"
+                class="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-border px-4 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent/40"
                 onclick={() => {
                   if (selectedDocumentId) void selectDocument(selectedDocumentId);
                 }}
@@ -557,7 +557,7 @@
               </button>
               <button
                 type="button"
-                class="inline-flex items-center gap-2 rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
+                class="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-red-300 px-4 py-2 text-sm font-medium text-red-700 transition-colors duration-150 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-red-900 dark:text-red-300 dark:hover:bg-red-950/30"
                 disabled={!selectedDocumentId}
                 onclick={() => (showDeleteConfirm = true)}
               >
@@ -610,7 +610,7 @@
             <button
               type="button"
               disabled={saving || !editBody.trim()}
-              class="inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+              class="cursor-pointer inline-flex items-center gap-2 rounded-xl bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
               onclick={() => void saveSelectedDocument()}
             >
               <Save class="h-4 w-4" />
@@ -629,7 +629,7 @@
               <div class="flex items-center gap-2">
                 <button
                   type="button"
-                  class="rounded-xl border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent/40"
+                  class="cursor-pointer rounded-xl border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent/40"
                   onclick={() => (showDeleteConfirm = false)}
                 >
                   Cancel
@@ -637,7 +637,7 @@
                 <button
                   type="button"
                   disabled={deleting}
-                  class="inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="cursor-pointer inline-flex items-center gap-2 rounded-xl bg-red-600 px-3 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                   onclick={() => void deleteSelectedDocument()}
                 >
                   {deleting ? "Deleting..." : "Delete"}
@@ -706,7 +706,7 @@
                 {#if selectedDocument.issueId}
                   <div class="flex items-center gap-2 text-xs text-muted-foreground">
                     <span>Issue attachment context:</span>
-                    <a href={`/${prefix}/issues/${selectedDocument.issueId}`} class="font-medium text-blue-600 hover:text-blue-700">
+                    <a href={`/${prefix}/issues/${selectedDocument.issueId}`} class="cursor-pointer font-medium text-blue-600 hover:text-blue-700 transition-colors duration-150">
                       {selectedDocument.issueId}
                     </a>
                   </div>
@@ -720,7 +720,7 @@
                 <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    class="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent/40"
+                    class="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent/40"
                     onclick={() => void copyDocumentBody({ ...selectedDocument, body: selectedRevision.body } as DocumentRow)}
                   >
                     {#if copiedDocumentId === selectedDocument?.id}
@@ -732,7 +732,7 @@
                   </button>
                   <button
                     type="button"
-                    class="inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition hover:bg-accent/40"
+                    class="cursor-pointer inline-flex items-center gap-2 rounded-xl border border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors duration-150 hover:bg-accent/40"
                     onclick={() => downloadDocumentFile({ ...selectedDocument, body: selectedRevision.body } as DocumentRow)}
                   >
                     <Download class="h-4 w-4" />

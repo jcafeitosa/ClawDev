@@ -44,7 +44,7 @@
   let error = $state<string | null>(null);
   let actionError = $state<string | null>(null);
 
-  const tabs = [
+  const settingsTabs = [
     { href: '/settings/general', label: 'General' },
     { href: '/settings/experimental', label: 'Experimental' },
     { href: '/settings/heartbeats', label: 'Heartbeats' },
@@ -212,7 +212,7 @@
 <PageLayout title="Heartbeat Config" description="Manage scheduler heartbeats for agents across every company.">
   {#snippet tabs()}
     <div class="flex gap-3 border-b border-border pb-3">
-      {#each tabs as tab}
+      {#each settingsTabs as tab}
         <a
           href={tab.href}
           class="text-sm transition-colors {tab.href === '/settings/heartbeats'

@@ -330,7 +330,7 @@
   {:else}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <!-- INFERENCE SPEND -->
-      <div class="rounded-xl border border-border bg-card p-5">
+      <div class="glass-card p-5">
         <div class="flex items-center gap-2 mb-3">
           <div class="rounded-lg bg-blue-500/10 p-2">
             <Zap class="h-4 w-4 text-blue-500" />
@@ -344,7 +344,7 @@
       </div>
 
       <!-- BUDGET -->
-      <div class="rounded-xl border border-border bg-card p-5">
+      <div class="glass-card p-5">
         <div class="flex items-center gap-2 mb-3">
           <div class="rounded-lg bg-emerald-500/10 p-2">
             <Shield class="h-4 w-4 text-emerald-500" />
@@ -356,7 +356,7 @@
       </div>
 
       <!-- FINANCE NET -->
-      <div class="rounded-xl border border-border bg-card p-5">
+      <div class="glass-card p-5">
         <div class="flex items-center gap-2 mb-3">
           <div class="rounded-lg bg-violet-500/10 p-2">
             <Activity class="h-4 w-4 text-violet-500" />
@@ -370,7 +370,7 @@
       </div>
 
       <!-- FINANCE EVENTS -->
-      <div class="rounded-xl border border-border bg-card p-5">
+      <div class="glass-card p-5">
         <div class="flex items-center gap-2 mb-3">
           <div class="rounded-lg bg-orange-500/10 p-2">
             <Hash class="h-4 w-4 text-orange-500" />
@@ -386,7 +386,7 @@
   {/if}
 
   <!-- Tabbed Breakdown Section -->
-  <div class="rounded-xl border border-border bg-card overflow-hidden">
+  <div class="glass-card p-0 overflow-hidden">
     <Tabs value={activeTab} onValueChange={(v) => { if (v) activeTab = v; }} class="w-full">
       <div class="border-b border-border px-5 pt-4 pb-0 overflow-x-auto">
         <TabsList class="bg-transparent p-0 h-auto gap-0">
@@ -408,7 +408,7 @@
         <div class="flex flex-wrap items-center gap-2 px-5 pt-4 pb-2">
           {#each DATE_PRESETS as preset}
             <button
-              class="rounded-md px-3 py-1.5 text-xs font-medium transition-colors {datePreset === preset.key
+              class="cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-150 {datePreset === preset.key
                 ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30'
                 : 'bg-secondary text-muted-foreground border border-border hover:bg-accent hover:text-foreground'}"
               onclick={() => { datePreset = preset.key; }}

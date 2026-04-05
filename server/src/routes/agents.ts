@@ -22,7 +22,7 @@ import {
   issues as issuesTable,
 } from "@clawdev/db";
 import { and, desc, eq, inArray, not, sql } from "drizzle-orm";
-import { agentMineInboxQuerySchema } from "@clawdev/shared";
+import { agentMineInboxQuerySchema, isUuidLike } from "@clawdev/shared";
 import {
   agentService,
   agentInstructionsService,
@@ -241,16 +241,16 @@ export function agentRoutes(db: Db) {
     };
   }
 
-  async function resolveAgentForRequest(agentId: string, companyId?: string | null) {
-    if (typeof companyId !== "string" || companyId.trim().length === 0) {
-      throw unprocessable("Agent shortname lookup requires companyId query parameter");
+    async function resolveAgentForRequest(agentId: string, companyId?: string | null) {
+      if (typeof companyId !== "string" || companyId.trim().length === 0) {
+        throw unprocessable("Agent shortname lookup requires companyId query parameter");
+      }
+      const normalizedCompanyId = companyId.trim();
+      const isUuid = isUuidLike(agentId);
+      if (isUuid) return await svc.getById(agentId);
+      const resolved = await svc.resolveByReference(normalizedCompanyId, agentId);
+      return resolved.agent ?? null;
     }
-    const normalizedCompanyId = companyId.trim();
-    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId);
-    if (isUuid) return await svc.getById(agentId);
-    const resolved = await svc.resolveByReference(normalizedCompanyId, agentId);
-    return resolved.agent ?? null;
-  }
 
   function toLeanOrgNode(node: Record<string, unknown>): Record<string, unknown> {
     const reports = Array.isArray(node.reports)
@@ -335,8 +335,17 @@ export function agentRoutes(db: Db) {
       "/companies/:companyId/agents",
       async ({ params, ...ctx }: any) => {
         const actor = ctx.actor;
-        assertCompanyAccess(actor, params.companyId);
-        return svc.list(params.companyId);
+        try {
+          assertCompanyAccess(actor, params.companyId);
+          return await svc.list(params.companyId);
+        } catch (error) {
+          const maybeCode =
+            typeof error === "object" && error !== null && "code" in error
+              ? (error as { code?: unknown }).code
+              : undefined;
+          if (maybeCode !== "22P02") throw error;
+          throw unprocessable("Company id must be a UUID");
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -355,8 +364,17 @@ export function agentRoutes(db: Db) {
         }
 
         if (!agent && companyId) {
-          const resolved = await svc.resolveByReference(companyId, params.id);
-          agent = resolved.agent;
+          try {
+            const resolved = await svc.resolveByReference(companyId, params.id);
+            agent = resolved.agent;
+          } catch (error) {
+            const maybeCode =
+              typeof error === "object" && error !== null && "code" in error
+                ? (error as { code?: unknown }).code
+                : undefined;
+            if (maybeCode !== "22P02") throw error;
+            throw unprocessable("Agent shortname lookup requires UUID companyId");
+          }
         }
 
         if (!agent) {
@@ -730,7 +748,7 @@ export function agentRoutes(db: Db) {
         // Auto-set reportsTo: if requested by an agent, new agent reports to that agent
         const reportsTo = typeof input.reportsTo === "string" && input.reportsTo
           ? input.reportsTo
-          : actor?.actorType === "agent" ? actor.actorId : null;
+          : actor?.type === "agent" ? actor.agentId ?? null : null;
 
         const payload = {
           name: input.name,
@@ -758,7 +776,7 @@ export function agentRoutes(db: Db) {
           status: "pending",
           payload,
           requestedByUserId: actor?.userId ?? null,
-          requestedByAgentId: actor?.actorType === "agent" ? actor.actorId : null,
+          requestedByAgentId: actor?.type === "agent" ? actor.agentId ?? null : null,
         } as any);
 
         set.status = 201;

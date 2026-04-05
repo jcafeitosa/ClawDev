@@ -236,7 +236,7 @@
       {#each STATUS_FILTERS as filter}
         <button
           onclick={() => { statusFilter = filter; }}
-          class="rounded-lg px-3 py-1.5 text-sm font-medium transition
+          class="cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150
             {statusFilter === filter
               ? 'bg-primary text-primary-foreground'
               : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
@@ -271,32 +271,33 @@
     <Alert variant="destructive">
       <AlertDescription>
         <p>{error}</p>
-        <button onclick={() => loadRuns()} class="mt-2 text-sm text-primary hover:underline">Retry</button>
+        <button onclick={() => loadRuns()} class="cursor-pointer mt-2 text-sm text-primary hover:underline transition-colors duration-150">Retry</button>
       </AlertDescription>
     </Alert>
 
   <!-- Empty -->
   {:else if filteredRuns.length === 0}
-    <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-accent/60 p-4 mb-4">
-        <Play class="h-10 w-10 text-muted-foreground" />
+    <div class="glass-card p-12 text-center">
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+          <Play class="h-5 w-5 text-muted-foreground/40" />
+        </div>
+        {#if runs.length === 0}
+          <p class="text-sm font-medium text-muted-foreground">No runs yet</p>
+          <p class="text-xs text-muted-foreground/60">Runs will appear here when agents execute tasks.</p>
+        {:else}
+          <p class="text-sm font-medium text-muted-foreground">No runs match the current filters.</p>
+        {/if}
       </div>
-      {#if runs.length === 0}
-        <h3 class="text-lg font-medium text-foreground">No runs yet</h3>
-        <p class="mt-1 text-sm text-muted-foreground">Runs will appear here when agents execute tasks</p>
-      {:else}
-        <p class="text-muted-foreground text-sm">No runs match the current filters.</p>
-      {/if}
     </div>
 
   <!-- Runs list -->
   {:else}
-    <Card class="border-border/60 overflow-hidden p-0">
-      <CardContent class="p-0">
+    <div class="glass-card p-0 overflow-hidden">
         {#each filteredRuns as run, i (run.id)}
           <a
             href="/{prefix}/runs/{run.id}"
-            class="group flex items-center gap-4 px-5 py-3.5 transition hover:bg-accent/40
+            class="cursor-pointer group flex items-center gap-4 px-5 py-3.5 transition-colors duration-150 hover:bg-accent/40
               {i < filteredRuns.length - 1 ? 'border-b border-border/50' : ''}"
           >
             <!-- Status dot -->
@@ -340,8 +341,7 @@
             <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
           </a>
         {/each}
-      </CardContent>
-    </Card>
+    </div>
 
     <!-- Count -->
     <p class="text-xs text-muted-foreground text-right">

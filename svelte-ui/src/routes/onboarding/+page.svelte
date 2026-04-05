@@ -40,6 +40,41 @@
   let adapterType = $state("claude_local");
   let createdAgent = $state<{ id: string; name: string; role: string } | null>(null);
   let adapterConfig = $state<Record<string, any>>({});
+  const MODEL_DISCOVERY_ADAPTERS = new Set([
+    "claude_local",
+    "codex_local",
+    "copilot_local",
+    "cursor",
+    "gemini_local",
+    "opencode_local",
+    "pi_local",
+  ]);
+  const MODEL_FILTERS: Partial<Record<string, { providers?: string[]; idPrefix?: string }>> = {
+    claude_local: { providers: ["anthropic"] },
+    codex_local: { providers: ["openai"] },
+    gemini_local: { providers: ["google"] },
+    opencode_local: { idPrefix: "opencode/" },
+  };
+  const MODEL_PROVIDER_LABELS: Record<string, string> = {
+    claude_local: "Anthropic",
+    codex_local: "OpenAI",
+    gemini_local: "Google",
+    opencode_local: "OpenCode",
+    copilot_local: "Copilot",
+    cursor: "Cursor",
+    pi_local: "Pi",
+  };
+  interface AdapterModel {
+    id: string;
+    label: string;
+    provider?: string;
+    status?: string;
+    statusDetail?: string;
+  }
+  let selectedProviderModels = $state<AdapterModel[]>([]);
+  let selectedProviderModelsLoading = $state(false);
+  let selectedProviderModelsError = $state<string | null>(null);
+  let selectedProviderModelsRequestId = 0;
 
   // Step 3: Task
   let taskTitle = $state("Hire your first engineer and create a hiring plan");
@@ -163,6 +198,120 @@
   function markCompleted(step: number) {
     completedSteps = new Set([...completedSteps, step]);
   }
+
+  function setAdapterConfigField(key: string, value: unknown) {
+    adapterConfig = { ...adapterConfig, [key]: value };
+  }
+
+  function filterAdapterModels(models: AdapterModel[]): AdapterModel[] {
+    const filter = MODEL_FILTERS[adapterType];
+    if (!filter) return models;
+    return models.filter((model) => {
+      if (filter.providers && filter.providers.length > 0) {
+        const provider = (model.provider ?? "").toLowerCase();
+        if (!filter.providers.includes(provider)) return false;
+      }
+      if (filter.idPrefix && !model.id.toLowerCase().startsWith(filter.idPrefix.toLowerCase())) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function getAdapterModelSourceLabel() {
+    return MODEL_PROVIDER_LABELS[adapterType] ?? adapterType;
+  }
+
+  function normalizeAdapterModels(data: unknown): AdapterModel[] {
+    const raw = Array.isArray(data)
+      ? data
+      : typeof data === "object" && data !== null
+        ? ((data as { models?: unknown }).models ?? (data as { items?: unknown }).items ?? [])
+        : [];
+
+    if (!Array.isArray(raw)) return [];
+
+    const normalized: AdapterModel[] = [];
+    for (const entry of raw) {
+      if (typeof entry !== "object" || entry === null) continue;
+      const id = String((entry as { id?: unknown }).id ?? (entry as { modelId?: unknown }).modelId ?? "").trim();
+      if (!id) continue;
+      const label = String(
+        (entry as { label?: unknown }).label ??
+          (entry as { name?: unknown }).name ??
+          (entry as { modelId?: unknown }).modelId ??
+          id,
+      ).trim() || id;
+      normalized.push({
+        id,
+        label,
+        provider:
+          typeof (entry as { provider?: unknown }).provider === "string"
+            ? (entry as { provider?: string }).provider
+            : undefined,
+        status:
+          typeof (entry as { status?: unknown }).status === "string"
+            ? (entry as { status?: string }).status
+            : undefined,
+        statusDetail:
+          typeof (entry as { statusDetail?: unknown }).statusDetail === "string"
+            ? (entry as { statusDetail?: string }).statusDetail
+            : undefined,
+      });
+    }
+
+    return normalized;
+  }
+
+  async function loadSelectedProviderModels() {
+    if (!createdCompanyId || !MODEL_DISCOVERY_ADAPTERS.has(adapterType)) {
+      selectedProviderModels = [];
+      selectedProviderModelsError = null;
+      selectedProviderModelsLoading = false;
+      return;
+    }
+
+    const requestId = ++selectedProviderModelsRequestId;
+    selectedProviderModelsLoading = true;
+    selectedProviderModelsError = null;
+
+    try {
+      const res = await api(`/api/companies/${createdCompanyId}/adapters/${adapterType}/models`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? `Failed to load ${adapterType} models (${res.status})`);
+      }
+      const data = await res.json();
+      const models = filterAdapterModels(normalizeAdapterModels(data));
+      if (requestId !== selectedProviderModelsRequestId) return;
+      selectedProviderModels = models;
+      const currentModel = typeof adapterConfig.model === "string" ? adapterConfig.model.trim() : "";
+      if (models.length > 0 && (!currentModel || !models.some((model) => model.id === currentModel))) {
+        setAdapterConfigField("model", models[0]!.id);
+      }
+    } catch (err) {
+      if (requestId !== selectedProviderModelsRequestId) return;
+      selectedProviderModels = [];
+      selectedProviderModelsError = err instanceof Error ? err.message : "Failed to load provider models";
+    } finally {
+      if (requestId === selectedProviderModelsRequestId) {
+        selectedProviderModelsLoading = false;
+      }
+    }
+  }
+
+  $effect(() => {
+    void currentStep;
+    void createdCompanyId;
+    void adapterType;
+    if (currentStep !== 2 || !createdCompanyId || !MODEL_DISCOVERY_ADAPTERS.has(adapterType)) {
+      selectedProviderModels = [];
+      selectedProviderModelsError = null;
+      selectedProviderModelsLoading = false;
+      return;
+    }
+    void loadSelectedProviderModels();
+  });
 
   async function ensureAdmin(): Promise<boolean> {
     if (hasSession) return true;
@@ -500,6 +649,55 @@
             </div>
           </div>
 
+          {#if createdCompanyId && MODEL_DISCOVERY_ADAPTERS.has(adapterType)}
+            <div class="rounded-lg border border-gray-200 bg-white/80 p-4">
+              <div class="mb-3">
+                <h4 class="text-sm font-medium text-gray-900">Model selector</h4>
+                <p class="text-xs text-gray-500">Pick the model from {getAdapterModelSourceLabel()}.</p>
+              </div>
+
+              {#if selectedProviderModelsLoading}
+                <div class="flex items-center gap-2 text-xs text-gray-500">
+                  <span class="h-3 w-3 animate-spin rounded-full border border-gray-300 border-t-gray-900"></span>
+                  Loading models...
+                </div>
+              {:else if selectedProviderModelsError}
+                <div class="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+                  {selectedProviderModelsError}
+                </div>
+              {:else if selectedProviderModels.length === 0}
+                <div class="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                  No models were discovered for this provider.
+                </div>
+              {:else}
+                <div class="space-y-2">
+                  <label for="provider-model" class="text-xs text-gray-400 mb-1 block">Model</label>
+                  <div class="relative">
+                    <select
+                      id="provider-model"
+                      class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 text-gray-900"
+                      value={typeof adapterConfig.model === "string" ? adapterConfig.model : ""}
+                      onchange={(e) => setAdapterConfigField("model", e.currentTarget.value)}
+                    >
+                      {#each selectedProviderModels as model}
+                        <option value={model.id}>
+                          {model.label}{model.provider ? ` (${model.provider})` : ""}
+                        </option>
+                      {/each}
+                    </select>
+                  </div>
+                  <p class="text-[10px] text-gray-400">
+                    {#if typeof adapterConfig.model === "string" && adapterConfig.model}
+                      Selected: {adapterConfig.model}
+                    {:else}
+                      A model will be selected automatically.
+                    {/if}
+                  </p>
+                </div>
+              {/if}
+            </div>
+          {/if}
+
           <div>
             <div class="text-xs text-gray-400 mb-1 block">Role</div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-md text-xs font-medium text-gray-900">
@@ -514,7 +712,7 @@
               <h4 class="text-sm font-medium text-gray-900">Connector settings</h4>
               <p class="text-xs text-gray-500">Refine the adapter configuration before launching the first agent.</p>
             </div>
-            <AgentConfigForm {adapterType} companyId={createdCompanyId} bind:config={adapterConfig} mode="create" />
+            <AgentConfigForm {adapterType} companyId={createdCompanyId} bind:config={adapterConfig} mode="create" showModelControls={false} />
           </div>
         </div>
 

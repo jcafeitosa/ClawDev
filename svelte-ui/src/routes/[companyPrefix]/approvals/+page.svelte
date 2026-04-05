@@ -94,7 +94,7 @@
   <div class="flex items-center gap-1 border-b border-border">
     <button
       onclick={() => (activeTab = 'pending')}
-      class="relative px-4 py-2.5 text-sm font-medium transition-colors
+      class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
         {activeTab === 'pending' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
     >
       Pending
@@ -109,7 +109,7 @@
     </button>
     <button
       onclick={() => (activeTab = 'all')}
-      class="relative px-4 py-2.5 text-sm font-medium transition-colors
+      class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
         {activeTab === 'all' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
     >
       All
@@ -128,24 +128,26 @@
     </div>
   {:else if displayedApprovals.length === 0}
     <!-- Empty state -->
-    <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-accent/60 p-4 mb-4">
-        <ShieldCheck class="h-10 w-10 text-muted-foreground" />
+    <div class="glass-card p-12 text-center">
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+          <ShieldCheck class="h-5 w-5 text-muted-foreground/40" />
+        </div>
+        <p class="text-sm font-medium text-muted-foreground">
+          {activeTab === 'pending' ? 'No pending approvals' : 'No approvals yet'}
+        </p>
+        <p class="text-xs text-muted-foreground/60">
+          {activeTab === 'pending' ? 'You\'re all caught up.' : 'Approval requests will appear here.'}
+        </p>
       </div>
-      <h3 class="text-lg font-medium text-foreground">
-        {activeTab === 'pending' ? 'No pending approvals' : 'No approvals yet'}
-      </h3>
-      <p class="mt-1 text-sm text-muted-foreground">
-        {activeTab === 'pending' ? 'You\'re all caught up' : 'Approval requests will appear here'}
-      </p>
     </div>
   {:else}
     <!-- Approval cards -->
-    <div class="space-y-3">
+    <div class="glass-card p-0 overflow-hidden">
+    <div class="divide-y divide-border/50">
       {#each displayedApprovals as approval (approval.id)}
-        <a href="/{prefix}/approvals/{approval.id}" class="block group">
-          <Card class="border-border/60 transition-colors hover:bg-accent/40">
-            <CardContent class="py-5">
+        <a href="/{prefix}/approvals/{approval.id}" class="cursor-pointer block group transition-colors duration-150">
+          <div class="px-5 py-5 transition-colors hover:bg-accent/40">
               <div class="flex items-start justify-between gap-4">
                 <div class="min-w-0 flex-1">
                   <div class="flex items-center gap-3 mb-2">
@@ -182,7 +184,7 @@
                   <div class="flex shrink-0 items-center gap-2">
                     <Button
                       size="xs"
-                      onclick={(e) => { e.preventDefault(); handleAction(approval.id, 'approve'); }}
+                      onclick={(e: MouseEvent) => { e.preventDefault(); handleAction(approval.id, 'approve'); }}
                       disabled={actionLoading === approval.id}
                       class="bg-emerald-600 hover:bg-emerald-700"
                     >
@@ -192,7 +194,7 @@
                     <Button
                       variant="destructive"
                       size="xs"
-                      onclick={(e) => { e.preventDefault(); handleAction(approval.id, 'reject'); }}
+                      onclick={(e: MouseEvent) => { e.preventDefault(); handleAction(approval.id, 'reject'); }}
                       disabled={actionLoading === approval.id}
                     >
                       <X class="h-3.5 w-3.5" />
@@ -203,10 +205,10 @@
                   <ChevronRight class="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
                 {/if}
               </div>
-            </CardContent>
-          </Card>
+          </div>
         </a>
       {/each}
+    </div>
     </div>
   {/if}
 </PageLayout>

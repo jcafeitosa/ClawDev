@@ -34,6 +34,7 @@ const baseAgent = {
 
 const mockAgentService = vi.hoisted(() => ({
   getById: vi.fn(),
+  list: vi.fn(),
   create: vi.fn(),
   update: vi.fn(),
   updatePermissions: vi.fn(),
@@ -186,6 +187,7 @@ describe("agent permission routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockAgentService.getById.mockResolvedValue(baseAgent);
+    mockAgentService.list.mockResolvedValue([baseAgent]);
     mockAgentService.getChainOfCommand.mockResolvedValue([]);
     mockAgentService.resolveByReference.mockResolvedValue({ ambiguous: false, agent: baseAgent });
     mockAgentService.create.mockResolvedValue(baseAgent);
@@ -324,6 +326,23 @@ describe("agent permission routes", () => {
     );
     expect(res.body.access.canAssignTasks).toBe(true);
     expect(res.body.access.taskAssignSource).toBe("agent_creator");
+  });
+
+  it("converts postgres uuid errors into a client error when listing agents", async () => {
+    mockAgentService.list.mockRejectedValueOnce({ code: "22P02" });
+
+    const app = createApp({
+      type: "board",
+      userId: "board-user",
+      source: "local_implicit",
+      isInstanceAdmin: true,
+      companyIds: [companyId],
+    });
+
+    const res = await req(app, "GET", "/api/companies/default/agents");
+
+    expect(res.status).toBe(422);
+    expect(res.body).toEqual({ error: "Company id must be a UUID" });
   });
 
   it("allows changing an agent provider through the edit route", async () => {

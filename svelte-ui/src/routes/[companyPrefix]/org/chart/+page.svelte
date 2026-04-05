@@ -5,6 +5,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
+  import { PageLayout } from '$components/layout/index.js';
   import { Download, Upload, Network, ZoomIn, ZoomOut, Maximize } from 'lucide-svelte';
 
   // ── Constants ───────────────────────────────────────────────────
@@ -294,31 +295,27 @@
   }
 </script>
 
-<div class="flex flex-col" style="height: calc(100vh - 160px);">
-  <!-- Header -->
-  <div class="flex items-center justify-between px-6 py-4 border-b border-border">
-    <div class="flex items-center gap-2">
-      <Network class="h-5 w-5 text-muted-foreground" />
-      <h1 class="text-xl font-semibold">Organization Chart</h1>
-    </div>
+<PageLayout title="Organization Chart" fullWidth>
+  {#snippet actions()}
     <div class="flex items-center gap-2">
       <a
         href="/{prefix}/import"
-        class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+        class="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors duration-150 hover:bg-muted"
       >
         <Upload class="h-4 w-4" />
         Import company
       </a>
       <a
         href="/{prefix}/export"
-        class="inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors hover:bg-muted"
+        class="cursor-pointer inline-flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 text-sm font-medium text-foreground transition-colors duration-150 hover:bg-muted"
       >
         <Download class="h-4 w-4" />
         Export company
       </a>
     </div>
-  </div>
+  {/snippet}
 
+  <div class="flex flex-col" style="height: calc(100vh - 220px);">
   <!-- Chart container -->
   {#if loading}
     <div class="flex-1 flex items-center justify-center">
@@ -415,21 +412,21 @@
       <div class="absolute top-4 right-4 flex flex-col gap-1 z-10">
         <button
           onclick={zoomIn}
-          class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-muted transition-colors"
+          class="cursor-pointer flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-muted transition-colors duration-150"
           title="Zoom in"
         >
           <ZoomIn class="h-4 w-4" />
         </button>
         <button
           onclick={zoomOut}
-          class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-muted transition-colors"
+          class="cursor-pointer flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-muted transition-colors duration-150"
           title="Zoom out"
         >
           <ZoomOut class="h-4 w-4" />
         </button>
         <button
           onclick={fitToView}
-          class="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-muted transition-colors"
+          class="cursor-pointer flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-sm hover:bg-muted transition-colors duration-150"
           title="Fit to view"
         >
           <Maximize class="h-4 w-4" />
@@ -442,4 +439,5 @@
       </div>
     </div>
   {/if}
-</div>
+  </div>
+</PageLayout>

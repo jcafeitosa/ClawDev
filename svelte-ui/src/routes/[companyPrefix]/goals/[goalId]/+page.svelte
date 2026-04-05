@@ -5,6 +5,7 @@
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
+  import { PageLayout } from "$components/layout/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
   import { Pencil, Trash2, X } from "lucide-svelte";
@@ -211,80 +212,13 @@
     </EmptyState>
   </div>
 {:else if goal}
-  <div class="p-6">
-    <!-- Header -->
-    <div class="flex items-start justify-between gap-4 mb-6">
-      <div class="min-w-0">
-        {#if editing}
-          <!-- Edit form -->
-          <div class="space-y-3 max-w-lg">
-            <div>
-              <label for="edit-title" class="block text-xs font-medium text-zinc-400 mb-1">Title</label>
-              <input
-                id="edit-title"
-                type="text"
-                bind:value={editTitle}
-                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label for="edit-description" class="block text-xs font-medium text-zinc-400 mb-1">Description</label>
-              <textarea
-                id="edit-description"
-                bind:value={editDescription}
-                rows="3"
-                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
-              ></textarea>
-            </div>
-            <div class="grid grid-cols-2 gap-3">
-              <div>
-                <label for="edit-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
-                <select
-                  id="edit-status"
-                  bind:value={editStatus}
-                  class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  {#each GOAL_STATUSES as s}
-                    <option value={s} class="capitalize">{s}</option>
-                  {/each}
-                </select>
-              </div>
-              <div>
-                <label for="edit-level" class="block text-xs font-medium text-zinc-400 mb-1">Level</label>
-                <select
-                  id="edit-level"
-                  bind:value={editLevel}
-                  class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                >
-                  {#each GOAL_LEVELS as l}
-                    <option value={l} class="capitalize">{l}</option>
-                  {/each}
-                </select>
-              </div>
-            </div>
-            <div class="flex items-center gap-2 pt-1">
-              <Button size="sm" onclick={saveGoal} disabled={saving || !editTitle.trim()}>
-                {saving ? "Saving..." : "Save"}
-              </Button>
-              <Button variant="ghost" size="sm" onclick={cancelEditing} disabled={saving}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        {:else}
-          <div class="flex items-center gap-3 mb-1">
-            <h1 class="text-xl font-semibold truncate">{goal.title}</h1>
-            <StatusBadge status={goal.status} />
-            {#if goal.level}
-              <Badge variant="outline" class="capitalize">{goal.level}</Badge>
-            {/if}
-          </div>
-          {#if goal.description}
-            <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{goal.description}</p>
-          {/if}
+  <PageLayout title={goal.title} fullWidth>
+    {#snippet actions()}
+      <div class="flex items-center gap-2">
+        <StatusBadge status={goal.status} />
+        {#if goal.level}
+          <Badge variant="outline" class="capitalize">{goal.level}</Badge>
         {/if}
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
         {#if !editing}
           <Button variant="outline" size="sm" onclick={startEditing}>
             <Pencil class="size-3.5 mr-1.5" />
@@ -310,7 +244,65 @@
           Back
         </Button>
       </div>
-    </div>
+    {/snippet}
+
+    {#if editing}
+      <!-- Edit form -->
+      <div class="space-y-3 max-w-lg">
+        <div>
+          <label for="edit-title" class="block text-xs font-medium text-zinc-400 mb-1">Title</label>
+          <input
+            id="edit-title"
+            type="text"
+            bind:value={editTitle}
+            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <div>
+          <label for="edit-description" class="block text-xs font-medium text-zinc-400 mb-1">Description</label>
+          <textarea
+            id="edit-description"
+            bind:value={editDescription}
+            rows="3"
+            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary resize-y"
+          ></textarea>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="edit-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+            <select
+              id="edit-status"
+              bind:value={editStatus}
+              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {#each GOAL_STATUSES as s}
+                <option value={s} class="capitalize">{s}</option>
+              {/each}
+            </select>
+          </div>
+          <div>
+            <label for="edit-level" class="block text-xs font-medium text-zinc-400 mb-1">Level</label>
+            <select
+              id="edit-level"
+              bind:value={editLevel}
+              class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              {#each GOAL_LEVELS as l}
+                <option value={l} class="capitalize">{l}</option>
+              {/each}
+            </select>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <Button size="sm" onclick={saveGoal} disabled={saving || !editTitle.trim()}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+          <Button variant="ghost" size="sm" onclick={cancelEditing} disabled={saving}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    {/if}
 
     <!-- Main content + sidebar -->
     <div class="flex flex-col lg:flex-row gap-6">
@@ -489,5 +481,5 @@
         </PropertyRow>
       </PropertiesPanel>
     </div>
-  </div>
+  </PageLayout>
 {/if}

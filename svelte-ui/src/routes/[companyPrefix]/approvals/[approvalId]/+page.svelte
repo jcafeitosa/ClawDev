@@ -3,6 +3,7 @@
   import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
+  import { PageLayout } from "$components/layout/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea } from "$components/ui/index.js";
   import CommentThread from "$lib/components/comment-thread.svelte";
@@ -255,25 +256,16 @@
     </EmptyState>
   </div>
 {:else if approval}
-  <div class="p-6">
-    <!-- Header -->
-    <div class="flex items-start justify-between gap-4 mb-6">
-      <div class="min-w-0">
-        <div class="flex items-center gap-3 mb-1">
-          <h1 class="text-xl font-semibold truncate">{approval.title ?? approvalTypeLabel(approval.type)}</h1>
-          <StatusBadge status={approval.status} />
-          <Badge variant="outline" class="capitalize">{approvalTypeLabel(approval.type)}</Badge>
-        </div>
-        {#if approval.description}
-          <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{approval.description}</p>
-        {/if}
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
+  <PageLayout title={approval.title ?? approvalTypeLabel(approval.type)} description={approval.description ?? undefined} fullWidth>
+    {#snippet actions()}
+      <div class="flex items-center gap-2">
+        <StatusBadge status={approval.status} />
+        <Badge variant="outline" class="capitalize">{approvalTypeLabel(approval.type)}</Badge>
         <Button variant="outline" size="sm" href="/{$page.params.companyPrefix}/approvals">
           Back
         </Button>
       </div>
-    </div>
+    {/snippet}
 
     <!-- Action bar (approve/reject) -->
     {#if isPending}
@@ -474,5 +466,5 @@
         </PropertyRow>
       </PropertiesPanel>
     </div>
-  </div>
+  </PageLayout>
 {/if}

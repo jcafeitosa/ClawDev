@@ -693,6 +693,10 @@ export function agentService(db: Db) {
         return { agent: null, ambiguous: false } as const;
       }
 
+      if (!isUuidLike(companyId)) {
+        return { agent: null, ambiguous: false } as const;
+      }
+
       if (isUuidLike(raw)) {
         const byId = await getById(raw);
         if (!byId || byId.companyId !== companyId) {

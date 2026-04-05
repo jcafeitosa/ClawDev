@@ -25,7 +25,7 @@
   let pendingAction = $state<string | null>(null);
   let confirmDialog = $state<{ userId: string; action: 'promote' | 'demote'; userName: string } | null>(null);
 
-  const tabs = [
+  const settingsTabs = [
     { href: '/settings/general', label: 'General' },
     { href: '/settings/experimental', label: 'Experimental' },
     { href: '/settings/heartbeats', label: 'Heartbeats' },
@@ -108,7 +108,7 @@
 <PageLayout title="Users" description="Manage instance-level user roles and admin access.">
   {#snippet tabs()}
     <div class="flex gap-3 border-b border-border pb-3">
-      {#each tabs as tab}
+      {#each settingsTabs as tab}
         <a
           href={tab.href}
           class="text-sm transition-colors {tab.href === '/settings/users'

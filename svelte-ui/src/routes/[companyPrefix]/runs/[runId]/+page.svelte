@@ -5,6 +5,7 @@
   import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
+  import { PageLayout } from '$components/layout/index.js';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import TimeAgo from '$lib/components/time-ago.svelte';
   import PageSkeleton from '$lib/components/page-skeleton.svelte';
@@ -560,6 +561,7 @@
   {/if}
 {/snippet}
 
+<PageLayout title={run?.agentName ? `Run — ${run.agentName}` : `Run ${$page.params.runId.slice(0, 8)}`} fullWidth>
 <div class="flex min-h-screen">
   <!-- ====================================================== -->
   <!-- LEFT SIDEBAR: Runs list -->
@@ -1029,3 +1031,4 @@
   {/if}
   </div>
 </div>
+</PageLayout>

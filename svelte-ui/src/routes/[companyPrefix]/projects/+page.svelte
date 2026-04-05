@@ -115,16 +115,18 @@
     </div>
   {:else if projects.length === 0}
     <!-- Empty state -->
-    <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-accent/60 p-4 mb-4">
-        <FolderOpen class="h-10 w-10 text-muted-foreground" />
+    <div class="glass-card p-12 text-center">
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+          <FolderKanban class="h-5 w-5 text-muted-foreground/40" />
+        </div>
+        <p class="text-sm font-medium text-muted-foreground">No projects yet</p>
+        <p class="text-xs text-muted-foreground/60">Create your first project to get started.</p>
+        <Button class="mt-2" onclick={() => (showCreate = true)}>
+          <Plus class="h-4 w-4" />
+          New Project
+        </Button>
       </div>
-      <h3 class="text-lg font-medium text-foreground">No projects yet</h3>
-      <p class="mt-1 text-sm text-muted-foreground">Create your first project to get started</p>
-      <Button class="mt-4" onclick={() => (showCreate = true)}>
-        <Plus class="h-4 w-4" />
-        New Project
-      </Button>
     </div>
   {:else}
     <!-- Project cards grid -->
@@ -132,7 +134,7 @@
       {#each projects as project (project.id)}
         <a
           href="/{prefix}/projects/{project.id}"
-          class="group block no-underline"
+          class="cursor-pointer group block no-underline transition-colors duration-150"
         >
           <Card class="transition-colors hover:bg-accent/40 hover:border-white/[0.12]">
             <CardContent class="pt-5">

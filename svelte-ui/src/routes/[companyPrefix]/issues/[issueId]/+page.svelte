@@ -8,7 +8,7 @@
   import { toastStore } from "$stores/toast.svelte.js";
   import { PluginLauncherOutlet, PluginRenderer } from "$lib/components/plugins/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
-  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea, Input, Label } from "$components/ui/index.js";
+  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea, Input, Label, Alert } from "$components/ui/index.js";
   import { PageLayout } from "$components/layout/index.js";
   import InlineEditor from "$lib/components/inline-editor.svelte";
   import MarkdownBody from "$lib/components/markdown-body.svelte";
@@ -1313,15 +1313,16 @@
       <LiveRunWidget {issueId} companyId={companyId} companyPrefix={prefix} />
     {/if}
 
+    {#snippet fallback()}
+      <div class="text-sm text-muted-foreground">No issue launchers installed.</div>
+    {/snippet}
+
     <Card class="mt-4 mb-6 rounded-xl border-border/60 backdrop-blur-sm">
       <CardHeader>
         <CardTitle class="text-sm">Plugin launchers</CardTitle>
         <p class="text-xs text-muted-foreground">Contextual issue actions exposed by installed plugins.</p>
       </CardHeader>
       <CardContent>
-        {#snippet noIssueLaunchers()}
-          <div class="text-sm text-muted-foreground">No issue launchers installed.</div>
-        {/snippet}
         <PluginLauncherOutlet
           placementZones={["detailTab", "taskDetailView", "toolbarButton", "contextMenuItem", "commentContextMenuItem"]}
           context={{
@@ -1334,7 +1335,7 @@
             userId: null,
           }}
           itemClassName="flex flex-wrap gap-2"
-          fallback={noIssueLaunchers}
+          fallback={fallback}
         />
       </CardContent>
     </Card>

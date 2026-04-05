@@ -9,7 +9,7 @@
   import {
     Search, ChevronDown, ChevronRight, Trash2, RefreshCw,
     Plus, FileCode2, FileText, Folder, FolderOpen, Eye, Code2,
-    Boxes, Shield, ShieldCheck, Wrench
+    Boxes, Shield, ShieldCheck, Wrench, Puzzle
   } from 'lucide-svelte';
   import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
@@ -371,13 +371,13 @@
             onclick={() => scanProjects()}
             disabled={scanning}
             title="Scan project workspaces for skills"
-            class="inline-flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors disabled:opacity-50"
+            class="cursor-pointer inline-flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors duration-150 disabled:opacity-50"
           >
             <RefreshCw class="w-4 h-4 {scanning ? 'animate-spin' : ''}" />
           </button>
           <button
             onclick={() => { showCreateForm = !showCreateForm; }}
-            class="inline-flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+            class="cursor-pointer inline-flex items-center justify-center w-8 h-8 rounded-md text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors duration-150"
           >
             <Plus class="w-4 h-4" />
           </button>
@@ -407,7 +407,7 @@
         <button
           onclick={() => handleImport()}
           disabled={importing}
-          class="shrink-0 text-sm text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 disabled:opacity-50"
+          class="cursor-pointer shrink-0 text-sm text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-zinc-100 transition-colors duration-150 disabled:opacity-50"
         >
           {importing ? '...' : 'Add'}
         </button>
@@ -435,14 +435,14 @@
         <div class="flex items-center justify-end gap-2">
           <button
             onclick={() => { showCreateForm = false; }}
-            class="px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+            class="cursor-pointer px-3 py-1.5 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300 transition-colors duration-150"
           >
             Cancel
           </button>
           <button
             onclick={() => handleCreate()}
             disabled={creating || !createName.trim()}
-            class="px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 disabled:opacity-50"
+            class="cursor-pointer px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-800 dark:hover:bg-zinc-200 transition-colors duration-150 disabled:opacity-50"
           >
             {creating ? 'Creating...' : 'Create skill'}
           </button>
@@ -459,8 +459,18 @@
           {/each}
         </div>
       {:else if filteredSkills.length === 0}
-        <div class="px-4 py-6 text-sm text-zinc-500 dark:text-zinc-400">
-          {searchQuery.trim() ? 'No skills match this filter.' : 'No skills configured.'}
+        <div class="mx-4 my-6 glass-card p-8 text-center">
+          <div class="flex flex-col items-center gap-3">
+            <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+              <Puzzle class="h-5 w-5 text-muted-foreground/40" />
+            </div>
+            <p class="text-sm font-medium text-muted-foreground">
+              {searchQuery.trim() ? 'No skills match this filter' : 'No skills installed'}
+            </p>
+            <p class="text-xs text-muted-foreground/60">
+              {searchQuery.trim() ? 'Try a different search term.' : 'Import or create a skill to get started.'}
+            </p>
+          </div>
         </div>
       {:else}
         {#each filteredSkills as skill (skill.id)}
@@ -475,7 +485,7 @@
             >
               <button
                 onclick={() => selectSkill(skill.id)}
-                class="flex min-w-0 items-center gap-2 self-stretch pr-2 text-left"
+                class="cursor-pointer flex min-w-0 items-center gap-2 self-stretch pr-2 text-left transition-colors duration-150"
               >
                 <span class="flex h-4 w-4 shrink-0 items-center justify-center opacity-75">
                   {#if skill.source === 'trusted'}
@@ -492,7 +502,7 @@
               </button>
               <button
                 onclick={() => toggleSkillExpand(skill.id)}
-                class="flex h-9 w-9 shrink-0 items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-700 dark:hover:text-zinc-200 opacity-80 group-hover:opacity-100 transition-all"
+                class="cursor-pointer flex h-9 w-9 shrink-0 items-center justify-center rounded-sm text-zinc-400 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-700 dark:hover:text-zinc-200 opacity-80 group-hover:opacity-100 transition-all duration-150"
                 aria-label={isExpanded ? `Collapse ${skill.name}` : `Expand ${skill.name}`}
               >
                 {#if isExpanded}
@@ -517,7 +527,7 @@
                           >
                             <button
                               onclick={() => node.path && toggleDir(skill.id, node.path)}
-                              class="flex min-w-0 items-center gap-2 py-1 text-left"
+                              class="cursor-pointer flex min-w-0 items-center gap-2 py-1 text-left transition-colors duration-150"
                               style="padding-left: {16 + depth * 24}px"
                             >
                               <span class="flex h-4 w-4 shrink-0 items-center justify-center">
@@ -531,7 +541,7 @@
                             </button>
                             <button
                               onclick={() => node.path && toggleDir(skill.id, node.path)}
-                              class="flex h-9 w-9 items-center justify-center rounded-sm text-zinc-400 opacity-70 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-700 dark:hover:text-zinc-200 group-hover/row:opacity-100 transition-all"
+                              class="cursor-pointer flex h-9 w-9 items-center justify-center rounded-sm text-zinc-400 opacity-70 hover:bg-zinc-200 dark:hover:bg-zinc-700 hover:text-zinc-700 dark:hover:text-zinc-200 group-hover/row:opacity-100 transition-all duration-150"
                             >
                               {#if dirExpanded}
                                 <ChevronDown class="w-3.5 h-3.5" />
@@ -548,7 +558,7 @@
                         {@const isFileSelected = selectedSkillId === skill.id && selectedFilePath === node.path}
                         <button
                           onclick={() => node.path && selectFile(skill.id, node.path)}
-                          class="flex w-full items-center gap-2 pr-3 text-left text-sm min-h-9 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/30 {isFileSelected ? 'text-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400'} hover:text-zinc-700 dark:hover:text-zinc-200"
+                          class="cursor-pointer flex w-full items-center gap-2 pr-3 text-left text-sm min-h-9 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/30 {isFileSelected ? 'text-zinc-900 dark:text-zinc-50' : 'text-zinc-500 dark:text-zinc-400'} hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors duration-150"
                           style="padding-left: {16 + depth * 24}px"
                         >
                           <span class="flex h-4 w-4 shrink-0 items-center justify-center">
@@ -568,7 +578,7 @@
                   <!-- Fallback: show SKILL.md link if no inventory -->
                   <button
                     onclick={() => selectFile(skill.id, 'SKILL.md')}
-                    class="flex w-full items-center gap-2 pr-3 text-left text-sm min-h-9 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/30 hover:text-zinc-700 dark:hover:text-zinc-200"
+                    class="cursor-pointer flex w-full items-center gap-2 pr-3 text-left text-sm min-h-9 text-zinc-500 dark:text-zinc-400 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/30 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors duration-150"
                     style="padding-left: 40px"
                   >
                     <span class="flex h-4 w-4 shrink-0 items-center justify-center">
@@ -680,20 +690,20 @@
               <button
                 onclick={() => deleteSkill(skill.id)}
                 disabled={deletingId === skill.id}
-                class="inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 transition-colors disabled:opacity-50"
+                class="cursor-pointer inline-flex items-center gap-1.5 rounded-md bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white hover:bg-red-700 transition-colors duration-150 disabled:opacity-50"
               >
                 {deletingId === skill.id ? 'Deleting...' : 'Confirm Delete'}
               </button>
               <button
                 onclick={() => { confirmDeleteId = null; }}
-                class="inline-flex items-center rounded-md border border-zinc-200 dark:border-zinc-700 px-2.5 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors"
+                class="cursor-pointer inline-flex items-center rounded-md border border-zinc-200 dark:border-zinc-700 px-2.5 py-1.5 text-xs font-medium text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors duration-150"
               >
                 Cancel
               </button>
             {:else}
               <button
                 onclick={() => { confirmDeleteId = skill.id; }}
-                class="inline-flex items-center gap-1.5 rounded-md border border-red-200 dark:border-red-800 px-2.5 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                class="cursor-pointer inline-flex items-center gap-1.5 rounded-md border border-red-200 dark:border-red-800 px-2.5 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors duration-150"
               >
                 <Trash2 class="w-3.5 h-3.5" />
                 Delete
@@ -714,14 +724,14 @@
               <div class="flex items-center border border-zinc-200 dark:border-zinc-700 rounded-sm">
                 <button
                   onclick={() => { viewMode = 'view'; }}
-                  class="px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors {viewMode === 'view' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}"
+                  class="cursor-pointer px-3 py-1.5 text-sm flex items-center gap-1.5 transition-colors duration-150 {viewMode === 'view' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}"
                 >
                   <Eye class="w-3.5 h-3.5" />
                   View
                 </button>
                 <button
                   onclick={() => { viewMode = 'code'; }}
-                  class="px-3 py-1.5 text-sm flex items-center gap-1.5 border-l border-zinc-200 dark:border-zinc-700 transition-colors {viewMode === 'code' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}"
+                  class="cursor-pointer px-3 py-1.5 text-sm flex items-center gap-1.5 border-l border-zinc-200 dark:border-zinc-700 transition-colors duration-150 {viewMode === 'code' ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-400 dark:text-zinc-500'}"
                 >
                   <Code2 class="w-3.5 h-3.5" />
                   Code

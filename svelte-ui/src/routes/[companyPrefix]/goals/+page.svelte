@@ -117,27 +117,28 @@
     </div>
   {:else if goals.length === 0}
     <!-- Empty state -->
-    <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-accent/60 p-4 mb-4">
-        <Target class="h-10 w-10 text-muted-foreground" />
+    <div class="glass-card p-12 text-center">
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+          <Target class="h-5 w-5 text-muted-foreground/40" />
+        </div>
+        <p class="text-sm font-medium text-muted-foreground">No goals yet</p>
+        <p class="text-xs text-muted-foreground/60">Create your first goal to get started.</p>
+        <Button onclick={() => (showCreate = true)} class="mt-2">
+          <Plus class="h-4 w-4" />
+          New Goal
+        </Button>
       </div>
-      <h3 class="text-lg font-medium text-foreground">No goals defined</h3>
-      <p class="mt-1 text-sm text-muted-foreground">Set goals to align your team's efforts</p>
-      <Button onclick={() => (showCreate = true)} class="mt-4">
-        <Plus class="h-4 w-4" />
-        New Goal
-      </Button>
     </div>
   {:else}
     <!-- Goals list -->
-    <div class="space-y-3">
+    <div class="glass-card p-0 overflow-hidden">
+    <div class="divide-y divide-border/50">
       {#each goals as goal (goal.id)}
         <a
           href="/{prefix}/goals/{goal.id}"
-          class="group block"
+          class="cursor-pointer group flex items-center gap-4 px-5 py-4 transition-colors duration-150 hover:bg-accent/40"
         >
-          <Card class="border-border/60 transition-all hover:bg-accent/40 hover:border-border">
-            <CardContent class="flex items-center gap-4 py-4">
               <!-- Icon -->
               <div class="shrink-0 rounded-lg bg-orange-500/10 p-2">
                 <TrendingUp class="h-5 w-5 text-orange-400" />
@@ -179,10 +180,9 @@
 
               <!-- Arrow -->
               <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
-            </CardContent>
-          </Card>
         </a>
       {/each}
+    </div>
     </div>
   {/if}
 </PageLayout>

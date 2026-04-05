@@ -7,6 +7,7 @@
   import { pluginUiContributionsStore } from "$stores/plugin-ui-contributions.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
   import { PluginLauncherOutlet, PluginRenderer } from "$lib/components/plugins/index.js";
+  import { PageLayout } from "$components/layout/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
   import { Pencil, Trash2, Plus, X } from "lucide-svelte";
@@ -578,71 +579,15 @@
     </EmptyState>
   </div>
 {:else if project}
-  <div class="p-6">
-    <!-- Header -->
-    <div class="flex items-start justify-between gap-4 mb-6">
-      <div class="min-w-0">
-        {#if editing}
-          <!-- Edit form -->
-          <div class="space-y-3 max-w-lg">
-            <div>
-              <label for="edit-name" class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
-              <input
-                id="edit-name"
-                type="text"
-                bind:value={editName}
-                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div>
-              <label for="edit-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
-              <select
-                id="edit-status"
-                bind:value={editStatus}
-                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              >
-                {#each PROJECT_STATUSES as s}
-                  <option value={s} class="capitalize">{s}</option>
-                {/each}
-              </select>
-            </div>
-            <div>
-              <label for="edit-target-date" class="block text-xs font-medium text-zinc-400 mb-1">Target Date</label>
-              <input
-                id="edit-target-date"
-                type="date"
-                bind:value={editTargetDate}
-                class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-              />
-            </div>
-            <div class="flex items-center gap-2 pt-1">
-              <Button size="sm" onclick={saveProject} disabled={saving || !editName.trim()}>
-                {saving ? "Saving..." : "Save"}
-              </Button>
-              <Button variant="ghost" size="sm" onclick={cancelEditing} disabled={saving}>
-                Cancel
-              </Button>
-            </div>
-          </div>
-        {:else}
-          <div class="flex items-center gap-3 mb-1">
-            <h1 class="text-xl font-semibold truncate">{project.name}</h1>
-            {#if project.status}
-              <StatusBadge status={project.status} />
-            {/if}
-            {#if project.archivedAt}
-              <Badge variant="secondary">Archived</Badge>
-            {/if}
-          </div>
-          {#if project.shortname}
-            <p class="text-xs font-mono text-zinc-500 dark:text-zinc-400">{project.shortname}</p>
-          {/if}
-          {#if project.description}
-            <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{project.description}</p>
-          {/if}
+  <PageLayout title={project.name} description={project.description ?? undefined} fullWidth>
+    {#snippet actions()}
+      <div class="flex items-center gap-2">
+        {#if project.status}
+          <StatusBadge status={project.status} />
         {/if}
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
+        {#if project.archivedAt}
+          <Badge variant="secondary">Archived</Badge>
+        {/if}
         {#if !editing}
           <Button variant="outline" size="sm" onclick={startEditing}>
             <Pencil class="size-3.5 mr-1.5" />
@@ -668,7 +613,51 @@
           Back
         </Button>
       </div>
-    </div>
+    {/snippet}
+
+    {#if editing}
+      <!-- Edit form -->
+      <div class="space-y-3 max-w-lg">
+        <div>
+          <label for="edit-name" class="block text-xs font-medium text-zinc-400 mb-1">Name</label>
+          <input
+            id="edit-name"
+            type="text"
+            bind:value={editName}
+            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <div>
+          <label for="edit-status" class="block text-xs font-medium text-zinc-400 mb-1">Status</label>
+          <select
+            id="edit-status"
+            bind:value={editStatus}
+            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 capitalize focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            {#each PROJECT_STATUSES as s}
+              <option value={s} class="capitalize">{s}</option>
+            {/each}
+          </select>
+        </div>
+        <div>
+          <label for="edit-target-date" class="block text-xs font-medium text-zinc-400 mb-1">Target Date</label>
+          <input
+            id="edit-target-date"
+            type="date"
+            bind:value={editTargetDate}
+            class="w-full rounded-md border border-zinc-700 bg-zinc-900 px-3 py-1.5 text-sm text-zinc-100 focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+        <div class="flex items-center gap-2 pt-1">
+          <Button size="sm" onclick={saveProject} disabled={saving || !editName.trim()}>
+            {saving ? "Saving..." : "Save"}
+          </Button>
+          <Button variant="ghost" size="sm" onclick={cancelEditing} disabled={saving}>
+            Cancel
+          </Button>
+        </div>
+      </div>
+    {/if}
 
     <div class="mb-6 rounded-xl border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-950">
       <div class="mb-3">
@@ -1165,5 +1154,5 @@
         </PropertyRow>
       </PropertiesPanel>
     </div>
-  </div>
+  </PageLayout>
 {/if}

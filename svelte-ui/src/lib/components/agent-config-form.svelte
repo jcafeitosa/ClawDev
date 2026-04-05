@@ -30,6 +30,7 @@
     companyId?: string | null;
     config: Record<string, any>;
     mode: "create" | "edit";
+    showModelControls?: boolean;
   }
 
   interface AdapterModel {
@@ -41,7 +42,7 @@
     probedAt?: string;
   }
 
-  let { adapterType, companyId = null, config = $bindable({}), mode }: Props = $props();
+  let { adapterType, companyId = null, config = $bindable({}), mode, showModelControls = true }: Props = $props();
 
   // ---------------------------------------------------------------------------
   // Adapter metadata
@@ -78,6 +79,21 @@
     "process",
     "http",
   ]);
+  const MODEL_FILTERS: Partial<Record<string, { providers?: string[]; idPrefix?: string }>> = {
+    claude_local: { providers: ["anthropic"] },
+    codex_local: { providers: ["openai"] },
+    gemini_local: { providers: ["google"] },
+    opencode_local: { idPrefix: "opencode/" },
+  };
+  const MODEL_PROVIDER_LABELS: Record<string, string> = {
+    claude_local: "Anthropic",
+    codex_local: "OpenAI",
+    gemini_local: "Google",
+    opencode_local: "OpenCode",
+    copilot_local: "Copilot",
+    cursor: "Cursor",
+    pi_local: "Pi",
+  };
   const isModelDiscoveryAdapter = $derived(Boolean(companyId) && MODEL_DISCOVERY_ADAPTERS.has(adapterType));
   const isEnvironmentTestableAdapter = $derived(Boolean(companyId) && TESTABLE_ADAPTERS.has(adapterType));
 
@@ -131,6 +147,25 @@
   function toggleField(key: string): void {
     config[key] = !config[key];
     config = config;
+  }
+
+  function filterAdapterModels(models: AdapterModel[]): AdapterModel[] {
+    const filter = MODEL_FILTERS[adapterType];
+    if (!filter) return models;
+    return models.filter((model) => {
+      if (filter.providers && filter.providers.length > 0) {
+        const provider = (model.provider ?? "").toLowerCase();
+        if (!filter.providers.includes(provider)) return false;
+      }
+      if (filter.idPrefix && !model.id.toLowerCase().startsWith(filter.idPrefix.toLowerCase())) {
+        return false;
+      }
+      return true;
+    });
+  }
+
+  function getAdapterModelSourceLabel() {
+    return MODEL_PROVIDER_LABELS[adapterType] ?? adapterType;
   }
 
   // Initialize defaults when adapter changes
@@ -207,7 +242,7 @@
   }
 
   async function loadAdapterModels(): Promise<void> {
-    if (!companyId || !isModelDiscoveryAdapter) {
+    if (!showModelControls || !companyId || !isModelDiscoveryAdapter) {
       adapterModels = [];
       adapterModelsError = null;
       adapterModelsLoading = false;
@@ -222,7 +257,8 @@
         throw new Error(body?.message ?? `Failed to load ${adapterType} models (${res.status})`);
       }
       const data = await res.json();
-      adapterModels = Array.isArray(data) ? data : data.models ?? [];
+      const rawModels = Array.isArray(data) ? data : data.models ?? [];
+      adapterModels = filterAdapterModels(Array.isArray(rawModels) ? rawModels : []);
     } catch (err) {
       adapterModels = [];
       adapterModelsError = err instanceof Error ? err.message : "Failed to load adapter models";
@@ -232,7 +268,7 @@
   }
 
   async function detectAdapterModel(): Promise<void> {
-    if (!companyId || !isModelDiscoveryAdapter) return;
+    if (!showModelControls || !companyId || !isModelDiscoveryAdapter) return;
     adapterModelsLoading = true;
     adapterModelsError = null;
     try {
@@ -305,6 +341,7 @@
     void adapterType;
     void isModelDiscoveryAdapter;
     void isEnvironmentTestableAdapter;
+    void showModelControls;
     adapterEnvResult = null;
     adapterEnvError = null;
     if (!companyId) {
@@ -313,7 +350,7 @@
       adapterModelsLoading = false;
       return;
     }
-    if (isModelDiscoveryAdapter) {
+    if (showModelControls && isModelDiscoveryAdapter) {
       void loadAdapterModels();
     } else {
       adapterModels = [];
@@ -349,31 +386,33 @@
     <div class="space-y-5">
       <!-- claude_local -->
       {#if adapterType === "claude_local"}
-        <div>
-          <label for="cfg-model" class={labelCls}>Model</label>
-          <div class="relative mt-1.5">
-            <select
-              id="cfg-model"
-              class={selectCls}
-              value={normalizeClaudeModel(config.model)}
-              onchange={(e) => setField("model", e.currentTarget.value)}
-            >
-              {#if adapterModels.length > 0}
-                {#each adapterModels as m (m.id)}
-                  <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
-                {/each}
-              {:else}
-                <option value="claude-opus-4-6">Claude Opus 4.6</option>
-                <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
-                <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
-              {/if}
-            </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        {#if showModelControls}
+          <div>
+            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="relative mt-1.5">
+              <select
+                id="cfg-model"
+                class={selectCls}
+                value={normalizeClaudeModel(config.model)}
+                onchange={(e) => setField("model", e.currentTarget.value)}
+              >
+                {#if adapterModels.length > 0}
+                  {#each adapterModels as m (m.id)}
+                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                  {/each}
+                {:else}
+                  <option value="claude-opus-4-6">Claude Opus 4.6</option>
+                  <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                  <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                {/if}
+              </select>
+              <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+            <p class={helpCls}>
+              {#if adapterModelsLoading}Loading models...{:else}The Anthropic model to use. {adapterModels.length} models available.{/if}
+            </p>
           </div>
-          <p class={helpCls}>
-            {#if adapterModelsLoading}Loading models...{:else}The Anthropic model to use. {adapterModels.length} models available.{/if}
-          </p>
-        </div>
+        {/if}
 
         <div>
           <label for="cfg-effort" class={labelCls}>Effort</label>
@@ -409,42 +448,72 @@
 
       <!-- codex_local -->
       {:else if adapterType === "codex_local"}
-        <div>
-          <label for="cfg-model" class={labelCls}>Model</label>
-          <div class="relative mt-1.5">
-            <select
-              id="cfg-model"
-              class={selectCls}
-              value={config.model ?? ""}
-              onchange={(e) => setField("model", e.currentTarget.value)}
-            >
-              {#if adapterModels.length > 0}
-                {#each adapterModels as m (m.id)}
-                  <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
-                {/each}
-              {:else}
-                <option value="">Select model...</option>
-              {/if}
-            </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        {#if showModelControls}
+          <div>
+            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="relative mt-1.5">
+              <select
+                id="cfg-model"
+                class={selectCls}
+                value={config.model ?? ""}
+                onchange={(e) => setField("model", e.currentTarget.value)}
+              >
+                {#if adapterModels.length > 0}
+                  {#each adapterModels as m (m.id)}
+                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                  {/each}
+                {:else}
+                  <option value="">Select model...</option>
+                {/if}
+              </select>
+              <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+            <p class={helpCls}>{adapterModelsLoading ? 'Loading models...' : `${adapterModels.length} models available.`}</p>
           </div>
-          <p class={helpCls}>{adapterModelsLoading ? 'Loading models...' : `${adapterModels.length} models available.`}</p>
-        </div>
+        {/if}
 
       <!-- copilot_local -->
       {:else if adapterType === "copilot_local"}
-        <div>
-          <label for="cfg-model" class={labelCls}>Model</label>
-          <input
-            id="cfg-model"
-            type="text"
-            class="{inputCls} mt-1.5"
-            value={config.model ?? ""}
-            oninput={(e) => setField("model", e.currentTarget.value)}
-            placeholder="gpt-5.4-mini"
-          />
-          <p class={helpCls}>Model id with optional effort suffix. Leave empty to use Copilot defaults.</p>
-        </div>
+        {#if showModelControls}
+          <div>
+            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="relative mt-1.5">
+              {#if adapterModels.length > 0}
+                <select
+                  id="cfg-model"
+                  class={selectCls}
+                  value={config.model ?? ""}
+                  onchange={(e) => setField("model", e.currentTarget.value)}
+                >
+                  {#each adapterModels as m (m.id)}
+                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ""}</option>
+                  {/each}
+                </select>
+              {:else}
+                <input
+                  id="cfg-model"
+                  type="text"
+                  class={inputCls}
+                  value={config.model ?? ""}
+                  oninput={(e) => setField("model", e.currentTarget.value)}
+                  placeholder="gpt-5.4-mini"
+                />
+              {/if}
+              {#if adapterModels.length > 0}
+                <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              {/if}
+            </div>
+            <p class={helpCls}>
+              {#if adapterModelsLoading}
+                Loading Copilot models...
+              {:else if adapterModels.length > 0}
+                Select from the models exposed by the Copilot CLI.
+              {:else}
+                Model id with optional effort suffix. Leave empty to use Copilot defaults.
+              {/if}
+            </p>
+          </div>
+        {/if}
 
         <div>
           <label for="cfg-effort" class={labelCls}>Effort</label>
@@ -531,18 +600,20 @@
 
       <!-- cursor -->
       {:else if adapterType === "cursor"}
-        <div>
-          <label for="cfg-model" class={labelCls}>Model</label>
-          <input
-            id="cfg-model"
-            type="text"
-            class="{inputCls} mt-1.5"
-            value={config.model ?? "auto"}
-            oninput={(e) => setField("model", e.currentTarget.value)}
-            placeholder="auto"
-          />
-          <p class={helpCls}>Model identifier. Use "auto" for Cursor's default selection.</p>
-        </div>
+        {#if showModelControls}
+          <div>
+            <label for="cfg-model" class={labelCls}>Model</label>
+            <input
+              id="cfg-model"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.model ?? "auto"}
+              oninput={(e) => setField("model", e.currentTarget.value)}
+              placeholder="auto"
+            />
+            <p class={helpCls}>Model identifier. Use "auto" for Cursor's default selection.</p>
+          </div>
+        {/if}
 
         <div>
           <label for="cfg-mode" class={labelCls}>Mode</label>
@@ -563,27 +634,29 @@
 
       <!-- gemini_local -->
       {:else if adapterType === "gemini_local"}
-        <div>
-          <label for="cfg-model" class={labelCls}>Model</label>
-          <div class="relative mt-1.5">
-            <select
-              id="cfg-model"
-              class={selectCls}
-              value={config.model ?? ""}
-              onchange={(e) => setField("model", e.currentTarget.value)}
-            >
-              {#if adapterModels.length > 0}
-                {#each adapterModels as m (m.id)}
-                  <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
-                {/each}
-              {:else}
-                <option value="">Select model...</option>
-              {/if}
-            </select>
-            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+        {#if showModelControls}
+          <div>
+            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="relative mt-1.5">
+              <select
+                id="cfg-model"
+                class={selectCls}
+                value={config.model ?? ""}
+                onchange={(e) => setField("model", e.currentTarget.value)}
+              >
+                {#if adapterModels.length > 0}
+                  {#each adapterModels as m (m.id)}
+                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                  {/each}
+                {:else}
+                  <option value="">Select model...</option>
+                {/if}
+              </select>
+              <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+            </div>
+            <p class={helpCls}>{adapterModelsLoading ? 'Loading models...' : `${adapterModels.length} models available.`}</p>
           </div>
-          <p class={helpCls}>{adapterModelsLoading ? 'Loading models...' : `${adapterModels.length} models available.`}</p>
-        </div>
+        {/if}
 
         <div class="flex items-center justify-between rounded-lg border border-border bg-background px-4 py-3">
           <div>
@@ -607,22 +680,24 @@
 
       <!-- pi_local -->
       {:else if adapterType === "pi_local"}
-        <div>
-          <label for="cfg-model" class={labelCls}>
-            Model
-            <span class="ml-1 text-red-400">*</span>
-          </label>
-          <input
-            id="cfg-model"
-            type="text"
-            class="{inputCls} mt-1.5"
-            value={config.model ?? ""}
-            oninput={(e) => setField("model", e.currentTarget.value)}
-            placeholder="provider/model (e.g. openai/gpt-5.4)"
-            required
-          />
-          <p class={helpCls}>Format: provider/model. This field is required for Pi adapters.</p>
-        </div>
+        {#if showModelControls}
+          <div>
+            <label for="cfg-model" class={labelCls}>
+              Model
+              <span class="ml-1 text-red-400">*</span>
+            </label>
+            <input
+              id="cfg-model"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.model ?? ""}
+              oninput={(e) => setField("model", e.currentTarget.value)}
+              placeholder="provider/model (e.g. openai/gpt-5.4)"
+              required
+            />
+            <p class={helpCls}>Format: provider/model. This field is required for Pi adapters.</p>
+          </div>
+        {/if}
 
         <div>
           <label for="cfg-thinking" class={labelCls}>Thinking Level</label>
@@ -784,7 +859,7 @@
     </div>
   </section>
 
-  {#if companyId && isModelDiscoveryAdapter}
+  {#if showModelControls && companyId && isModelDiscoveryAdapter}
     <section>
       <div class={sectionHeadingCls}>
         <Search class="size-3.5" />
@@ -796,7 +871,7 @@
           <div>
             <p class="text-sm font-medium text-muted-foreground/80">Discover models</p>
             <p class="text-xs text-muted-foreground mt-0.5">
-              Loaded from the selected adapter in the current company context.
+              Loaded from {getAdapterModelSourceLabel()} in the current company context.
             </p>
           </div>
           <button

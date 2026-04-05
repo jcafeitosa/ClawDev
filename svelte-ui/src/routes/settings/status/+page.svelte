@@ -57,7 +57,7 @@
     return () => clearInterval(timer);
   });
 
-  const tabs = [
+  const settingsTabs = [
     { href: '/settings/general', label: 'General' },
     { href: '/settings/experimental', label: 'Experimental' },
     { href: '/settings/heartbeats', label: 'Heartbeats' },
@@ -103,7 +103,7 @@
 <PageLayout title="System Status">
   {#snippet tabs()}
     <div class="flex gap-3 border-b border-border pb-3">
-      {#each tabs as tab}
+      {#each settingsTabs as tab}
         <a
           href={tab.href}
           class="text-sm transition-colors {tab.href === '/settings/status'

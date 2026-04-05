@@ -3,6 +3,7 @@
   import { api } from "$lib/api";
   import { breadcrumbStore } from "$stores/breadcrumb.svelte.js";
   import { toastStore } from "$stores/toast.svelte.js";
+  import { PageLayout } from "$components/layout/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { goto } from "$app/navigation";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Input, Textarea, Select, SelectTrigger, SelectContent, SelectItem } from "$components/ui/index.js";
@@ -279,19 +280,10 @@
     </EmptyState>
   </div>
 {:else if routine}
-  <div class="p-6">
-    <!-- Header -->
-    <div class="flex items-start justify-between gap-4 mb-6">
-      <div class="min-w-0">
-        <div class="flex items-center gap-3 mb-1">
-          <h1 class="text-xl font-semibold truncate">{routine.title}</h1>
-          <StatusBadge status={routine.status} />
-        </div>
-        {#if routine.description}
-          <p class="text-sm text-zinc-500 dark:text-zinc-400 mt-1">{routine.description}</p>
-        {/if}
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
+  <PageLayout title={routine.title} description={routine.description ?? undefined} fullWidth>
+    {#snippet actions()}
+      <div class="flex items-center gap-2">
+        <StatusBadge status={routine.status} />
         <Button variant="outline" size="sm" onclick={startEdit}>
           <Pencil class="w-3.5 h-3.5 mr-1" />
           Edit
@@ -326,7 +318,7 @@
           Back
         </Button>
       </div>
-    </div>
+    {/snippet}
 
     <!-- Edit form -->
     {#if editing}
@@ -609,5 +601,5 @@
         </PropertyRow>
       </PropertiesPanel>
     </div>
-  </div>
+  </PageLayout>
 {/if}

@@ -283,7 +283,7 @@
             bind:value={inviteEmail}
             placeholder="colleague@company.com"
             required
-            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           />
         </div>
 
@@ -319,7 +319,7 @@
             bind:value={inviteMessage}
             placeholder="Add a personal message to the invitation..."
             rows="3"
-            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-[#94A3B8] resize-none focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder:text-muted-foreground resize-none focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
           ></textarea>
         </div>
 
@@ -340,7 +340,7 @@
           <button
             type="submit"
             disabled={inviting || !inviteEmail.trim() || inviteSuccess}
-            class="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:opacity-50"
+            class="cursor-pointer inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors duration-150 hover:bg-blue-700 disabled:opacity-50"
           >
             <Mail class="h-4 w-4" />
             {inviting ? 'Sending...' : 'Send Invitation'}
@@ -348,7 +348,7 @@
           <button
             type="button"
             onclick={resetInviteForm}
-            class="rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40 transition-colors"
+            class="cursor-pointer rounded-lg border border-border px-4 py-2 text-sm text-muted-foreground hover:bg-accent/40 transition-colors duration-150"
           >
             Cancel
           </button>
@@ -363,7 +363,7 @@
     <div class="flex items-center gap-1 border-b border-border">
       <button
         onclick={() => { activeTab = 'all'; }}
-        class="relative px-4 py-2.5 text-sm font-medium transition-colors
+        class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
           {activeTab === 'all' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
       >
         All
@@ -374,7 +374,7 @@
       </button>
       <button
         onclick={() => { activeTab = 'active'; }}
-        class="relative px-4 py-2.5 text-sm font-medium transition-colors
+        class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
           {activeTab === 'active' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
       >
         Active
@@ -385,7 +385,7 @@
       </button>
       <button
         onclick={() => { activeTab = 'pending'; }}
-        class="relative px-4 py-2.5 text-sm font-medium transition-colors
+        class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
           {activeTab === 'pending' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
       >
         Pending
@@ -409,7 +409,7 @@
         type="text"
         placeholder="Search members..."
         bind:value={searchQuery}
-        class="w-full sm:w-64 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-[#2563EB] transition"
+        class="w-full sm:w-64 rounded-lg border border-border bg-card pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:border-primary transition"
       />
     </div>
   </div>
@@ -437,7 +437,7 @@
             .catch((e) => { error = e.message; })
             .finally(() => { loading = false; });
         }}
-        class="mt-3 text-sm text-[#2563EB] hover:underline"
+        class="cursor-pointer mt-3 text-sm text-primary hover:underline transition-colors duration-150"
       >
         Retry
       </button>
@@ -454,7 +454,7 @@
         <p class="mt-1 text-sm text-muted-foreground">Invite your first team member to get started.</p>
         <button
           onclick={() => { showInviteForm = true; }}
-          class="mt-4 text-sm text-[#2563EB] hover:underline"
+          class="cursor-pointer mt-4 text-sm text-primary hover:underline transition-colors duration-150"
         >
           Send your first invite
         </button>
@@ -520,13 +520,13 @@
                   <button
                     onclick={() => revokeAccess(member)}
                     disabled={revokingId === member.id}
-                    class="inline-flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-700 disabled:opacity-50"
+                    class="cursor-pointer inline-flex items-center gap-1 rounded-lg bg-red-600 px-2.5 py-1.5 text-xs font-medium text-white transition-colors duration-150 hover:bg-red-700 disabled:opacity-50"
                   >
                     {revokingId === member.id ? 'Revoking...' : 'Confirm'}
                   </button>
                   <button
                     onclick={() => { confirmRevokeId = null; }}
-                    class="rounded-lg border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/40"
+                    class="cursor-pointer rounded-lg border border-border px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/40 transition-colors duration-150"
                   >
                     Cancel
                   </button>
@@ -536,7 +536,7 @@
                   onclick={() => { confirmRevokeId = member.id; }}
                   disabled={revokingId === member.id}
                   title="Revoke access"
-                  class="rounded-lg p-2 text-muted-foreground transition-colors hover:bg-accent/60 hover:text-red-400 disabled:opacity-50"
+                  class="cursor-pointer rounded-lg p-2 text-muted-foreground transition-colors duration-150 hover:bg-accent/60 hover:text-red-400 disabled:opacity-50"
                 >
                   <UserMinus class="h-4 w-4" />
                 </button>

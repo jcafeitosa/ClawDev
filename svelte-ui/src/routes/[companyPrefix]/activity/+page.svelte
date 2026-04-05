@@ -198,16 +198,19 @@
     </div>
   {:else if activities.length === 0}
     <!-- Empty state -->
-    <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-accent/60 p-4 mb-4">
-        <Activity class="h-10 w-10 text-muted-foreground" />
+    <div class="glass-card p-12 text-center">
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+          <Activity class="h-5 w-5 text-muted-foreground/40" />
+        </div>
+        <p class="text-sm font-medium text-muted-foreground">No activity yet</p>
+        <p class="text-xs text-muted-foreground/60">Events will appear here as your team works.</p>
       </div>
-      <h3 class="text-lg font-medium text-foreground">No activity yet</h3>
-      <p class="mt-1 text-sm text-muted-foreground">Events will appear here as your team works</p>
     </div>
   {:else}
     <!-- Activity feed grouped by date -->
-    <div class="space-y-6">
+    <div class="glass-card p-0 overflow-hidden">
+    <div class="space-y-6 p-5">
       {#each groupedActivities as group (group.label)}
         <!-- Date group header -->
         <div>
@@ -233,11 +236,11 @@
                     <span class="font-medium {actorIsSystem(item) ? 'text-muted-foreground' : ''}">{actorDisplay(item)}</span>
                     <span class="text-muted-foreground"> {item.action ?? item.description ?? item.message ?? 'performed an action'}</span>
                     {#if link && (item.entityName || item.entityTitle)}
-                      <a href={link} class="font-medium text-blue-400 hover:text-blue-300 hover:underline">
+                      <a href={link} class="cursor-pointer font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors duration-150">
                         {item.entityName ?? item.entityTitle}
                       </a>
                     {:else if link}
-                      <a href={link} class="font-medium text-blue-400 hover:text-blue-300 hover:underline">
+                      <a href={link} class="cursor-pointer font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors duration-150">
                         {item.entityType ?? 'entity'}
                       </a>
                     {/if}
@@ -249,6 +252,7 @@
           </div>
         </div>
       {/each}
+    </div>
     </div>
 
     <!-- Load More -->

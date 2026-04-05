@@ -8,7 +8,7 @@
     Card, CardContent, Badge, Button, Input, Skeleton,
     Alert, AlertDescription,
   } from '$lib/components/ui/index.js';
-  import { Plus, RefreshCw, ChevronRight, Search, Clock, Play, Pause, Archive } from 'lucide-svelte';
+  import { Plus, RefreshCw, RotateCcw, ChevronRight, Search, Clock, Play, Pause, Archive } from 'lucide-svelte';
   import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Routines' }]));
@@ -269,7 +269,7 @@
       {#each STATUS_FILTERS as filter}
         <button
           onclick={() => { activeFilter = filter; }}
-          class="rounded-lg px-3 py-1.5 text-sm font-medium transition
+          class="cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150
             {activeFilter === filter
               ? 'bg-primary text-primary-foreground'
               : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
@@ -304,36 +304,37 @@
     <Alert variant="destructive">
       <AlertDescription>
         <p>{error}</p>
-        <button onclick={() => loadRoutines()} class="mt-2 text-sm text-primary hover:underline">Retry</button>
+        <button onclick={() => loadRoutines()} class="cursor-pointer mt-2 text-sm text-primary hover:underline transition-colors duration-150">Retry</button>
       </AlertDescription>
     </Alert>
 
   <!-- Empty -->
   {:else if filteredRoutines.length === 0}
-    <div class="flex flex-col items-center justify-center py-20">
-      <div class="rounded-full bg-accent/60 p-4 mb-4">
-        <RefreshCw class="h-10 w-10 text-muted-foreground" />
+    <div class="glass-card p-12 text-center">
+      <div class="flex flex-col items-center gap-3">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+          <RotateCcw class="h-5 w-5 text-muted-foreground/40" />
+        </div>
+        {#if routines.length === 0}
+          <p class="text-sm font-medium text-muted-foreground">No routines yet</p>
+          <p class="text-xs text-muted-foreground/60">Create a routine to automate recurring tasks.</p>
+          <Button onclick={() => (showCreate = true)} class="mt-2">
+            <Plus class="h-4 w-4" />
+            New Routine
+          </Button>
+        {:else}
+          <p class="text-sm font-medium text-muted-foreground">No routines match the current filters.</p>
+        {/if}
       </div>
-      {#if routines.length === 0}
-        <h3 class="text-lg font-medium text-foreground">No routines defined</h3>
-        <p class="mt-1 text-sm text-muted-foreground">Create a routine to automate recurring tasks</p>
-        <Button onclick={() => (showCreate = true)} class="mt-4">
-          <Plus class="h-4 w-4" />
-          New Routine
-        </Button>
-      {:else}
-        <p class="text-muted-foreground text-sm">No routines match the current filters.</p>
-      {/if}
     </div>
 
   <!-- Routines list -->
   {:else}
-    <Card class="border-border/60 overflow-hidden p-0">
-      <CardContent class="p-0">
+    <div class="glass-card p-0 overflow-hidden">
         {#each filteredRoutines as routine, i (routine.id)}
           <a
             href="/{prefix}/routines/{routine.id}"
-            class="group flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
+            class="cursor-pointer group flex items-center gap-4 px-5 py-4 transition-colors duration-150 hover:bg-accent/40
               {i < filteredRoutines.length - 1 ? 'border-b border-border/50' : ''}"
           >
             <!-- Status dot -->
@@ -375,8 +376,7 @@
             <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
           </a>
         {/each}
-      </CardContent>
-    </Card>
+    </div>
 
     <!-- Count -->
     <p class="text-xs text-muted-foreground text-right">
