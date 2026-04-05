@@ -1210,7 +1210,7 @@
               <span class="size-2.5 rounded-full {statusDotColor(issue.status)}"></span>
               <span class="text-sm font-mono text-muted-foreground">{issue.identifier}</span>
               <button
-                class="p-0.5 rounded text-zinc-400 hover:text-zinc-600 hover:bg-zinc-100 dark:hover:text-zinc-300 dark:hover:bg-zinc-800 transition-colors"
+                class="p-0.5 rounded text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors cursor-pointer"
                 title="Copy identifier"
                 onclick={() => {
                   navigator.clipboard.writeText(issue?.identifier ?? '');
@@ -1237,7 +1237,7 @@
                 <span class="size-2 rounded-full bg-primary shrink-0"></span>
                 {issue.project.name}
               </a>
-              <ChevronRight class="size-3 text-zinc-400 shrink-0" />
+              <ChevronRight class="size-3 text-muted-foreground/70 shrink-0" />
             {/if}
             {#each [...issue.ancestors].reverse() as ancestor}
               <a
@@ -1248,9 +1248,9 @@
                 <span class="size-2 rounded-full {statusDotColor(ancestor.status)} shrink-0"></span>
                 {ancestor.identifier ?? ancestor.title}
               </a>
-              <ChevronRight class="size-3 text-zinc-400 shrink-0" />
+              <ChevronRight class="size-3 text-muted-foreground/70 shrink-0" />
             {/each}
-            <span class="text-zinc-600 dark:text-zinc-300 font-medium shrink-0">{issue.identifier ?? issue.title}</span>
+            <span class="text-foreground/80 font-medium shrink-0">{issue.identifier ?? issue.title}</span>
           </nav>
         {/if}
       </div>
@@ -1401,7 +1401,7 @@
                       class={`inline-flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                         selected
                           ? 'border-primary/40 bg-primary/10 text-primary'
-                          : 'border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800'
+                          : 'border-border bg-card text-muted-foreground hover:border-border/80 hover:bg-muted/50'
                       }`}
                     >
                       <span class="h-2 w-2 rounded-full" style={labelStyle(label.color)}></span>
@@ -1502,7 +1502,7 @@
                       {#each attachments as att}
                         <div class="flex items-center justify-between p-3 text-sm hover:bg-accent/50 transition-colors duration-150">
                           <div class="flex items-center gap-2 min-w-0">
-                            <FileText class="size-4 text-zinc-400 shrink-0" />
+                            <FileText class="size-4 text-muted-foreground/70 shrink-0" />
                             <div class="min-w-0">
                               <p class="font-medium truncate">{att.filename}</p>
                               {#if att.size != null}
@@ -2231,11 +2231,11 @@
                         {agentInitials(name ?? "AG")}
                       </span>
                       <span class="text-sm">{name ?? issue.assigneeAgentId.slice(0, 8)}</span>
-                      <ChevronRight class="size-3 text-zinc-400" />
+                      <ChevronRight class="size-3 text-muted-foreground/70" />
                     </a>
                   {:else if issue.assigneeUserId}
                     <span class="inline-flex items-center gap-2 text-foreground">
-                      <User class="size-3.5 text-zinc-400" />
+                      <User class="size-3.5 text-muted-foreground/70" />
                       <span class="text-sm">{issue.assigneeUserId.slice(0, 12)}</span>
                     </span>
                   {:else}
@@ -2255,7 +2255,7 @@
                     >
                       <span class="size-2.5 rounded-full bg-primary shrink-0"></span>
                       <span class="text-sm">{issue.project.name}</span>
-                      <ChevronRight class="size-3 text-zinc-400" />
+                      <ChevronRight class="size-3 text-muted-foreground/70" />
                     </a>
                   {:else}
                     <span class="text-muted-foreground text-xs">No project</span>
@@ -2272,7 +2272,7 @@
                     class="inline-flex items-center gap-2 text-foreground hover:text-primary transition-colors"
                   >
                     <span class="text-sm truncate max-w-[160px]">{issue.goal.title}</span>
-                    <ChevronRight class="size-3 text-zinc-400" />
+                    <ChevronRight class="size-3 text-muted-foreground/70" />
                   </a>
                 </div>
               {/if}
@@ -2315,7 +2315,7 @@
                       href="/{prefix}/agents/{issue.createdByAgentId}"
                       class="inline-flex items-center gap-2 text-foreground hover:text-primary transition-colors"
                     >
-                      <span class="inline-flex items-center justify-center size-5 rounded-full bg-zinc-200 dark:bg-zinc-700 text-[10px] font-bold text-zinc-600 dark:text-zinc-300 shrink-0">
+                      <span class="inline-flex items-center justify-center size-5 rounded-full bg-muted text-[10px] font-bold text-muted-foreground shrink-0">
                         {agentInitials(name ?? "AG")}
                       </span>
                       <span class="text-sm">{name ?? issue.createdByAgentId.slice(0, 8)}</span>
@@ -2362,7 +2362,7 @@
               <div class="flex items-center justify-between py-2 text-sm">
                 <span class="text-muted-foreground">ID</span>
                 <button
-                  class="font-mono text-xs text-muted-foreground hover:text-zinc-900 dark:hover:text-zinc-200 transition-colors cursor-pointer truncate max-w-[180px]"
+                  class="font-mono text-xs text-muted-foreground hover:text-foreground transition-colors cursor-pointer truncate max-w-[180px]"
                   title="Click to copy: {issue.id}"
                   onclick={() => {
                     navigator.clipboard.writeText(issue?.id ?? '');
