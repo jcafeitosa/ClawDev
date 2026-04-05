@@ -49,7 +49,21 @@
   // ---------------------------------------------------------------------------
   // Breadcrumb
   // ---------------------------------------------------------------------------
-  onMount(() => breadcrumbStore.set([{ label: 'Inbox' }]));
+  onMount(() => {
+    breadcrumbStore.set([{ label: 'Inbox' }]);
+
+    // Close columns dropdown on outside click
+    function handleGlobalClick(e: MouseEvent) {
+      if (columnsDropdownOpen) {
+        const target = e.target as HTMLElement;
+        if (!target.closest('[data-columns-dropdown]')) {
+          columnsDropdownOpen = false;
+        }
+      }
+    }
+    document.addEventListener('click', handleGlobalClick);
+    return () => document.removeEventListener('click', handleGlobalClick);
+  });
 
   // ---------------------------------------------------------------------------
   // State
@@ -841,7 +855,7 @@
         </div>
 
         <!-- Show/hide columns dropdown -->
-        <div class="relative">
+        <div class="relative" data-columns-dropdown>
           <button
             type="button"
             onclick={() => (columnsDropdownOpen = !columnsDropdownOpen)}
