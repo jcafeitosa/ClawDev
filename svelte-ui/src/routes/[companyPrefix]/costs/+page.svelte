@@ -26,6 +26,8 @@
     ArrowDownRight,
     Activity,
     Calendar,
+    Clock,
+    AlertTriangle,
   } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Costs' }]));
@@ -59,6 +61,12 @@
   let budgetsLoading = $state(false);
   let budgetsData = $state<any[]>([]);
   let budgetsLoaded = $state(false);
+
+  // Window spend (rolling time windows)
+  let windowSpend = $state<{ fiveHours: number; oneDay: number; sevenDays: number }>({ fiveHours: 0, oneDay: 0, sevenDays: 0 });
+
+  // Open budget incidents
+  let openIncidents = $state<any[]>([]);
 
   let activeTab = $state('overview');
 
@@ -129,12 +137,28 @@
       api(`/api/companies/${companyId}/costs/finance-summary`)
         .then((r) => r.json())
         .catch(() => null),
+      api(`/api/companies/${companyId}/costs/window-spend`)
+        .then((r) => r.json())
+        .catch(() => null),
+      api(`/api/companies/${companyId}/budgets/overview`)
+        .then((r) => r.json())
+        .catch(() => null),
     ])
-      .then(([summaryData, finData]) => {
+      .then(([summaryData, finData, windowData, budgetOverviewData]) => {
         summary = summaryData?.summary ?? summaryData;
         entries = summaryData?.entries ?? summaryData?.costs ?? summaryData?.items ?? [];
         if (finData) {
           financeSummary = finData?.summary ?? finData;
+        }
+        if (windowData) {
+          windowSpend = {
+            fiveHours: windowData.fiveHours ?? windowData.five_hours ?? 0,
+            oneDay: windowData.oneDay ?? windowData.one_day ?? 0,
+            sevenDays: windowData.sevenDays ?? windowData.seven_days ?? 0,
+          };
+        }
+        if (budgetOverviewData) {
+          openIncidents = budgetOverviewData.openIncidents ?? budgetOverviewData.open_incidents ?? [];
         }
       })
       .catch(console.error)
@@ -319,6 +343,63 @@
 
 <PageLayout title="Costs" description="Track spending across agents and providers">
 <div class="costs-root space-y-6">
+
+  <!-- Window Spend (rolling time windows) -->
+  {#if !loading && (windowSpend.fiveHours > 0 || windowSpend.oneDay > 0 || windowSpend.sevenDays > 0)}
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div class="glass-card p-5">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="rounded-lg bg-cyan-500/10 p-2">
+            <Clock class="h-4 w-4 text-cyan-500" />
+          </div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 5 Hours</span>
+        </div>
+        <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.fiveHours / 100)}</p>
+      </div>
+      <div class="glass-card p-5">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="rounded-lg bg-cyan-500/10 p-2">
+            <Clock class="h-4 w-4 text-cyan-500" />
+          </div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 24 Hours</span>
+        </div>
+        <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.oneDay / 100)}</p>
+      </div>
+      <div class="glass-card p-5">
+        <div class="flex items-center gap-2 mb-3">
+          <div class="rounded-lg bg-cyan-500/10 p-2">
+            <Clock class="h-4 w-4 text-cyan-500" />
+          </div>
+          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 7 Days</span>
+        </div>
+        <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.sevenDays / 100)}</p>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Open Budget Incidents -->
+  {#if !loading && openIncidents.length > 0}
+    <div class="space-y-2">
+      {#each openIncidents as incident, i (incident.id ?? i)}
+        <div class="glass-card flex items-start gap-3 border-l-4 border-red-500 p-4">
+          <div class="rounded-lg bg-red-500/10 p-2 shrink-0">
+            <AlertTriangle class="h-4 w-4 text-red-500" />
+          </div>
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-semibold text-red-600 dark:text-red-400">
+              Budget Incident: {incident.scope_type ?? incident.scopeType ?? 'scope'}:{(incident.scope_id ?? incident.scopeId ?? '').slice(0, 8)}
+            </p>
+            <p class="text-xs text-muted-foreground mt-0.5">
+              Threshold: {incident.threshold_type ?? incident.thresholdType ?? 'limit'}
+            </p>
+            <p class="text-xs text-muted-foreground">
+              {formatCurrency((incident.amount_observed ?? incident.amountObserved ?? 0) / 100)} observed / {formatCurrency((incident.amount_limit ?? incident.amountLimit ?? 0) / 100)} limit
+            </p>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 
   <!-- 4 Summary Cards (matching original: INFERENCE SPEND, BUDGET, FINANCE NET, FINANCE EVENTS) -->
   {#if loading}

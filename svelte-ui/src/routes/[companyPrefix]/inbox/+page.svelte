@@ -8,7 +8,8 @@
   import { onMount } from 'svelte';
   import {
     Inbox as InboxIcon, AlertTriangle, XCircle, X, RotateCcw,
-    UserPlus, ChevronRight, Loader2, CheckCheck, Radio
+    UserPlus, ChevronRight, Loader2, CheckCheck, Radio,
+    Search, Columns3, Check,
   } from 'lucide-svelte';
   import SwipeToArchive from '$lib/components/swipe-to-archive.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
@@ -60,6 +61,63 @@
   let activeTab = $state<InboxTab>(loadLastInboxTab());
   let allCategoryFilter = $state<InboxCategoryFilter>('everything');
   let allApprovalFilter = $state<InboxApprovalFilter>('all');
+  let searchQuery = $state('');
+
+  // ── Column visibility ───────────────────────────────────────────────
+  type InboxIssueColumn = 'status' | 'id' | 'assignee' | 'project' | 'labels' | 'updated';
+  const INBOX_COLUMNS_KEY = 'clawdev:inbox:columns';
+  const DEFAULT_INBOX_COLUMNS: InboxIssueColumn[] = ['status', 'id', 'updated'];
+  const ALL_INBOX_COLUMNS: InboxIssueColumn[] = ['status', 'id', 'assignee', 'project', 'labels', 'updated'];
+  const COLUMN_LABELS: Record<InboxIssueColumn, string> = {
+    status: 'Status',
+    id: 'ID',
+    assignee: 'Assignee',
+    project: 'Project',
+    labels: 'Tags',
+    updated: 'Last updated',
+  };
+  const COLUMN_DESCRIPTIONS: Record<InboxIssueColumn, string> = {
+    status: 'Issue state chip on the left edge.',
+    id: 'Ticket identifier like TES-1009.',
+    assignee: 'Assigned agent or board user.',
+    project: 'Linked project pill with its color.',
+    labels: 'Issue labels and tags.',
+    updated: 'Latest visible activity time.',
+  };
+
+  function loadInboxColumns(): InboxIssueColumn[] {
+    try {
+      const raw = localStorage.getItem(INBOX_COLUMNS_KEY);
+      if (!raw) return [...DEFAULT_INBOX_COLUMNS];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [...DEFAULT_INBOX_COLUMNS];
+      return parsed.filter((c: string) => ALL_INBOX_COLUMNS.includes(c as InboxIssueColumn)) as InboxIssueColumn[];
+    } catch { return [...DEFAULT_INBOX_COLUMNS]; }
+  }
+
+  function saveInboxColumns(cols: InboxIssueColumn[]) {
+    try { localStorage.setItem(INBOX_COLUMNS_KEY, JSON.stringify(cols)); }
+    catch { /* ignore */ }
+  }
+
+  let visibleColumns = $state<InboxIssueColumn[]>(loadInboxColumns());
+  let columnsDropdownOpen = $state(false);
+
+  function toggleColumn(col: InboxIssueColumn, checked: boolean) {
+    if (checked) {
+      visibleColumns = [...visibleColumns, col];
+    } else {
+      visibleColumns = visibleColumns.filter((c) => c !== col);
+    }
+    saveInboxColumns(visibleColumns);
+  }
+
+  function resetColumns() {
+    visibleColumns = [...DEFAULT_INBOX_COLUMNS];
+    saveInboxColumns(visibleColumns);
+  }
+
+  let visibleColumnSet = $derived(new Set(visibleColumns));
 
   // Loading states
   let loadingIssuesMine = $state(true);
@@ -343,7 +401,7 @@
     return joinRequests;
   });
 
-  let workItemsToRender = $derived(
+  let workItemsUnfiltered = $derived(
     getInboxWorkItems({
       issues: activeTab === 'all' && !showTouchedCategory ? [] : issuesToRender,
       approvals: activeTab === 'all' && !showApprovalsCategory ? [] : approvalsToRender,
@@ -351,6 +409,34 @@
       joinRequests: joinRequestsForTab,
     })
   );
+
+  let workItemsToRender = $derived.by(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return workItemsUnfiltered;
+    return workItemsUnfiltered.filter((item) => {
+      if (item.kind === 'issue') {
+        const issue = item.issue;
+        const titleMatch = (issue.title ?? '').toLowerCase().includes(q);
+        const idMatch = (issue.identifier ?? issue.id ?? '').toLowerCase().includes(q);
+        return titleMatch || idMatch;
+      }
+      if (item.kind === 'approval') {
+        const approval = item.approval;
+        const label = (approval.title ?? approval.type ?? '').toLowerCase();
+        return label.includes(q);
+      }
+      if (item.kind === 'failed_run') {
+        const run = item.run;
+        const agentName = agentById.get(run.agentId) ?? '';
+        return agentName.toLowerCase().includes(q) || (run.error ?? '').toLowerCase().includes(q);
+      }
+      if (item.kind === 'join_request') {
+        const jr = item.joinRequest;
+        return (jr.agentName ?? '').toLowerCase().includes(q) || (jr.requestType ?? '').toLowerCase().includes(q);
+      }
+      return true;
+    });
+  });
 
   // Alert state
   let hasRunFailures = $derived(failedRuns.length > 0);
@@ -395,6 +481,7 @@
   function switchTab(tab: InboxTab) {
     activeTab = tab;
     saveLastInboxTab(tab);
+    searchQuery = '';
   }
 
   // ---------------------------------------------------------------------------
@@ -722,44 +809,115 @@
 </script>
 
 <PageLayout title="Inbox">
-  <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-    <div class="flex flex-wrap items-center gap-2">
-      <!-- Tab bar -->
-      <div class="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
-        {#each tabs as tab (tab.key)}
-          <button
-            onclick={() => switchTab(tab.key)}
-            class="relative rounded-md px-3 py-1.5 text-sm font-medium transition-colors
-              {activeTab === tab.key
-                ? 'bg-accent text-foreground'
-                : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'}"
-          >
-            {tab.label}
-          </button>
-        {/each}
+  <div class="flex flex-col gap-3">
+    <div class="flex items-center justify-between gap-2">
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Tab bar -->
+        <div class="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
+          {#each tabs as tab (tab.key)}
+            <button
+              onclick={() => switchTab(tab.key)}
+              class="relative rounded-md px-3 py-1.5 text-sm font-medium transition-colors
+                {activeTab === tab.key
+                  ? 'bg-accent text-foreground'
+                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'}"
+            >
+              {tab.label}
+            </button>
+          {/each}
+        </div>
       </div>
 
-      <!-- Mark all read -->
-      {#if canMarkAllRead}
-        <button
-          onclick={handleMarkAllRead}
-          disabled={markAllReadPending}
-          class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
-        >
-          {#if markAllReadPending}
-            <Loader2 class="h-3.5 w-3.5 animate-spin" />
-            Marking...
-          {:else}
-            <CheckCheck class="h-3.5 w-3.5" />
-            Mark all as read
+      <div class="flex items-center gap-2">
+        <!-- Search field -->
+        <div class="relative">
+          <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+          <input
+            type="search"
+            placeholder="Search inbox..."
+            bind:value={searchQuery}
+            class="h-8 w-[180px] rounded-lg border border-border bg-card pl-8 pr-2 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground/50 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 sm:w-[220px]"
+          />
+        </div>
+
+        <!-- Show/hide columns dropdown -->
+        <div class="relative">
+          <button
+            type="button"
+            onclick={() => (columnsDropdownOpen = !columnsDropdownOpen)}
+            class="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
+          >
+            <Columns3 class="h-3.5 w-3.5" />
+            <span class="hidden sm:inline">Show / hide columns</span>
+          </button>
+          {#if columnsDropdownOpen}
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
+              class="absolute right-0 top-full z-20 mt-1 w-[300px] rounded-xl border border-border/70 bg-popover p-1.5 shadow-xl"
+              onkeydown={(e) => { if (e.key === 'Escape') columnsDropdownOpen = false; }}
+            >
+              <div class="px-2 pb-1 pt-1.5">
+                <div class="text-[10px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
+                  Desktop issue rows
+                </div>
+                <div class="mt-1 text-sm font-medium text-foreground">
+                  Choose which inbox columns stay visible
+                </div>
+              </div>
+              <div class="my-1 h-px bg-border"></div>
+              {#each ALL_INBOX_COLUMNS as col}
+                {@const checked = visibleColumnSet.has(col)}
+                <button
+                  type="button"
+                  onclick={() => toggleColumn(col, !checked)}
+                  class="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-accent/50"
+                >
+                  <span class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded border border-border {checked ? 'bg-blue-600 border-blue-600' : 'bg-transparent'}">
+                    {#if checked}
+                      <Check class="h-3 w-3 text-white" />
+                    {/if}
+                  </span>
+                  <span class="flex flex-col gap-0.5">
+                    <span class="text-sm font-medium text-foreground">{COLUMN_LABELS[col]}</span>
+                    <span class="text-xs leading-relaxed text-muted-foreground">{COLUMN_DESCRIPTIONS[col]}</span>
+                  </span>
+                </button>
+              {/each}
+              <div class="my-1 h-px bg-border"></div>
+              <button
+                type="button"
+                onclick={() => { resetColumns(); columnsDropdownOpen = false; }}
+                class="flex w-full items-center rounded-lg px-3 py-2 text-sm transition-colors hover:bg-accent/50"
+              >
+                Reset defaults
+                <span class="ml-auto text-xs text-muted-foreground">status, id, updated</span>
+              </button>
+            </div>
           {/if}
-        </button>
-      {/if}
+        </div>
+
+        <!-- Mark all read -->
+        {#if canMarkAllRead}
+          <button
+            onclick={handleMarkAllRead}
+            disabled={markAllReadPending}
+            class="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border bg-card px-3 text-sm font-medium text-foreground transition-colors hover:bg-accent/60 disabled:opacity-50"
+          >
+            {#if markAllReadPending}
+              <Loader2 class="h-3.5 w-3.5 animate-spin" />
+              Marking...
+            {:else}
+              <CheckCheck class="h-3.5 w-3.5" />
+              Mark all as read
+            {/if}
+          </button>
+        {/if}
+      </div>
     </div>
 
     <!-- Filters for "All" tab -->
     {#if activeTab === 'all'}
-      <div class="flex flex-wrap items-center gap-2 sm:justify-end">
+      <div class="flex flex-wrap items-center gap-2">
         <select
           bind:value={allCategoryFilter}
           class="h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
@@ -807,10 +965,16 @@
     </div>
   {:else if allLoaded && !hasAnySections}
     <!-- Empty state -->
-    {@const empty = emptyMessages[activeTab] ?? emptyMessages.all}
+    {@const empty = searchQuery.trim()
+      ? { title: 'No results found.', body: `No inbox items match "${searchQuery.trim()}"` }
+      : emptyMessages[activeTab] ?? emptyMessages.all}
     <div class="flex flex-col items-center justify-center py-20">
       <div class="rounded-full bg-accent/60 p-4 mb-4">
-        <InboxIcon class="h-10 w-10 text-muted-foreground" />
+        {#if searchQuery.trim()}
+          <Search class="h-10 w-10 text-muted-foreground" />
+        {:else}
+          <InboxIcon class="h-10 w-10 text-muted-foreground" />
+        {/if}
       </div>
       <h3 class="text-lg font-medium text-foreground">{empty.title}</h3>
       <p class="mt-1 text-sm text-muted-foreground">{empty.body}</p>

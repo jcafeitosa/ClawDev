@@ -9,9 +9,9 @@
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "$components/ui/index.js";
   import { PageLayout } from "$components/layout/index.js";
-  import { ActivityChart } from "$lib/components/charts/index.js";
+  import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "$lib/components/charts/index.js";
   import { onMount } from "svelte";
-  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check, FolderOpen, Loader2, ExternalLink, BookOpen, MoreHorizontal, AlertCircle, Activity, ClipboardList, StopCircle } from "lucide-svelte";
+  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check, FolderOpen, Loader2, ExternalLink, BookOpen, MoreHorizontal, AlertCircle, ClipboardList, StopCircle } from "lucide-svelte";
   import { openNewIssueDialog } from '$lib/components/new-issue-dialog.svelte';
   import AgentIconPicker from '$lib/components/agent-icon-picker.svelte';
   import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
@@ -253,51 +253,7 @@
       Boolean(latestRun && (latestRun.status === "running" || latestRun.status === "queued")),
     ),
   );
-  let recentIssues = $derived(issues.slice(0, 5));
-  let runSuccessCount = $derived(heartbeats.filter(r => r.status === 'completed' || r.status === 'success').length);
-  let runFailCount = $derived(heartbeats.filter(r => r.status === 'error' || r.status === 'failed').length);
-  let runSuccessRate = $derived(heartbeats.length > 0 ? Math.round((runSuccessCount / heartbeats.length) * 100) : 0);
-  let issuesByStatus = $derived.by(() => {
-    const counts: Record<string, number> = {};
-    for (const issue of issues) {
-      const s = issue.status ?? 'unknown';
-      counts[s] = (counts[s] ?? 0) + 1;
-    }
-    return counts;
-  });
-  let issuesByPriority = $derived.by(() => {
-    const counts: Record<string, number> = {};
-    for (const issue of issues) {
-      const p = issue.priority ?? 'none';
-      counts[p] = (counts[p] ?? 0) + 1;
-    }
-    return counts;
-  });
-  let agentActivitySeries = $derived.by(() => {
-    const days = Array.from({ length: 14 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (13 - i));
-      return d.toISOString().slice(0, 10);
-    });
-    const activity = days.map((date) => ({ date, runs: 0, issues: 0 }));
-    const index = new Map(activity.map((item) => [item.date, item]));
-
-    for (const run of heartbeats) {
-      const date = String(run.createdAt ?? run.startedAt ?? run.finishedAt ?? "").slice(0, 10);
-      const bucket = index.get(date);
-      if (!bucket) continue;
-      bucket.runs += 1;
-    }
-
-    for (const issue of issues) {
-      const date = String(issue.createdAt ?? issue.updatedAt ?? "").slice(0, 10);
-      const bucket = index.get(date);
-      if (!bucket) continue;
-      bucket.issues += 1;
-    }
-
-    return activity;
-  });
+  let recentIssues = $derived(issues.slice(0, 10));
   let hasError = $derived(agent?.status === 'error');
 
   // Budget tab derived
@@ -1003,6 +959,37 @@
   };
   function adapterLabel(type: string): string { return ADAPTER_LABELS[type] ?? type; }
   function formatCents(cents: number): string { return `$${(cents / 100).toFixed(2)}`; }
+
+  function formatTokens(n: number): string {
+    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+    return n.toLocaleString();
+  }
+
+  function runMetrics(run: Record<string, any>): { input: number; output: number; cached: number; cost: number } {
+    const usage = run.usageJson ?? run.usage ?? {};
+    return {
+      input: (usage.inputTokens ?? usage.input_tokens ?? 0) as number,
+      output: (usage.outputTokens ?? usage.output_tokens ?? 0) as number,
+      cached: (usage.cachedTokens ?? usage.cached_tokens ?? usage.cacheReadInputTokens ?? 0) as number,
+      cost: ((usage.costCents ?? usage.cost_cents ?? 0) as number) / 100,
+    };
+  }
+
+  function formatRunDate(dateStr: string | null | undefined): string {
+    if (!dateStr) return '-';
+    const d = new Date(dateStr);
+    return `${d.getMonth() + 1}/${d.getDate()}`;
+  }
+
+  let runsWithCost = $derived.by(() => {
+    return heartbeats
+      .filter(r => {
+        const m = runMetrics(r);
+        return m.cost > 0 || m.input > 0 || m.output > 0;
+      })
+      .sort((a, b) => new Date(b.createdAt ?? 0).getTime() - new Date(a.createdAt ?? 0).getTime());
+  });
 </script>
 
 <PageLayout title={agent?.name ?? 'Agent'} fullWidth>
@@ -1316,149 +1303,115 @@
                 </CardContent>
               </Card>
 
-              <!-- Stats row: Run Activity, Issues by Priority, Issues by Status, Success Rate -->
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <Card>
-                  <CardContent class="pt-4">
-                    <div class="flex items-center gap-2 mb-2">
-                      <Activity size={16} class="text-[#60a5fa]" />
-                      <span class="text-xs font-medium text-[#94A3B8]">Run Activity</span>
-                    </div>
-                    <p class="text-2xl font-semibold">{heartbeats.length}</p>
-                    <p class="text-xs text-[#94A3B8] mt-1">recent runs</p>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent class="pt-4">
-                    <div class="flex items-center gap-2 mb-2">
-                      <ClipboardList size={16} class="text-[#f59e0b]" />
-                      <span class="text-xs font-medium text-[#94A3B8]">Issues by Priority</span>
-                    </div>
-                    <div class="space-y-1">
-                      {#each Object.entries(issuesByPriority) as [priority, count]}
-                        <div class="flex items-center justify-between text-xs">
-                          <span class="capitalize text-[#94A3B8]">{priority}</span>
-                          <span class="font-medium">{count}</span>
-                        </div>
-                      {/each}
-                      {#if Object.keys(issuesByPriority).length === 0}
-                        <p class="text-xs text-[#475569]">No issues</p>
-                      {/if}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent class="pt-4">
-                    <div class="flex items-center gap-2 mb-2">
-                      <ClipboardList size={16} class="text-[#10b981]" />
-                      <span class="text-xs font-medium text-[#94A3B8]">Issues by Status</span>
-                    </div>
-                    <div class="space-y-1">
-                      {#each Object.entries(issuesByStatus) as [status, count]}
-                        <div class="flex items-center justify-between text-xs">
-                          <span class="capitalize text-[#94A3B8]">{status}</span>
-                          <span class="font-medium">{count}</span>
-                        </div>
-                      {/each}
-                      {#if Object.keys(issuesByStatus).length === 0}
-                        <p class="text-xs text-[#475569]">No issues</p>
-                      {/if}
-                    </div>
-                  </CardContent>
-                </Card>
-                <Card>
-                  <CardContent class="pt-4">
-                    <div class="flex items-center gap-2 mb-2">
-                      <Activity size={16} class="text-[#10b981]" />
-                      <span class="text-xs font-medium text-[#94A3B8]">Success Rate</span>
-                    </div>
-                    <p class="text-2xl font-semibold">{runSuccessRate}%</p>
-                    <div class="h-1.5 rounded-full bg-white/[0.06] overflow-hidden mt-2">
-                      <div
-                        class="h-full rounded-full transition-all"
-                        style="width: {runSuccessRate}%; background: {runSuccessRate > 80 ? '#10b981' : runSuccessRate > 50 ? '#f59e0b' : '#ef4444'};"
-                      ></div>
-                    </div>
-                    <p class="text-xs text-[#94A3B8] mt-1">{runSuccessCount} passed, {runFailCount} failed</p>
-                  </CardContent>
-                </Card>
+              <!-- Charts row: Run Activity, Issues by Priority, Issues by Status, Success Rate -->
+              <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <ChartCard title="Run Activity" subtitle="Last 14 days">
+                  <RunActivityChart runs={heartbeats} />
+                </ChartCard>
+                <ChartCard title="Issues by Priority" subtitle="Last 14 days">
+                  <PriorityChart {issues} />
+                </ChartCard>
+                <ChartCard title="Issues by Status" subtitle="Last 14 days">
+                  <IssueStatusChart {issues} />
+                </ChartCard>
+                <ChartCard title="Success Rate" subtitle="Last 14 days">
+                  <SuccessRateChart runs={heartbeats} />
+                </ChartCard>
               </div>
 
-              <!-- Activity chart -->
-              <Card>
-                <CardHeader>
-                  <CardTitle>Activity Over Time</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {#if agentActivitySeries.length === 0}
-                    <p class="text-sm text-[#94A3B8]">No activity data available yet.</p>
-                  {:else}
-                    <ActivityChart data={agentActivitySeries} height="260px" />
-                  {/if}
-                </CardContent>
-              </Card>
-
               <!-- Recent Issues -->
-              <Card>
-                <CardHeader>
-                  <div class="flex items-center justify-between">
-                    <CardTitle>Recent Issues</CardTitle>
-                    {#if issues.length > 5}
-                      <button class="text-xs text-[#2563EB] hover:underline" onclick={() => activeTab = "issues"}>View all ({issues.length})</button>
+              <div class="space-y-3">
+                <div class="flex items-center justify-between">
+                  <h3 class="text-sm font-medium">Recent Issues</h3>
+                  <button
+                    class="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    onclick={() => activeTab = "issues"}
+                  >
+                    See All &rarr;
+                  </button>
+                </div>
+                {#if recentIssues.length === 0}
+                  <p class="text-sm text-muted-foreground">No recent issues.</p>
+                {:else}
+                  <div class="border border-border rounded-lg">
+                    {#each recentIssues as issue}
+                      <a
+                        href="/{prefix}/issues/{issue.identifier ?? issue.id}"
+                        class="flex items-center gap-2 border-b border-border last:border-b-0 px-3 py-2 text-sm no-underline text-inherit transition-colors hover:bg-accent/50"
+                      >
+                        <span class="shrink-0 font-mono text-xs text-muted-foreground">{issue.identifier ?? issue.id?.slice(0, 8)}</span>
+                        <span class="min-w-0 flex-1 truncate">{issue.title}</span>
+                        <span class="ml-auto shrink-0"><StatusBadge status={issue.status} /></span>
+                      </a>
+                    {/each}
+                    {#if issues.length > 10}
+                      <div class="px-3 py-2 text-xs text-muted-foreground text-center border-t border-border">
+                        +{issues.length - 10} more issues
+                      </div>
                     {/if}
                   </div>
-                </CardHeader>
-                <CardContent>
-                  {#if recentIssues.length === 0}
-                    <p class="text-sm text-[#94A3B8]">No issues assigned to this agent.</p>
-                  {:else}
-                    <div class="border border-white/[0.08] rounded-lg divide-y divide-white/[0.06]">
-                      {#each recentIssues as issue}
-                        <a href="/{prefix}/issues/{issue.id}" class="flex items-center justify-between p-2.5 text-sm hover:bg-white/[0.03] transition">
-                          <div class="flex items-center gap-2.5 min-w-0">
-                            <StatusBadge status={issue.status} />
-                            <span class="truncate">{issue.title}</span>
-                          </div>
-                          <div class="flex items-center gap-2 shrink-0">
-                            {#if issue.priority}<Badge variant="outline" class="text-[10px] capitalize">{issue.priority}</Badge>{/if}
-                          </div>
-                        </a>
-                      {/each}
-                    </div>
-                  {/if}
-                </CardContent>
-              </Card>
+                {/if}
+              </div>
 
-              <!-- Costs Summary -->
-              <Card>
-                <CardHeader><CardTitle>Costs Summary</CardTitle></CardHeader>
-                <CardContent>
-                  {#if costsSummaryLoading}
-                    <PageSkeleton lines={3} />
-                  {:else if costsSummary}
-                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                      <div class="border border-white/[0.08] rounded-lg p-3">
-                        <p class="text-xs text-[#94A3B8] mb-1">Input Tokens</p>
-                        <p class="text-lg font-semibold">{(costsSummary.inputTokens ?? 0).toLocaleString()}</p>
+              <!-- Costs -->
+              <div class="space-y-3">
+                <h3 class="text-sm font-medium">Costs</h3>
+                {#if costsSummaryLoading}
+                  <PageSkeleton lines={3} />
+                {:else if costsSummary}
+                  <div class="border border-border rounded-lg p-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 tabular-nums">
+                      <div>
+                        <span class="text-xs text-muted-foreground block">Input tokens</span>
+                        <span class="text-lg font-semibold">{formatTokens(costsSummary.inputTokens ?? 0)}</span>
                       </div>
-                      <div class="border border-white/[0.08] rounded-lg p-3">
-                        <p class="text-xs text-[#94A3B8] mb-1">Output Tokens</p>
-                        <p class="text-lg font-semibold">{(costsSummary.outputTokens ?? 0).toLocaleString()}</p>
+                      <div>
+                        <span class="text-xs text-muted-foreground block">Output tokens</span>
+                        <span class="text-lg font-semibold">{formatTokens(costsSummary.outputTokens ?? 0)}</span>
                       </div>
-                      <div class="border border-white/[0.08] rounded-lg p-3">
-                        <p class="text-xs text-[#94A3B8] mb-1">Cached Tokens</p>
-                        <p class="text-lg font-semibold">{(costsSummary.cachedTokens ?? 0).toLocaleString()}</p>
+                      <div>
+                        <span class="text-xs text-muted-foreground block">Cached tokens</span>
+                        <span class="text-lg font-semibold">{formatTokens(costsSummary.cachedTokens ?? 0)}</span>
                       </div>
-                      <div class="border border-white/[0.08] rounded-lg p-3">
-                        <p class="text-xs text-[#94A3B8] mb-1">Total Cost</p>
-                        <p class="text-lg font-semibold">{costsSummary.totalCostCents != null ? formatCents(costsSummary.totalCostCents) : '$0.00'}</p>
+                      <div>
+                        <span class="text-xs text-muted-foreground block">Total cost</span>
+                        <span class="text-lg font-semibold">{costsSummary.totalCostCents != null ? formatCents(costsSummary.totalCostCents) : '$0.00'}</span>
                       </div>
                     </div>
-                  {:else}
-                    <p class="text-sm text-[#94A3B8]">No cost data available.</p>
-                  {/if}
-                </CardContent>
-              </Card>
+                  </div>
+                {:else}
+                  <p class="text-sm text-muted-foreground">No cost data available.</p>
+                {/if}
+
+                <!-- Per-run cost table -->
+                {#if runsWithCost.length > 0}
+                  <div class="border border-border rounded-lg overflow-hidden">
+                    <table class="w-full text-xs">
+                      <thead>
+                        <tr class="border-b border-border bg-accent/20">
+                          <th class="text-left px-3 py-2 font-medium text-muted-foreground">Date</th>
+                          <th class="text-left px-3 py-2 font-medium text-muted-foreground">Run</th>
+                          <th class="text-right px-3 py-2 font-medium text-muted-foreground">Input</th>
+                          <th class="text-right px-3 py-2 font-medium text-muted-foreground">Output</th>
+                          <th class="text-right px-3 py-2 font-medium text-muted-foreground">Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {#each runsWithCost.slice(0, 10) as run}
+                          {@const metrics = runMetrics(run)}
+                          <tr class="border-b border-border last:border-b-0">
+                            <td class="px-3 py-2">{formatRunDate(run.createdAt ?? run.startedAt)}</td>
+                            <td class="px-3 py-2 font-mono">{run.id.slice(0, 8)}</td>
+                            <td class="px-3 py-2 text-right tabular-nums">{formatTokens(metrics.input)}</td>
+                            <td class="px-3 py-2 text-right tabular-nums">{formatTokens(metrics.output)}</td>
+                            <td class="px-3 py-2 text-right tabular-nums">{metrics.cost > 0 ? `$${metrics.cost.toFixed(4)}` : '-'}</td>
+                          </tr>
+                        {/each}
+                      </tbody>
+                    </table>
+                  </div>
+                {/if}
+              </div>
 
               <!-- Budget Card -->
               {#if agent.budgetMonthlyCents > 0}

@@ -2,3 +2,8 @@ export { default as BaseChart } from './base-chart.svelte';
 export { default as ActivityChart } from './activity-chart.svelte';
 export { default as CostChart } from './cost-chart.svelte';
 export { default as AgentStatusChart } from './agent-status-chart.svelte';
+export { default as ChartCard } from './chart-card.svelte';
+export { default as RunActivityChart } from './run-activity-chart.svelte';
+export { default as PriorityChart } from './priority-chart.svelte';
+export { default as IssueStatusChart } from './issue-status-chart.svelte';
+export { default as SuccessRateChart } from './success-rate-chart.svelte';

@@ -29,7 +29,7 @@
 
   let loading = $state(true);
   let approvals = $state<any[]>([]);
-  let activeTab = $state<'pending' | 'all'>('pending');
+  let activeTab = $state<'pending' | 'approved' | 'rejected' | 'all'>('pending');
   let actionLoading = $state<string | null>(null);
 
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
@@ -50,8 +50,21 @@
   let pendingApprovals = $derived(
     approvals.filter((a) => a.status === 'pending' || a.status === 'revision_requested'),
   );
+  let approvedApprovals = $derived(
+    approvals.filter((a) => a.status === 'approved'),
+  );
+  let rejectedApprovals = $derived(
+    approvals.filter((a) => a.status === 'rejected'),
+  );
   let pendingCount = $derived(pendingApprovals.length);
-  let displayedApprovals = $derived(activeTab === 'pending' ? pendingApprovals : approvals);
+  let approvedCount = $derived(approvedApprovals.length);
+  let rejectedCount = $derived(rejectedApprovals.length);
+  let displayedApprovals = $derived(
+    activeTab === 'pending' ? pendingApprovals
+    : activeTab === 'approved' ? approvedApprovals
+    : activeTab === 'rejected' ? rejectedApprovals
+    : approvals
+  );
 
   async function handleAction(approvalId: string, action: 'approve' | 'reject') {
     actionLoading = approvalId;
@@ -108,6 +121,32 @@
       {/if}
     </button>
     <button
+      onclick={() => (activeTab = 'approved')}
+      class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
+        {activeTab === 'approved' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+    >
+      Approved
+      {#if approvedCount > 0}
+        <span class="ml-1 text-xs text-muted-foreground">({approvedCount})</span>
+      {/if}
+      {#if activeTab === 'approved'}
+        <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></span>
+      {/if}
+    </button>
+    <button
+      onclick={() => (activeTab = 'rejected')}
+      class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
+        {activeTab === 'rejected' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+    >
+      Rejected
+      {#if rejectedCount > 0}
+        <span class="ml-1 text-xs text-muted-foreground">({rejectedCount})</span>
+      {/if}
+      {#if activeTab === 'rejected'}
+        <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></span>
+      {/if}
+    </button>
+    <button
       onclick={() => (activeTab = 'all')}
       class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
         {activeTab === 'all' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
@@ -134,7 +173,10 @@
           <ShieldCheck class="h-5 w-5 text-muted-foreground/40" />
         </div>
         <p class="text-sm font-medium text-muted-foreground">
-          {activeTab === 'pending' ? 'No pending approvals' : 'No approvals yet'}
+          {activeTab === 'pending' ? 'No pending approvals'
+          : activeTab === 'approved' ? 'No approved approvals'
+          : activeTab === 'rejected' ? 'No rejected approvals'
+          : 'No approvals yet'}
         </p>
         <p class="text-xs text-muted-foreground/60">
           {activeTab === 'pending' ? 'You\'re all caught up.' : 'Approval requests will appear here.'}
