@@ -143,8 +143,17 @@
       api(`/api/companies/${companyId}/budgets/overview`)
         .then((r) => r.json())
         .catch(() => null),
+      api(`/api/companies/${companyId}/costs/by-agent`)
+        .then((r) => r.json())
+        .catch(() => []),
+      api(`/api/companies/${companyId}/costs/by-project`)
+        .then((r) => r.json())
+        .catch(() => []),
+      api(`/api/companies/${companyId}/costs/finance-events`)
+        .then((r) => r.json())
+        .catch(() => []),
     ])
-      .then(([summaryData, finData, windowData, budgetOverviewData]) => {
+      .then(([summaryData, finData, windowData, budgetOverviewData, agentData, projData, eventsData]) => {
         summary = summaryData?.summary ?? summaryData;
         entries = summaryData?.entries ?? summaryData?.costs ?? summaryData?.items ?? [];
         if (finData) {
@@ -160,6 +169,18 @@
         if (budgetOverviewData) {
           openIncidents = budgetOverviewData.openIncidents ?? budgetOverviewData.open_incidents ?? [];
         }
+        byAgentData = Array.isArray(agentData)
+          ? agentData
+          : agentData?.data ?? agentData?.items ?? agentData?.agents ?? [];
+        byAgentLoaded = true;
+        byProjectData = Array.isArray(projData)
+          ? projData
+          : projData?.data ?? projData?.items ?? projData?.projects ?? [];
+        byProjectLoaded = true;
+        financeEvents = Array.isArray(eventsData)
+          ? eventsData
+          : eventsData?.data ?? eventsData?.events ?? eventsData?.items ?? [];
+        financeLoaded = true;
       })
       .catch(console.error)
       .finally(() => (loading = false));
@@ -612,6 +633,111 @@
             </div>
           </div>
         </div>
+
+        <!-- By Agent section (overview) -->
+        <div class="px-5 pt-6 pb-2 border-t border-border">
+          <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">By agent</h3>
+          <p class="text-xs text-muted-foreground mb-3">Which agent consumed in the selected period.</p>
+        </div>
+        {#if byAgentData.length === 0}
+          <div class="flex flex-col items-center justify-center py-6">
+            <p class="text-sm text-muted-foreground">No agent cost data available</p>
+          </div>
+        {:else}
+          <div class="border-t border-border">
+            <div class="grid grid-cols-12 gap-4 px-5 py-3 text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-border">
+              <div class="col-span-4">Agent</div>
+              <div class="col-span-2 text-right">Input Cost</div>
+              <div class="col-span-2 text-right">Output Cost</div>
+              <div class="col-span-2 text-right">Total</div>
+              <div class="col-span-2 text-right">Requests</div>
+            </div>
+
+            {#each byAgentData as row, i (row.id ?? row.agentId ?? i)}
+              <div class="grid grid-cols-12 gap-4 px-5 py-3 text-sm border-b border-border last:border-0 hover:bg-accent/50 transition-colors">
+                <div class="col-span-4 flex items-center gap-3 min-w-0">
+                  <div class="shrink-0 rounded-lg bg-blue-500/10 p-1.5">
+                    <Bot class="h-3.5 w-3.5 text-blue-500" />
+                  </div>
+                  <p class="text-foreground truncate font-medium">{row.agentName ?? row.name ?? row.agent ?? '---'}</p>
+                </div>
+                <div class="col-span-2 text-right text-muted-foreground">{formatSmallCurrency(row.inputCost)}</div>
+                <div class="col-span-2 text-right text-muted-foreground">{formatSmallCurrency(row.outputCost)}</div>
+                <div class="col-span-2 text-right font-medium text-foreground">{formatSmallCurrency(row.totalCost ?? row.total ?? row.cost)}</div>
+                <div class="col-span-2 text-right text-muted-foreground">{row.requestCount ?? row.requests ?? '---'}</div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- By Project section (overview) -->
+        <div class="px-5 pt-6 pb-2 border-t border-border">
+          <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">By project</h3>
+          <p class="text-xs text-muted-foreground mb-3">Run costs attributed through project-linked issues.</p>
+        </div>
+        {#if byProjectData.length === 0}
+          <div class="flex flex-col items-center justify-center py-6">
+            <p class="text-sm text-muted-foreground">No project-attributed run costs yet</p>
+          </div>
+        {:else}
+          <div class="border-t border-border">
+            <div class="grid grid-cols-12 gap-4 px-5 py-3 text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-border">
+              <div class="col-span-4">Project</div>
+              <div class="col-span-2 text-right">Input Cost</div>
+              <div class="col-span-2 text-right">Output Cost</div>
+              <div class="col-span-2 text-right">Total</div>
+              <div class="col-span-2 text-right">Requests</div>
+            </div>
+
+            {#each byProjectData as row, i (row.id ?? row.projectId ?? i)}
+              <div class="grid grid-cols-12 gap-4 px-5 py-3 text-sm border-b border-border last:border-0 hover:bg-accent/50 transition-colors">
+                <div class="col-span-4 flex items-center gap-3 min-w-0">
+                  <div class="shrink-0 rounded-lg bg-violet-500/10 p-1.5">
+                    <FolderKanban class="h-3.5 w-3.5 text-violet-500" />
+                  </div>
+                  <p class="text-foreground truncate font-medium">{row.projectName ?? row.name ?? row.project ?? '---'}</p>
+                </div>
+                <div class="col-span-2 text-right text-muted-foreground">{formatSmallCurrency(row.inputCost)}</div>
+                <div class="col-span-2 text-right text-muted-foreground">{formatSmallCurrency(row.outputCost)}</div>
+                <div class="col-span-2 text-right font-medium text-foreground">{formatSmallCurrency(row.totalCost ?? row.total ?? row.cost)}</div>
+                <div class="col-span-2 text-right text-muted-foreground">{row.requestCount ?? row.requests ?? '---'}</div>
+              </div>
+            {/each}
+          </div>
+        {/if}
+
+        <!-- Recent Financial Events section (overview) -->
+        <div class="px-5 pt-6 pb-2 border-t border-border">
+          <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Recent financial events</h3>
+          <p class="text-xs text-muted-foreground mb-3">Top-ups, fees, credits, commitments, and other non-request charges.</p>
+        </div>
+        {#if financeEvents.length === 0}
+          <div class="flex flex-col items-center justify-center py-6">
+            <p class="text-sm text-muted-foreground">No finance events yet. Add account-level charges using biller invoices or credits tool.</p>
+          </div>
+        {:else}
+          <div class="border-t border-border">
+            <div class="grid grid-cols-12 gap-4 px-5 py-3 text-xs font-medium uppercase tracking-wider text-muted-foreground border-b border-border">
+              <div class="col-span-2">Date</div>
+              <div class="col-span-3">Description</div>
+              <div class="col-span-2">Type</div>
+              <div class="col-span-2 text-right">Amount</div>
+              <div class="col-span-3">Source</div>
+            </div>
+
+            {#each financeEvents.slice(0, 10) as evt, i (evt.id ?? i)}
+              <div class="grid grid-cols-12 gap-4 px-5 py-3 text-sm border-b border-border last:border-0 hover:bg-accent/50 transition-colors">
+                <div class="col-span-2 text-muted-foreground">{formatDate(evt.date ?? evt.createdAt)}</div>
+                <div class="col-span-3 truncate text-foreground">{evt.description ?? evt.memo ?? '---'}</div>
+                <div class="col-span-2">
+                  <span class="rounded px-1.5 py-0.5 text-[10px] font-medium {evt.type === 'credit' || evt.type === 'revenue' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-red-500/10 text-red-600 dark:text-red-400'}">{evt.type ?? evt.category ?? '---'}</span>
+                </div>
+                <div class="col-span-2 text-right font-medium text-foreground">{formatCurrency(evt.amount ?? evt.value ?? 0)}</div>
+                <div class="col-span-3 text-muted-foreground truncate">{evt.source ?? evt.biller ?? '---'}</div>
+              </div>
+            {/each}
+          </div>
+        {/if}
       </TabsContent>
 
       <!-- ─── Budgets Tab ───────────────────────────────────────────── -->
