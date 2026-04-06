@@ -714,6 +714,7 @@
             </label>
             <div class="relative mt-1.5">
               {#if adapterModels.length > 0}
+                {@const piGrouped = Object.entries(adapterModels.reduce((acc, m) => { const p = m.provider ?? m.id.split('/')[0] ?? "other"; (acc[p] ??= []).push(m); return acc; }, {} as Record<string, typeof adapterModels>))}
                 <select
                   id="cfg-model"
                   class={selectCls}
@@ -721,8 +722,12 @@
                   onchange={(e) => setField("model", e.currentTarget.value)}
                 >
                   <option value="">Select model...</option>
-                  {#each adapterModels as m (m.id)}
-                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ""}</option>
+                  {#each piGrouped as [provider, models]}
+                    <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
+                      {#each models as m (m.id)}
+                        <option value={m.id}>{m.label || m.id}</option>
+                      {/each}
+                    </optgroup>
                   {/each}
                 </select>
                 <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -730,7 +735,7 @@
                 <input id="cfg-model" type="text" class={inputCls} value={config.model ?? ""} oninput={(e) => setField("model", e.currentTarget.value)} placeholder="provider/model (e.g. openai/gpt-5.4)" required />
               {/if}
             </div>
-            <p class={helpCls}>{adapterModelsLoading ? "Loading models..." : adapterModels.length > 0 ? `${adapterModels.length} models available.` : "Format: provider/model. Required for Pi."}</p>
+            <p class={helpCls}>{adapterModelsLoading ? "Discovering models via pi --list-models..." : adapterModels.length > 0 ? `${adapterModels.length} models from ${new Set(adapterModels.map(m => m.provider ?? 'unknown')).size} providers.` : "Run 'pi --list-models' to discover. Format: provider/model."}</p>
           </div>
         {/if}
 

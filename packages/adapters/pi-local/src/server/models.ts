@@ -263,25 +263,15 @@ export async function ensurePiModelConfiguredAndAvailable(input: {
 /**
  * Public listing function used by the adapter registry.
  *
- * Filters the full Pi model list to only include bridge providers (those
- * without dedicated adapters) that have their API key configured in the
- * current process environment. This prevents duplicate models from appearing
- * when e.g. the Anthropic adapter already handles Claude models.
+ * Returns ALL models from `pi --list-models` so the user can see
+ * every provider/model available. Models from providers without
+ * configured API keys will still be listed (the user can configure
+ * them later). This matches the behavior of copilot_local and cursor
+ * which also show all available models.
  */
 export async function listPiModels(): Promise<AdapterModel[]> {
-  const activeProviders = getActiveBridgeProviders();
-  if (activeProviders.size === 0) {
-    return [];
-  }
-
   try {
-    const all = await discoverPiModelsCached();
-    return all.filter((model) => {
-      const provider = model.provider ?? model.id.split("/")[0];
-      if (DEDICATED_PROVIDERS.has(provider)) return false;
-      if (!activeProviders.has(provider)) return false;
-      return true;
-    });
+    return await discoverPiModelsCached();
   } catch {
     return [];
   }
