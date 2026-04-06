@@ -558,7 +558,25 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
       const fallbackPath = fs.existsSync(path.join(uiDist, "200.html"))
         ? path.join(uiDist, "200.html")
         : path.join(uiDist, "index.html");
-      const indexHtml = applyUiBranding(fs.readFileSync(fallbackPath, "utf-8"));
+
+      // Cache the fallback HTML but invalidate when the file changes on disk.
+      // This prevents stale HTML (with old JS/CSS hashes) after a UI rebuild
+      // without requiring a full server restart.
+      let cachedFallbackHtml = applyUiBranding(fs.readFileSync(fallbackPath, "utf-8"));
+      let cachedFallbackMtime = fs.statSync(fallbackPath).mtimeMs;
+
+      function getFallbackHtml(): string {
+        try {
+          const currentMtime = fs.statSync(fallbackPath).mtimeMs;
+          if (currentMtime !== cachedFallbackMtime) {
+            cachedFallbackHtml = applyUiBranding(fs.readFileSync(fallbackPath, "utf-8"));
+            cachedFallbackMtime = currentMtime;
+          }
+        } catch {
+          // If stat fails, serve the cached version
+        }
+        return cachedFallbackHtml;
+      }
 
       const mimeTypes: Record<string, string> = {
         ".html": "text/html; charset=utf-8",
@@ -613,7 +631,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
           return new Response(fs.readFileSync(filePath), { headers });
         }
 
-        return new Response(indexHtml, {
+        return new Response(getFallbackHtml(), {
           headers: { "content-type": "text/html; charset=utf-8" },
         });
       };
