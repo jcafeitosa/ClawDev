@@ -371,7 +371,13 @@
   }
 
   async function handleAgentStep() {
-    if (!createdCompany || loading || createdAgent) return;
+    if (!createdCompany || loading) return;
+    // If agent already created, just advance to step 3
+    if (createdAgent) {
+      markCompleted(2);
+      currentStep = 3;
+      return;
+    }
     error = null;
     loading = true;
     try {
