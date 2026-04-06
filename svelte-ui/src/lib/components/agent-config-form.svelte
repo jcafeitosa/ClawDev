@@ -84,12 +84,17 @@
     codex_local: { providers: ["openai"] },
     gemini_local: { providers: ["google"] },
     opencode_local: { idPrefix: "opencode/" },
+    // copilot_local: no filter — supports all providers (anthropic, openai, google)
+    // cursor: no filter — supports all providers
+    // pi_local: no filter — user specifies provider/model format
   };
   const MODEL_PROVIDER_LABELS: Record<string, string> = {
     claude_local: "Anthropic",
     codex_local: "OpenAI",
     gemini_local: "Google",
     opencode_local: "OpenCode",
+    copilot_local: "All Providers",
+    cursor: "All Providers",
     copilot_local: "Copilot",
     cursor: "Cursor",
     pi_local: "Pi",
@@ -603,15 +608,25 @@
         {#if showModelControls}
           <div>
             <label for="cfg-model" class={labelCls}>Model</label>
-            <input
-              id="cfg-model"
-              type="text"
-              class="{inputCls} mt-1.5"
-              value={config.model ?? "auto"}
-              oninput={(e) => setField("model", e.currentTarget.value)}
-              placeholder="auto"
-            />
-            <p class={helpCls}>Model identifier. Use "auto" for Cursor's default selection.</p>
+            <div class="relative mt-1.5">
+              {#if adapterModels.length > 0}
+                <select
+                  id="cfg-model"
+                  class={selectCls}
+                  value={config.model ?? "auto"}
+                  onchange={(e) => setField("model", e.currentTarget.value)}
+                >
+                  <option value="auto">Auto (default)</option>
+                  {#each adapterModels as m (m.id)}
+                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ""}</option>
+                  {/each}
+                </select>
+                <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              {:else}
+                <input id="cfg-model" type="text" class={inputCls} value={config.model ?? "auto"} oninput={(e) => setField("model", e.currentTarget.value)} placeholder="auto" />
+              {/if}
+            </div>
+            <p class={helpCls}>{adapterModelsLoading ? "Loading models..." : `${adapterModels.length} models available. Use "auto" for default.`}</p>
           </div>
         {/if}
 
@@ -686,16 +701,25 @@
               Model
               <span class="ml-1 text-red-400">*</span>
             </label>
-            <input
-              id="cfg-model"
-              type="text"
-              class="{inputCls} mt-1.5"
-              value={config.model ?? ""}
-              oninput={(e) => setField("model", e.currentTarget.value)}
-              placeholder="provider/model (e.g. openai/gpt-5.4)"
-              required
-            />
-            <p class={helpCls}>Format: provider/model. This field is required for Pi adapters.</p>
+            <div class="relative mt-1.5">
+              {#if adapterModels.length > 0}
+                <select
+                  id="cfg-model"
+                  class={selectCls}
+                  value={config.model ?? ""}
+                  onchange={(e) => setField("model", e.currentTarget.value)}
+                >
+                  <option value="">Select model...</option>
+                  {#each adapterModels as m (m.id)}
+                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ""}</option>
+                  {/each}
+                </select>
+                <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              {:else}
+                <input id="cfg-model" type="text" class={inputCls} value={config.model ?? ""} oninput={(e) => setField("model", e.currentTarget.value)} placeholder="provider/model (e.g. openai/gpt-5.4)" required />
+              {/if}
+            </div>
+            <p class={helpCls}>{adapterModelsLoading ? "Loading models..." : adapterModels.length > 0 ? `${adapterModels.length} models available.` : "Format: provider/model. Required for Pi."}</p>
           </div>
         {/if}
 
