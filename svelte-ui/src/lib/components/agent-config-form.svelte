@@ -484,14 +484,20 @@
             <label for="cfg-model" class={labelCls}>Model</label>
             <div class="relative mt-1.5">
               {#if adapterModels.length > 0}
+                {@const grouped = Object.entries(adapterModels.reduce((acc, m) => { const p = m.provider ?? "other"; (acc[p] ??= []).push(m); return acc; }, {} as Record<string, typeof adapterModels>))}
                 <select
                   id="cfg-model"
                   class={selectCls}
                   value={config.model ?? ""}
                   onchange={(e) => setField("model", e.currentTarget.value)}
                 >
-                  {#each adapterModels as m (m.id)}
-                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ""}</option>
+                  <option value="">Select model...</option>
+                  {#each grouped as [provider, models]}
+                    <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
+                      {#each models as m (m.id)}
+                        <option value={m.id}>{m.label || m.id}</option>
+                      {/each}
+                    </optgroup>
                   {/each}
                 </select>
               {:else}
@@ -610,6 +616,7 @@
             <label for="cfg-model" class={labelCls}>Model</label>
             <div class="relative mt-1.5">
               {#if adapterModels.length > 0}
+                {@const cursorGrouped = Object.entries(adapterModels.reduce((acc, m) => { const p = m.provider ?? "other"; (acc[p] ??= []).push(m); return acc; }, {} as Record<string, typeof adapterModels>))}
                 <select
                   id="cfg-model"
                   class={selectCls}
@@ -617,8 +624,12 @@
                   onchange={(e) => setField("model", e.currentTarget.value)}
                 >
                   <option value="auto">Auto (default)</option>
-                  {#each adapterModels as m (m.id)}
-                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ""}</option>
+                  {#each cursorGrouped as [provider, models]}
+                    <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
+                      {#each models as m (m.id)}
+                        <option value={m.id}>{m.label || m.id}</option>
+                      {/each}
+                    </optgroup>
                   {/each}
                 </select>
                 <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
