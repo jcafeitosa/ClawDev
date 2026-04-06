@@ -140,6 +140,47 @@ export function approvalService(db: Db) {
           });
           hireApprovedAgentId = created?.id ?? null;
         }
+        // Fix instructions paths: the hire request materializes instructions
+        // with a temporary UUID. After approval, re-point paths to the real agent ID.
+        if (hireApprovedAgentId) {
+          const agent = await agentsSvc.getById(hireApprovedAgentId);
+          if (agent) {
+            const cfg = typeof agent.adapterConfig === "object" && agent.adapterConfig !== null
+              ? { ...(agent.adapterConfig as Record<string, unknown>) }
+              : {};
+            const filePath = typeof cfg.instructionsFilePath === "string" ? cfg.instructionsFilePath : "";
+            const rootPath = typeof cfg.instructionsRootPath === "string" ? cfg.instructionsRootPath : "";
+            // Check if paths contain a different agent UUID (from the hire request materialization)
+            if (filePath && !filePath.includes(hireApprovedAgentId)) {
+              const fixedFilePath = filePath.replace(/\/agents\/[0-9a-f-]{36}\//, `/agents/${hireApprovedAgentId}/`);
+              const fixedRootPath = rootPath.replace(/\/agents\/[0-9a-f-]{36}\//, `/agents/${hireApprovedAgentId}/`);
+              if (fixedFilePath !== filePath) {
+                // Move files from old path to new path
+                const fs = await import("node:fs/promises");
+                const path = await import("node:path");
+                const oldDir = rootPath;
+                const newDir = fixedRootPath;
+                try {
+                  await fs.mkdir(path.dirname(newDir), { recursive: true });
+                  await fs.rename(oldDir, newDir);
+                } catch {
+                  // If rename fails (e.g. cross-device), try copy
+                  try {
+                    await fs.cp(oldDir, newDir, { recursive: true });
+                    await fs.rm(oldDir, { recursive: true, force: true });
+                  } catch { /* ignore if copy fails too */ }
+                }
+                await agentsSvc.update(hireApprovedAgentId, {
+                  adapterConfig: {
+                    ...cfg,
+                    instructionsFilePath: fixedFilePath,
+                    instructionsRootPath: fixedRootPath,
+                  },
+                });
+              }
+            }
+          }
+        }
         if (hireApprovedAgentId) {
           const budgetMonthlyCents =
             typeof payload.budgetMonthlyCents === "number" ? payload.budgetMonthlyCents : 0;

@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { goto } from '$app/navigation';
   import { onMount } from 'svelte';
+  import { PageLayout } from '$components/layout/index.js';
 
   let prefix = $derived($page.params.companyPrefix);
   let runId = $derived($page.params.runId);
@@ -12,4 +13,6 @@
   });
 </script>
 
-<p style="color: white;">Redirecting to run detail...</p>
+<PageLayout title="Run Redirect" description="Redirecting to the run detail page." fullWidth>
+  <p class="text-sm text-muted-foreground">Redirecting to run detail...</p>
+</PageLayout>

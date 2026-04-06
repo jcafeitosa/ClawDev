@@ -259,8 +259,8 @@
   <PageLayout title={approval.title ?? approvalTypeLabel(approval.type)} description={approval.description ?? undefined} fullWidth>
     {#snippet actions()}
       <div class="flex items-center gap-2">
-        <StatusBadge status={approval.status} />
-        <Badge variant="outline" class="capitalize">{approvalTypeLabel(approval.type)}</Badge>
+        <StatusBadge status={approval!.status} />
+        <Badge variant="outline" class="capitalize">{approvalTypeLabel(approval!.type)}</Badge>
         <Button variant="outline" size="sm" href="/{$page.params.companyPrefix}/approvals">
           Back
         </Button>
@@ -332,7 +332,7 @@
       <Card class="mb-6">
         <CardContent class="pt-6">
           <div class="flex items-start gap-3">
-            <StatusBadge status={approval.status} />
+            <StatusBadge status={approval!.status} />
             <div class="text-sm">
               <p class="whitespace-pre-wrap">{approval.decisionNote}</p>
               {#if approval.decidedAt}
@@ -422,7 +422,7 @@
       <!-- Sidebar properties -->
       <PropertiesPanel>
         <PropertyRow label="Status">
-          <StatusBadge status={approval.status} />
+          <StatusBadge status={approval!.status} />
         </PropertyRow>
         <Separator />
         <PropertyRow label="Type">

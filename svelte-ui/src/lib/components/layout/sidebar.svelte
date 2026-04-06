@@ -36,7 +36,26 @@
     Sun,
     Pin,
     PinOff,
+    Brain,
+    Zap,
+    Terminal,
+    Crown,
+    Code,
+    Globe,
+    Server,
+    Database,
+    Cloud,
   } from "lucide-svelte";
+  import type { ComponentType } from "svelte";
+
+  const SIDEBAR_ICON_MAP: Record<string, ComponentType> = {
+    bot: Bot, brain: Brain, cpu: Cpu, zap: Zap, terminal: Terminal, crown: Crown,
+    code: Code, rocket: Rocket, globe: Globe, server: Server, database: Database, cloud: Cloud,
+  };
+  function resolveAgentIcon(name: string | null | undefined): ComponentType | null {
+    if (!name) return null;
+    return SIDEBAR_ICON_MAP[name.toLowerCase()] ?? null;
+  }
 
   let expanded = $derived(sidebarStore.expanded);
 
@@ -126,7 +145,6 @@
     document.documentElement.classList.toggle("light", !isDark);
     document.documentElement.style.colorScheme = isDark ? "dark" : "light";
     try {
-      localStorage.setItem("clawdev.theme", isDark ? "dark" : "light");
       localStorage.setItem("clawdev.theme", isDark ? "dark" : "light");
     } catch { /* ignore */ }
   }
@@ -720,9 +738,14 @@
               <div class="px-2.5 py-1.5 text-xs text-[var(--clawdev-text-muted)]/60 italic">No agents yet</div>
             {:else}
               {#each visibleAgents as agent (agent.id)}
+                {@const AgentIcon = resolveAgentIcon(agent.icon)}
                 <a href={`/${prefix}/agents/${agent.slug ?? agent.urlKey ?? agent.id}`} class={cn("flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors", $page.url.pathname.includes(`/agents/${agent.slug ?? agent.urlKey ?? agent.id}`) ? "bg-[rgba(255,255,255,0.08)] text-[var(--clawdev-text-primary)] font-medium" : "text-[var(--clawdev-text-muted)] hover:bg-[rgba(255,255,255,0.05)] hover:text-[var(--clawdev-text-primary)]")}>
                   <div class="relative shrink-0">
-                    {#if agent.icon}<span class="flex h-5 w-5 items-center justify-center text-sm" title={agent.name}>{agent.icon}</span>{:else}<span class="flex h-5 w-5 items-center justify-center rounded bg-[rgba(255,255,255,0.08)] text-[9px] font-bold text-[var(--clawdev-text-muted)] uppercase">{agentInitials(agent)}</span>{/if}
+                    {#if AgentIcon}
+                      <span class="flex h-5 w-5 items-center justify-center text-sm" title={agent.name}><AgentIcon size={14} /></span>
+                    {:else}
+                      <span class="flex h-5 w-5 items-center justify-center rounded bg-[rgba(255,255,255,0.08)] text-[9px] font-bold text-[var(--clawdev-text-muted)] uppercase">{agentInitials(agent)}</span>
+                    {/if}
                     {#if agentStatusColor(agent)}<span class={cn("absolute -bottom-px -right-px block h-2 w-2 rounded-full border border-[var(--clawdev-bg-base)]", agent.status === "running" && "animate-pulse")} style:background-color={agentStatusColor(agent)}></span>{/if}
                   </div>
                   <span class="flex-1 truncate">{agent.name}</span>

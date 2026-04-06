@@ -12,6 +12,7 @@
   import { AGENT_ADAPTER_OPTIONS } from '$lib/constants/agent-adapters';
   import { Bot, User, Settings, Zap, FileText, ChevronDown } from 'lucide-svelte';
   import { Card, CardContent, CardHeader, CardTitle, Button, Input, Label, Alert, AlertDescription, Badge, Skeleton, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   // ---------------------------------------------------------------------------
   // Constants
@@ -171,7 +172,7 @@
   }
 </script>
 
-<div class="mx-auto max-w-3xl p-6 space-y-8">
+<PageLayout title="Create Agent" description="Configure a new agent for your company." fullWidth>
   <Card class="border-border/60 backdrop-blur-sm">
     <CardHeader>
       <CardTitle class="text-xl">Create Agent</CardTitle>
@@ -412,4 +413,4 @@
   </form>
     </CardContent>
   </Card>
-</div>
+</PageLayout>

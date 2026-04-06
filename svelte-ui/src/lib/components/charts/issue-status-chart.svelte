@@ -2,6 +2,8 @@
   /**
    * IssueStatusChart -- stacked bar chart showing issues by status over 14 days.
    */
+  import { ISSUE_STATUS_ORDER, ISSUE_STATUS_VISUALS } from '$lib/constants/visual';
+  import { formatDayLabel, getLast14Days } from './chart-helpers';
 
   interface Issue {
     status: string;
@@ -14,39 +16,6 @@
   }
 
   let { issues }: Props = $props();
-
-  const STATUS_COLORS: Record<string, string> = {
-    todo: '#3b82f6',
-    in_progress: '#8b5cf6',
-    in_review: '#a855f7',
-    done: '#10b981',
-    blocked: '#ef4444',
-    cancelled: '#6b7280',
-    backlog: '#64748b',
-  };
-
-  const STATUS_LABELS: Record<string, string> = {
-    todo: 'To Do',
-    in_progress: 'In Progress',
-    in_review: 'In Review',
-    done: 'Done',
-    blocked: 'Blocked',
-    cancelled: 'Cancelled',
-    backlog: 'Backlog',
-  };
-
-  function getLast14Days(): string[] {
-    return Array.from({ length: 14 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (13 - i));
-      return d.toISOString().slice(0, 10);
-    });
-  }
-
-  function formatDayLabel(dateStr: string): string {
-    const d = new Date(dateStr + 'T12:00:00');
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  }
 
   let days = $derived(getLast14Days());
 
@@ -68,9 +37,7 @@
     return map;
   });
 
-  let statusOrder = $derived(
-    ['todo', 'in_progress', 'in_review', 'done', 'blocked', 'cancelled', 'backlog'].filter(s => allStatuses.has(s))
-  );
+  let statusOrder = $derived(ISSUE_STATUS_ORDER.filter((s) => allStatuses.has(s)));
 
   let maxValue = $derived(Math.max(...Array.from(grouped.values()).map(v => Object.values(v).reduce((a, b) => a + b, 0)), 1));
   let hasData = $derived(allStatuses.size > 0);
@@ -90,7 +57,7 @@
             <div class="flex flex-col-reverse gap-px overflow-hidden" style="height: {heightPct}%; min-height: 2px;">
               {#each statusOrder as s}
                 {#if entry && (entry[s] ?? 0) > 0}
-                  <div style="flex: {entry[s]}; background-color: {STATUS_COLORS[s] ?? '#6b7280'};"></div>
+                  <div style="flex: {entry[s]}; background-color: {ISSUE_STATUS_VISUALS[s]?.hex ?? '#6b7280'};"></div>
                 {/if}
               {/each}
             </div>
@@ -104,7 +71,7 @@
       {#each days as day, i}
         <div class="flex-1 text-center">
           {#if i === 0 || i === 6 || i === 13}
-            <span class="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day)}</span>
+            <span class="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day, i)}</span>
           {/if}
         </div>
       {/each}
@@ -112,8 +79,8 @@
     <div class="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-2">
       {#each statusOrder as s}
         <span class="flex items-center gap-1 text-[9px] text-muted-foreground">
-          <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background-color: {STATUS_COLORS[s] ?? '#6b7280'};"></span>
-          {STATUS_LABELS[s] ?? s}
+          <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background-color: {ISSUE_STATUS_VISUALS[s]?.hex ?? '#6b7280'};"></span>
+          {ISSUE_STATUS_VISUALS[s]?.label ?? s}
         </span>
       {/each}
     </div>

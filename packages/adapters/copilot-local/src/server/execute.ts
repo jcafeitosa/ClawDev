@@ -1,4 +1,7 @@
+import fs from "node:fs/promises";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { readFile } from "node:fs/promises";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@clawdev/adapter-utils";
 import {
@@ -18,6 +21,31 @@ import {
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
 import { parseCopilotOutput } from "./parse.js";
+
+const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
+
+/**
+ * Create a tmpdir with `.claude/skills/` (Copilot uses the same skills layout
+ * as Claude Code) containing symlinks to ClawDev skills, so `--add-dir` makes
+ * the Copilot CLI discover them as registered skills.
+ */
+async function buildSkillsDir(config: Record<string, unknown>): Promise<string> {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "clawdev-copilot-skills-"));
+  const target = path.join(tmp, ".claude", "skills");
+  await fs.mkdir(target, { recursive: true });
+  const availableEntries = await readClawDevRuntimeSkillEntries(config, __moduleDir);
+  const desiredNames = new Set(
+    resolveClawDevDesiredSkillNames(config, availableEntries),
+  );
+  for (const entry of availableEntries) {
+    if (!desiredNames.has(entry.key)) continue;
+    await fs.symlink(
+      entry.source,
+      path.join(target, entry.runtimeName),
+    );
+  }
+  return tmp;
+}
 
 function firstNonEmptyLine(text: string): string {
   return (
@@ -200,13 +228,42 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     } catch { /* ignore missing file */ }
   }
 
+  // Inject ClawDev skill content into the prompt so the agent knows how to
+  // use the API (hire_agent, create_issue, etc.) — Copilot CLI doesn't
+  // support Claude Code's skill system natively.
+  let skillsContent = "";
+  try {
+    const entries = await readClawDevRuntimeSkillEntries(config, __moduleDir);
+    const desiredNames = new Set(resolveClawDevDesiredSkillNames(config, entries));
+    await onLog("stderr", `[clawdev-copilot] Skills: moduleDir=${__moduleDir}, entries=${entries.length}, desired=${desiredNames.size}, keys=[${entries.map(e => e.key).join(", ")}]\n`);
+    for (const entry of entries) {
+      if (!desiredNames.has(entry.key)) continue;
+      try {
+        const md = await readFile(path.join(entry.source, "SKILL.md"), "utf8");
+        if (md.trim()) {
+          skillsContent += `\n\n---\n## Skill: ${entry.runtimeName}\n\n${md.trim()}\n`;
+          await onLog("stderr", `[clawdev-copilot] Loaded skill: ${entry.runtimeName} (${md.length} chars)\n`);
+        }
+      } catch (err) {
+        await onLog("stderr", `[clawdev-copilot] Failed to load skill ${entry.runtimeName}: ${err}\n`);
+      }
+    }
+  } catch (err) {
+    await onLog("stderr", `[clawdev-copilot] Skill loading error: ${err}\n`);
+  }
+  await onLog("stderr", `[clawdev-copilot] Total skills content: ${skillsContent.length} chars\n`);
+
   const prompt = joinPromptSections([
     instructionsPrefix,
+    skillsContent,
     sessionHandoffNote,
     renderedPrompt,
   ]);
 
   const effort = modelEffort || asString(config.effort, "");
+
+  // Mount ClawDev skills so the agent can use hire_agent, create_issue, etc.
+  const skillsDir = await buildSkillsDir(config);
 
   const buildArgs = (resumeSessionId: string | null) => {
     const args: string[] = ["-p", prompt, "--output-format", "json"];
@@ -241,7 +298,8 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // Config
     if (configDir) args.push("--config-dir", configDir);
 
-    // Directories
+    // Directories (internal skills dir always included first)
+    args.push("--add-dir", skillsDir);
     for (const d of addDirs) args.push("--add-dir", d);
 
     // MCP
@@ -359,6 +417,11 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     };
   };
 
-  const initial = await runAttempt(sessionId);
-  return toResult(initial);
+  try {
+    const initial = await runAttempt(sessionId);
+    return toResult(initial);
+  } finally {
+    // Cleanup temp skills directory
+    fs.rm(skillsDir, { recursive: true, force: true }).catch(() => {});
+  }
 }

@@ -115,19 +115,21 @@
     </div>
   {:else if projects.length === 0}
     <!-- Empty state -->
-    <div class="glass-card p-12 text-center">
-      <div class="flex flex-col items-center gap-3">
-        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
-          <FolderKanban class="h-5 w-5 text-muted-foreground/40" />
+    <Card>
+      <CardContent class="p-12 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+            <FolderKanban class="h-5 w-5 text-muted-foreground/40" />
+          </div>
+          <p class="text-sm font-medium text-muted-foreground">No projects yet</p>
+          <p class="text-xs text-muted-foreground/60">Create your first project to get started.</p>
+          <Button class="mt-2" onclick={() => (showCreate = true)}>
+            <Plus class="h-4 w-4" />
+            New Project
+          </Button>
         </div>
-        <p class="text-sm font-medium text-muted-foreground">No projects yet</p>
-        <p class="text-xs text-muted-foreground/60">Create your first project to get started.</p>
-        <Button class="mt-2" onclick={() => (showCreate = true)}>
-          <Plus class="h-4 w-4" />
-          New Project
-        </Button>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   {:else}
     <!-- Project cards grid -->
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">

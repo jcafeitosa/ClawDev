@@ -22,6 +22,7 @@
     Loader2,
     MinusCircle,
   } from "lucide-svelte";
+  import { AGENT_STATUS_DOT_CLASSES } from "$lib/constants/visual";
 
   // ---------------------------------------------------------------------------
   // Props
@@ -147,17 +148,8 @@
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
-  const STATUS_COLORS: Record<string, string> = {
-    idle: "bg-emerald-500",
-    running: "bg-blue-500",
-    paused: "bg-yellow-500",
-    error: "bg-red-500",
-    terminated: "bg-zinc-500",
-    pending_approval: "bg-amber-400",
-  };
-
   function statusDotClass(status: string): string {
-    return STATUS_COLORS[status] ?? "bg-zinc-500";
+    return AGENT_STATUS_DOT_CLASSES[status] ?? "bg-zinc-500";
   }
 
   function roleBadgeColor(role: string): string {

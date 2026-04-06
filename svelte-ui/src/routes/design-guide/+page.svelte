@@ -180,7 +180,7 @@
       <p class="mb-6 text-sm text-[#64748b]">Card compound component with header, content, and footer slots.</p>
 
       <div class="grid grid-cols-1 gap-4 md:grid-cols-2">
-        <Card class="glass-card">
+        <Card>
           <CardHeader>
             <CardTitle class="text-[#F8FAFC]">Agent Performance</CardTitle>
             <CardDescription class="text-[#64748b]">Overview of agent metrics for the past 7 days.</CardDescription>
@@ -197,7 +197,7 @@
           </CardFooter>
         </Card>
 
-        <Card class="glass-card">
+        <Card>
           <CardHeader>
             <CardTitle class="text-[#F8FAFC]">Active Issues</CardTitle>
             <CardDescription class="text-[#64748b]">Current open issues requiring attention.</CardDescription>
@@ -219,11 +219,11 @@
       </div>
 
       <div class="mt-6">
-        <h3 class="mb-3 text-[0.8125rem] font-semibold uppercase tracking-widest text-[#94A3B8]">Glass Card</h3>
-        <p class="mb-4 text-sm text-[#64748b]">The <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">glass-card</code> utility class from <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">app.css</code> provides the standard elevated surface with border, gradient background, backdrop blur, and hover lift.</p>
-        <div class="glass-card p-6">
-          <p class="text-sm text-[#94A3B8]">This container uses the <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">glass-card</code> class. Hover to see the lift effect.</p>
-        </div>
+        <h3 class="mb-3 text-[0.8125rem] font-semibold uppercase tracking-widest text-[#94A3B8]">Card Surface</h3>
+        <p class="mb-4 text-sm text-[#64748b]">The <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">Card</code> compound from the UI kit provides the standard elevated surface with border, background, and structured spacing.</p>
+        <Card class="p-6">
+          <p class="text-sm text-[#94A3B8]">This container uses the <code class="rounded-md border border-white/6 bg-white/6 px-1.5 py-0.5 font-mono text-[0.8125em] text-[#60a5fa]">Card</code> component. Hover to see the lift effect.</p>
+        </Card>
       </div>
     </section>
 
@@ -343,7 +343,7 @@
       <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-5">
         {#each colors as color}
           <button
-            class="glass-card group cursor-pointer overflow-hidden text-left"
+            class="group cursor-pointer overflow-hidden text-left"
             onclick={() => {
               navigator.clipboard.writeText(color.hex);
               showToast('success', `Copied ${color.hex}`);

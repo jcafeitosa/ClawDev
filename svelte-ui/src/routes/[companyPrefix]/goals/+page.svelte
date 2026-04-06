@@ -184,34 +184,36 @@
     </div>
   {:else if goals.length === 0}
     <!-- Empty state -->
-    <div class="glass-card p-12 text-center">
-      <div class="flex flex-col items-center gap-3">
-        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
-          <Target class="h-5 w-5 text-muted-foreground/40" />
+    <Card>
+      <CardContent class="p-12 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+            <Target class="h-5 w-5 text-muted-foreground/40" />
+          </div>
+          <p class="text-sm font-medium text-muted-foreground">No goals yet</p>
+          <p class="text-xs text-muted-foreground/60">Create your first goal to get started.</p>
+          <Button onclick={() => (showCreate = true)} class="mt-2">
+            <Plus class="h-4 w-4" />
+            New Goal
+          </Button>
         </div>
-        <p class="text-sm font-medium text-muted-foreground">No goals yet</p>
-        <p class="text-xs text-muted-foreground/60">Create your first goal to get started.</p>
-        <Button onclick={() => (showCreate = true)} class="mt-2">
-          <Plus class="h-4 w-4" />
-          New Goal
-        </Button>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   {:else}
     <!-- Goals tree -->
-    <div class="glass-card p-0 overflow-hidden">
-    <div class="divide-y divide-border/50">
-      {#each flatGoals as { goal, depth } (goal.id)}
-        {@const children = childrenOf(goal.id)}
-        <a
-          href="/{prefix}/goals/{goal.id}"
-          class="cursor-pointer group flex items-center gap-4 py-4 pr-5 transition-colors duration-150 hover:bg-accent/40"
-          style="padding-left: {1.25 + depth * 1.5}rem"
-        >
-              <!-- Level-colored border accent -->
-              {#if depth > 0}
-                <div class="w-0.5 self-stretch rounded-full {statusVariant(goal.status).includes('emerald') ? 'bg-emerald-500/40' : statusVariant(goal.status).includes('blue') ? 'bg-blue-500/40' : statusVariant(goal.status).includes('red') ? 'bg-red-500/40' : statusVariant(goal.status).includes('amber') ? 'bg-amber-500/40' : 'bg-border/60'} shrink-0"></div>
-              {/if}
+    <Card class="p-0 overflow-hidden">
+      <div class="divide-y divide-border/50">
+        {#each flatGoals as { goal, depth } (goal.id)}
+          {@const children = childrenOf(goal.id)}
+          <a
+            href="/{prefix}/goals/{goal.id}"
+            class="cursor-pointer group flex items-center gap-4 py-4 pr-5 transition-colors duration-150 hover:bg-accent/40"
+            style="padding-left: {1.25 + depth * 1.5}rem"
+          >
+                <!-- Level-colored border accent -->
+                {#if depth > 0}
+                  <div class="w-0.5 self-stretch rounded-full {statusVariant(goal.status).includes('emerald') ? 'bg-emerald-500/40' : statusVariant(goal.status).includes('blue') ? 'bg-blue-500/40' : statusVariant(goal.status).includes('red') ? 'bg-red-500/40' : statusVariant(goal.status).includes('amber') ? 'bg-amber-500/40' : 'bg-border/60'} shrink-0"></div>
+                {/if}
 
               <!-- Icon -->
               <div class="shrink-0 rounded-lg {levelIconClass(goal.level)} p-2">
@@ -259,7 +261,7 @@
               <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
         </a>
       {/each}
-    </div>
-    </div>
+      </div>
+    </Card>
   {/if}
 </PageLayout>

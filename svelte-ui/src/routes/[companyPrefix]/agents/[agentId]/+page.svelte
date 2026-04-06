@@ -11,7 +11,17 @@
   import { PageLayout } from "$components/layout/index.js";
   import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "$lib/components/charts/index.js";
   import { onMount } from "svelte";
-  import { Bot, Settings, Shield, DollarSign, Play, Pause, Zap, Key, FileText, Link2, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Eye, EyeOff, Plus, X, Save, RotateCcw, Wallet, Check, FolderOpen, Loader2, ExternalLink, BookOpen, MoreHorizontal, AlertCircle, ClipboardList, StopCircle } from "lucide-svelte";
+  import { Bot, Play, Pause, Zap, Key, FileText, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Plus, X, Save, RotateCcw, Check, Loader2, MoreHorizontal, AlertCircle, ClipboardList, StopCircle, Brain, Cpu, Terminal, Crown, Code, Rocket, Globe, Server, Database, Cloud } from "lucide-svelte";
+  import type { ComponentType } from "svelte";
+
+  const AGENT_ICON_COMPONENTS: Record<string, ComponentType> = {
+    bot: Bot, brain: Brain, cpu: Cpu, zap: Zap, terminal: Terminal, crown: Crown,
+    code: Code, rocket: Rocket, globe: Globe, server: Server, database: Database, cloud: Cloud,
+  };
+  function resolveAgentIcon(name: string | null | undefined): ComponentType {
+    if (!name) return Bot;
+    return AGENT_ICON_COMPONENTS[name.toLowerCase()] ?? Bot;
+  }
   import { openNewIssueDialog } from '$lib/components/new-issue-dialog.svelte';
   import AgentIconPicker from '$lib/components/agent-icon-picker.svelte';
   import ReportsToPicker from '$lib/components/reports-to-picker.svelte';
@@ -19,6 +29,7 @@
   import MarkdownBody from '$lib/components/markdown-body.svelte';
   import InlineEditor from '$lib/components/inline-editor.svelte';
   import RunTranscriptPreview from '$lib/components/run-transcript-preview.svelte';
+  import AgentConfigForm from '$lib/components/agent-config-form.svelte';
   import { buildTranscriptFromLog, normalizeTranscript } from '$lib/transcript/run-transcript';
 
   // ---------------------------------------------------------------------------
@@ -67,6 +78,18 @@
   let revealedKey = $state<string | null>(null);
   let revokingKeyId = $state<string | null>(null);
   let confirmRevokeId = $state<string | null>(null);
+
+  // Model selector state (Configuration tab)
+  let configModels = $state<{id: string; label: string; status?: string; statusDetail?: string; provider?: string}[]>([]);
+  let configModelsLoading = $state(false);
+  let configModelsError = $state<string | null>(null);
+  let configModelValue = $state("");
+  let configSaving = $state(false);
+  let configModelTestResult = $state<{status: string; testedAt: string; checks: {level: string; message: string; detail?: string; hint?: string; code?: string}[]} | null>(null);
+  let configModelTestLoading = $state(false);
+  let configModelTestTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+  let configDraft = $state<Record<string, any>>({});
+  let configAdapterType = $state("");
 
   // Budget edit state
   let editingBudget = $state(false);
@@ -133,6 +156,8 @@
   // Derived
   // ---------------------------------------------------------------------------
   let agentId = $derived($page.params.agentId);
+  /** Resolved UUID — prefers loaded agent.id over URL param (which may be a urlKey like "ceo") */
+  let agentUuid = $derived(agent?.id ?? agentId);
   let prefix = $derived($page.params.companyPrefix);
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix(prefix));
   let companyId = $derived(routeCompanyId);
@@ -299,7 +324,7 @@
   async function loadHeartbeats() {
     if (!agentId || !companyId) return;
     try {
-      const res = await api(`/api/agents/${agentId}/heartbeat-runs?limit=20${companyId ? `&companyId=${companyId}` : ''}`);
+      const res = await api(`/api/agents/${agentUuid}/heartbeat-runs?limit=20${companyId ? `&companyId=${companyId}` : ''}`);
       if (!res.ok) return;
       const data = await res.json();
       heartbeats = Array.isArray(data) ? data : data.runs ?? data.data ?? [];
@@ -318,7 +343,7 @@
   async function loadAgentIssues() {
     if (!agentId || !companyId) return;
     try {
-      const res = await api(`/api/companies/${companyId}/issues?assigneeAgentId=${agent?.id ?? agentId}`);
+      const res = await api(`/api/companies/${companyId}/issues?assigneeAgentId=${agentUuid}`);
       if (!res.ok) return;
       const data = await res.json();
       issues = Array.isArray(data) ? data : data.issues ?? [];
@@ -330,7 +355,7 @@
     if (!agentId || !companyId || !isLocalAdapter) return;
     instructionsBundleLoading = true;
     try {
-      const res = await api(`/api/agents/${agentId}/instructions-bundle?companyId=${companyId}`);
+      const res = await api(`/api/agents/${agentUuid}/instructions-bundle?companyId=${companyId}`);
       if (!res.ok) { instructionsBundle = null; return; }
       instructionsBundle = await res.json();
       bundleDraftMode = null;
@@ -344,7 +369,7 @@
     if (!agentId || !companyId || !isLocalAdapter) return;
     selectedFileLoading = true;
     try {
-      const res = await api(`/api/agents/${agentId}/instructions-bundle/file?path=${encodeURIComponent(path)}&companyId=${companyId}`);
+      const res = await api(`/api/agents/${agentUuid}/instructions-bundle/file?path=${encodeURIComponent(path)}&companyId=${companyId}`);
       if (!res.ok) { selectedFileContent = ""; return; }
       const detail: InstructionsFileDetail = await res.json();
       selectedFileContent = detail.content ?? "";
@@ -363,7 +388,7 @@
         if (bundleDraftMode !== null) bundlePayload.mode = bundleDraftMode;
         if (bundleDraftRootPath !== null) bundlePayload.rootPath = bundleDraftMode === "external" ? bundleDraftRootPath : null;
         if (bundleDraftEntryFile !== null) bundlePayload.entryFile = bundleDraftEntryFile;
-        await api(`/api/agents/${agentId}/instructions-bundle?companyId=${companyId}`, {
+        await api(`/api/agents/${agentUuid}/instructions-bundle?companyId=${companyId}`, {
           method: "PATCH",
           body: JSON.stringify(bundlePayload),
         });
@@ -371,7 +396,7 @@
       // Save file content if changed
       if (instructionsFileDirty) {
         const shouldClearLegacy = Boolean(instructionsBundle?.legacyPromptTemplateActive || instructionsBundle?.legacyBootstrapPromptTemplateActive);
-        await api(`/api/agents/${agentId}/instructions-bundle/file?companyId=${companyId}`, {
+        await api(`/api/agents/${agentUuid}/instructions-bundle/file?companyId=${companyId}`, {
           method: "PUT",
           body: JSON.stringify({ path: selectedFile, content: displayContent, clearLegacyPromptTemplate: shouldClearLegacy }),
         });
@@ -390,7 +415,7 @@
     if (!agentId || !companyId) return;
     instructionsSaving = true;
     try {
-      await api(`/api/agents/${agentId}/instructions-bundle/file?path=${encodeURIComponent(path)}&companyId=${companyId}`, { method: "DELETE" });
+      await api(`/api/agents/${agentUuid}/instructions-bundle/file?path=${encodeURIComponent(path)}&companyId=${companyId}`, { method: "DELETE" });
       toastStore.push({ title: "File deleted", body: `${path} has been removed.`, tone: "success" });
       selectedFile = currentEntryFile;
       instructionsDraft = null;
@@ -425,7 +450,7 @@
     if (!agentId || !companyId) return;
     skillSnapshotLoading = true;
     try {
-      const res = await api(`/api/agents/${agentId}/skills?companyId=${companyId}`);
+      const res = await api(`/api/agents/${agentUuid}/skills?companyId=${companyId}`);
       if (!res.ok) { skillSnapshot = null; return; }
       const snap: SkillSnapshot = await res.json();
       skillSnapshot = snap;
@@ -448,7 +473,7 @@
     if (!agentId || !companyId || skillSyncing) return;
     skillSyncing = true;
     try {
-      const res = await api(`/api/agents/${agentId}/skills/sync?companyId=${companyId}`, {
+      const res = await api(`/api/agents/${agentUuid}/skills/sync?companyId=${companyId}`, {
         method: "POST",
         body: JSON.stringify({ desiredSkills: skillDraft }),
       });
@@ -490,7 +515,7 @@
     }
     budgetTabSaving = true;
     try {
-      const res = await api(`/api/agents/${agentId}/budgets`, {
+      const res = await api(`/api/agents/${agentUuid}/budgets`, {
         method: "PATCH",
         body: JSON.stringify({ budgetMonthlyCents: Math.round(dollars * 100) }),
       });
@@ -505,12 +530,25 @@
   }
 
   async function loadCostsSummary() {
-    if (!companyId || !agentId) return;
+    if (!companyId || !agentUuid) return;
     costsSummaryLoading = true;
     try {
-      const res = await api(`/api/companies/${companyId}/costs/summary?agentId=${agentId}`);
+      // Aggregate costs from heartbeat runs (the /costs/summary endpoint doesn't support per-agent filtering)
+      const res = await api(`/api/agents/${agentUuid}/heartbeat-runs?limit=100&companyId=${companyId}`);
       if (!res.ok) { costsSummary = null; return; }
-      costsSummary = await res.json();
+      const data = await res.json();
+      const runs = data.runs ?? [];
+      let inputTokens = 0, outputTokens = 0, cachedTokens = 0, totalCostCents = 0;
+      for (const run of runs) {
+        const usage = run.usageJson;
+        if (typeof usage === 'object' && usage) {
+          inputTokens += Number(usage.inputTokens ?? 0);
+          outputTokens += Number(usage.outputTokens ?? 0);
+          cachedTokens += Number(usage.cachedTokens ?? usage.cacheReadInputTokens ?? 0);
+          totalCostCents += Math.round(Number(usage.costUsd ?? 0) * 100);
+        }
+      }
+      costsSummary = { inputTokens, outputTokens, cachedTokens, totalCostCents };
     } catch { costsSummary = null; }
     finally { costsSummaryLoading = false; }
   }
@@ -568,7 +606,7 @@
 
   $effect(() => {
     if (!agentId) return;
-    if (!companyId && !agentIsUuid) return;
+    // Load agent even without companyId — the API resolves by urlKey with ?companyId if available
     loadAgent();
     if (companyId) {
       loadHeartbeats();
@@ -707,9 +745,15 @@
     if (!agentId) return;
     actionLoading = "wake";
     try {
-      const res = await api(`/api/agents/${agentId}/wakeup`, {
+      // Pass the first open issue assigned to this agent so the heartbeat has context
+      const firstIssue = issues.find(i => i.status !== 'done' && i.status !== 'cancelled');
+      const payload: Record<string, any> = { source: "on_demand" };
+      if (firstIssue) {
+        payload.payload = { issueId: firstIssue.id };
+      }
+      const res = await api(`/api/agents/${agentUuid}/wakeup`, {
         method: "POST",
-        body: JSON.stringify({ source: "on_demand" }),
+        body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       toastStore.push({ title: "Agent woken", body: "Wake signal sent successfully.", tone: "success" });
@@ -728,7 +772,7 @@
     const endpoint = isPaused ? "resume" : "pause";
     actionLoading = "pause";
     try {
-      const res = await api(`/api/agents/${agentId}/${endpoint}`, { method: "POST" });
+      const res = await api(`/api/agents/${agentUuid}/${endpoint}`, { method: "POST" });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       toastStore.push({
         title: isPaused ? "Agent resumed" : "Agent paused",
@@ -747,7 +791,7 @@
     if (!agentId) return;
     actionLoading = "delete";
     try {
-      const res = await api(`/api/agents/${agentId}`, { method: "DELETE" });
+      const res = await api(`/api/agents/${agentUuid}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       toastStore.push({ title: "Agent deleted", body: "The agent has been permanently removed.", tone: "success" });
       goto(`/${prefix}/agents`);
@@ -763,7 +807,7 @@
     if (!agentId) return;
     actionLoading = "terminate";
     try {
-      const res = await api(`/api/agents/${agentId}/terminate`, { method: "POST" });
+      const res = await api(`/api/agents/${agentUuid}/terminate`, { method: "POST" });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       toastStore.push({ title: "Agent terminated", body: "Active session has been terminated.", tone: "success" });
       await loadAgent();
@@ -818,7 +862,7 @@
         return;
       }
 
-      const res = await api(`/api/agents/${agentId}`, {
+      const res = await api(`/api/agents/${agentUuid}`, {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
@@ -834,13 +878,120 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Configuration tab — model selector with auto-test
+  // ---------------------------------------------------------------------------
+  const CONFIG_MODEL_FILTERS: Record<string, { providers?: string[]; idPrefix?: string }> = {
+    claude_local: { providers: ["anthropic"] },
+    codex_local: { providers: ["openai"] },
+    gemini_local: { providers: ["google"] },
+    opencode_local: { idPrefix: "opencode/" },
+  };
+
+  let configModelDirty = $derived(
+    agent ? (configModelValue !== (agent.adapterConfig?.model ?? agent.model ?? "")) : false
+  );
+
+  function filterModelsForAdapter(models: typeof configModels, adapterType: string): typeof configModels {
+    const filter = CONFIG_MODEL_FILTERS[adapterType];
+    if (!filter) return models; // copilot, cursor, pi — show all
+    return models.filter((m) => {
+      if (filter.providers?.length) {
+        const p = (m.provider ?? "").toLowerCase();
+        if (!filter.providers.includes(p)) return false;
+      }
+      if (filter.idPrefix && !m.id.toLowerCase().startsWith(filter.idPrefix.toLowerCase())) return false;
+      return true;
+    });
+  }
+
+  async function loadConfigModels() {
+    if (!agent || !companyId) return;
+    const at = agent.adapterType;
+    configModelsLoading = true;
+    configModelsError = null;
+    try {
+      const res = await api(`/api/companies/${companyId}/adapters/${at}/models`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.message ?? `Failed (${res.status})`);
+      }
+      const data = await res.json();
+      const raw = Array.isArray(data) ? data : data.models ?? [];
+      configModels = filterModelsForAdapter(raw, at);
+    } catch (err: any) {
+      configModels = [];
+      configModelsError = err?.message ?? "Failed to load models";
+    } finally {
+      configModelsLoading = false;
+    }
+  }
+
+  // Sync model value + load models when agent loads
+  $effect(() => {
+    if (agent && !configSaving) {
+      configModelValue = agent.adapterConfig?.model ?? agent.model ?? "";
+      configAdapterType = agent.adapterType ?? "";
+      configModelTestResult = null;
+      void loadConfigModels();
+    }
+  });
+
+  function handleConfigModelChange() {
+    // Auto-test after model change (debounced)
+    configModelTestResult = null;
+    if (configModelTestTimer) clearTimeout(configModelTestTimer);
+    if (!companyId || !agent) return;
+    configModelTestTimer = setTimeout(() => {
+      void runConfigModelTest();
+    }, 600);
+  }
+
+  async function runConfigModelTest() {
+    if (!companyId || !agent) return;
+    configModelTestLoading = true;
+    configModelTestResult = null;
+    try {
+      const testConfig = { ...(typeof agent.adapterConfig === 'object' && agent.adapterConfig ? agent.adapterConfig : {}), model: configModelValue };
+      const res = await api(`/api/companies/${companyId}/adapters/${agent.adapterType}/test-environment`, {
+        method: "POST",
+        body: JSON.stringify({ adapterConfig: testConfig }),
+      });
+      if (!res.ok) throw new Error(`Test failed (${res.status})`);
+      configModelTestResult = await res.json();
+    } catch {
+      configModelTestResult = { status: "fail", testedAt: new Date().toISOString(), checks: [{ level: "error", message: "Environment test failed" }] };
+    } finally {
+      configModelTestLoading = false;
+    }
+  }
+
+  async function saveModelChange() {
+    if (!agentUuid || !agent || !configModelDirty) return;
+    configSaving = true;
+    try {
+      const existingConfig = typeof agent.adapterConfig === 'object' && agent.adapterConfig ? agent.adapterConfig : {};
+      const res = await api(`/api/agents/${agentUuid}`, {
+        method: "PATCH",
+        body: JSON.stringify({ adapterConfig: { ...existingConfig, model: configModelValue } }),
+      });
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      toastStore.push({ title: "Model updated", body: `Now using ${configModelValue}`, tone: "success" });
+      await loadAgent();
+    } catch (err: any) {
+      toastStore.push({ title: "Save failed", body: err?.message, tone: "error" });
+    } finally {
+      configSaving = false;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // API Keys
   // ---------------------------------------------------------------------------
   async function loadApiKeys() {
     if (!agentId) return;
     apiKeysLoading = true;
     try {
-      const res = await api(`/api/agents/${agentId}/keys`);
+      const res = await api(`/api/agents/${agentUuid}/keys`);
       if (!res.ok) return;
       apiKeys = await res.json() ?? [];
     } catch {
@@ -854,7 +1005,7 @@
     if (!agentId || !newKeyName.trim()) return;
     newKeyCreating = true;
     try {
-      const res = await api(`/api/agents/${agentId}/keys`, {
+      const res = await api(`/api/agents/${agentUuid}/keys`, {
         method: "POST",
         body: JSON.stringify({ name: newKeyName.trim() }),
       });
@@ -875,7 +1026,7 @@
     if (!agentId) return;
     revokingKeyId = keyId;
     try {
-      const res = await api(`/api/agents/${agentId}/keys/${keyId}`, { method: "DELETE" });
+      const res = await api(`/api/agents/${agentUuid}/keys/${keyId}`, { method: "DELETE" });
       if (!res.ok) throw new Error(`Failed: ${res.status}`);
       toastStore.push({ title: "Key revoked", body: "The API key has been permanently revoked.", tone: "success" });
       confirmRevokeId = null;
@@ -902,8 +1053,8 @@
   // Inline name edit
   // ---------------------------------------------------------------------------
   async function saveInlineName(newName: string): Promise<void> {
-    if (!agentId) throw new Error("No agent ID");
-    const res = await api(`/api/agents/${agentId}`, {
+    if (!agentUuid) throw new Error("No agent ID");
+    const res = await api(`/api/agents/${agentUuid}`, {
       method: "PATCH",
       body: JSON.stringify({ name: newName }),
     });
@@ -934,7 +1085,7 @@
     }
     budgetSaving = true;
     try {
-      const res = await api(`/api/agents/${agentId}/budgets`, {
+      const res = await api(`/api/agents/${agentUuid}/budgets`, {
         method: "PATCH",
         body: JSON.stringify({ budgetMonthlyCents: Math.round(dollars * 100) }),
       });
@@ -1006,7 +1157,12 @@
       <div class="min-w-0">
         <div class="flex items-center gap-3 mb-1">
           <div class="flex items-center justify-center w-10 h-10 rounded-lg bg-[#2563EB]/10 text-[#60a5fa] shrink-0" title={agent.icon ?? "Bot"}>
-            <Bot size={20} />
+            {#if agent.icon && resolveAgentIcon(agent.icon)}
+              {@const AgentIcon = resolveAgentIcon(agent.icon)}
+              <AgentIcon size={20} />
+            {:else}
+              <span>Bot</span>
+            {/if}
           </div>
           <div>
             <div class="flex items-center gap-2">
@@ -1099,7 +1255,7 @@
           companyId,
           companyPrefix: prefix ?? null,
           projectId: null,
-          entityId: agent?.id ?? agentId,
+          entityId: agentUuid,
           entityType: "agent",
           parentEntityId: null,
           userId: null,
@@ -1982,7 +2138,7 @@
               {:else}
                 <div class="border border-white/[0.08] rounded-lg divide-y divide-white/[0.06]">
                   {#each issues as issue}
-                    <a href="/{prefix}/issues/{issue.id}" class="flex items-center justify-between p-3 text-sm hover:bg-white/[0.03] transition">
+                    <a href="/{prefix}/issues/{issue.identifier ?? issue.id}" class="flex items-center justify-between p-3 text-sm hover:bg-white/[0.03] transition">
                       <div class="flex items-center gap-3 min-w-0">
                         <StatusBadge status={issue.status} />
                         <span class="font-mono text-xs text-[#94A3B8]">{issue.identifier}</span>
@@ -2224,18 +2380,149 @@
           <!-- CONFIGURATION TAB -->
           <TabsContent value="config">
             <div class="space-y-4 mt-4">
+              <!-- Model selector card -->
               <Card>
-                <CardHeader><CardTitle>Adapter Configuration</CardTitle></CardHeader>
+                <CardHeader class="flex flex-row items-center justify-between">
+                  <div>
+                    <CardTitle>Model</CardTitle>
+                    <p class="text-xs text-muted-foreground mt-1">{adapterLabel(agent.adapterType)}</p>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <!-- Model discovery status from probed data -->
+                    {#if configModelValue && configModels.length > 0}
+                      {@const selectedModelData = configModels.find(m => m.id === configModelValue)}
+                      {#if selectedModelData}
+                        {#if selectedModelData.status === 'available'}
+                          <Badge variant="outline" class="gap-1 border-green-500/30 bg-green-500/10 text-green-600">✅ Available</Badge>
+                        {:else if selectedModelData.status === 'quota_exceeded'}
+                          <Badge variant="outline" class="gap-1 border-amber-500/30 bg-amber-500/10 text-amber-600">⏳ Cooldown</Badge>
+                        {:else if selectedModelData.status === 'unavailable' || selectedModelData.status === 'error'}
+                          <Badge variant="outline" class="gap-1 border-red-500/30 bg-red-500/10 text-red-600">❌ Unavailable</Badge>
+                        {:else}
+                          <Badge variant="outline" class="gap-1">⚪ Unknown</Badge>
+                        {/if}
+                      {/if}
+                    {/if}
+                    <!-- Live test result -->
+                    {#if configModelTestLoading}
+                      <Badge variant="outline" class="gap-1"><Loader2 size={12} class="animate-spin" /> Testing...</Badge>
+                    {:else if configModelTestResult}
+                      {#if configModelTestResult.status === 'pass'}
+                        <Badge variant="outline" class="gap-1 border-green-500/30 bg-green-500/10 text-green-600"><Check size={12} /> Test Passed</Badge>
+                      {:else if configModelTestResult.status === 'warn'}
+                        <Badge variant="outline" class="gap-1 border-amber-500/30 bg-amber-500/10 text-amber-600"><AlertCircle size={12} /> Cooldown</Badge>
+                      {:else}
+                        <Badge variant="outline" class="gap-1 border-red-500/30 bg-red-500/10 text-red-600"><AlertCircle size={12} /> Unavailable</Badge>
+                      {/if}
+                    {/if}
+                    <Button size="sm" onclick={saveModelChange} disabled={configSaving || !configModelDirty}>
+                      {#if configSaving}<Loader2 size={14} class="mr-1 animate-spin" />{:else}<Save size={14} class="mr-1" />{/if}
+                      Save
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  {#if configModelsLoading}
+                    <div class="flex items-center gap-2 text-sm text-muted-foreground py-4">
+                      <Loader2 size={16} class="animate-spin" /> Loading models...
+                    </div>
+                  {:else if configModels.length > 0}
+                    {@const grouped = Object.entries(
+                      configModels.reduce((acc, m) => {
+                        const p = m.provider ?? m.id.split('/')[0] ?? "other";
+                        (acc[p] ??= []).push(m);
+                        return acc;
+                      }, {} as Record<string, typeof configModels>)
+                    ).sort(([a], [b]) => a.localeCompare(b))}
+                    {@const providerCount = grouped.length}
+                    {@const availableCount = configModels.filter(m => m.status === 'available').length}
+                    {@const quotaCount = configModels.filter(m => m.status === 'quota_exceeded').length}
+                    {@const unavailableCount = configModels.filter(m => m.status === 'unavailable' || m.status === 'error').length}
+                    <div class="relative">
+                      <select
+                        id="config-model-select"
+                        class="w-full appearance-none rounded-lg border border-border bg-background px-3.5 py-2.5 pr-9 text-sm text-foreground focus:outline-none focus:border-[#2563EB] focus:ring-1 focus:ring-[#2563EB]/30 transition cursor-pointer"
+                        bind:value={configModelValue}
+                        onchange={handleConfigModelChange}
+                      >
+                        <option value="">Select model...</option>
+                        {#each grouped as [provider, models]}
+                          <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
+                            {#each models as m (m.id)}
+                              <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>
+                                {m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}
+                              </option>
+                            {/each}
+                          </optgroup>
+                        {/each}
+                      </select>
+                      <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    </div>
+                    <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                      <span>✅ {availableCount} available</span>
+                      {#if quotaCount > 0}<span>⏳ {quotaCount} cooldown</span>{/if}
+                      {#if unavailableCount > 0}<span>❌ {unavailableCount} unavailable</span>{/if}
+                      <span class="text-muted-foreground/60">— {providerCount} provider{providerCount > 1 ? 's' : ''}</span>
+                    </div>
+                  {:else if configModelsError}
+                    <p class="text-sm text-red-400">{configModelsError}</p>
+                  {:else}
+                    <p class="text-sm text-muted-foreground">No models discovered for this adapter.</p>
+                  {/if}
+
+                  <!-- Test result details -->
+                  {#if configModelTestLoading}
+                    <div class="mt-3 rounded-lg border border-border/50 bg-muted/20 px-4 py-3 text-xs text-muted-foreground">
+                      <div class="flex items-center gap-2">
+                        <Loader2 size={14} class="animate-spin" />
+                        <span>Sending PING to <span class="font-mono font-medium">{configModelValue}</span>...</span>
+                      </div>
+                    </div>
+                  {:else if configModelTestResult}
+                    <div class="mt-3 rounded-lg border px-4 py-3 text-xs space-y-2 {configModelTestResult.status === 'pass' ? 'border-green-500/20 bg-green-500/5 text-green-700' : configModelTestResult.status === 'warn' ? 'border-amber-500/20 bg-amber-500/5 text-amber-600' : 'border-red-500/20 bg-red-500/5 text-red-500'}">
+                      <div class="flex items-center justify-between">
+                        <span class="font-semibold">
+                          {configModelTestResult.status === 'pass' ? '✅ Model responded successfully' : configModelTestResult.status === 'warn' ? '⏳ Model in cooldown' : '❌ Model unavailable'}
+                        </span>
+                        <span class="opacity-60">{new Date(configModelTestResult.testedAt).toLocaleTimeString()}</span>
+                      </div>
+                      {#each configModelTestResult.checks as check}
+                        {#if check.code?.includes('model_test') || check.code?.includes('quota') || check.code?.includes('unavailable') || check.code?.includes('subscription')}
+                          <div class="rounded-md border border-current/10 bg-white/40 dark:bg-white/5 px-3 py-2">
+                            <p>{check.message}</p>
+                            {#if check.detail}
+                              <p class="mt-1 font-mono opacity-70 break-all">{check.detail}</p>
+                            {/if}
+                            {#if check.hint}
+                              <p class="mt-1 opacity-80 italic">{check.hint}</p>
+                            {/if}
+                          </div>
+                        {/if}
+                      {/each}
+                    </div>
+                  {/if}
+                </CardContent>
+              </Card>
+
+              <!-- Adapter info summary -->
+              <Card>
+                <CardHeader><CardTitle>Adapter Details</CardTitle></CardHeader>
                 <CardContent>
                   <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
                     <div>
                       <p class="text-[#94A3B8] text-xs mb-1">Adapter Type</p>
                       <p class="font-medium">{adapterLabel(agent.adapterType)}</p>
                     </div>
-                    {#if agent.model || agent.adapterConfig?.model}
+                    {#if agent.adapterConfig?.cwd}
                       <div>
-                        <p class="text-[#94A3B8] text-xs mb-1">Model</p>
-                        <p class="font-mono text-xs">{agent.model ?? agent.adapterConfig?.model}</p>
+                        <p class="text-[#94A3B8] text-xs mb-1">Working Directory</p>
+                        <p class="font-mono text-xs break-all">{agent.adapterConfig.cwd}</p>
+                      </div>
+                    {/if}
+                    {#if agent.adapterConfig?.effort || agent.adapterConfig?.modelReasoningEffort || agent.adapterConfig?.thinking}
+                      <div>
+                        <p class="text-[#94A3B8] text-xs mb-1">Effort / Reasoning</p>
+                        <p class="font-medium capitalize">{agent.adapterConfig?.effort ?? agent.adapterConfig?.modelReasoningEffort ?? agent.adapterConfig?.thinking}</p>
                       </div>
                     {/if}
                     {#if agent.adapterConfig?.instructionsBundleMode}
@@ -2244,20 +2531,7 @@
                         <p class="font-medium capitalize">{agent.adapterConfig.instructionsBundleMode}</p>
                       </div>
                     {/if}
-                    {#if agent.adapterConfig?.instructionsEntryFile}
-                      <div>
-                        <p class="text-[#94A3B8] text-xs mb-1">Entry File</p>
-                        <p class="font-mono text-xs">{agent.adapterConfig.instructionsEntryFile}</p>
-                      </div>
-                    {/if}
                   </div>
-                  {#if agent.adapterConfig?.instructionsFilePath}
-                    <Separator class="my-4" />
-                    <div>
-                      <p class="text-[#94A3B8] text-xs mb-1">Instructions Path</p>
-                      <p class="font-mono text-xs text-[#94A3B8] break-all">{agent.adapterConfig.instructionsFilePath}</p>
-                    </div>
-                  {/if}
                 </CardContent>
               </Card>
 

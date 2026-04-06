@@ -443,7 +443,7 @@
 
   <!-- Loading skeleton -->
   {#if loading}
-    <div class="glass-card p-0">
+    <Card class="p-0">
       {#each Array(6) as _, i}
         <div class="flex items-center gap-3 px-3 py-2.5">
           <Skeleton class="h-6 w-6 rounded-full" />
@@ -453,7 +453,7 @@
         </div>
         {#if i < 5}<div class="border-t border-border/40"></div>{/if}
       {/each}
-    </div>
+    </Card>
 
   <!-- Error -->
   {:else if error}

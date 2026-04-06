@@ -11,7 +11,7 @@
     Plus, FileCode2, FileText, Folder, FolderOpen, Eye, Code2,
     Boxes, Shield, ShieldCheck, Wrench, Puzzle
   } from 'lucide-svelte';
-  import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
+  import { Card, Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
 
   // ---------------------------------------------------------------------------
@@ -459,7 +459,7 @@
           {/each}
         </div>
       {:else if filteredSkills.length === 0}
-        <div class="mx-4 my-6 glass-card p-8 text-center">
+        <Card class="mx-4 my-6 p-8 text-center">
           <div class="flex flex-col items-center gap-3">
             <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
               <Puzzle class="h-5 w-5 text-muted-foreground/40" />
@@ -471,7 +471,7 @@
               {searchQuery.trim() ? 'Try a different search term.' : 'Import or create a skill to get started.'}
             </p>
           </div>
-        </div>
+        </Card>
       {:else}
         {#each filteredSkills as skill (skill.id)}
           {@const isExpanded = expandedSkillId === skill.id}

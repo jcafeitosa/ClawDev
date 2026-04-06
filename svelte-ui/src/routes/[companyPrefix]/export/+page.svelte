@@ -115,8 +115,8 @@
     </Alert>
   {/if}
 
-  <div class="glass-card p-0 overflow-hidden">
-    <div class="p-4 space-y-2">
+  <Card class="p-0 overflow-hidden">
+    <CardContent class="p-4 space-y-2">
       {#each sections as s}
         <label class="flex items-center gap-3 rounded-lg border border-border p-3 cursor-pointer transition-colors hover:bg-accent/40 {selected.has(s) ? 'border-blue-500/30' : ''}">
           <input
@@ -132,8 +132,8 @@
           {/if}
         </label>
       {/each}
-    </div>
-  </div>
+    </CardContent>
+  </Card>
 
   <!-- Preview button and data -->
   {#if selected.size > 0 && !previewData}

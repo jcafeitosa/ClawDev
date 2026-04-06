@@ -213,8 +213,12 @@ export async function listAdapterModels(type: string): Promise<AdapterModel[]> {
   const adapter = adaptersByType.get(type);
   if (!adapter) return [];
   if (adapter.listModels) {
-    const discovered = await adapter.listModels();
-    if (discovered.length > 0) return discovered;
+    try {
+      const discovered = await adapter.listModels();
+      if (discovered.length > 0) return discovered;
+    } catch (err) {
+      console.warn(`[registry] listModels for ${type} failed, using static fallback:`, err instanceof Error ? err.message : err);
+    }
   }
   return adapter.models ?? [];
 }

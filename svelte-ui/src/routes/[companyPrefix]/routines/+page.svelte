@@ -310,27 +310,29 @@
 
   <!-- Empty -->
   {:else if filteredRoutines.length === 0}
-    <div class="glass-card p-12 text-center">
-      <div class="flex flex-col items-center gap-3">
-        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
-          <RotateCcw class="h-5 w-5 text-muted-foreground/40" />
+    <Card>
+      <CardContent class="p-12 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+            <RotateCcw class="h-5 w-5 text-muted-foreground/40" />
+          </div>
+          {#if routines.length === 0}
+            <p class="text-sm font-medium text-muted-foreground">No routines yet</p>
+            <p class="text-xs text-muted-foreground/60">Create a routine to automate recurring tasks.</p>
+            <Button onclick={() => (showCreate = true)} class="mt-2">
+              <Plus class="h-4 w-4" />
+              New Routine
+            </Button>
+          {:else}
+            <p class="text-sm font-medium text-muted-foreground">No routines match the current filters.</p>
+          {/if}
         </div>
-        {#if routines.length === 0}
-          <p class="text-sm font-medium text-muted-foreground">No routines yet</p>
-          <p class="text-xs text-muted-foreground/60">Create a routine to automate recurring tasks.</p>
-          <Button onclick={() => (showCreate = true)} class="mt-2">
-            <Plus class="h-4 w-4" />
-            New Routine
-          </Button>
-        {:else}
-          <p class="text-sm font-medium text-muted-foreground">No routines match the current filters.</p>
-        {/if}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
 
   <!-- Routines list -->
   {:else}
-    <div class="glass-card p-0 overflow-hidden">
+    <Card class="p-0 overflow-hidden">
         {#each filteredRoutines as routine, i (routine.id)}
           <a
             href="/{prefix}/routines/{routine.id}"
@@ -376,7 +378,7 @@
             <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
           </a>
         {/each}
-    </div>
+    </Card>
 
     <!-- Count -->
     <p class="text-xs text-muted-foreground text-right">

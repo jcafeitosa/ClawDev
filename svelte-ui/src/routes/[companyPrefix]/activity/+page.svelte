@@ -8,7 +8,7 @@
     Activity, Bot, CircleDot, FolderKanban, MessageSquare, GitBranch,
     Zap, User, FileText, Filter, Target, ShieldCheck, Loader2
   } from 'lucide-svelte';
-  import { Badge, Button, Skeleton, Separator } from '$components/ui/index.js';
+  import { Badge, Button, Card, CardContent, CardHeader, CardTitle, CardDescription, Skeleton, Separator } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Activity' }]));
@@ -198,62 +198,63 @@
     </div>
   {:else if activities.length === 0}
     <!-- Empty state -->
-    <div class="glass-card p-12 text-center">
-      <div class="flex flex-col items-center gap-3">
+    <Card class="border-border/60">
+      <CardHeader class="pb-3">
+        <CardTitle class="text-sm">No activity yet</CardTitle>
+        <CardDescription>Events will appear here as your team works.</CardDescription>
+      </CardHeader>
+      <CardContent class="flex flex-col items-center gap-3 pb-12 text-center">
         <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
           <Activity class="h-5 w-5 text-muted-foreground/40" />
         </div>
-        <p class="text-sm font-medium text-muted-foreground">No activity yet</p>
-        <p class="text-xs text-muted-foreground/60">Events will appear here as your team works.</p>
-      </div>
-    </div>
+      </CardContent>
+    </Card>
   {:else}
     <!-- Activity feed grouped by date -->
-    <div class="glass-card p-0 overflow-hidden">
-    <div class="space-y-6 p-5">
-      {#each groupedActivities as group (group.label)}
-        <!-- Date group header -->
-        <div>
-          <div class="sticky top-0 z-10 flex items-center gap-3 py-2">
-            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</span>
-            <Separator class="flex-1" />
-          </div>
-
-          <div class="space-y-1">
-            {#each group.items as item, i (item.id ?? i)}
-              {@const IconComponent = getIcon(item.entityType ?? item.type)}
-              {@const colorClass = getIconColor(item.entityType ?? item.type)}
-              {@const link = entityLink(item)}
-              <div class="flex items-start gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-accent/40 border-b border-border/50 last:border-0">
-                <!-- Icon -->
-                <div class="shrink-0 rounded-lg p-2 {colorClass}">
-                  <IconComponent class="h-4 w-4" />
-                </div>
-
-                <!-- Content -->
-                <div class="min-w-0 flex-1">
-                  <p class="text-sm text-foreground">
-                    <span class="font-medium {actorIsSystem(item) ? 'text-muted-foreground' : ''}">{actorDisplay(item)}</span>
-                    <span class="text-muted-foreground"> {item.action ?? item.description ?? item.message ?? 'performed an action'}</span>
-                    {#if link && (item.entityName || item.entityTitle)}
-                      <a href={link} class="cursor-pointer font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors duration-150">
-                        {item.entityName ?? item.entityTitle}
-                      </a>
-                    {:else if link}
-                      <a href={link} class="cursor-pointer font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors duration-150">
-                        {item.entityType ?? 'entity'}
-                      </a>
-                    {/if}
-                  </p>
-                  <p class="mt-0.5 text-xs text-muted-foreground">{timeAgo(item.createdAt ?? item.timestamp)}</p>
-                </div>
+    <Card class="border-border/60 overflow-hidden">
+      <CardContent class="p-0">
+        <div class="space-y-6 p-5">
+          {#each groupedActivities as group (group.label)}
+            <div>
+              <div class="sticky top-0 z-10 flex items-center gap-3 py-2">
+                <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{group.label}</span>
+                <Separator class="flex-1" />
               </div>
-            {/each}
-          </div>
+
+              <div class="space-y-1">
+                {#each group.items as item, i (item.id ?? i)}
+                  {@const IconComponent = getIcon(item.entityType ?? item.type)}
+                  {@const colorClass = getIconColor(item.entityType ?? item.type)}
+                  {@const link = entityLink(item)}
+                  <div class="flex items-start gap-4 rounded-xl px-4 py-3 transition-colors hover:bg-accent/40 border-b border-border/50 last:border-0">
+                    <div class="shrink-0 rounded-lg p-2 {colorClass}">
+                      <IconComponent class="h-4 w-4" />
+                    </div>
+
+                    <div class="min-w-0 flex-1">
+                      <p class="text-sm text-foreground">
+                        <span class="font-medium {actorIsSystem(item) ? 'text-muted-foreground' : ''}">{actorDisplay(item)}</span>
+                        <span class="text-muted-foreground"> {item.action ?? item.description ?? item.message ?? 'performed an action'}</span>
+                        {#if link && (item.entityName || item.entityTitle)}
+                          <a href={link} class="cursor-pointer font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors duration-150">
+                            {item.entityName ?? item.entityTitle}
+                          </a>
+                        {:else if link}
+                          <a href={link} class="cursor-pointer font-medium text-blue-400 hover:text-blue-300 hover:underline transition-colors duration-150">
+                            {item.entityType ?? 'entity'}
+                          </a>
+                        {/if}
+                      </p>
+                      <p class="mt-0.5 text-xs text-muted-foreground">{timeAgo(item.createdAt ?? item.timestamp)}</p>
+                    </div>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          {/each}
         </div>
-      {/each}
-    </div>
-    </div>
+      </CardContent>
+    </Card>
 
     <!-- Load More -->
     {#if hasMore}

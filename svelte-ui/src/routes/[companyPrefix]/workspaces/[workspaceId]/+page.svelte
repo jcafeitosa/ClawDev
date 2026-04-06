@@ -386,8 +386,8 @@
   <PageLayout title="Workspace" description={ws.cwd ?? ws.id} fullWidth>
     {#snippet actions()}
       <div class="flex items-center gap-2">
-        <StatusBadge status={ws.status ?? 'unknown'} />
-        {#if ws.status !== 'archived'}
+        <StatusBadge status={ws!.status ?? 'unknown'} />
+        {#if ws!.status !== 'archived'}
           <Button variant="outline" size="sm" class="gap-1.5" onclick={openCloseDialog}>
             <Archive class="w-3.5 h-3.5" />
             Close workspace
@@ -431,7 +431,7 @@
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
                   <span class="text-muted-foreground">Status</span>
-                  <StatusBadge status={ws.status ?? 'unknown'} />
+                  <StatusBadge status={ws!.status ?? 'unknown'} />
                 </div>
                 <div class="grid grid-cols-[140px_1fr] items-center px-4 py-3 text-sm">
                   <span class="text-muted-foreground">Agent</span>
@@ -586,7 +586,7 @@
       <!-- Sidebar -->
       <PropertiesPanel>
         <PropertyRow label="Status">
-          <StatusBadge status={ws.status ?? 'unknown'} />
+          <StatusBadge status={ws!.status ?? 'unknown'} />
         </PropertyRow>
         <Separator />
         <PropertyRow label="Mode">

@@ -25,6 +25,7 @@
     TabsTrigger,
     Textarea,
   } from "$components/ui/index.js";
+  import { PageLayout } from "$components/layout/index.js";
   import {
     ActivitySquare,
     AlertTriangle,
@@ -542,6 +543,7 @@
   });
 </script>
 
+<PageLayout title={displayName} description={`Configure ${displayName} plugin behavior.`} fullWidth>
 <div class="space-y-6 max-w-6xl">
   <div class="flex items-start justify-between gap-4">
     <div class="min-w-0 space-y-3">
@@ -1327,3 +1329,4 @@
     </Tabs>
   {/if}
 </div>
+</PageLayout>

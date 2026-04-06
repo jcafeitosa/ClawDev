@@ -16,6 +16,8 @@
     Loader2,
     Search,
     AlertTriangle,
+    CheckCircle2,
+    XCircle,
   } from "lucide-svelte";
   import { api } from "$lib/api";
   import type {
@@ -95,8 +97,6 @@
     opencode_local: "OpenCode",
     copilot_local: "All Providers",
     cursor: "All Providers",
-    copilot_local: "Copilot",
-    cursor: "Cursor",
     pi_local: "Pi",
   };
   const isModelDiscoveryAdapter = $derived(Boolean(companyId) && MODEL_DISCOVERY_ADAPTERS.has(adapterType));
@@ -364,6 +364,24 @@
     }
   });
 
+  // ---------------------------------------------------------------------------
+  // Auto-test on model change (debounced)
+  // ---------------------------------------------------------------------------
+  let autoTestTimer = $state<ReturnType<typeof setTimeout> | null>(null);
+  let lastTestedModel = $state<string | null>(null);
+
+  function handleModelChangeWithAutoTest(model: string): void {
+    setField("model", model);
+    // Debounce auto-test: wait 800ms after model change
+    if (autoTestTimer) clearTimeout(autoTestTimer);
+    if (!companyId || !isEnvironmentTestableAdapter) return;
+    autoTestTimer = setTimeout(() => {
+      if (model && model !== lastTestedModel) {
+        lastTestedModel = model;
+        void runAdapterEnvironmentTest();
+      }
+    }, 800);
+  }
 
   // ---------------------------------------------------------------------------
   // CSS helpers
@@ -393,17 +411,30 @@
       {#if adapterType === "claude_local"}
         {#if showModelControls}
           <div>
-            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="flex items-center gap-2">
+              <label for="cfg-model" class={labelCls}>Model</label>
+              {#if adapterEnvLoading}
+                <Loader2 size={14} class="animate-spin text-muted-foreground" />
+              {:else if adapterEnvResult}
+                {#if adapterEnvResult.status === 'pass'}
+                  <span class="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-semibold text-green-600"><CheckCircle2 size={12} /> Passed</span>
+                {:else if adapterEnvResult.status === 'warn'}
+                  <span class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600"><AlertTriangle size={12} /> Warning</span>
+                {:else}
+                  <span class="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-600"><XCircle size={12} /> Failed</span>
+                {/if}
+              {/if}
+            </div>
             <div class="relative mt-1.5">
               <select
                 id="cfg-model"
                 class={selectCls}
                 value={normalizeClaudeModel(config.model)}
-                onchange={(e) => setField("model", e.currentTarget.value)}
+                onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
               >
                 {#if adapterModels.length > 0}
                   {#each adapterModels as m (m.id)}
-                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                    <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>{m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
                   {/each}
                 {:else}
                   <option value="claude-opus-4-6">Claude Opus 4.6</option>
@@ -455,17 +486,20 @@
       {:else if adapterType === "codex_local"}
         {#if showModelControls}
           <div>
-            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="flex items-center gap-2">
+              <label for="cfg-model" class={labelCls}>Model</label>
+              {#if adapterEnvLoading}<Loader2 size={14} class="animate-spin text-muted-foreground" />{:else if adapterEnvResult}{#if adapterEnvResult.status === 'pass'}<span class="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-semibold text-green-600"><CheckCircle2 size={12} /> Passed</span>{:else if adapterEnvResult.status === 'warn'}<span class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600"><AlertTriangle size={12} /> Warning</span>{:else}<span class="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-600"><XCircle size={12} /> Failed</span>{/if}{/if}
+            </div>
             <div class="relative mt-1.5">
               <select
                 id="cfg-model"
                 class={selectCls}
                 value={config.model ?? ""}
-                onchange={(e) => setField("model", e.currentTarget.value)}
+                onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
               >
                 {#if adapterModels.length > 0}
                   {#each adapterModels as m (m.id)}
-                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                    <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>{m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
                   {/each}
                 {:else}
                   <option value="">Select model...</option>
@@ -481,7 +515,10 @@
       {:else if adapterType === "copilot_local"}
         {#if showModelControls}
           <div>
-            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="flex items-center gap-2">
+              <label for="cfg-model" class={labelCls}>Model</label>
+              {#if adapterEnvLoading}<Loader2 size={14} class="animate-spin text-muted-foreground" />{:else if adapterEnvResult}{#if adapterEnvResult.status === 'pass'}<span class="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-semibold text-green-600"><CheckCircle2 size={12} /> Passed</span>{:else if adapterEnvResult.status === 'warn'}<span class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600"><AlertTriangle size={12} /> Warning</span>{:else}<span class="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-600"><XCircle size={12} /> Failed</span>{/if}{/if}
+            </div>
             <div class="relative mt-1.5">
               {#if adapterModels.length > 0}
                 {@const grouped = Object.entries(adapterModels.reduce((acc, m) => { const p = m.provider ?? "other"; (acc[p] ??= []).push(m); return acc; }, {} as Record<string, typeof adapterModels>))}
@@ -489,13 +526,13 @@
                   id="cfg-model"
                   class={selectCls}
                   value={config.model ?? ""}
-                  onchange={(e) => setField("model", e.currentTarget.value)}
+                  onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
                 >
                   <option value="">Select model...</option>
                   {#each grouped as [provider, models]}
                     <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
                       {#each models as m (m.id)}
-                        <option value={m.id}>{m.label || m.id}</option>
+                        <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>{m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}</option>
                       {/each}
                     </optgroup>
                   {/each}
@@ -613,7 +650,10 @@
       {:else if adapterType === "cursor"}
         {#if showModelControls}
           <div>
-            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="flex items-center gap-2">
+              <label for="cfg-model" class={labelCls}>Model</label>
+              {#if adapterEnvLoading}<Loader2 size={14} class="animate-spin text-muted-foreground" />{:else if adapterEnvResult}{#if adapterEnvResult.status === 'pass'}<span class="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-semibold text-green-600"><CheckCircle2 size={12} /> Passed</span>{:else if adapterEnvResult.status === 'warn'}<span class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600"><AlertTriangle size={12} /> Warning</span>{:else}<span class="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-600"><XCircle size={12} /> Failed</span>{/if}{/if}
+            </div>
             <div class="relative mt-1.5">
               {#if adapterModels.length > 0}
                 {@const cursorGrouped = Object.entries(adapterModels.reduce((acc, m) => { const p = m.provider ?? "other"; (acc[p] ??= []).push(m); return acc; }, {} as Record<string, typeof adapterModels>))}
@@ -621,13 +661,13 @@
                   id="cfg-model"
                   class={selectCls}
                   value={config.model ?? "auto"}
-                  onchange={(e) => setField("model", e.currentTarget.value)}
+                  onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
                 >
                   <option value="auto">Auto (default)</option>
                   {#each cursorGrouped as [provider, models]}
                     <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
                       {#each models as m (m.id)}
-                        <option value={m.id}>{m.label || m.id}</option>
+                        <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>{m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}</option>
                       {/each}
                     </optgroup>
                   {/each}
@@ -662,17 +702,20 @@
       {:else if adapterType === "gemini_local"}
         {#if showModelControls}
           <div>
-            <label for="cfg-model" class={labelCls}>Model</label>
+            <div class="flex items-center gap-2">
+              <label for="cfg-model" class={labelCls}>Model</label>
+              {#if adapterEnvLoading}<Loader2 size={14} class="animate-spin text-muted-foreground" />{:else if adapterEnvResult}{#if adapterEnvResult.status === 'pass'}<span class="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-semibold text-green-600"><CheckCircle2 size={12} /> Passed</span>{:else if adapterEnvResult.status === 'warn'}<span class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600"><AlertTriangle size={12} /> Warning</span>{:else}<span class="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-600"><XCircle size={12} /> Failed</span>{/if}{/if}
+            </div>
             <div class="relative mt-1.5">
               <select
                 id="cfg-model"
                 class={selectCls}
                 value={config.model ?? ""}
-                onchange={(e) => setField("model", e.currentTarget.value)}
+                onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
               >
                 {#if adapterModels.length > 0}
                   {#each adapterModels as m (m.id)}
-                    <option value={m.id}>{m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
+                    <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>{m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
                   {/each}
                 {:else}
                   <option value="">Select model...</option>
@@ -708,10 +751,13 @@
       {:else if adapterType === "pi_local"}
         {#if showModelControls}
           <div>
-            <label for="cfg-model" class={labelCls}>
-              Model
-              <span class="ml-1 text-red-400">*</span>
-            </label>
+            <div class="flex items-center gap-2">
+              <label for="cfg-model" class={labelCls}>
+                Model
+                <span class="ml-1 text-red-400">*</span>
+              </label>
+              {#if adapterEnvLoading}<Loader2 size={14} class="animate-spin text-muted-foreground" />{:else if adapterEnvResult}{#if adapterEnvResult.status === 'pass'}<span class="inline-flex items-center gap-1 rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-semibold text-green-600"><CheckCircle2 size={12} /> Passed</span>{:else if adapterEnvResult.status === 'warn'}<span class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-600"><AlertTriangle size={12} /> Warning</span>{:else}<span class="inline-flex items-center gap-1 rounded-full bg-red-500/15 px-2 py-0.5 text-[10px] font-semibold text-red-600"><XCircle size={12} /> Failed</span>{/if}{/if}
+            </div>
             <div class="relative mt-1.5">
               {#if adapterModels.length > 0}
                 {@const piGrouped = Object.entries(adapterModels.reduce((acc, m) => { const p = m.provider ?? m.id.split('/')[0] ?? "other"; (acc[p] ??= []).push(m); return acc; }, {} as Record<string, typeof adapterModels>))}
@@ -719,13 +765,13 @@
                   id="cfg-model"
                   class={selectCls}
                   value={config.model ?? ""}
-                  onchange={(e) => setField("model", e.currentTarget.value)}
+                  onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
                 >
                   <option value="">Select model...</option>
                   {#each piGrouped as [provider, models]}
                     <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
                       {#each models as m (m.id)}
-                        <option value={m.id}>{m.label || m.id}</option>
+                        <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>{m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}</option>
                       {/each}
                     </optgroup>
                   {/each}
@@ -909,38 +955,18 @@
       <div class="space-y-4 rounded-lg border border-border bg-background p-4">
         <div class="flex items-center justify-between gap-3">
           <div>
-            <p class="text-sm font-medium text-muted-foreground/80">Discover models</p>
-            <p class="text-xs text-muted-foreground mt-0.5">
-              Loaded from {getAdapterModelSourceLabel()} in the current company context.
+            <p class="text-sm font-medium text-muted-foreground/80">
+              {adapterModels.length} models from {new Set(adapterModels.map(m => m.provider ?? 'unknown')).size} provider{new Set(adapterModels.map(m => m.provider ?? 'unknown')).size > 1 ? 's' : ''}
             </p>
           </div>
           <button
             type="button"
             class="rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-muted-foreground transition hover:bg-accent/50"
-            onclick={() => void detectAdapterModel()}
+            onclick={() => void loadAdapterModels()}
             disabled={adapterModelsLoading}
           >
-            {adapterModelsLoading ? "Detecting..." : "Detect model"}
+            {adapterModelsLoading ? "Refreshing..." : "Refresh"}
           </button>
-        </div>
-
-        <div>
-          <label for="cfg-model-search" class={labelCls}>Model</label>
-          <input
-            id="cfg-model-search"
-            type="text"
-            class="{inputCls} mt-1.5"
-            value={modelSearch}
-            oninput={(e) => (modelSearch = e.currentTarget.value)}
-            placeholder="Search models or type provider/model"
-          />
-          <p class={helpCls}>
-            {#if selectedModel}
-              Selected: <span class="font-medium text-foreground">{selectedModel.label}</span>
-            {:else}
-              Pick a discovered model or let the adapter detect one.
-            {/if}
-          </p>
         </div>
 
         {#if adapterModelsError}
@@ -950,39 +976,57 @@
         {:else if adapterModelsLoading}
           <div class="flex items-center gap-2 text-sm text-muted-foreground py-2">
             <Loader2 class="size-4 animate-spin" />
-            Loading models...
+            Discovering models...
           </div>
-        {:else if filteredModels.length === 0}
+        {:else if adapterModels.length === 0}
           <div class="flex items-start gap-2 rounded-lg border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
             <AlertTriangle class="size-4 shrink-0 mt-0.5" />
-            <span>No models discovered yet. Refresh discovery or verify the adapter is authenticated.</span>
+            <span>No models discovered. Verify the adapter is authenticated.</span>
           </div>
         {:else}
-          <div class="grid gap-2 sm:grid-cols-2">
-            {#each filteredModels as entry}
-              <button
-                type="button"
-                class="rounded-lg border px-3 py-2 text-left transition hover:bg-accent/50 {typeof config.model === 'string' && config.model === entry.id ? 'border-foreground bg-accent' : 'border-border'}"
-                onclick={() => setField('model', entry.id)}
-              >
-                <div class="flex items-start justify-between gap-2">
-                  <div class="min-w-0">
-                    <p class="truncate text-sm font-medium text-foreground">{entry.label}</p>
-                    <p class="truncate text-xs text-muted-foreground">{entry.id}</p>
-                  </div>
-                  {#if typeof config.model === 'string' && config.model === entry.id}
-                    <span class="rounded-full bg-green-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-green-600">Selected</span>
-                  {/if}
-                </div>
-                {#if entry.provider}
-                  <p class="mt-2 text-[11px] uppercase tracking-wide text-muted-foreground">Provider: {entry.provider}</p>
-                {/if}
-                {#if entry.statusDetail}
-                  <p class="mt-1 text-[11px] text-muted-foreground">{entry.statusDetail}</p>
-                {/if}
-              </button>
-            {/each}
+          {@const discoveryGrouped = Object.entries(
+            adapterModels.reduce((acc, m) => {
+              const p = m.provider ?? m.id.split('/')[0] ?? "other";
+              (acc[p] ??= []).push(m);
+              return acc;
+            }, {} as Record<string, typeof adapterModels>)
+          ).sort(([a], [b]) => a.localeCompare(b))}
+          {@const dAvailable = adapterModels.filter(m => m.status === 'available').length}
+          {@const dQuota = adapterModels.filter(m => m.status === 'quota_exceeded').length}
+          {@const dUnavail = adapterModels.filter(m => m.status === 'unavailable' || m.status === 'error').length}
+          <div class="relative">
+            <select
+              id="cfg-discovery-model"
+              class={selectCls}
+              value={typeof config.model === 'string' ? config.model : ''}
+              onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
+            >
+              <option value="">Select model...</option>
+              {#each discoveryGrouped as [provider, models]}
+                <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
+                  {#each models as m (m.id)}
+                    <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>
+                      {m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}
+                    </option>
+                  {/each}
+                </optgroup>
+              {/each}
+            </select>
+            <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
+          <div class="mt-2 flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <span>✅ {dAvailable} available</span>
+            {#if dQuota > 0}<span>⏳ {dQuota} cooldown</span>{/if}
+            {#if dUnavail > 0}<span>❌ {dUnavail} unavailable</span>{/if}
+          </div>
+          {#if selectedModel}
+            <p class="mt-1.5 text-xs text-muted-foreground">
+              Selected: <span class="font-medium text-foreground">{selectedModel.id}</span>
+              {#if selectedModel.statusDetail}
+                — {selectedModel.statusDetail}
+              {/if}
+            </p>
+          {/if}
         {/if}
       </div>
     </section>

@@ -13,7 +13,7 @@
   let saving = $state(false);
   let error = $state<string | null>(null);
 
-  const tabs = [
+  const tabLinks = [
     { href: '/settings/general', label: 'General' },
     { href: '/settings/experimental', label: 'Experimental' },
     { href: '/settings/heartbeats', label: 'Heartbeats' },
@@ -81,7 +81,7 @@
 <PageLayout title="Experimental Features" description="Beta flags and advanced platform behavior.">
   {#snippet tabs()}
     <div class="flex gap-3 border-b border-border pb-3">
-      {#each tabs as tab}
+      {#each tabLinks as tab}
         <a
           href={tab.href}
           class="text-sm transition-colors {tab.href === '/settings/experimental'

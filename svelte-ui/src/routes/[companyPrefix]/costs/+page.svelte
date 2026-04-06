@@ -4,7 +4,7 @@
   import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
-  import { Tabs, TabsList, TabsTrigger, TabsContent, Skeleton } from '$lib/components/ui/index.js';
+  import { Tabs, TabsList, TabsTrigger, TabsContent, Skeleton, Card, CardContent } from '$lib/components/ui/index.js';
   import { PageLayout } from '$lib/components/layout/index.js';
   import {
     DollarSign,
@@ -368,33 +368,39 @@
   <!-- Window Spend (rolling time windows) -->
   {#if !loading && (windowSpend.fiveHours > 0 || windowSpend.oneDay > 0 || windowSpend.sevenDays > 0)}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-      <div class="glass-card p-5">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="rounded-lg bg-cyan-500/10 p-2">
-            <Clock class="h-4 w-4 text-cyan-500" />
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="rounded-lg bg-cyan-500/10 p-2">
+              <Clock class="h-4 w-4 text-cyan-500" />
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 5 Hours</span>
           </div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 5 Hours</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.fiveHours / 100)}</p>
-      </div>
-      <div class="glass-card p-5">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="rounded-lg bg-cyan-500/10 p-2">
-            <Clock class="h-4 w-4 text-cyan-500" />
+          <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.fiveHours / 100)}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="rounded-lg bg-cyan-500/10 p-2">
+              <Clock class="h-4 w-4 text-cyan-500" />
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 24 Hours</span>
           </div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 24 Hours</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.oneDay / 100)}</p>
-      </div>
-      <div class="glass-card p-5">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="rounded-lg bg-cyan-500/10 p-2">
-            <Clock class="h-4 w-4 text-cyan-500" />
+          <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.oneDay / 100)}</p>
+        </CardContent>
+      </Card>
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="rounded-lg bg-cyan-500/10 p-2">
+              <Clock class="h-4 w-4 text-cyan-500" />
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 7 Days</span>
           </div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last 7 Days</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.sevenDays / 100)}</p>
-      </div>
+          <p class="text-2xl font-bold text-foreground">{formatCurrency(windowSpend.sevenDays / 100)}</p>
+        </CardContent>
+      </Card>
     </div>
   {/if}
 
@@ -402,22 +408,24 @@
   {#if !loading && openIncidents.length > 0}
     <div class="space-y-2">
       {#each openIncidents as incident, i (incident.id ?? i)}
-        <div class="glass-card flex items-start gap-3 border-l-4 border-red-500 p-4">
-          <div class="rounded-lg bg-red-500/10 p-2 shrink-0">
-            <AlertTriangle class="h-4 w-4 text-red-500" />
-          </div>
-          <div class="min-w-0 flex-1">
-            <p class="text-sm font-semibold text-red-600 dark:text-red-400">
-              Budget Incident: {incident.scope_type ?? incident.scopeType ?? 'scope'}:{(incident.scope_id ?? incident.scopeId ?? '').slice(0, 8)}
-            </p>
-            <p class="text-xs text-muted-foreground mt-0.5">
-              Threshold: {incident.threshold_type ?? incident.thresholdType ?? 'limit'}
-            </p>
-            <p class="text-xs text-muted-foreground">
-              {formatCurrency((incident.amount_observed ?? incident.amountObserved ?? 0) / 100)} observed / {formatCurrency((incident.amount_limit ?? incident.amountLimit ?? 0) / 100)} limit
-            </p>
-          </div>
-        </div>
+        <Card class="border-l-4 border-red-500">
+          <CardContent class="flex items-start gap-3 p-4">
+            <div class="rounded-lg bg-red-500/10 p-2 shrink-0">
+              <AlertTriangle class="h-4 w-4 text-red-500" />
+            </div>
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-semibold text-red-600 dark:text-red-400">
+                Budget Incident: {incident.scope_type ?? incident.scopeType ?? 'scope'}:{(incident.scope_id ?? incident.scopeId ?? '').slice(0, 8)}
+              </p>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                Threshold: {incident.threshold_type ?? incident.thresholdType ?? 'limit'}
+              </p>
+              <p class="text-xs text-muted-foreground">
+                {formatCurrency((incident.amount_observed ?? incident.amountObserved ?? 0) / 100)} observed / {formatCurrency((incident.amount_limit ?? incident.amountLimit ?? 0) / 100)} limit
+              </p>
+            </div>
+          </CardContent>
+        </Card>
       {/each}
     </div>
   {/if}
@@ -431,64 +439,68 @@
     </div>
   {:else}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
-      <!-- INFERENCE SPEND -->
-      <div class="glass-card p-5">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="rounded-lg bg-blue-500/10 p-2">
-            <Zap class="h-4 w-4 text-blue-500" />
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="rounded-lg bg-blue-500/10 p-2">
+              <Zap class="h-4 w-4 text-blue-500" />
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inference Spend</span>
           </div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Inference Spend</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{formatCurrency(inferenceSpend)}</p>
-        <p class="mt-1.5 text-xs text-muted-foreground">
-          {formatTokens(totalTokens)} tokens across request-scoped events
-        </p>
-      </div>
+          <p class="text-2xl font-bold text-foreground">{formatCurrency(inferenceSpend)}</p>
+          <p class="mt-1.5 text-xs text-muted-foreground">
+            {formatTokens(totalTokens)} tokens across request-scoped events
+          </p>
+        </CardContent>
+      </Card>
 
-      <!-- BUDGET -->
-      <div class="glass-card p-5">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="rounded-lg bg-emerald-500/10 p-2">
-            <Shield class="h-4 w-4 text-emerald-500" />
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="rounded-lg bg-emerald-500/10 p-2">
+              <Shield class="h-4 w-4 text-emerald-500" />
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Budget</span>
           </div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Budget</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{budgetStatus}</p>
-        <p class="mt-1.5 text-xs text-muted-foreground">{budgetCapText}</p>
-      </div>
+          <p class="text-2xl font-bold text-foreground">{budgetStatus}</p>
+          <p class="mt-1.5 text-xs text-muted-foreground">{budgetCapText}</p>
+        </CardContent>
+      </Card>
 
-      <!-- FINANCE NET -->
-      <div class="glass-card p-5">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="rounded-lg bg-violet-500/10 p-2">
-            <Activity class="h-4 w-4 text-violet-500" />
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="rounded-lg bg-violet-500/10 p-2">
+              <Activity class="h-4 w-4 text-violet-500" />
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Finance Net</span>
           </div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Finance Net</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{formatCurrency(financeNet)}</p>
-        <p class="mt-1.5 text-xs text-muted-foreground">
-          {formatCurrency(financeDebits)} debits &middot; {formatCurrency(financeCredits)} credits
-        </p>
-      </div>
+          <p class="text-2xl font-bold text-foreground">{formatCurrency(financeNet)}</p>
+          <p class="mt-1.5 text-xs text-muted-foreground">
+            {formatCurrency(financeDebits)} debits &middot; {formatCurrency(financeCredits)} credits
+          </p>
+        </CardContent>
+      </Card>
 
-      <!-- FINANCE EVENTS -->
-      <div class="glass-card p-5">
-        <div class="flex items-center gap-2 mb-3">
-          <div class="rounded-lg bg-orange-500/10 p-2">
-            <Hash class="h-4 w-4 text-orange-500" />
+      <Card>
+        <CardContent class="p-5">
+          <div class="flex items-center gap-2 mb-3">
+            <div class="rounded-lg bg-orange-500/10 p-2">
+              <Hash class="h-4 w-4 text-orange-500" />
+            </div>
+            <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Finance Events</span>
           </div>
-          <span class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Finance Events</span>
-        </div>
-        <p class="text-2xl font-bold text-foreground">{financeEventCount}</p>
-        <p class="mt-1.5 text-xs text-muted-foreground">
-          {formatCurrency(financeEstimated)} estimated in range
-        </p>
-      </div>
+          <p class="text-2xl font-bold text-foreground">{financeEventCount}</p>
+          <p class="mt-1.5 text-xs text-muted-foreground">
+            {formatCurrency(financeEstimated)} estimated in range
+          </p>
+        </CardContent>
+      </Card>
     </div>
   {/if}
 
   <!-- Tabbed Breakdown Section -->
-  <div class="glass-card p-0 overflow-hidden">
+  <Card class="p-0 overflow-hidden">
     <Tabs value={activeTab} onValueChange={(v) => { if (v) activeTab = v; }} class="w-full">
       <div class="border-b border-border px-5 pt-4 pb-0 overflow-x-auto">
         <TabsList class="bg-transparent p-0 h-auto gap-0">
@@ -525,27 +537,31 @@
           <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Inference Ledger</h3>
           <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 mb-4">
             <!-- Spend card -->
-            <div class="rounded-lg border border-border bg-secondary/50 p-4">
-              <div class="flex items-center gap-2 mb-2">
-                <DollarSign class="h-4 w-4 text-blue-500" />
-                <span class="text-xs font-medium text-muted-foreground">Spend</span>
-              </div>
-              <p class="text-xl font-bold text-foreground">{formatCurrency(inferenceSpend)}</p>
-              {#if summary?.period}
-                <p class="mt-1 text-xs text-muted-foreground">{summary.period}</p>
-              {/if}
-            </div>
+            <Card>
+              <CardContent class="p-4">
+                <div class="flex items-center gap-2 mb-2">
+                  <DollarSign class="h-4 w-4 text-blue-500" />
+                  <span class="text-xs font-medium text-muted-foreground">Spend</span>
+                </div>
+                <p class="text-xl font-bold text-foreground">{formatCurrency(inferenceSpend)}</p>
+                {#if summary?.period}
+                  <p class="mt-1 text-xs text-muted-foreground">{summary.period}</p>
+                {/if}
+              </CardContent>
+            </Card>
             <!-- Usage (tokens) card -->
-            <div class="rounded-lg border border-border bg-secondary/50 p-4">
-              <div class="flex items-center gap-2 mb-2">
-                <Zap class="h-4 w-4 text-amber-500" />
-                <span class="text-xs font-medium text-muted-foreground">Usage</span>
-              </div>
-              <p class="text-xl font-bold text-foreground">{formatTokens(totalTokens)}</p>
-              <p class="mt-1 text-xs text-muted-foreground">
-                {totalRequests.toLocaleString('en')} requests
-              </p>
-            </div>
+            <Card>
+              <CardContent class="p-4">
+                <div class="flex items-center gap-2 mb-2">
+                  <Zap class="h-4 w-4 text-amber-500" />
+                  <span class="text-xs font-medium text-muted-foreground">Usage</span>
+                </div>
+                <p class="text-xl font-bold text-foreground">{formatTokens(totalTokens)}</p>
+                <p class="mt-1 text-xs text-muted-foreground">
+                  {totalRequests.toLocaleString('en')} requests
+                </p>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
@@ -600,37 +616,45 @@
           <h3 class="text-sm font-semibold uppercase tracking-wider text-muted-foreground mb-3">Finance Ledger</h3>
           <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <!-- Debits -->
-            <div class="rounded-lg border border-red-500/20 bg-red-500/5 p-4">
-              <div class="flex items-center gap-1.5 mb-1.5">
-                <ArrowDownRight class="h-3.5 w-3.5 text-red-500" />
-                <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Debits</span>
-              </div>
-              <p class="text-lg font-bold text-red-600 dark:text-red-400">{formatCurrency(financeDebits)}</p>
-            </div>
+            <Card class="border-red-500/20 bg-red-500/5">
+              <CardContent class="p-4">
+                <div class="flex items-center gap-1.5 mb-1.5">
+                  <ArrowDownRight class="h-3.5 w-3.5 text-red-500" />
+                  <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Debits</span>
+                </div>
+                <p class="text-lg font-bold text-red-600 dark:text-red-400">{formatCurrency(financeDebits)}</p>
+              </CardContent>
+            </Card>
             <!-- Credits -->
-            <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-4">
-              <div class="flex items-center gap-1.5 mb-1.5">
-                <ArrowUpRight class="h-3.5 w-3.5 text-emerald-500" />
-                <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Credits</span>
-              </div>
-              <p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(financeCredits)}</p>
-            </div>
+            <Card class="border-emerald-500/20 bg-emerald-500/5">
+              <CardContent class="p-4">
+                <div class="flex items-center gap-1.5 mb-1.5">
+                  <ArrowUpRight class="h-3.5 w-3.5 text-emerald-500" />
+                  <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Credits</span>
+                </div>
+                <p class="text-lg font-bold text-emerald-600 dark:text-emerald-400">{formatCurrency(financeCredits)}</p>
+              </CardContent>
+            </Card>
             <!-- Net -->
-            <div class="rounded-lg border border-border bg-secondary/50 p-4">
-              <div class="flex items-center gap-1.5 mb-1.5">
-                <Activity class="h-3.5 w-3.5 text-violet-500" />
-                <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Net</span>
-              </div>
-              <p class="text-lg font-bold text-foreground">{formatCurrency(financeNet)}</p>
-            </div>
+            <Card>
+              <CardContent class="p-4">
+                <div class="flex items-center gap-1.5 mb-1.5">
+                  <Activity class="h-3.5 w-3.5 text-violet-500" />
+                  <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Net</span>
+                </div>
+                <p class="text-lg font-bold text-foreground">{formatCurrency(financeNet)}</p>
+              </CardContent>
+            </Card>
             <!-- Estimated -->
-            <div class="rounded-lg border border-border bg-secondary/50 p-4">
-              <div class="flex items-center gap-1.5 mb-1.5">
-                <Calendar class="h-3.5 w-3.5 text-amber-500" />
-                <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Estimated</span>
-              </div>
-              <p class="text-lg font-bold text-foreground">{formatCurrency(financeEstimated)}</p>
-            </div>
+            <Card>
+              <CardContent class="p-4">
+                <div class="flex items-center gap-1.5 mb-1.5">
+                  <Calendar class="h-3.5 w-3.5 text-amber-500" />
+                  <span class="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Estimated</span>
+                </div>
+                <p class="text-lg font-bold text-foreground">{formatCurrency(financeEstimated)}</p>
+              </CardContent>
+            </Card>
           </div>
         </div>
 
@@ -762,28 +786,30 @@
               {@const used = budget.used ?? budget.currentSpend ?? 0}
               {@const limit = budget.limit ?? budget.monthlyLimit ?? budget.total ?? 0}
               {@const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0}
-              <div class="rounded-lg border border-border bg-secondary/30 p-4">
-                <div class="flex items-center justify-between mb-2">
-                  <div class="flex items-center gap-2">
-                    <Shield size={14} class="text-muted-foreground" />
-                    <span class="text-sm font-medium text-foreground">{budget.name ?? budget.label ?? 'Budget'}</span>
-                    {#if budget.scope ?? budget.type}
-                      <span class="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">{budget.scope ?? budget.type}</span>
-                    {/if}
+              <Card>
+                <CardContent class="p-4">
+                  <div class="flex items-center justify-between mb-2">
+                    <div class="flex items-center gap-2">
+                      <Shield size={14} class="text-muted-foreground" />
+                      <span class="text-sm font-medium text-foreground">{budget.name ?? budget.label ?? 'Budget'}</span>
+                      {#if budget.scope ?? budget.type}
+                        <span class="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">{budget.scope ?? budget.type}</span>
+                      {/if}
+                    </div>
+                    <span class="text-xs font-semibold" style="color: {quotaBarColor(pct)};">{pct.toFixed(0)}%</span>
                   </div>
-                  <span class="text-xs font-semibold" style="color: {quotaBarColor(pct)};">{pct.toFixed(0)}%</span>
-                </div>
-                <div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                  <div
-                    class="h-full rounded-full transition-all duration-500"
-                    style="width: {pct}%; background-color: {quotaBarColor(pct)};"
-                  ></div>
-                </div>
-                <div class="mt-1.5 flex items-center justify-between">
-                  <span class="text-[11px] text-muted-foreground">{formatCurrency(used)} used</span>
-                  <span class="text-[11px] text-muted-foreground">{limit > 0 ? `${formatCurrency(limit)} limit` : 'No cap'}</span>
-                </div>
-              </div>
+                  <div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                    <div
+                      class="h-full rounded-full transition-all duration-500"
+                      style="width: {pct}%; background-color: {quotaBarColor(pct)};"
+                    ></div>
+                  </div>
+                  <div class="mt-1.5 flex items-center justify-between">
+                    <span class="text-[11px] text-muted-foreground">{formatCurrency(used)} used</span>
+                    <span class="text-[11px] text-muted-foreground">{limit > 0 ? `${formatCurrency(limit)} limit` : 'No cap'}</span>
+                  </div>
+                </CardContent>
+              </Card>
             {/each}
           </div>
         {/if}
@@ -980,52 +1006,56 @@
         {:else}
           <!-- Revenue vs Expense summary cards -->
           <div class="grid grid-cols-1 gap-4 p-5 sm:grid-cols-2">
-            <div class="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-5">
-              <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-2">
-                  <div class="rounded-md bg-emerald-500/10 p-1.5">
-                    <TrendingUp class="h-4 w-4 text-emerald-500" />
+            <Card class="border-emerald-500/20 bg-emerald-500/5">
+              <CardContent class="p-5">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2">
+                    <div class="rounded-md bg-emerald-500/10 p-1.5">
+                      <TrendingUp class="h-4 w-4 text-emerald-500" />
+                    </div>
+                    <span class="text-sm font-medium text-muted-foreground">Revenue</span>
                   </div>
-                  <span class="text-sm font-medium text-muted-foreground">Revenue</span>
+                  {#if financeSummary?.revenueCount ?? financeSummary?.revenueEventCount}
+                    <span class="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
+                      {financeSummary?.revenueCount ?? financeSummary?.revenueEventCount} events
+                    </span>
+                  {/if}
                 </div>
-                {#if financeSummary?.revenueCount ?? financeSummary?.revenueEventCount}
-                  <span class="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-bold text-emerald-600 dark:text-emerald-400">
-                    {financeSummary?.revenueCount ?? financeSummary?.revenueEventCount} events
-                  </span>
-                {/if}
-              </div>
-              <p class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" title={`$${(financeSummary?.revenue ?? financeSummary?.totalRevenue ?? 0).toLocaleString('en', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`}>
-                {formatCurrency(financeSummary?.revenue ?? financeSummary?.totalRevenue ?? 0)}
-              </p>
-              {#if financeSummary?.revenueChange !== undefined}
-                <p class="mt-1 text-xs text-emerald-600/70 dark:text-emerald-400/70">
-                  {financeSummary.revenueChange > 0 ? '+' : ''}{financeSummary.revenueChange.toFixed(1)}% vs last period
+                <p class="text-3xl font-bold text-emerald-600 dark:text-emerald-400" title={`$${(financeSummary?.revenue ?? financeSummary?.totalRevenue ?? 0).toLocaleString('en', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`}>
+                  {formatCurrency(financeSummary?.revenue ?? financeSummary?.totalRevenue ?? 0)}
                 </p>
-              {/if}
-            </div>
-            <div class="rounded-lg border border-red-500/20 bg-red-500/5 p-5">
-              <div class="flex items-center justify-between mb-3">
-                <div class="flex items-center gap-2">
-                  <div class="rounded-md bg-red-500/10 p-1.5">
-                    <TrendingDown class="h-4 w-4 text-red-500" />
+                {#if financeSummary?.revenueChange !== undefined}
+                  <p class="mt-1 text-xs text-emerald-600/70 dark:text-emerald-400/70">
+                    {financeSummary.revenueChange > 0 ? '+' : ''}{financeSummary.revenueChange.toFixed(1)}% vs last period
+                  </p>
+                {/if}
+              </CardContent>
+            </Card>
+            <Card class="border-red-500/20 bg-red-500/5">
+              <CardContent class="p-5">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2">
+                    <div class="rounded-md bg-red-500/10 p-1.5">
+                      <TrendingDown class="h-4 w-4 text-red-500" />
+                    </div>
+                    <span class="text-sm font-medium text-muted-foreground">Expenses</span>
                   </div>
-                  <span class="text-sm font-medium text-muted-foreground">Expenses</span>
+                  {#if financeSummary?.expenseCount ?? financeSummary?.expenseEventCount}
+                    <span class="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400">
+                      {financeSummary?.expenseCount ?? financeSummary?.expenseEventCount} events
+                    </span>
+                  {/if}
                 </div>
-                {#if financeSummary?.expenseCount ?? financeSummary?.expenseEventCount}
-                  <span class="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-bold text-red-600 dark:text-red-400">
-                    {financeSummary?.expenseCount ?? financeSummary?.expenseEventCount} events
-                  </span>
-                {/if}
-              </div>
-              <p class="text-3xl font-bold text-red-600 dark:text-red-400" title={`$${(financeSummary?.expense ?? financeSummary?.totalExpense ?? 0).toLocaleString('en', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`}>
-                {formatCurrency(financeSummary?.expense ?? financeSummary?.totalExpense ?? 0)}
-              </p>
-              {#if financeSummary?.expenseChange !== undefined}
-                <p class="mt-1 text-xs text-red-600/70 dark:text-red-400/70">
-                  {financeSummary.expenseChange > 0 ? '+' : ''}{financeSummary.expenseChange.toFixed(1)}% vs last period
+                <p class="text-3xl font-bold text-red-600 dark:text-red-400" title={`$${(financeSummary?.expense ?? financeSummary?.totalExpense ?? 0).toLocaleString('en', { minimumFractionDigits: 4, maximumFractionDigits: 4 })}`}>
+                  {formatCurrency(financeSummary?.expense ?? financeSummary?.totalExpense ?? 0)}
                 </p>
-              {/if}
-            </div>
+                {#if financeSummary?.expenseChange !== undefined}
+                  <p class="mt-1 text-xs text-red-600/70 dark:text-red-400/70">
+                    {financeSummary.expenseChange > 0 ? '+' : ''}{financeSummary.expenseChange.toFixed(1)}% vs last period
+                  </p>
+                {/if}
+              </CardContent>
+            </Card>
           </div>
 
           <!-- Provider Quota Windows -->
@@ -1044,52 +1074,54 @@
                   {@const used = window.used ?? window.currentUsage ?? 0}
                   {@const limit = window.limit ?? window.quotaLimit ?? window.total ?? 1}
                   {@const pct = limit > 0 ? Math.min(100, (used / limit) * 100) : 0}
-                  <div class="rounded-lg border border-border bg-secondary/30 p-4">
-                    <div class="flex items-center justify-between mb-2">
-                      <div class="flex items-center gap-2">
-                        <Gauge size={14} class="text-muted-foreground" />
-                        <span class="text-sm font-medium text-foreground">{window.provider ?? window.name ?? 'Provider'}</span>
-                        {#if window.model}
-                          <span class="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">{window.model}</span>
-                        {/if}
+                  <Card>
+                    <CardContent class="p-4">
+                      <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                          <Gauge size={14} class="text-muted-foreground" />
+                          <span class="text-sm font-medium text-foreground">{window.provider ?? window.name ?? 'Provider'}</span>
+                          {#if window.model}
+                            <span class="rounded bg-secondary px-1.5 py-0.5 text-[10px] font-mono text-muted-foreground">{window.model}</span>
+                          {/if}
+                        </div>
+                        <span class="text-xs font-semibold" style="color: {quotaBarColor(pct)};">{pct.toFixed(0)}%</span>
                       </div>
-                      <span class="text-xs font-semibold" style="color: {quotaBarColor(pct)};">{pct.toFixed(0)}%</span>
-                    </div>
-                    <div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
-                      <div
-                        class="h-full rounded-full transition-all duration-500"
-                        style="width: {pct}%; background-color: {quotaBarColor(pct)};"
-                      ></div>
-                    </div>
-                    <div class="mt-1.5 flex items-center justify-between">
-                      <span class="text-[11px] text-muted-foreground" title={`$${used.toLocaleString('en', { minimumFractionDigits: 4 })}`}>
-                        {formatCurrency(used)} used
-                      </span>
-                      <span class="text-[11px] text-muted-foreground" title={`$${limit.toLocaleString('en', { minimumFractionDigits: 4 })}`}>
-                        {formatCurrency(limit)} limit
-                      </span>
-                    </div>
-                    <!-- Model breakdown -->
-                    {#if window.models && window.models.length > 0}
-                      <div class="mt-2 space-y-1 border-t border-border pt-2">
-                        {#each window.models as mdl}
-                          {@const mdlUsed = mdl.used ?? mdl.currentUsage ?? 0}
-                          {@const mdlLimit = mdl.limit ?? mdl.quotaLimit ?? limit}
-                          {@const mdlPct = mdlLimit > 0 ? Math.min(100, (mdlUsed / mdlLimit) * 100) : 0}
-                          <div class="flex items-center gap-3">
-                            <span class="w-24 truncate text-[10px] font-mono text-muted-foreground">{mdl.model ?? mdl.name}</span>
-                            <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
-                              <div
-                                class="h-full rounded-full"
-                                style="width: {mdlPct}%; background-color: {quotaBarColor(mdlPct)};"
-                              ></div>
+                      <div class="h-2 w-full overflow-hidden rounded-full bg-secondary">
+                        <div
+                          class="h-full rounded-full transition-all duration-500"
+                          style="width: {pct}%; background-color: {quotaBarColor(pct)};"
+                        ></div>
+                      </div>
+                      <div class="mt-1.5 flex items-center justify-between">
+                        <span class="text-[11px] text-muted-foreground" title={`$${used.toLocaleString('en', { minimumFractionDigits: 4 })}`}>
+                          {formatCurrency(used)} used
+                        </span>
+                        <span class="text-[11px] text-muted-foreground" title={`$${limit.toLocaleString('en', { minimumFractionDigits: 4 })}`}>
+                          {formatCurrency(limit)} limit
+                        </span>
+                      </div>
+                      <!-- Model breakdown -->
+                      {#if window.models && window.models.length > 0}
+                        <div class="mt-2 space-y-1 border-t border-border pt-2">
+                          {#each window.models as mdl}
+                            {@const mdlUsed = mdl.used ?? mdl.currentUsage ?? 0}
+                            {@const mdlLimit = mdl.limit ?? mdl.quotaLimit ?? limit}
+                            {@const mdlPct = mdlLimit > 0 ? Math.min(100, (mdlUsed / mdlLimit) * 100) : 0}
+                            <div class="flex items-center gap-3">
+                              <span class="w-24 truncate text-[10px] font-mono text-muted-foreground">{mdl.model ?? mdl.name}</span>
+                              <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-secondary">
+                                <div
+                                  class="h-full rounded-full"
+                                  style="width: {mdlPct}%; background-color: {quotaBarColor(mdlPct)};"
+                                ></div>
+                              </div>
+                              <span class="text-[10px] text-muted-foreground w-16 text-right">{formatCurrency(mdlUsed)}</span>
                             </div>
-                            <span class="text-[10px] text-muted-foreground w-16 text-right">{formatCurrency(mdlUsed)}</span>
-                          </div>
-                        {/each}
-                      </div>
-                    {/if}
-                  </div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </CardContent>
+                  </Card>
                 {/each}
               </div>
             </div>
@@ -1136,8 +1168,8 @@
             </div>
           {/if}
         {/if}
-      </TabsContent>
+  </TabsContent>
     </Tabs>
-  </div>
+  </Card>
 </div>
 </PageLayout>

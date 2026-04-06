@@ -2,6 +2,7 @@
   /**
    * SuccessRateChart -- bar chart showing daily success rate over 14 days.
    */
+  import { formatDayLabel, getLast14Days } from './chart-helpers';
 
   interface Run {
     status: string;
@@ -15,19 +16,6 @@
   }
 
   let { runs }: Props = $props();
-
-  function getLast14Days(): string[] {
-    return Array.from({ length: 14 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (13 - i));
-      return d.toISOString().slice(0, 10);
-    });
-  }
-
-  function formatDayLabel(dateStr: string): string {
-    const d = new Date(dateStr + 'T12:00:00');
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  }
 
   let days = $derived(getLast14Days());
 
@@ -69,7 +57,7 @@
       {#each days as day, i}
         <div class="flex-1 text-center">
           {#if i === 0 || i === 6 || i === 13}
-            <span class="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day)}</span>
+            <span class="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day, i)}</span>
           {/if}
         </div>
       {/each}

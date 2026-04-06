@@ -101,6 +101,7 @@
   // ============================================================
   let runId = $derived($page.params.runId);
   let prefix = $derived($page.params.companyPrefix);
+  let routeRunId = $derived($page.params.runId ?? '');
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix(prefix));
   let companyId = $derived(routeCompanyId ?? '');
   let isLive = $derived(run?.status === 'started' || run?.status === 'running');
@@ -561,7 +562,7 @@
   {/if}
 {/snippet}
 
-<PageLayout title={run?.agentName ? `Run — ${run.agentName}` : `Run ${$page.params.runId.slice(0, 8)}`} fullWidth>
+<PageLayout title={run?.agentName ? `Run — ${run.agentName}` : `Run ${routeRunId.slice(0, 8)}`} fullWidth>
 <div class="flex min-h-screen">
   <!-- ====================================================== -->
   <!-- LEFT SIDEBAR: Runs list -->

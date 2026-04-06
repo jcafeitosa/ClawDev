@@ -3,6 +3,7 @@
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
   import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
+  import { ISSUE_STATUS_ORDER, ISSUE_STATUS_VISUALS, PRIORITY_ORDER, PRIORITY_VISUALS } from '$lib/constants/visual';
   import { onMount } from 'svelte';
   import { Plus, Search, List, LayoutGrid, Filter, ArrowUpDown, Layers, ChevronRight, X, Check, User } from 'lucide-svelte';
   import KanbanBoard from '$lib/components/board/kanban-board.svelte';
@@ -51,25 +52,15 @@
   // ---------------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------------
-  const STATUS_ORDER = ['in_progress', 'todo', 'backlog', 'in_review', 'blocked', 'done', 'cancelled'];
-  const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'];
+  const ALL_STATUSES = ISSUE_STATUS_ORDER.map((value) => ({
+    value,
+    label: ISSUE_STATUS_VISUALS[value]?.label ?? value,
+  }));
 
-  const ALL_STATUSES = [
-    { value: 'backlog', label: 'Backlog' },
-    { value: 'todo', label: 'To Do' },
-    { value: 'in_progress', label: 'In Progress' },
-    { value: 'in_review', label: 'In Review' },
-    { value: 'blocked', label: 'Blocked' },
-    { value: 'done', label: 'Done' },
-    { value: 'cancelled', label: 'Cancelled' },
-  ];
-
-  const ALL_PRIORITIES = [
-    { value: 'critical', label: 'Critical' },
-    { value: 'high', label: 'High' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'low', label: 'Low' },
-  ];
+  const ALL_PRIORITIES = PRIORITY_ORDER.map((value) => ({
+    value,
+    label: PRIORITY_VISUALS[value]?.label ?? value,
+  }));
 
   const QUICK_PRESETS = [
     { label: 'All', statuses: [] as string[] },
@@ -92,25 +83,6 @@
     { value: 'assignee', label: 'Assignee' },
     { value: 'none', label: 'None' },
   ] as const;
-
-  const STATUS_COLORS: Record<string, string> = {
-    backlog: 'bg-zinc-500',
-    todo: 'bg-[#2563EB]',
-    in_progress: 'bg-[#F97316]',
-    in_review: 'bg-purple-500',
-    blocked: 'bg-[#EF4444]',
-    done: 'bg-[#10A37F]',
-    cancelled: 'bg-zinc-600',
-  };
-
-  const PRIORITY_COLORS: Record<string, string> = {
-    critical: 'text-[#EF4444] bg-red-500/15 border-red-500/30',
-    high: 'text-[#F97316] bg-orange-500/15 border-orange-500/30',
-    medium: 'text-[#F59E0B] bg-yellow-500/15 border-yellow-500/30',
-    low: 'text-muted-foreground bg-zinc-500/15 border-zinc-500/30',
-  };
-
-  const PRIORITY_LABELS: Record<string, string> = { critical: 'P0', high: 'P1', medium: 'P2', low: 'P3' };
 
   const defaultViewState: ViewState = {
     statuses: [],
@@ -182,7 +154,7 @@
     const dir = viewState.sortDir === 'asc' ? 1 : -1;
     list.sort((a, b) => {
       switch (viewState.sortField) {
-        case 'status': return dir * (STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status));
+        case 'status': return dir * (ISSUE_STATUS_ORDER.indexOf(a.status) - ISSUE_STATUS_ORDER.indexOf(b.status));
         case 'priority': return dir * (PRIORITY_ORDER.indexOf(a.priority ?? '') - PRIORITY_ORDER.indexOf(b.priority ?? ''));
         case 'title': return dir * (a.title ?? '').localeCompare(b.title ?? '');
         case 'created': return dir * (new Date(a.createdAt ?? 0).getTime() - new Date(b.createdAt ?? 0).getTime());
@@ -206,7 +178,7 @@
     }
     const entries = [...groups.entries()];
     if (viewState.groupBy === 'status') {
-      entries.sort((a, b) => STATUS_ORDER.indexOf(a[0]) - STATUS_ORDER.indexOf(b[0]));
+        entries.sort((a, b) => ISSUE_STATUS_ORDER.indexOf(a[0]) - ISSUE_STATUS_ORDER.indexOf(b[0]));
     } else if (viewState.groupBy === 'priority') {
       entries.sort((a, b) => (PRIORITY_ORDER.indexOf(a[0]) ?? 99) - (PRIORITY_ORDER.indexOf(b[0]) ?? 99));
     }
@@ -266,7 +238,7 @@
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
-  function statusDotClass(s: string) { return STATUS_COLORS[s] ?? 'bg-zinc-500'; }
+  function statusDotClass(s: string) { return ISSUE_STATUS_VISUALS[s]?.dotClass ?? 'bg-zinc-500'; }
 
   function timeAgo(dateStr: string | null | undefined): string {
     if (!dateStr) return '';
@@ -402,9 +374,9 @@
     <!-- Trailing -->
     <span class="ml-auto hidden shrink-0 items-center gap-2 sm:flex sm:gap-3">
       <!-- Priority -->
-      {#if issue.priority && PRIORITY_LABELS[issue.priority]}
-        <Badge variant="outline" class="text-[10px] font-bold leading-none rounded px-1.5 py-0.5 {PRIORITY_COLORS[issue.priority] ?? ''}">
-          {PRIORITY_LABELS[issue.priority]}
+      {#if issue.priority && PRIORITY_VISUALS[issue.priority]}
+        <Badge variant="outline" class="text-[10px] font-bold leading-none rounded px-1.5 py-0.5 {PRIORITY_VISUALS[issue.priority].badgeClass}">
+          {PRIORITY_VISUALS[issue.priority].label}
         </Badge>
       {/if}
 
@@ -607,8 +579,8 @@
                           onchange={() => toggleFilter('priorities', p.value)}
                           class="rounded"
                         />
-                        <span class="inline-flex items-center rounded border px-1 text-[10px] font-bold {PRIORITY_COLORS[p.value] ?? ''}">
-                          {PRIORITY_LABELS[p.value]}
+                        <span class="inline-flex items-center rounded border px-1 text-[10px] font-bold {PRIORITY_VISUALS[p.value]?.badgeClass ?? ''}">
+                          {PRIORITY_VISUALS[p.value]?.label ?? p.value}
                         </span>
                         <span class="text-sm">{p.label}</span>
                       </label>
@@ -776,9 +748,9 @@
                 {#if viewState.groupBy === 'status' && group.key}
                   <span class="h-2 w-2 rounded-full {statusDotClass(group.key)}"></span>
                 {/if}
-                {#if viewState.groupBy === 'priority' && PRIORITY_LABELS[group.key]}
-                  <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none {PRIORITY_COLORS[group.key] ?? ''}">
-                    {PRIORITY_LABELS[group.key]}
+                {#if viewState.groupBy === 'priority' && PRIORITY_VISUALS[group.key]}
+                  <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none {PRIORITY_VISUALS[group.key].badgeClass}">
+                    {PRIORITY_VISUALS[group.key].label}
                   </span>
                 {/if}
                 <span class="text-sm font-semibold uppercase tracking-wide">{group.label}</span>

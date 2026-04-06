@@ -7,6 +7,7 @@
   import * as echarts from 'echarts/core';
   import BaseChart from './base-chart.svelte';
   import type { EChartsOption } from 'echarts';
+  import { CHART_SERIES_COLORS } from '$lib/constants/visual';
 
   echarts.use([EPie, TooltipComponent, LegendComponent]);
 
@@ -25,8 +26,6 @@
   }
 
   let { data, height = '250px', title = '', doughnut = true, class: className = '' }: Props = $props();
-
-  const DEFAULT_COLORS = ['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899'];
 
   let option = $derived<EChartsOption>({
     tooltip: {
@@ -57,7 +56,7 @@
       data: data.map((d, i) => ({
         name: d.name,
         value: d.value,
-        itemStyle: { color: d.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length] },
+        itemStyle: { color: d.color ?? CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length] },
       })),
     }],
   });

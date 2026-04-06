@@ -277,23 +277,25 @@
 
   <!-- Empty -->
   {:else if filteredRuns.length === 0}
-    <div class="glass-card p-12 text-center">
-      <div class="flex flex-col items-center gap-3">
-        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
-          <Play class="h-5 w-5 text-muted-foreground/40" />
+    <Card>
+      <CardContent class="p-12 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+            <Play class="h-5 w-5 text-muted-foreground/40" />
+          </div>
+          {#if runs.length === 0}
+            <p class="text-sm font-medium text-muted-foreground">No runs yet</p>
+            <p class="text-xs text-muted-foreground/60">Runs will appear here when agents execute tasks.</p>
+          {:else}
+            <p class="text-sm font-medium text-muted-foreground">No runs match the current filters.</p>
+          {/if}
         </div>
-        {#if runs.length === 0}
-          <p class="text-sm font-medium text-muted-foreground">No runs yet</p>
-          <p class="text-xs text-muted-foreground/60">Runs will appear here when agents execute tasks.</p>
-        {:else}
-          <p class="text-sm font-medium text-muted-foreground">No runs match the current filters.</p>
-        {/if}
-      </div>
-    </div>
+      </CardContent>
+    </Card>
 
   <!-- Runs list -->
   {:else}
-    <div class="glass-card p-0 overflow-hidden">
+    <Card class="p-0 overflow-hidden">
         {#each filteredRuns as run, i (run.id)}
           <a
             href="/{prefix}/runs/{run.id}"
@@ -341,7 +343,7 @@
             <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100" />
           </a>
         {/each}
-    </div>
+    </Card>
 
     <!-- Count -->
     <p class="text-xs text-muted-foreground text-right">

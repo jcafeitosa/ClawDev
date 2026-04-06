@@ -203,34 +203,60 @@ export async function testEnvironment(
     });
   }
 
-  // Probe a quick request to check quota/subscription status
+  // Real model test: send a PING prompt and verify the model responds
+  const probeModel = asString(config.model, "gpt-4.1").split(":")[0]; // strip effort suffix
   if (canRunProbe && commandLooksLike(command, "copilot")) {
     const quotaProbe = await runChildProcess(
-      `copilot-quota-probe-${Date.now()}`,
+      `copilot-model-test-${Date.now()}`,
       command,
-      ["-p", "hi", "--model", "gpt-4.1", "--output-format", "json", "-s", "--disable-builtin-mcps"],
+      ["-p", "When I say PING, you reply with only the word PONG. PING", "--model", probeModel, "--output-format", "json", "-s", "--no-auto-update", "--disable-builtin-mcps"],
       {
         cwd,
         env,
-        timeoutSec: 15,
+        timeoutSec: 20,
         graceSec: 5,
         stdin: "",
         onLog: async () => {},
       },
     );
     const combined = quotaProbe.stdout + quotaProbe.stderr;
-    if (combined.includes('"errorType":"quota"') || combined.includes("no quota")) {
+    const lowerCombined = combined.toLowerCase();
+    if (lowerCombined.includes('"errortype":"quota"') || lowerCombined.includes("no quota") || lowerCombined.includes("402")) {
       checks.push({
-        code: "copilot_quota_exhausted",
-        level: "warn",
-        message: "Copilot quota exhausted — requests may fail until quota resets.",
-        hint: "Check your GitHub Copilot subscription at https://github.com/settings/copilot",
+        code: "copilot_model_no_quota",
+        level: "error",
+        message: `Model "${probeModel}" has no quota — requests will fail.`,
+        hint: "Select a different model or check your GitHub Copilot subscription at https://github.com/settings/copilot",
       });
-    } else if ((quotaProbe.exitCode ?? 1) === 0) {
+    } else if (lowerCombined.includes("not available")) {
       checks.push({
-        code: "copilot_subscription_active",
+        code: "copilot_model_unavailable",
+        level: "error",
+        message: `Model "${probeModel}" is not available on your Copilot plan.`,
+        hint: "Select a model marked with ✅ in the model selector.",
+      });
+    } else if (quotaProbe.timedOut) {
+      checks.push({
+        code: "copilot_model_test_timeout",
+        level: "warn",
+        message: `Model "${probeModel}" test timed out.`,
+        hint: "The model may be slow or unresponsive. Try again.",
+      });
+    } else if (lowerCombined.includes("pong") || (quotaProbe.exitCode ?? 1) === 0) {
+      const hasPong = lowerCombined.includes("pong");
+      checks.push({
+        code: "copilot_model_test_passed",
         level: "info",
-        message: "Copilot subscription is active and quota is available.",
+        message: `Model "${probeModel}" responded successfully${hasPong ? " (PONG ✓)" : ""}.`,
+      });
+    } else {
+      const detail = firstNonEmptyLine(quotaProbe.stderr) || firstNonEmptyLine(quotaProbe.stdout);
+      checks.push({
+        code: "copilot_model_test_failed",
+        level: "error",
+        message: `Model "${probeModel}" failed to respond.`,
+        ...(detail ? { detail: detail.slice(0, 300) } : {}),
+        hint: "Check if the model is available and your subscription is active.",
       });
     }
 

@@ -651,7 +651,8 @@
             class="inline-flex items-center gap-1.5 rounded-md border border-border px-2 py-1 text-xs transition-colors hover:bg-accent/50"
           >
             {#if currentPriority}
-              <svelte:component this={currentPriority.icon} class="h-3 w-3 {currentPriority.colorClass}" />
+              {@const CurrentPriorityIcon = currentPriority.icon}
+              <CurrentPriorityIcon class="h-3 w-3 {currentPriority.colorClass}" />
               {currentPriority.label}
             {:else}
               <Minus class="h-3 w-3 text-muted-foreground" />
@@ -665,12 +666,13 @@
               onkeydown={(e) => { if (e.key === 'Escape') priorityOpen = false; }}
             >
               {#each priorityOptions as p}
+                {@const PriorityOptionIcon = p.icon}
                 <button
                   type="button"
                   class="flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs transition-colors hover:bg-accent/50 {p.value === priority ? 'bg-accent' : ''}"
                   onclick={() => { priority = p.value; priorityOpen = false; }}
                 >
-                  <svelte:component this={p.icon} class="h-3 w-3 {p.colorClass}" />
+                  <PriorityOptionIcon class="h-3 w-3 {p.colorClass}" />
                   {p.label}
                 </button>
               {/each}

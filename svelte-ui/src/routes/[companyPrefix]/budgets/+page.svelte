@@ -16,7 +16,7 @@
     Clock,
     X,
   } from 'lucide-svelte';
-  import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Progress, Skeleton, Separator } from '$components/ui/index.js';
+  import { Card, CardHeader, CardTitle, CardDescription, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Progress, Skeleton, Separator } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Budget Policies' }]));
@@ -277,43 +277,48 @@
   {:else if !error}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-3">
       <!-- Total Budget -->
-      <div class="glass-card p-5">
+      <Card class="border-border/60">
+        <CardHeader class="pb-3">
           <div class="flex items-center gap-3 mb-3">
             <div class="rounded-lg bg-blue-500/10 p-2">
               <Wallet class="h-5 w-5 text-blue-400" />
             </div>
             <span class="text-sm font-medium text-muted-foreground">Total Budget</span>
           </div>
-          <p class="text-2xl font-bold text-foreground">{formatCents(totalBudget)}</p>
-          <p class="mt-1 text-xs text-muted-foreground">{policies.length} active {policies.length === 1 ? 'policy' : 'policies'}</p>
-      </div>
+          <CardTitle class="text-2xl">{formatCents(totalBudget)}</CardTitle>
+          <CardDescription>{policies.length} active {policies.length === 1 ? 'policy' : 'policies'}</CardDescription>
+        </CardHeader>
+      </Card>
 
       <!-- Current Spend -->
-      <div class="glass-card p-5">
+      <Card class="border-border/60">
+        <CardHeader class="pb-3">
           <div class="flex items-center gap-3 mb-3">
             <div class="rounded-lg bg-emerald-500/10 p-2">
               <DollarSign class="h-5 w-5 text-emerald-400" />
             </div>
             <span class="text-sm font-medium text-muted-foreground">Current Spend</span>
           </div>
-          <p class="text-2xl font-bold text-foreground">{formatCents(currentSpend)}</p>
+          <CardTitle class="text-2xl">{formatCents(currentSpend)}</CardTitle>
           {#if totalBudget > 0}
             <div class="mt-2">
               <Progress value={Math.min(100, spendPercent)} class="h-1.5" />
               <p class="mt-1 text-xs text-muted-foreground">{spendPercent}% of total budget</p>
             </div>
           {/if}
-      </div>
+        </CardHeader>
+      </Card>
 
       <!-- Remaining -->
-      <div class="glass-card p-5">
+      <Card class="border-border/60">
+        <CardHeader class="pb-3">
           <div class="flex items-center gap-3 mb-3">
             <div class="rounded-lg bg-orange-500/10 p-2">
               <TrendingDown class="h-5 w-5 text-orange-400" />
             </div>
             <span class="text-sm font-medium text-muted-foreground">Remaining</span>
           </div>
-          <p class="text-2xl font-bold text-foreground">{formatCents(remaining)}</p>
+          <CardTitle class="text-2xl">{formatCents(remaining)}</CardTitle>
           {#if pendingIncidents.length > 0}
             <p class="mt-1 text-xs text-amber-400">
               {pendingIncidents.length} pending {pendingIncidents.length === 1 ? 'incident' : 'incidents'}
@@ -321,7 +326,8 @@
           {:else}
             <p class="mt-1 text-xs text-emerald-400">No incidents</p>
           {/if}
-      </div>
+        </CardHeader>
+      </Card>
     </div>
   {/if}
 
@@ -532,80 +538,75 @@
       </button>
     </div>
   {:else}
-    <div class="glass-card p-0 overflow-hidden">
-      <div class="px-5 py-4 border-b border-border/50">
-        <h3 class="text-sm font-semibold text-foreground">Active Policies</h3>
-      </div>
-
-      <div class="divide-y divide-white/[0.05]">
-        {#each policies as policy (policy.id)}
-          {@const pct = policySpendPct(policy)}
-          <div class="px-5 py-4 hover:bg-accent/40 transition-colors">
-            <div class="flex items-start justify-between gap-4">
-              <!-- Left side: scope + details -->
-              <div class="min-w-0 flex-1 space-y-2">
-                <div class="flex items-center gap-2 flex-wrap">
-                  <!-- Scope badge -->
-                  <Badge variant="outline" class="text-xs {scopeBadgeColor(policy.scopeType)}">
-                    {scopeIcon(policy.scopeType)}
-                  </Badge>
-                  {#if policy.scopeLabel}
-                    <span class="text-sm font-medium text-foreground truncate">{policy.scopeLabel}</span>
-                  {:else if policy.scopeId}
-                    <span class="text-sm font-mono text-muted-foreground truncate">{policy.scopeId}</span>
-                  {/if}
-                  <!-- Window badge -->
-                  <Badge variant="outline" class="text-xs {windowBadgeColor(policy.windowKind)}">
-                    {windowLabel(policy.windowKind)}
-                  </Badge>
-                </div>
-
-                <!-- Spend progress -->
-                <div class="flex items-center gap-3">
-                  <div class="h-1.5 flex-1 max-w-xs rounded-full bg-accent overflow-hidden">
-                    <div
-                      class="h-full rounded-full transition-all {spendBarColor(pct)}"
-                      style="width: {Math.min(100, pct)}%"
-                    ></div>
-                  </div>
-                  <span class="shrink-0 text-xs font-medium text-muted-foreground tabular-nums">
-                    {formatCents(policy.currentSpend ?? 0)} / {formatCents(policy.amount)}
-                  </span>
-                </div>
-
-                <!-- Meta row -->
-                <div class="flex items-center gap-4 text-xs text-muted-foreground">
-                  <span>Warn at {policy.warnPercent}%</span>
-                  <span class="flex items-center gap-1">
-                    {#if policy.hardStopEnabled}
-                      <ShieldAlert class="h-3 w-3 text-red-400" />
-                      <span class="text-red-400">Hard stop enabled</span>
-                    {:else}
-                      <Shield class="h-3 w-3" />
-                      <span>Warn only</span>
+    <Card class="border-border/60 overflow-hidden">
+      <CardHeader class="border-b border-border/50">
+        <CardTitle class="text-sm">Active Policies</CardTitle>
+      </CardHeader>
+      <CardContent class="p-0">
+        <div class="divide-y divide-white/[0.05]">
+          {#each policies as policy (policy.id)}
+            {@const pct = policySpendPct(policy)}
+            <div class="px-5 py-4 transition-colors hover:bg-accent/40">
+              <div class="flex items-start justify-between gap-4">
+                <div class="min-w-0 flex-1 space-y-2">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" class="text-xs {scopeBadgeColor(policy.scopeType)}">
+                      {scopeIcon(policy.scopeType)}
+                    </Badge>
+                    {#if policy.scopeLabel}
+                      <span class="truncate text-sm font-medium text-foreground">{policy.scopeLabel}</span>
+                    {:else if policy.scopeId}
+                      <span class="truncate font-mono text-sm text-muted-foreground">{policy.scopeId}</span>
                     {/if}
-                  </span>
-                  {#if policy.status}
-                    <span class="inline-flex items-center gap-1">
-                      <span
-                        class="h-1.5 w-1.5 rounded-full
-                          {policy.status === 'active' ? 'bg-emerald-500' : policy.status === 'exceeded' ? 'bg-red-500' : 'bg-zinc-500'}"
-                      ></span>
-                      {policy.status}
-                    </span>
-                  {/if}
-                </div>
-              </div>
+                    <Badge variant="outline" class="text-xs {windowBadgeColor(policy.windowKind)}">
+                      {windowLabel(policy.windowKind)}
+                    </Badge>
+                  </div>
 
-              <!-- Right side: amount -->
-              <div class="text-right shrink-0">
-                <p class="text-lg font-bold text-foreground tabular-nums">{formatCents(policy.amount)}</p>
-                <p class="text-xs text-muted-foreground">per {policy.windowKind === 'lifetime' ? 'lifetime' : policy.windowKind.replace('ly', '')}</p>
+                  <div class="flex items-center gap-3">
+                    <div class="max-w-xs flex-1 overflow-hidden rounded-full bg-accent h-1.5">
+                      <div
+                        class="h-full rounded-full transition-all {spendBarColor(pct)}"
+                        style="width: {Math.min(100, pct)}%"
+                      ></div>
+                    </div>
+                    <span class="shrink-0 tabular-nums text-xs font-medium text-muted-foreground">
+                      {formatCents(policy.currentSpend ?? 0)} / {formatCents(policy.amount)}
+                    </span>
+                  </div>
+
+                  <div class="flex items-center gap-4 text-xs text-muted-foreground">
+                    <span>Warn at {policy.warnPercent}%</span>
+                    <span class="flex items-center gap-1">
+                      {#if policy.hardStopEnabled}
+                        <ShieldAlert class="h-3 w-3 text-red-400" />
+                        <span class="text-red-400">Hard stop enabled</span>
+                      {:else}
+                        <Shield class="h-3 w-3" />
+                        <span>Warn only</span>
+                      {/if}
+                    </span>
+                    {#if policy.status}
+                      <span class="inline-flex items-center gap-1">
+                        <span
+                          class="h-1.5 w-1.5 rounded-full
+                            {policy.status === 'active' ? 'bg-emerald-500' : policy.status === 'exceeded' ? 'bg-red-500' : 'bg-zinc-500'}"
+                        ></span>
+                        {policy.status}
+                      </span>
+                    {/if}
+                  </div>
+                </div>
+
+                <div class="shrink-0 text-right">
+                  <p class="text-lg font-bold text-foreground tabular-nums">{formatCents(policy.amount)}</p>
+                  <p class="text-xs text-muted-foreground">per {policy.windowKind === 'lifetime' ? 'lifetime' : policy.windowKind.replace('ly', '')}</p>
+                </div>
               </div>
             </div>
-          </div>
-        {/each}
-      </div>
-    </div>
+          {/each}
+        </div>
+      </CardContent>
+    </Card>
   {/if}
 </PageLayout>

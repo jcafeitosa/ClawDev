@@ -527,6 +527,13 @@ export function agentRoutes(db: Db) {
             exitCode: heartbeatRuns.exitCode,
             errorCode: heartbeatRuns.errorCode,
             stdoutExcerpt: heartbeatRuns.stdoutExcerpt,
+            contextSnapshot: heartbeatRuns.contextSnapshot,
+            wakeupRequestId: heartbeatRuns.wakeupRequestId,
+            sessionIdBefore: heartbeatRuns.sessionIdBefore,
+            sessionIdAfter: heartbeatRuns.sessionIdAfter,
+            usageJson: heartbeatRuns.usageJson,
+            resultJson: heartbeatRuns.resultJson,
+            retryOfRunId: heartbeatRuns.retryOfRunId,
             createdAt: heartbeatRuns.createdAt,
           })
           .from(heartbeatRuns)
@@ -850,7 +857,7 @@ export function agentRoutes(db: Db) {
         }
 
         // Copy other safe fields
-        for (const key of ["name", "role", "title", "reportsTo", "capabilities", "runtimeConfig", "metadata", "status"]) {
+        for (const key of ["name", "role", "title", "icon", "reportsTo", "capabilities", "runtimeConfig", "metadata", "status"]) {
           if (key === "runtimeConfig") continue;
           if (input[key] !== undefined) {
             patch[key] = input[key];

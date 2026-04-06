@@ -3,6 +3,7 @@
   import { onMount } from "svelte";
   import { page } from "$app/stores";
   import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
+  import { PageLayout } from "$components/layout/index.js";
 
   onMount(() => {
     const prefix = ($page.params.companyPrefix ?? "").trim();
@@ -21,6 +22,8 @@
   });
 </script>
 
-<div class="flex h-full items-center justify-center">
-  <div class="text-sm text-muted-foreground">Redirecting to setup…</div>
-</div>
+<PageLayout title="Workspace Setup" description="Redirecting to the main onboarding flow." fullWidth>
+  <div class="flex h-full items-center justify-center">
+    <div class="text-sm text-muted-foreground">Redirecting to setup…</div>
+  </div>
+</PageLayout>

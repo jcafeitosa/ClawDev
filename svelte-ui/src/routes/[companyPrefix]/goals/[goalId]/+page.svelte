@@ -215,9 +215,9 @@
   <PageLayout title={goal.title} fullWidth>
     {#snippet actions()}
       <div class="flex items-center gap-2">
-        <StatusBadge status={goal.status} />
-        {#if goal.level}
-          <Badge variant="outline" class="capitalize">{goal.level}</Badge>
+        <StatusBadge status={goal!.status} />
+        {#if goal!.level}
+          <Badge variant="outline" class="capitalize">{goal!.level}</Badge>
         {/if}
         {#if !editing}
           <Button variant="outline" size="sm" onclick={startEditing}>
@@ -439,7 +439,7 @@
       <!-- Sidebar properties -->
       <PropertiesPanel>
         <PropertyRow label="Status">
-          <StatusBadge status={goal.status} />
+          <StatusBadge status={goal!.status} />
         </PropertyRow>
         <Separator />
         {#if goal.level}

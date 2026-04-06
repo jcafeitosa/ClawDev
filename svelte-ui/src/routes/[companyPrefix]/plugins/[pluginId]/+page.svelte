@@ -271,10 +271,10 @@
     <PageLayout title={displayName} description={pluginDescription} fullWidth>
       {#snippet actions()}
         <div class="flex items-center gap-2">
-          <StatusBadge status={plugin.enabled ? "enabled" : "disabled"} />
-          {#if plugin.status}
-            <Badge variant={plugin.status === "ready" ? "default" : plugin.status === "error" ? "destructive" : "secondary"}>
-              {plugin.status}
+          <StatusBadge status={plugin!.enabled ? "enabled" : "disabled"} />
+          {#if plugin!.status}
+            <Badge variant={plugin!.status === "ready" ? "default" : plugin!.status === "error" ? "destructive" : "secondary"}>
+              {plugin!.status}
             </Badge>
           {/if}
           <Badge variant="outline">v{version}</Badge>
@@ -299,12 +299,12 @@
             Refresh Logs
           </Button>
           <Button
-            variant={plugin.enabled ? "destructive" : "default"}
+            variant={plugin!.enabled ? "destructive" : "default"}
             size="sm"
             onclick={toggleEnabled}
             disabled={deleting}
           >
-            {plugin.enabled ? "Disable" : "Enable"}
+            {plugin!.enabled ? "Disable" : "Enable"}
           </Button>
           {#if confirmDelete}
             <div class="flex items-center gap-1.5">
@@ -429,7 +429,7 @@
                   </div>
                   <div class="flex justify-between gap-4">
                     <dt class="text-muted-foreground">Status</dt>
-                    <dd><StatusBadge status={plugin.enabled ? "enabled" : "disabled"} /></dd>
+                    <dd><StatusBadge status={plugin!.enabled ? "enabled" : "disabled"} /></dd>
                   </div>
                   <div class="flex justify-between gap-4">
                     <dt class="text-muted-foreground">ID</dt>

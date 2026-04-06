@@ -6,6 +6,7 @@
   import { api } from "$lib/api";
   import { onMount } from "svelte";
   import { AlertTriangle } from "lucide-svelte";
+  import { PageLayout } from "$components/layout/index.js";
 
   interface PluginRecord {
     id: string;
@@ -96,16 +97,17 @@
   const pageSlots = $derived(contribution?.slots?.filter((slot) => slot.type === "page") ?? []);
 </script>
 
-<div class="space-y-6 p-6">
-  <div class="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
-    <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
-    <div class="space-y-1 text-sm">
-      <p class="font-medium text-foreground">Plugin page</p>
-      <p class="text-muted-foreground">
-        This page hosts the UI contribution declared by the installed plugin.
-      </p>
+<PageLayout title="Plugin Page" description="This page hosts the UI contribution declared by the installed plugin." fullWidth>
+  <div class="space-y-6">
+    <div class="flex items-start gap-3 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 py-3">
+      <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-700" />
+      <div class="space-y-1 text-sm">
+        <p class="font-medium text-foreground">Plugin page</p>
+        <p class="text-muted-foreground">
+          This page hosts the UI contribution declared by the installed plugin.
+        </p>
+      </div>
     </div>
-  </div>
 
   {#if loading}
     <div class="rounded-xl border border-dashed border-zinc-300 px-4 py-8 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
@@ -163,4 +165,5 @@
       {/if}
     </div>
   {/if}
-</div>
+  </div>
+</PageLayout>

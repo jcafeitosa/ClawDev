@@ -2,14 +2,14 @@ export const type = "claude_local";
 export const label = "Claude Code (local)";
 
 export const models = [
-  { id: "opus", label: "Claude Opus (latest)", provider: "anthropic" },
-  { id: "sonnet", label: "Claude Sonnet (latest)", provider: "anthropic" },
-  { id: "haiku", label: "Claude Haiku (latest)", provider: "anthropic" },
-  { id: "claude-opus-4-6", label: "Claude Opus 4.6", provider: "anthropic" },
-  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", provider: "anthropic" },
-  { id: "claude-haiku-4-6", label: "Claude Haiku 4.6", provider: "anthropic" },
-  { id: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5", provider: "anthropic" },
-  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", provider: "anthropic" },
+  { id: "opus", label: "Claude Opus (latest)", provider: "anthropic", status: "available" as const },
+  { id: "sonnet", label: "Claude Sonnet (latest)", provider: "anthropic", status: "available" as const },
+  { id: "haiku", label: "Claude Haiku (latest)", provider: "anthropic", status: "available" as const },
+  { id: "claude-opus-4-6", label: "Claude Opus 4.6", provider: "anthropic", status: "available" as const },
+  { id: "claude-sonnet-4-6", label: "Claude Sonnet 4.6", provider: "anthropic", status: "available" as const },
+  { id: "claude-haiku-4-6", label: "Claude Haiku 4.6", provider: "anthropic", status: "available" as const },
+  { id: "claude-sonnet-4-5-20250929", label: "Claude Sonnet 4.5", provider: "anthropic", status: "available" as const },
+  { id: "claude-haiku-4-5-20251001", label: "Claude Haiku 4.5", provider: "anthropic", status: "available" as const },
 ];
 
 export const agentConfigurationDoc = `# claude_local agent configuration

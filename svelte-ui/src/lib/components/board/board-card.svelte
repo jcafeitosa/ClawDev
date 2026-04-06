@@ -1,6 +1,7 @@
 <script lang="ts">
   import { cn } from "$utils/index.js";
   import { User, FolderKanban } from "lucide-svelte";
+  import { DEFAULT_ENTITY_COLOR, PRIORITY_VISUALS } from "$lib/constants/visual";
 
   interface Issue {
     id: string;
@@ -26,20 +27,6 @@
   // ---------------------------------------------------------------------------
   // Priority
   // ---------------------------------------------------------------------------
-  const PRIORITY_DOT_COLORS: Record<string, string> = {
-    critical: "bg-[#EF4444]",
-    high: "bg-[#F97316]",
-    medium: "bg-[#F59E0B]",
-    low: "bg-[#64748B]",
-  };
-
-  const PRIORITY_LABELS: Record<string, string> = {
-    critical: "P0",
-    high: "P1",
-    medium: "P2",
-    low: "P3",
-  };
-
   function assigneeInitial(iss: Issue): string {
     const name = iss.assigneeName || iss.agentName;
     if (name) return name.charAt(0).toUpperCase();
@@ -59,19 +46,16 @@
         {issue.identifier}
       </span>
     {/if}
-    {#if issue.priority && PRIORITY_DOT_COLORS[issue.priority]}
+    {#if issue.priority && PRIORITY_VISUALS[issue.priority]}
       <span
         class={cn(
           "ml-auto inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none",
           "border",
-          issue.priority === "critical" && "text-[#EF4444] bg-red-500/10 border-red-500/20",
-          issue.priority === "high" && "text-[#F97316] bg-orange-500/10 border-orange-500/20",
-          issue.priority === "medium" && "text-[#F59E0B] bg-yellow-500/10 border-yellow-500/20",
-          issue.priority === "low" && "text-muted-foreground bg-zinc-500/10 border-zinc-500/20",
+          PRIORITY_VISUALS[issue.priority]?.badgeClass ?? "text-muted-foreground bg-zinc-500/10 border-zinc-500/20",
         )}
       >
-        <span class={cn("size-1.5 rounded-full", PRIORITY_DOT_COLORS[issue.priority])}></span>
-        {PRIORITY_LABELS[issue.priority]}
+        <span class={cn("size-1.5 rounded-full", PRIORITY_VISUALS[issue.priority]?.dotClass ?? "bg-zinc-500")}></span>
+        {PRIORITY_VISUALS[issue.priority]?.label}
       </span>
     {/if}
   </div>
@@ -87,7 +71,7 @@
       {#each issue.labels.slice(0, 3) as label}
         <span
           class="inline-block rounded-full px-1.5 py-0 text-[10px] font-medium leading-relaxed"
-          style="background-color: {label.color ?? '#3b82f6'}15; color: {label.color ?? '#3b82f6'}; border: 1px solid {label.color ?? '#3b82f6'}30;"
+          style="background-color: {label.color ?? DEFAULT_ENTITY_COLOR}15; color: {label.color ?? DEFAULT_ENTITY_COLOR}; border: 1px solid {label.color ?? DEFAULT_ENTITY_COLOR}30;"
         >
           {label.name}
         </span>

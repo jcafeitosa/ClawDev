@@ -275,7 +275,7 @@
 <PageLayout title="Company Settings" description="Manage your company configuration">
 
   <!-- General section -->
-  <section class="glass-card p-0 overflow-hidden">
+  <Card class="p-0 overflow-hidden">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-blue-500/10 p-2">
@@ -324,10 +324,10 @@
         <span class="text-sm text-emerald-400">Saved successfully</span>
       {/if}
     </CardFooter>
-  </section>
+  </Card>
 
   <!-- Appearance section -->
-  <section class="glass-card p-0 overflow-hidden">
+  <Card class="p-0 overflow-hidden">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-purple-500/10 p-2">
@@ -440,10 +440,10 @@
         </div>
       </div>
     </CardContent>
-  </section>
+  </Card>
 
   <!-- Hiring & Access section -->
-  <section class="glass-card p-0 overflow-hidden">
+  <Card class="p-0 overflow-hidden">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-emerald-500/10 p-2">
@@ -515,10 +515,10 @@
         </Button>
       </div>
     </CardContent>
-  </section>
+  </Card>
 
   <!-- Company Packages section -->
-  <section class="glass-card p-0 overflow-hidden">
+  <Card class="p-0 overflow-hidden">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-orange-500/10 p-2">
@@ -556,10 +556,10 @@
         </Button>
       </div>
     </CardContent>
-  </section>
+  </Card>
 
   <!-- Danger Zone -->
-  <section class="glass-card p-0 overflow-hidden" style="border-color: rgba(239, 68, 68, 0.2)">
+  <Card class="p-0 overflow-hidden" style="border-color: rgba(239, 68, 68, 0.2)">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-red-500/10 p-2">
@@ -644,5 +644,5 @@
         </Alert>
       {/if}
     </CardContent>
-  </section>
+  </Card>
 </PageLayout>

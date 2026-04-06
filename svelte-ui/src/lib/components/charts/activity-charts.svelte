@@ -12,6 +12,7 @@
   import BaseChart from './base-chart.svelte';
   import { api } from '$lib/api';
   import type { EChartsOption } from 'echarts';
+  import { formatDayLabel, getLast14Days } from './chart-helpers';
 
   echarts.use([BarChart, GridComponent, TooltipComponent]);
 
@@ -50,21 +51,6 @@
       loading = false;
     });
   });
-
-  // ── Helpers ────────────────────────────────────────────────────────
-  function getLast14Days(): string[] {
-    return Array.from({ length: 14 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (13 - i));
-      return d.toISOString().slice(0, 10);
-    });
-  }
-
-  function formatDayLabel(dateStr: string, i: number): string {
-    if (i !== 0 && i !== 6 && i !== 13) return '';
-    const d = new Date(dateStr + 'T12:00:00');
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  }
 
   const tooltipStyle = {
     backgroundColor: 'rgba(0,0,0,0.85)',

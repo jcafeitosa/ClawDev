@@ -283,7 +283,7 @@
   <PageLayout title={routine.title} description={routine.description ?? undefined} fullWidth>
     {#snippet actions()}
       <div class="flex items-center gap-2">
-        <StatusBadge status={routine.status} />
+        <StatusBadge status={routine!.status} />
         <Button variant="outline" size="sm" onclick={startEdit}>
           <Pencil class="w-3.5 h-3.5 mr-1" />
           Edit

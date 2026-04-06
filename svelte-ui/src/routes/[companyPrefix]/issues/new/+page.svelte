@@ -7,6 +7,7 @@
   import { onMount } from 'svelte';
   import { Plus } from 'lucide-svelte';
   import { Card, CardHeader, CardTitle, CardContent, CardFooter, Input, Button, Alert, AlertDescription, Label, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([
     { label: 'Issues', href: `/${$page.params.companyPrefix}/issues` },
@@ -101,7 +102,7 @@
   }
 </script>
 
-<div class="mx-auto max-w-2xl p-6">
+<PageLayout title="Create Issue" description="Create a new issue for this company." fullWidth>
   <Card class="rounded-xl border-border/60 backdrop-blur-sm">
     <CardHeader>
       <CardTitle>Create Issue</CardTitle>
@@ -205,4 +206,4 @@
       </Button>
     </CardFooter>
   </Card>
-</div>
+</PageLayout>

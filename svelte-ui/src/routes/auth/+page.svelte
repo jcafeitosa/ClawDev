@@ -11,7 +11,6 @@
   let name = $state("");
   let error = $state<string | null>(null);
   let loading = $state(false);
-  let deploymentMode = $state<string | null>(null);
   let bootstrapPending = $state(false);
   let ready = $state(false);
   let nextPath = $derived($page.url.searchParams.get("next") ?? "/");
@@ -22,7 +21,6 @@
     try {
       const res = await fetch("/api/health");
       const health = await res.json();
-      deploymentMode = health.deploymentMode ?? null;
 
       if (health.bootstrapStatus === "bootstrap_pending") {
         bootstrapPending = true;

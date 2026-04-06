@@ -162,6 +162,8 @@
   // Derived
   // ---------------------------------------------------------------------------
   let projectId = $derived($page.params.projectId);
+  /** Resolved UUID — prefers loaded project.id over URL param (which may be a slug like "onboarding") */
+  let projectUuid = $derived(project?.id ?? projectId);
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
@@ -233,7 +235,7 @@
     workspacesLoading = true;
     workspacesLoadError = null;
     try {
-      const res = await api(`/api/projects/${projectId}/workspaces`);
+      const res = await api(`/api/projects/${projectUuid}/workspaces`);
       if (!res.ok) throw new Error(await res.text());
       workspaces = ((await res.json()) as Workspace[]) ?? [];
     } catch {
@@ -325,7 +327,7 @@
       } else {
         body.targetDate = null;
       }
-      const res = await api(`/api/projects/${projectId}`, {
+      const res = await api(`/api/projects/${projectUuid}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       });
@@ -348,7 +350,7 @@
   async function deleteProject() {
     deleting = true;
     try {
-      const res = await api(`/api/projects/${projectId}`, { method: "DELETE" });
+      const res = await api(`/api/projects/${projectUuid}`, { method: "DELETE" });
       if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Project deleted", tone: "success" });
       goto(`/${prefix}/projects`);
@@ -370,7 +372,7 @@
       };
       if (newWsCwd.trim()) body.cwd = newWsCwd.trim();
       if (newWsRepoUrl.trim()) body.repoUrl = newWsRepoUrl.trim();
-      const res = await api(`/api/projects/${projectId}/workspaces`, {
+      const res = await api(`/api/projects/${projectUuid}/workspaces`, {
         method: "POST",
         body: JSON.stringify(body),
       });
@@ -416,7 +418,7 @@
       };
       if (editWsCwd.trim()) body.cwd = editWsCwd.trim();
       if (editWsRepoUrl.trim()) body.repoUrl = editWsRepoUrl.trim();
-      const res = await api(`/api/projects/${projectId}/workspaces/${workspaceId}`, {
+      const res = await api(`/api/projects/${projectUuid}/workspaces/${workspaceId}`, {
         method: "PATCH",
         body: JSON.stringify(body),
       });
@@ -435,7 +437,7 @@
   async function makeWorkspacePrimary(workspaceId: string) {
     savingWorkspaceId = workspaceId;
     try {
-      const res = await api(`/api/projects/${projectId}/workspaces/${workspaceId}`, {
+      const res = await api(`/api/projects/${projectUuid}/workspaces/${workspaceId}`, {
         method: "PATCH",
         body: JSON.stringify({ isPrimary: true }),
       });
@@ -454,7 +456,7 @@
     if (!confirm("Delete this workspace?")) return;
     deletingWorkspaceId = workspaceId;
     try {
-      const res = await api(`/api/projects/${projectId}/workspaces/${workspaceId}`, { method: "DELETE" });
+      const res = await api(`/api/projects/${projectUuid}/workspaces/${workspaceId}`, { method: "DELETE" });
       if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Workspace deleted", tone: "success" });
       if (editingWorkspaceId === workspaceId) cancelWorkspaceEdit();
@@ -473,7 +475,7 @@
     const repoUrl = settingsRepoUrl.trim();
     if (!cwd && !repoUrl) {
       if (primary?.id) {
-        const res = await api(`/api/projects/${projectId}/workspaces/${primary.id}`, { method: "DELETE" });
+        const res = await api(`/api/projects/${projectUuid}/workspaces/${primary.id}`, { method: "DELETE" });
         if (!res.ok) throw new Error(await res.text());
       }
       return;
@@ -485,14 +487,14 @@
       repoUrl: repoUrl || null,
     };
     if (primary?.id) {
-      const res = await api(`/api/projects/${projectId}/workspaces/${primary.id}`, {
+      const res = await api(`/api/projects/${projectUuid}/workspaces/${primary.id}`, {
         method: "PATCH",
         body: JSON.stringify(payload),
       });
       if (!res.ok) throw new Error(await res.text());
       return;
     }
-    const res = await api(`/api/projects/${projectId}/workspaces`, {
+    const res = await api(`/api/projects/${projectUuid}/workspaces`, {
       method: "POST",
       body: JSON.stringify(payload),
     });
@@ -527,7 +529,7 @@
           },
         },
       };
-      const projectRes = await api(`/api/projects/${projectId}`, {
+      const projectRes = await api(`/api/projects/${projectUuid}`, {
         method: "PATCH",
         body: JSON.stringify(projectBody),
       });
@@ -582,10 +584,10 @@
   <PageLayout title={project.name} description={project.description ?? undefined} fullWidth>
     {#snippet actions()}
       <div class="flex items-center gap-2">
-        {#if project.status}
-          <StatusBadge status={project.status} />
+        {#if project!.status}
+          <StatusBadge status={project!.status} />
         {/if}
-        {#if project.archivedAt}
+        {#if project!.archivedAt}
           <Badge variant="secondary">Archived</Badge>
         {/if}
         {#if !editing}

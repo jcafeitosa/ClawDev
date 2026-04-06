@@ -7,6 +7,7 @@
   import * as echarts from 'echarts/core';
   import BaseChart from './base-chart.svelte';
   import type { EChartsOption } from 'echarts';
+  import { CHART_SERIES_COLORS } from '$lib/constants/visual';
 
   echarts.use([ELine, GridComponent, TooltipComponent, LegendComponent]);
 
@@ -28,8 +29,6 @@
   }
 
   let { labels, series, height = '250px', title = '', yAxisLabel = '', smooth = true, class: className = '' }: Props = $props();
-
-  const DEFAULT_COLORS = ['#3b82f6', '#22c55e', '#f97316', '#ef4444', '#8b5cf6'];
 
   let option = $derived<EChartsOption>({
     tooltip: {
@@ -67,13 +66,13 @@
       data: s.data,
       symbol: 'circle',
       symbolSize: 4,
-      lineStyle: { width: 2, color: s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length] },
-      itemStyle: { color: s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length] },
+      lineStyle: { width: 2, color: s.color ?? CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length] },
+      itemStyle: { color: s.color ?? CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length] },
       ...(s.area ? {
         areaStyle: {
           color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            { offset: 0, color: (s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length]) + '40' },
-            { offset: 1, color: (s.color ?? DEFAULT_COLORS[i % DEFAULT_COLORS.length]) + '05' },
+            { offset: 0, color: (s.color ?? CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length]) + '40' },
+            { offset: 1, color: (s.color ?? CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length]) + '05' },
           ]),
         },
       } : {}),

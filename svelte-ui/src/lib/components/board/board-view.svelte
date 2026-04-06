@@ -1,5 +1,6 @@
 <script lang="ts">
   import BoardColumn from "./board-column.svelte";
+  import { ISSUE_STATUS_VISUALS } from "$lib/constants/visual";
 
   interface Issue {
     id: string;
@@ -26,12 +27,12 @@
   // Status column definitions (ordered)
   // ---------------------------------------------------------------------------
   const COLUMNS = [
-    { status: "backlog", label: "Backlog", color: "#64748b" },
-    { status: "todo", label: "To Do", color: "#2563eb" },
-    { status: "in_progress", label: "In Progress", color: "#f59e0b" },
-    { status: "in_review", label: "In Review", color: "#8b5cf6" },
-    { status: "done", label: "Done", color: "#10b981" },
-    { status: "blocked", label: "Blocked", color: "#ef4444" },
+    { status: "backlog", label: "Backlog", color: ISSUE_STATUS_VISUALS.backlog.hex },
+    { status: "todo", label: "To Do", color: ISSUE_STATUS_VISUALS.todo.hex },
+    { status: "in_progress", label: "In Progress", color: ISSUE_STATUS_VISUALS.in_progress.hex },
+    { status: "in_review", label: "In Review", color: ISSUE_STATUS_VISUALS.in_review.hex },
+    { status: "done", label: "Done", color: ISSUE_STATUS_VISUALS.done.hex },
+    { status: "blocked", label: "Blocked", color: ISSUE_STATUS_VISUALS.blocked.hex },
   ] as const;
 
   // ---------------------------------------------------------------------------

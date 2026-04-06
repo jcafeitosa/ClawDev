@@ -648,18 +648,23 @@ export async function startServer(): Promise<StartedServer> {
     }
   }
   
+  logger.info("Startup: post-db checks");
   let authReady = config.deploymentMode === "local_trusted";
   let resolveSessionFromHeaders:
     | ((headers: Headers) => Promise<BetterAuthSessionResult | null>)
     | undefined;
   if (config.deploymentMode === "local_trusted") {
+    logger.info("Startup: ensuring board principal");
     await ensureLocalTrustedBoardPrincipal(db as any);
+    logger.info("Startup: board principal ready");
   }
+  logger.info("Startup: importing auth module");
   const {
     createBetterAuthInstance,
     deriveAuthTrustedOrigins,
     resolveBetterAuthSessionFromHeaders,
   } = await import("./auth/better-auth.js");
+  logger.info("Startup: auth module imported");
   const betterAuthSecret =
     process.env.BETTER_AUTH_SECRET?.trim() ?? process.env.CLAWDEV_AGENT_JWT_SECRET?.trim();
   if (config.deploymentMode === "authenticated" && !betterAuthSecret) {
@@ -687,14 +692,26 @@ export async function startServer(): Promise<StartedServer> {
       "Authenticated mode auth origin configuration",
     );
   }
+  logger.info("Startup: creating auth instance");
   const auth = createBetterAuthInstance(db as any, config, effectiveTrustedOrigins);
   resolveSessionFromHeaders = (headers) => resolveBetterAuthSessionFromHeaders(auth, headers);
   if (config.deploymentMode === "authenticated") {
     await initializeBoardClaimChallenge(db as any, { deploymentMode: config.deploymentMode });
   }
   authReady = true;
-  
-  let listenPort = await detectFreePort(config.port, config.host);
+  logger.info("Startup: auth ready");
+
+  logger.info("Startup: detecting free port");
+  let listenPort: number;
+  try {
+    listenPort = await Promise.race([
+      detectFreePort(config.port, config.host),
+      new Promise<number>((_, reject) => setTimeout(() => reject(new Error("detectFreePort timeout")), 5000)),
+    ]);
+  } catch {
+    logger.warn("detectFreePort timed out, using configured port directly");
+    listenPort = config.port;
+  }
   logger.info({ listenPort, requestedPort: config.port }, "Startup: preparing to listen");
   if (listenPort !== config.port) {
     config.port = listenPort;

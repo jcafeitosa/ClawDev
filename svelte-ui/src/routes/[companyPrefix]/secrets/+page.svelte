@@ -384,7 +384,7 @@
 
   <!-- Secrets list -->
   {:else}
-    <div class="glass-card p-0 overflow-hidden">
+    <Card class="p-0 overflow-hidden">
       {#each filteredSecrets as secret, i (secret.id)}
         <div
           class="flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
@@ -478,7 +478,7 @@
           </div>
         </div>
       {/each}
-    </div>
+    </Card>
 
     <!-- Summary -->
     <p class="text-xs text-muted-foreground text-center">

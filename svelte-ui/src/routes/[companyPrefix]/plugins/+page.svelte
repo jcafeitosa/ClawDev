@@ -7,6 +7,7 @@
   import { onMount } from 'svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
   import { CardHoverEffect } from '$lib/components/aceternity';
+  import { PageLayout } from '$components/layout/index.js';
   import {
     Badge, Button, Input, Separator, Skeleton,
     Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter
@@ -248,19 +249,15 @@
   });
 </script>
 
-<div class="space-y-6 p-6">
-  <div class="flex items-center justify-between gap-4">
-    <div class="min-w-0">
-      <h1 class="truncate text-xl font-semibold text-zinc-900 dark:text-zinc-50">Plugins</h1>
-      <p class="mt-1 text-sm text-zinc-500 dark:text-zinc-400">
-        Install, enable, and inspect plugins for this company.
-      </p>
-    </div>
+<PageLayout title="Plugins" description="Install, enable, and inspect plugins for this company." fullWidth>
+  {#snippet actions()}
     <Button size="sm" onclick={openInstallDialog}>
       <Plus class="mr-1.5 h-4 w-4" />
       Install Plugin
     </Button>
-  </div>
+  {/snippet}
+
+  <div class="space-y-6">
 
   <div class="rounded-lg border border-amber-500/30 bg-amber-500/5 px-4 py-3">
     <div class="flex items-start gap-3">
@@ -481,6 +478,8 @@
     </DialogFooter>
   </DialogContent>
 </Dialog>
+
+</PageLayout>
 
 <Dialog bind:open={uninstallDialogOpen}>
   <DialogContent class="sm:max-w-md">

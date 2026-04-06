@@ -11,7 +11,6 @@
   let code = $state('');
   let claimState = $state<ClaimState>('idle');
   let error = $state('');
-  let challengeInfo = $state<{ requiresCode?: boolean; status?: string } | null>(null);
   let nextPath = $derived($page.url.searchParams.get('next') ?? '/');
 
   // Auto-fill token from URL query param
@@ -29,7 +28,6 @@
     token = t;
     claimState = 'checking';
     error = '';
-    challengeInfo = null;
 
     try {
       const res = await api(`/api/access/board-claim/${encodeURIComponent(t)}`);
@@ -57,7 +55,6 @@
         error = 'This claim token is not valid.';
         return;
       }
-      challengeInfo = data;
       claimState = 'ready';
     } catch (e: unknown) {
       claimState = 'error';
@@ -103,7 +100,6 @@
   function reset() {
     claimState = 'idle';
     error = '';
-    challengeInfo = null;
     code = '';
   }
 </script>

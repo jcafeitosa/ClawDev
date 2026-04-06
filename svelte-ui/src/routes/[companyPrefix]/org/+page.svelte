@@ -2,7 +2,10 @@
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import { onMount } from 'svelte';
+  import { PageLayout } from '$components/layout/index.js';
   onMount(() => goto(`/${$page.params.companyPrefix}/org/chart`, { replaceState: true }));
 </script>
 
-<div class="p-6"><p class="text-sm text-zinc-500">Redirecting...</p></div>
+<PageLayout title="Organization" description="Redirecting to organization chart." fullWidth>
+  <p class="text-sm text-muted-foreground">Redirecting...</p>
+</PageLayout>

@@ -237,11 +237,11 @@
 
   <!-- Loading skeleton -->
   {#if loading}
-    <div class="glass-card p-5 space-y-3">
+    <Card class="p-5 space-y-3">
       {#each Array(6) as _}
         <Skeleton class="h-12 rounded-lg" />
       {/each}
-    </div>
+    </Card>
 
   <!-- Error state -->
   {:else if error}
@@ -283,7 +283,7 @@
 
   <!-- Labels list -->
   {:else}
-    <div class="glass-card p-0 overflow-hidden">
+    <Card class="p-0 overflow-hidden">
       <div class="px-5 py-4 border-b border-border/50">
         <h3 class="text-sm font-semibold text-foreground">
           {labels.length} {labels.length === 1 ? 'label' : 'labels'}
@@ -341,6 +341,6 @@
           </div>
         {/each}
       </div>
-    </div>
+    </Card>
   {/if}
 </PageLayout>

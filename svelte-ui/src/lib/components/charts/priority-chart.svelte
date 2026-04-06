@@ -2,6 +2,8 @@
   /**
    * PriorityChart -- stacked bar chart showing issues by priority over 14 days.
    */
+  import { PRIORITY_ORDER, PRIORITY_VISUALS } from '$lib/constants/visual';
+  import { formatDayLabel, getLast14Days } from './chart-helpers';
 
   interface Issue {
     priority?: string | null;
@@ -14,28 +16,6 @@
   }
 
   let { issues }: Props = $props();
-
-  const PRIORITY_COLORS: Record<string, string> = {
-    critical: '#ef4444',
-    high: '#f97316',
-    medium: '#eab308',
-    low: '#6b7280',
-  };
-
-  const PRIORITY_ORDER = ['critical', 'high', 'medium', 'low'] as const;
-
-  function getLast14Days(): string[] {
-    return Array.from({ length: 14 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (13 - i));
-      return d.toISOString().slice(0, 10);
-    });
-  }
-
-  function formatDayLabel(dateStr: string): string {
-    const d = new Date(dateStr + 'T12:00:00');
-    return `${d.getMonth() + 1}/${d.getDate()}`;
-  }
 
   let days = $derived(getLast14Days());
 
@@ -70,7 +50,7 @@
             <div class="flex flex-col-reverse gap-px overflow-hidden" style="height: {heightPct}%; min-height: 2px;">
               {#each PRIORITY_ORDER as p}
                 {#if entry && (entry[p] ?? 0) > 0}
-                  <div style="flex: {entry[p]}; background-color: {PRIORITY_COLORS[p]};"></div>
+                  <div style="flex: {entry[p]}; background-color: {PRIORITY_VISUALS[p]?.hex ?? '#6b7280'};"></div>
                 {/if}
               {/each}
             </div>
@@ -84,7 +64,7 @@
       {#each days as day, i}
         <div class="flex-1 text-center">
           {#if i === 0 || i === 6 || i === 13}
-            <span class="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day)}</span>
+            <span class="text-[9px] text-muted-foreground tabular-nums">{formatDayLabel(day, i)}</span>
           {/if}
         </div>
       {/each}
@@ -92,8 +72,8 @@
     <div class="flex flex-wrap gap-x-2.5 gap-y-0.5 mt-2">
       {#each PRIORITY_ORDER as p}
         <span class="flex items-center gap-1 text-[9px] text-muted-foreground">
-          <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background-color: {PRIORITY_COLORS[p]};"></span>
-          {p.charAt(0).toUpperCase() + p.slice(1)}
+          <span class="h-1.5 w-1.5 rounded-full shrink-0" style="background-color: {PRIORITY_VISUALS[p]?.hex ?? '#6b7280'};"></span>
+          {PRIORITY_VISUALS[p]?.label ?? p.charAt(0).toUpperCase() + p.slice(1)}
         </span>
       {/each}
     </div>

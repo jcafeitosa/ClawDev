@@ -5,7 +5,7 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import {
-    Card, CardContent, Badge, Button, Skeleton,
+    Card, CardContent, CardHeader, CardTitle, CardDescription, Badge, Button, Skeleton,
   } from '$lib/components/ui/index.js';
   import { ShieldCheck, Check, X, Clock, User, ChevronRight } from 'lucide-svelte';
   import { PageLayout } from '$components/layout/index.js';
@@ -167,90 +167,93 @@
     </div>
   {:else if displayedApprovals.length === 0}
     <!-- Empty state -->
-    <div class="glass-card p-12 text-center">
-      <div class="flex flex-col items-center gap-3">
-        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
-          <ShieldCheck class="h-5 w-5 text-muted-foreground/40" />
-        </div>
-        <p class="text-sm font-medium text-muted-foreground">
+    <Card class="border-border/60">
+      <CardHeader class="pb-3">
+        <CardTitle class="text-sm">
           {activeTab === 'pending' ? 'No pending approvals'
           : activeTab === 'approved' ? 'No approved approvals'
           : activeTab === 'rejected' ? 'No rejected approvals'
           : 'No approvals yet'}
-        </p>
-        <p class="text-xs text-muted-foreground/60">
+        </CardTitle>
+        <CardDescription>
           {activeTab === 'pending' ? 'You\'re all caught up.' : 'Approval requests will appear here.'}
-        </p>
-      </div>
-    </div>
+        </CardDescription>
+      </CardHeader>
+      <CardContent class="flex flex-col items-center gap-3 pb-12 text-center">
+        <div class="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/30">
+          <ShieldCheck class="h-5 w-5 text-muted-foreground/40" />
+        </div>
+      </CardContent>
+    </Card>
   {:else}
     <!-- Approval cards -->
-    <div class="glass-card p-0 overflow-hidden">
-    <div class="divide-y divide-border/50">
-      {#each displayedApprovals as approval (approval.id)}
-        <a href="/{prefix}/approvals/{approval.id}" class="cursor-pointer block group transition-colors duration-150">
-          <div class="px-5 py-5 transition-colors hover:bg-accent/40">
-              <div class="flex items-start justify-between gap-4">
-                <div class="min-w-0 flex-1">
-                  <div class="flex items-center gap-3 mb-2">
-                    <h3 class="text-sm font-semibold text-foreground truncate group-hover:text-primary transition-colors">
-                      {approvalLabel(approval.type ?? approval.kind, approval.payload)}
-                    </h3>
-                    <Badge class={statusVariant(approval.status)}>
-                      {approval.status}
-                    </Badge>
+    <Card class="border-border/60 overflow-hidden">
+      <CardContent class="p-0">
+        <div class="divide-y divide-border/50">
+          {#each displayedApprovals as approval (approval.id)}
+            <a href={`/${prefix}/approvals/${approval.id}`} class="group block cursor-pointer transition-colors duration-150">
+              <div class="px-5 py-5 transition-colors hover:bg-accent/40">
+                <div class="flex items-start justify-between gap-4">
+                  <div class="min-w-0 flex-1">
+                    <div class="mb-2 flex items-center gap-3">
+                      <h3 class="truncate text-sm font-semibold text-foreground group-hover:text-primary transition-colors">
+                        {approvalLabel(approval.type ?? approval.kind, approval.payload)}
+                      </h3>
+                      <Badge class={statusVariant(approval.status)}>
+                        {approval.status}
+                      </Badge>
+                    </div>
+
+                    <div class="flex items-center gap-4 text-xs text-muted-foreground">
+                      {#if approval.requesterName || approval.requester}
+                        <span class="inline-flex items-center gap-1">
+                          <User class="h-3.5 w-3.5" />
+                          {approval.requesterName ?? approval.requester}
+                        </span>
+                      {/if}
+                      {#if approval.createdAt}
+                        <span class="inline-flex items-center gap-1">
+                          <Clock class="h-3.5 w-3.5" />
+                          {timeAgo(approval.createdAt)}
+                        </span>
+                      {/if}
+                    </div>
+
+                    {#if approval.details || approval.reason}
+                      <p class="mt-2 line-clamp-2 text-xs text-muted-foreground">{approval.details ?? approval.reason}</p>
+                    {/if}
                   </div>
 
-                  <div class="flex items-center gap-4 text-xs text-muted-foreground">
-                    {#if approval.requesterName || approval.requester}
-                      <span class="inline-flex items-center gap-1">
-                        <User class="h-3.5 w-3.5" />
-                        {approval.requesterName ?? approval.requester}
-                      </span>
-                    {/if}
-                    {#if approval.createdAt}
-                      <span class="inline-flex items-center gap-1">
-                        <Clock class="h-3.5 w-3.5" />
-                        {timeAgo(approval.createdAt)}
-                      </span>
-                    {/if}
-                  </div>
-
-                  {#if approval.details || approval.reason}
-                    <p class="mt-2 text-xs text-muted-foreground line-clamp-2">{approval.details ?? approval.reason}</p>
+                  {#if approval.status === 'pending'}
+                    <div class="flex shrink-0 items-center gap-2">
+                      <Button
+                        size="xs"
+                        onclick={(e: MouseEvent) => { e.preventDefault(); handleAction(approval.id, 'approve'); }}
+                        disabled={actionLoading === approval.id}
+                        class="bg-emerald-600 hover:bg-emerald-700"
+                      >
+                        <Check class="h-3.5 w-3.5" />
+                        Approve
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="xs"
+                        onclick={(e: MouseEvent) => { e.preventDefault(); handleAction(approval.id, 'reject'); }}
+                        disabled={actionLoading === approval.id}
+                      >
+                        <X class="h-3.5 w-3.5" />
+                        Reject
+                      </Button>
+                    </div>
+                  {:else}
+                    <ChevronRight class="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-foreground" />
                   {/if}
                 </div>
-
-                <!-- Action buttons (only for pending) -->
-                {#if approval.status === 'pending'}
-                  <div class="flex shrink-0 items-center gap-2">
-                    <Button
-                      size="xs"
-                      onclick={(e: MouseEvent) => { e.preventDefault(); handleAction(approval.id, 'approve'); }}
-                      disabled={actionLoading === approval.id}
-                      class="bg-emerald-600 hover:bg-emerald-700"
-                    >
-                      <Check class="h-3.5 w-3.5" />
-                      Approve
-                    </Button>
-                    <Button
-                      variant="destructive"
-                      size="xs"
-                      onclick={(e: MouseEvent) => { e.preventDefault(); handleAction(approval.id, 'reject'); }}
-                      disabled={actionLoading === approval.id}
-                    >
-                      <X class="h-3.5 w-3.5" />
-                      Reject
-                    </Button>
-                  </div>
-                {:else}
-                  <ChevronRight class="h-4 w-4 text-muted-foreground group-hover:text-foreground transition-colors shrink-0" />
-                {/if}
               </div>
-          </div>
-        </a>
-      {/each}
-    </div>
-    </div>
+            </a>
+          {/each}
+        </div>
+      </CardContent>
+    </Card>
   {/if}
 </PageLayout>
