@@ -65,7 +65,7 @@
   function normalizeStatus(status: string): string {
     const s = status.toLowerCase();
     if (s === 'running' || s === 'in_progress' || s === 'started') return 'running';
-    if (s === 'success' || s === 'completed' || s === 'done' || s === 'finished') return 'success';
+    if (s === 'success' || s === 'succeeded' || s === 'completed' || s === 'done' || s === 'finished') return 'success';
     if (s === 'failed' || s === 'error' || s === 'errored') return 'failed';
     if (s === 'cancelled' || s === 'canceled' || s === 'aborted') return 'cancelled';
     return s;
@@ -230,19 +230,19 @@
 </script>
 
 <PageLayout title="Runs" description="Agent execution history and active runs">
-  <!-- Filter pills + Search -->
+  <!-- Tabs + Search -->
   <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-    <div class="flex items-center gap-1.5 flex-wrap">
+    <div class="flex items-center border-b border-border">
       {#each STATUS_FILTERS as filter}
         <button
           onclick={() => { statusFilter = filter; }}
-          class="cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150
+          class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
             {statusFilter === filter
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
+              ? 'border-b-2 border-blue-500 text-foreground'
+              : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
         >
           {filterLabel(filter)}
-          <span class="ml-1 text-xs opacity-70">({countByFilter(filter)})</span>
+          <span class="text-xs opacity-70">({countByFilter(filter)})</span>
         </button>
       {/each}
     </div>
@@ -296,6 +296,17 @@
   <!-- Runs list -->
   {:else}
     <Card class="p-0 overflow-hidden">
+        <!-- Table header -->
+        <div class="flex items-center gap-4 border-b border-border px-5 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <span class="w-2 shrink-0"></span>
+          <span class="w-20 shrink-0">Status</span>
+          <span class="w-20 shrink-0">Run ID</span>
+          <span class="min-w-0 flex-1">Agent</span>
+          <span class="hidden sm:block w-20 shrink-0">Source</span>
+          <span class="hidden md:block w-16 shrink-0 text-right">Duration</span>
+          <span class="w-16 shrink-0 text-right">Time</span>
+          <span class="w-4 shrink-0"></span>
+        </div>
         {#each filteredRuns as run, i (run.id)}
           <a
             href="/{prefix}/runs/{run.id}"

@@ -22,6 +22,7 @@
   } from '$lib/components/ui/index.js';
   import {
     CHART_SERIES_COLORS,
+    ISSUE_STATUS_ORDER,
     ISSUE_STATUS_VISUALS,
   } from '$lib/constants/visual';
   import { PageLayout } from '$lib/components/layout/index.js';
@@ -58,6 +59,7 @@
   let recentActivity = $state<any[]>([]);
   let recentActivityLoading = $state(true);
   let recentIssues = $state<any[]>([]);
+  let costRuns = $state<any[]>([]);
 
   let prefix = $derived($page.params.companyPrefix);
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix(prefix));
@@ -96,14 +98,19 @@
   let blockedIssues = $derived(
     issues.filter((i) => i.status === 'blocked').length,
   );
-  let monthSpend = $derived(costSummary?.totalCost ?? costSummary?.total ?? 0);
-  let monthBudgetCents = $derived(costSummary?.budget ?? costSummary?.limit ?? 0);
+  let monthSpend = $derived(
+    costSummary?.monthSpendCents ?? costSummary?.spendCents ?? costSummary?.totalCost ?? costSummary?.total ?? 0
+  );
+  let monthBudgetCents = $derived(
+    costSummary?.monthBudgetCents ?? costSummary?.budgetCents ?? costSummary?.budget ?? costSummary?.limit ?? 0
+  );
   let monthUtilizationPercent = $derived(
     monthBudgetCents > 0 ? Math.min(Math.round((monthSpend / monthBudgetCents) * 100), 100) : 0,
   );
 
-  // Cost trend: extract daily data from costSummary if available, else generate from runs
+  // Cost trend: build daily data from heartbeat runs (API doesn't provide daily breakdown)
   let costDailyData = $derived.by(() => {
+    // First check if costSummary has daily data
     const daily = costSummary?.daily ?? costSummary?.dailyCosts ?? [];
     if (Array.isArray(daily) && daily.length > 0) {
       return daily.map((d: any) => ({
@@ -111,15 +118,38 @@
         value: Number(d.cost ?? d.total ?? d.amount ?? 0),
       }));
     }
-    // Fallback: generate last 7 days with 0
-    const result: { label: string; value: number }[] = [];
+    // Build from heartbeat runs usageJson
+    const dayMap = new Map<string, number>();
     for (let i = 6; i >= 0; i--) {
       const d = new Date();
       d.setDate(d.getDate() - i);
-      result.push({ label: d.toLocaleDateString('en', { month: 'short', day: 'numeric' }), value: 0 });
+      dayMap.set(d.toISOString().slice(0, 10), 0);
     }
-    return result;
+    if (Array.isArray(costRuns)) {
+      for (const run of costRuns) {
+        const usage = run.usageJson;
+        if (!usage?.costUsd) continue;
+        const dateKey = (run.finishedAt ?? run.startedAt ?? run.createdAt ?? '').slice(0, 10);
+        if (dayMap.has(dateKey)) {
+          dayMap.set(dateKey, (dayMap.get(dateKey) ?? 0) + Math.round(Number(usage.costUsd) * 100));
+        }
+      }
+    }
+    return Array.from(dayMap.entries()).map(([date, cents]) => ({
+      label: new Date(date).toLocaleDateString('en', { month: 'short', day: 'numeric' }),
+      value: cents,
+    }));
   });
+  let dashStatusCounts = $derived.by(() => {
+    const m: Record<string, number> = {};
+    for (const i of issues) {
+      const s = normalizeIssueStatus(i.status);
+      m[s] = (m[s] ?? 0) + 1;
+    }
+    return m;
+  });
+  let dashStatusMax = $derived(Math.max(...Object.values(dashStatusCounts), 1));
+
   let pendingApprovals = $derived(
     dashboardApprovals > 0
       ? dashboardApprovals
@@ -184,6 +214,11 @@
     safeFetch<any>(`/api/companies/${companyId}/issues?limit=10&sort=createdAt&order=desc`, []).then((data) => {
       const items = Array.isArray(data) ? data : data?.issues ?? data?.data ?? [];
       recentIssues = items.slice(0, 10);
+    });
+
+    // Fetch recent runs for cost trend chart
+    safeFetch<any>(`/api/companies/${companyId}/heartbeat-runs?limit=50`, null).then((data) => {
+      costRuns = Array.isArray(data) ? data : data?.runs ?? [];
     });
   }
 
@@ -377,6 +412,30 @@
     return ISSUE_STATUS_VISUALS[normalizeIssueStatus(status)]?.hex ?? '#64748b';
   }
 
+  // ── Sparkline data from runs (7 days) ──────────────────────────────
+  function buildDailyBuckets(items: any[], dateField: string, countMode: 'count' | 'sum' = 'count', sumField = ''): number[] {
+    const buckets = new Map<string, number>();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      buckets.set(d.toISOString().slice(0, 10), 0);
+    }
+    for (const item of items) {
+      const dateStr = (item[dateField] ?? '').slice(0, 10);
+      if (buckets.has(dateStr)) {
+        if (countMode === 'sum' && sumField) {
+          const val = Number(item.usageJson?.[sumField] ?? item[sumField] ?? 0);
+          buckets.set(dateStr, (buckets.get(dateStr) ?? 0) + val);
+        } else {
+          buckets.set(dateStr, (buckets.get(dateStr) ?? 0) + 1);
+        }
+      }
+    }
+    return Array.from(buckets.values());
+  }
+
+  let sparkRuns = $derived(buildDailyBuckets(costRuns, 'finishedAt'));
+  let sparkCost = $derived(buildDailyBuckets(costRuns, 'finishedAt', 'sum', 'costUsd'));
+
   // ── Metric cards for glassmorphism grid ────────────────────────────
   let metricCards = $derived([
     {
@@ -385,6 +444,8 @@
       label: 'Agents Enabled',
       sub: `${runningAgents} running, ${pausedAgents} paused, ${errorAgents} errors`,
       icon: Bot,
+      spark: sparkRuns,
+      sparkColor: '#3b82f6',
     },
     {
       href: `/${prefix}/issues`,
@@ -392,6 +453,8 @@
       label: 'Tasks In Progress',
       sub: `${openIssues} open, ${blockedIssues} blocked`,
       icon: CircleDot,
+      spark: sparkRuns.map((v, i) => Math.max(0, v - (i > 0 ? sparkRuns[i - 1] : 0))),
+      sparkColor: '#f97316',
     },
     {
       href: `/${prefix}/costs`,
@@ -399,6 +462,8 @@
       label: 'Month Spend',
       sub: monthBudgetCents > 0 ? `${monthUtilizationPercent}% of ${formatCents(monthBudgetCents)} budget` : 'Unlimited budget',
       icon: DollarSign,
+      spark: costDailyData.map(d => d.value),
+      sparkColor: '#10b981',
     },
     {
       href: `/${prefix}/approvals`,
@@ -406,16 +471,14 @@
       label: 'Pending Approvals',
       sub: budgetPendingApprovals > 0 ? `${budgetPendingApprovals} budget overrides awaiting review` : 'Awaiting board review',
       icon: ShieldCheck,
+      spark: [0, 0, 0, 0, 0, 0, pendingApprovals + budgetPendingApprovals],
+      sparkColor: '#8b5cf6',
     },
   ]);
 
 </script>
 
-<svelte:head>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="anonymous" />
-  <link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
-</svelte:head>
+<!-- Fonts loaded globally via app.css (Space Grotesk + DM Sans + Fira Code) -->
 
 <PageLayout title="Dashboard" description={`Overview of ${companyName}`} fullWidth class="dashboard-typography">
   {#snippet actions()}
@@ -493,21 +556,36 @@
     <div class="grid grid-cols-2 gap-4 xl:grid-cols-4">
       {#each metricCards as card}
         {@const CardIcon = card.icon}
+        {@const sparkMax = Math.max(...(card.spark ?? [1]), 1)}
+        {@const sparkPoints = (card.spark ?? []).map((v, i, arr) => {
+          const x = (i / Math.max(arr.length - 1, 1)) * 100;
+          const y = 100 - (v / sparkMax) * 80 - 10;
+          return `${x},${y}`;
+        }).join(' ')}
+        {@const sparkFill = sparkPoints ? `${sparkPoints} 100,100 0,100` : ''}
         <a href={card.href} class="group block no-underline text-inherit">
-          <Card class="h-full gap-0 p-0">
-            <CardContent class="p-5">
-              <div class="flex items-start justify-between">
-                <div>
-                  <p class="text-3xl font-bold tabular-nums">{card.value}</p>
-                  <p class="mt-1 text-sm font-medium text-muted-foreground">{card.label}</p>
-                  <p class="mt-1 hidden text-[11px] text-muted-foreground/50 sm:block">{card.sub}</p>
-                </div>
-                <div class="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.06] bg-background/50 backdrop-blur-sm transition-transform duration-200 group-hover:scale-110">
-                  <CardIcon class="h-4 w-4 text-muted-foreground/60" />
-                </div>
+          <div class="glass-card font-card relative h-full overflow-hidden p-5">
+            <!-- Sparkline background -->
+            {#if card.spark && card.spark.some(v => v > 0)}
+              <svg class="pointer-events-none absolute inset-0 h-full w-full opacity-[0.08]" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <polygon points={sparkFill} fill={card.sparkColor} />
+              </svg>
+              <svg class="pointer-events-none absolute bottom-0 left-0 h-[50%] w-full opacity-30" viewBox="0 0 100 100" preserveAspectRatio="none">
+                <polyline points={sparkPoints} fill="none" stroke={card.sparkColor} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+              </svg>
+            {/if}
+            <!-- Content -->
+            <div class="relative flex items-start justify-between">
+              <div>
+                <p class="text-3xl font-bold tabular-nums" style="font-family: 'Inter', system-ui, sans-serif;">{card.value}</p>
+                <p class="mt-1.5 text-sm font-medium text-muted-foreground">{card.label}</p>
+                <p class="mt-1 hidden text-[11px] text-muted-foreground/50 sm:block">{card.sub}</p>
               </div>
-            </CardContent>
-          </Card>
+              <div class="icon-gradient flex h-9 w-9 items-center justify-center">
+                <CardIcon class="h-4 w-4 text-blue-400" />
+              </div>
+            </div>
+          </div>
         </a>
       {/each}
     </div>
@@ -526,41 +604,35 @@
   {/if}
 
   {#if companyId}
-    <Card>
-      <CardHeader>
-        <CardTitle class="text-sm uppercase tracking-wide">Activity Overview</CardTitle>
-        <CardDescription>Recent events across the workspace.</CardDescription>
-      </CardHeader>
-      <CardContent class="pt-0">
+    <div class="glass-card font-card p-6">
+      <h3 class="font-card text-sm font-semibold uppercase tracking-wider text-muted-foreground">Activity Overview</h3>
+      <p class="mt-1 text-xs text-muted-foreground/60">Recent events across the workspace.</p>
+      <div class="mt-4">
         <ActivityCharts {companyId} />
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   {/if}
 
   {#if !loading}
-    <div class="grid grid-cols-1 gap-4 md:grid-cols-3">
-      <Card>
-        <CardHeader>
-          <CardTitle class="text-sm uppercase tracking-wide">Budget Usage</CardTitle>
-          <CardDescription>Current spend against the monthly budget.</CardDescription>
-        </CardHeader>
-        <CardContent class="pt-0">
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div class="glass-card font-card p-5">
+        <h4 class="font-card text-sm font-semibold uppercase tracking-wider text-muted-foreground">Budget Usage</h4>
+        <p class="mt-0.5 text-[11px] text-muted-foreground/50">Current spend against the monthly budget.</p>
+        <div class="mt-3">
           {#if monthBudgetCents > 0}
             <GaugeChart value={monthSpend} max={monthBudgetCents} label="of budget" height="180px" colorMode="ascending" />
           {:else}
             <div class="flex h-[180px] items-center justify-center">
-              <p class="text-sm italic text-muted-foreground/60">No budget set</p>
+              <p class="text-sm italic text-muted-foreground/40">No budget set</p>
             </div>
           {/if}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle class="text-sm uppercase tracking-wide">Agent Status</CardTitle>
-          <CardDescription>Running, idle, and error distribution.</CardDescription>
-        </CardHeader>
-        <CardContent class="pt-0">
+      <div class="glass-card font-card p-5">
+        <h4 class="font-card text-sm font-semibold uppercase tracking-wider text-muted-foreground">Agent Status</h4>
+        <p class="mt-0.5 text-[11px] text-muted-foreground/50">Running, idle, and error distribution.</p>
+        <div class="mt-3">
           {#if agents.length > 0}
             <PieChart
               data={[
@@ -572,18 +644,16 @@
             />
           {:else}
             <div class="flex h-[180px] items-center justify-center">
-              <p class="text-sm italic text-muted-foreground/60">No agents</p>
+              <p class="text-sm italic text-muted-foreground/40">No agents</p>
             </div>
           {/if}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle class="text-sm uppercase tracking-wide">Cost Trend</CardTitle>
-          <CardDescription>Seven-day spend trend for the active company.</CardDescription>
-        </CardHeader>
-        <CardContent class="pt-0">
+      <div class="glass-card font-card p-5">
+        <h4 class="font-card text-sm font-semibold uppercase tracking-wider text-muted-foreground">Cost Trend</h4>
+        <p class="mt-0.5 text-[11px] text-muted-foreground/50">Seven-day spend trend.</p>
+        <div class="mt-3">
           {#if costDailyData.length > 0}
             <LineChart
               labels={costDailyData.map(d => d.label)}
@@ -593,29 +663,88 @@
             />
           {:else}
             <div class="flex h-[180px] items-center justify-center">
-              <p class="text-sm italic text-muted-foreground/60">No cost data yet</p>
+              <p class="text-sm italic text-muted-foreground/40">No cost data yet</p>
             </div>
           {/if}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
+
+      <!-- Tasks by Status (ClickUp-style horizontal bars) -->
+      <div class="glass-card font-card p-5">
+        <h4 class="font-card text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tasks by Status</h4>
+        <p class="mt-0.5 text-[11px] text-muted-foreground/50">Issue status distribution.</p>
+        <div class="mt-3">
+          {#if issues.length > 0}
+            <div class="space-y-2">
+              {#each ISSUE_STATUS_ORDER.filter(s => dashStatusCounts[s]) as status}
+                {@const count = dashStatusCounts[status] ?? 0}
+                {@const pct = Math.round((count / dashStatusMax) * 100)}
+                <div class="flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full shrink-0" style="background-color: {ISSUE_STATUS_VISUALS[status]?.hex ?? '#64748b'}"></span>
+                  <span class="text-[11px] w-20 shrink-0 truncate">{ISSUE_STATUS_VISUALS[status]?.label ?? status}</span>
+                  <div class="flex-1 h-3 rounded-full bg-muted/50 overflow-hidden">
+                    <div
+                      class="h-full rounded-full transition-all duration-300"
+                      style="width: {pct}%; background-color: {ISSUE_STATUS_VISUALS[status]?.hex ?? '#64748b'}"
+                    ></div>
+                  </div>
+                  <span class="text-[11px] text-muted-foreground tabular-nums w-6 text-right">{count}</span>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <div class="flex h-[180px] items-center justify-center">
+              <p class="text-sm italic text-muted-foreground/40">No tasks</p>
+            </div>
+          {/if}
+        </div>
+      </div>
+
+      <!-- Tasks by Assignee (ClickUp-style) -->
+      <div class="glass-card font-card p-5">
+        <h4 class="font-card text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tasks by Assignee</h4>
+        <p class="mt-0.5 text-[11px] text-muted-foreground/50">Distribution across agents.</p>
+        <div class="mt-3">
+          {#if agents.length > 0 || issues.length > 0}
+            {@const assigneeCounts = agents.map((a) => ({
+              name: a.name ?? 'Unassigned',
+              value: issues.filter((i) => i.assigneeAgentId === a.id).length,
+            })).filter(d => d.value > 0)}
+            {@const unassigned = issues.filter((i) => !i.assigneeAgentId).length}
+            {@const chartData = [...assigneeCounts, ...(unassigned > 0 ? [{ name: 'Unassigned', value: unassigned }] : [])]}
+            {#if chartData.length > 0}
+            <PieChart
+              data={chartData.map((d, i) => ({ ...d, color: CHART_SERIES_COLORS[i % CHART_SERIES_COLORS.length] }))}
+              height="180px"
+            />
+          {:else}
+            <div class="flex h-[180px] items-center justify-center">
+              <p class="text-sm italic text-muted-foreground/40">No tasks</p>
+            </div>
+          {/if}
+          {:else}
+            <div class="flex h-[180px] items-center justify-center">
+              <p class="text-sm italic text-muted-foreground/40">No data</p>
+            </div>
+          {/if}
+        </div>
+      </div>
     </div>
   {/if}
 
   <div class="grid gap-4 md:grid-cols-2">
     {#if recentActivity.length > 0 || recentActivityLoading}
-      <Card class="overflow-hidden">
-        <CardHeader>
-          <CardTitle class="text-sm uppercase tracking-wide">Recent Activity</CardTitle>
-          <CardDescription>Latest board and agent actions.</CardDescription>
-        </CardHeader>
-        <CardContent class="pt-0">
+      <div class="glass-card overflow-hidden p-6">
+        <h4 class="font-card text-sm font-semibold uppercase tracking-wider text-muted-foreground">Recent Activity</h4>
+        <p class="mt-0.5 mb-4 text-[11px] text-muted-foreground/50">Latest board and agent actions.</p>
+        <div>
           {#if recentActivityLoading}
             <div class="relative">
               {#each Array(5) as _, i}
                 <div class="flex">
                   <div class="flex w-6 shrink-0 flex-col items-center">
                     <Skeleton class="h-6 w-6 rounded-full" />
-                    {#if i < 4}<div class="w-px flex-1 bg-border/30"></div>{/if}
+                    {#if i < 4}<div class="w-0.5 flex-1 rounded-full bg-border/30"></div>{/if}
                   </div>
                   <div class="mb-1 ml-3 flex-1 px-3 py-1.5">
                     <Skeleton class="mb-1.5 h-3 w-3/4" />
@@ -644,7 +773,7 @@
                       <ActivityIcon size={12} class={activityIcon.color} />
                     </div>
                     {#if !isLast}
-                      <div class="w-px flex-1 bg-border/50"></div>
+                      <div class="w-0.5 flex-1 rounded-full bg-gradient-to-b from-border/60 to-border/20"></div>
                     {/if}
                   </div>
 
@@ -682,24 +811,18 @@
               {/each}
             </div>
           {/if}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     {/if}
 
-    <Card class="overflow-hidden">
-      <CardHeader>
-        <CardTitle class="text-sm uppercase tracking-wide">Recent Tasks</CardTitle>
-        <CardDescription>The newest issues created in this company.</CardDescription>
-      </CardHeader>
-      <CardContent class="pt-0">
+    <div class="glass-card overflow-hidden p-6">
+      <h4 class="font-card text-sm font-semibold uppercase tracking-wider text-muted-foreground">Tasks</h4>
+      <p class="mt-0.5 mb-4 text-[11px] text-muted-foreground/50">Grouped by status.</p>
+      <div>
         {#if loading}
-          <div class="divide-y divide-white/[0.06]">
+          <div class="space-y-2">
             {#each Array(5) as _}
-              <div class="flex items-center gap-3 px-2 py-3">
-                <Skeleton class="h-4 w-4 shrink-0 rounded-full" />
-                <Skeleton class="h-3 w-16" />
-                <Skeleton class="h-3 w-3/4" />
-              </div>
+              <Skeleton class="h-8 w-full" />
             {/each}
           </div>
         {:else if recentIssues.length === 0}
@@ -707,62 +830,73 @@
             <p class="text-sm text-muted-foreground">No tasks yet.</p>
           </div>
         {:else}
-          <div class="divide-y divide-white/[0.06]">
-            {#each recentIssues.slice(0, 10) as issue}
-              {@const normalizedStatus = normalizeIssueStatus(issue.status)}
-              {@const color = statusColor(issue.status)}
-              {@const identifier = issue.identifier ?? issue.slug ?? (issue.number ? `#${issue.number}` : '')}
-              {@const assignedAgent = findAgentById(issue.assigneeAgentId)}
-              {@const agentName = assignedAgent?.name ?? issue.assigneeName ?? issue.agentName ?? ''}
-              <a
-                href={`/${prefix}/issues/${issue.identifier ?? issue.id}`}
-                class="block cursor-pointer rounded-lg px-2 py-3 text-sm no-underline text-inherit transition-all duration-200 hover:bg-white/[0.04]"
-              >
-                <div class="flex items-start gap-2 sm:items-center sm:gap-3">
-                  <span
-                    class="inline-flex h-4 w-4 shrink-0 rounded-full border-2"
-                    style="border-color: {color};{normalizedStatus === 'done' ? ` background-color: ${color};` : ''}"
-                  ></span>
+          <!-- ClickUp-style status groups -->
+          {@const STATUS_ORDER = ['in_progress', 'todo', 'in_review', 'blocked', 'backlog', 'done', 'cancelled']}
+          {@const STATUS_LABELS = { in_progress: 'IN PROGRESS', todo: 'TO DO', in_review: 'IN REVIEW', blocked: 'BLOCKED', backlog: 'BACKLOG', done: 'COMPLETE', cancelled: 'CANCELLED' } as Record<string, string>}
+          {@const STATUS_COLORS = { in_progress: '#f97316', todo: '#3b82f6', in_review: '#8b5cf6', blocked: '#ef4444', backlog: '#64748b', done: '#10b981', cancelled: '#6b7280' } as Record<string, string>}
+          {@const grouped = STATUS_ORDER.map(s => ({
+            status: s,
+            label: STATUS_LABELS[s] ?? s.toUpperCase(),
+            color: STATUS_COLORS[s] ?? '#64748b',
+            issues: recentIssues.filter(i => normalizeIssueStatus(i.status) === s),
+          })).filter(g => g.issues.length > 0)}
 
-                  <span class="flex min-w-0 flex-1 flex-col gap-1 sm:contents">
-                    <span class="line-clamp-2 text-sm sm:order-2 sm:flex-1 sm:min-w-0 sm:line-clamp-none sm:truncate">
-                      {issue.title ?? issue.name ?? 'Untitled'}
-                    </span>
-                    <span class="flex items-center gap-2 sm:order-1 sm:shrink-0">
-                      {#if identifier}
-                        <span class="text-xs font-mono text-muted-foreground">
-                          {identifier}
-                        </span>
-                      {/if}
-                      {#if agentName}
-                        <span class="hidden items-center gap-1.5 text-xs text-muted-foreground sm:inline-flex">
-                          <span
-                            class="inline-flex h-4 w-4 items-center justify-center rounded-full text-[8px] font-bold text-white"
-                            style="background-color: {color};"
-                          >
-                            {getInitials(agentName)}
-                          </span>
-                          {agentName}
-                        </span>
-                      {/if}
-                      <span class="shrink-0 text-xs text-muted-foreground sm:order-last">
-                        <TimeAgo date={issue.updatedAt ?? issue.createdAt} />
+          <div class="space-y-3">
+            {#each grouped as group}
+              <!-- Status group header -->
+              <div class="flex items-center gap-2">
+                <span
+                  class="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white"
+                  style="background-color: {group.color};"
+                >
+                  <span class="inline-flex h-2 w-2 rounded-full bg-white/30"></span>
+                  {group.label}
+                </span>
+                <span class="text-[11px] text-muted-foreground/60">{group.issues.length}</span>
+              </div>
+
+              <!-- Task rows in this group -->
+              <div class="ml-1 border-l-2 pl-3" style="border-color: {group.color}20;">
+                {#each group.issues as issue}
+                  {@const identifier = issue.identifier ?? issue.slug ?? ''}
+                  {@const assignedAgent = findAgentById(issue.assigneeAgentId)}
+                  {@const agentName = assignedAgent?.name ?? ''}
+                  <a
+                    href={`/${prefix}/issues/${issue.identifier ?? issue.id}`}
+                    class="flex items-center gap-3 rounded-md px-2 py-2 text-sm no-underline text-inherit transition-all duration-150 hover:bg-accent/50"
+                  >
+                    <span
+                      class="inline-flex h-3.5 w-3.5 shrink-0 rounded-full border-2"
+                      style="border-color: {group.color};{group.status === 'done' ? ` background-color: ${group.color};` : ''}"
+                    ></span>
+                    <span class="min-w-0 flex-1 truncate">{issue.title ?? 'Untitled'}</span>
+                    {#if identifier}
+                      <span class="font-mono text-[11px] text-muted-foreground/60 shrink-0">{identifier}</span>
+                    {/if}
+                    {#if agentName}
+                      <span class="hidden items-center gap-1 text-[11px] text-muted-foreground/60 sm:inline-flex shrink-0">
+                        <span class="inline-flex h-4 w-4 items-center justify-center rounded-full bg-muted text-[7px] font-bold">{getInitials(agentName)}</span>
+                        {agentName}
                       </span>
+                    {/if}
+                    <span class="shrink-0 text-[11px] text-muted-foreground/40">
+                      <TimeAgo date={issue.updatedAt ?? issue.createdAt} />
                     </span>
-                  </span>
-                </div>
-              </a>
+                  </a>
+                {/each}
+              </div>
             {/each}
           </div>
         {/if}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   </div>
 </PageLayout>
 
 <style>
   :global(.dashboard-typography) {
-    font-family: 'Fira Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-size: 14px;
   }
 
   :global(.dashboard-typography code),

@@ -6,8 +6,14 @@
   import { api } from '$lib/api';
   import { onMount } from 'svelte';
   import { Plus } from 'lucide-svelte';
-  import { Card, CardHeader, CardTitle, CardContent, CardFooter, Input, Button, Alert, AlertDescription, Label, Separator } from '$components/ui/index.js';
+  import { Card, CardHeader, CardTitle, CardContent, CardFooter, Input, Button, Badge, Alert, AlertDescription, Label, Separator } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
+  import {
+    getHierarchyPresetDefinition,
+    getHierarchyPresetDepartments,
+    getHierarchyPresetOperatingRules,
+    type HierarchyPreset,
+  } from '@clawdev/shared';
 
   onMount(() => breadcrumbStore.set([
     { label: 'Issues', href: `/${$page.params.companyPrefix}/issues` },
@@ -16,6 +22,9 @@
 
   let title = $state('');
   let description = $state('');
+  let sddSpec = $state('');
+  let sddDesign = $state('');
+  let sddValidation = $state('');
   let status = $state('todo');
   let priority = $state('medium');
   let creating = $state(false);
@@ -29,6 +38,24 @@
 
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
+  let selectedHierarchyPreset = $derived<HierarchyPreset | null>(
+    (companyStore.selectedCompany?.hierarchyPreset as HierarchyPreset | undefined) ?? null
+  );
+  let hierarchyPresetDefinition = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDefinition(selectedHierarchyPreset) : null
+  );
+  let hierarchyPresetDepartments = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDepartments(selectedHierarchyPreset) : []
+  );
+  let hierarchyPresetOperatingRules = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetOperatingRules(selectedHierarchyPreset) : []
+  );
+  const SDD_ISSUE_FLOW = [
+    { label: 'Spec', description: 'State the problem and the expected result.' },
+    { label: 'Design', description: 'Link the issue to the right project, owner, and impact.' },
+    { label: 'Validate', description: 'Confirm dependencies, priority, and acceptance criteria.' },
+    { label: 'Implement', description: 'Only after the issue is ready for execution.' },
+  ] as const;
 
   $effect(() => {
     if (!companyId) return;
@@ -80,6 +107,9 @@
       const body: Record<string, unknown> = {
         title: title.trim(),
         description: description.trim() || undefined,
+        sddSpec: sddSpec.trim(),
+        sddDesign: sddDesign.trim(),
+        sddValidation: sddValidation.trim() || undefined,
         status,
         priority,
       };
@@ -103,6 +133,63 @@
 </script>
 
 <PageLayout title="Create Issue" description="Create a new issue for this company." fullWidth>
+  {#if hierarchyPresetDefinition}
+    <Card class="mb-4 rounded-xl border-border/60 backdrop-blur-sm">
+      <CardContent class="pt-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div class="max-w-3xl">
+            <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hierarchy preset</p>
+            <h2 class="mt-1 text-lg font-semibold text-foreground">{hierarchyPresetDefinition.label}</h2>
+            <p class="mt-1 text-sm text-muted-foreground">{hierarchyPresetDefinition.description}</p>
+          </div>
+          <div class="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Issue intake rule</p>
+            <p class="mt-1 text-sm text-foreground">Tie the issue to the current operating model before execution.</p>
+          </div>
+        </div>
+
+        <div class="mt-5 grid gap-4 xl:grid-cols-[1fr_0.95fr]">
+          <div class="rounded-xl border border-border/60 bg-background/60 p-4">
+            <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SDD flow</p>
+            <div class="mt-3 space-y-2">
+              {#each SDD_ISSUE_FLOW as step, index}
+                <div class="flex gap-3 rounded-lg border border-border/60 bg-card/60 p-3">
+                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">{index + 1}</div>
+                  <div>
+                    <p class="text-sm font-medium text-foreground">{step.label}</p>
+                    <p class="text-xs text-muted-foreground">{step.description}</p>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          </div>
+
+          <div class="space-y-4">
+            <div class="rounded-xl border border-border/60 bg-background/60 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Departments</p>
+              <div class="mt-3 flex flex-wrap gap-1.5">
+                {#each hierarchyPresetDepartments as department}
+                  <Badge variant="outline" class="text-[10px] uppercase tracking-wider">{department.label}</Badge>
+                {/each}
+              </div>
+            </div>
+            <div class="rounded-xl border border-border/60 bg-background/60 p-4">
+              <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Operating rules</p>
+              <div class="mt-3 space-y-2">
+                {#each hierarchyPresetOperatingRules as rule}
+                  <div class="rounded-md border border-border/60 bg-card/60 p-3">
+                    <p class="text-sm font-medium text-foreground">{rule.title}</p>
+                    <p class="mt-1 text-xs text-muted-foreground">{rule.description}</p>
+                  </div>
+                {/each}
+              </div>
+            </div>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
+
   <Card class="rounded-xl border-border/60 backdrop-blur-sm">
     <CardHeader>
       <CardTitle>Create Issue</CardTitle>
@@ -118,6 +205,25 @@
           <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Description</Label>
           <textarea bind:value={description} rows={4} placeholder="Describe the issue..."
             class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"></textarea>
+        </div>
+
+        <div class="grid gap-4 lg:grid-cols-2">
+          <div>
+            <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Spec *</Label>
+            <textarea bind:value={sddSpec} rows={4} placeholder="State the problem and the success criteria."
+              class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
+          </div>
+          <div>
+            <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Design *</Label>
+            <textarea bind:value={sddDesign} rows={4} placeholder="Map the owners, execution slices, and dependencies."
+              class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
+          </div>
+        </div>
+
+        <div>
+          <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Validation</Label>
+          <textarea bind:value={sddValidation} rows={3} placeholder="Describe how to verify it is safe to implement."
+            class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
         </div>
 
         <Separator />
@@ -198,7 +304,7 @@
       </form>
     </CardContent>
     <CardFooter class="flex items-center gap-3 pt-0">
-      <Button class="flex-1 cursor-pointer" disabled={creating || !title.trim()} onclick={() => create()}>
+      <Button class="flex-1 cursor-pointer" disabled={creating || !title.trim() || !sddSpec.trim() || !sddDesign.trim()} onclick={() => create()}>
         {creating ? 'Creating...' : 'Create Issue'}
       </Button>
       <Button variant="outline" class="cursor-pointer" href="/{$page.params.companyPrefix}/issues">

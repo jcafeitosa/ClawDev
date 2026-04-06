@@ -197,7 +197,7 @@
 
 <PageLayout title="Routines" description="Scheduled recurring tasks and automations">
   {#snippet actions()}
-    <Button onclick={() => (showCreate = !showCreate)}>
+    <Button variant="outline" size="sm" onclick={() => (showCreate = !showCreate)}>
       <Plus class="w-4 h-4" />
       New Routine
     </Button>
@@ -263,19 +263,19 @@
     </Card>
   {/if}
 
-  <!-- Filter pills + Search -->
+  <!-- Tabs + Search -->
   <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-    <div class="flex items-center gap-1.5 flex-wrap">
+    <div class="flex items-center border-b border-border">
       {#each STATUS_FILTERS as filter}
         <button
           onclick={() => { activeFilter = filter; }}
-          class="cursor-pointer rounded-lg px-3 py-1.5 text-sm font-medium transition-colors duration-150
+          class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
             {activeFilter === filter
-              ? 'bg-primary text-primary-foreground'
-              : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
+              ? 'border-b-2 border-blue-500 text-foreground'
+              : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
         >
           {filterLabel(filter)}
-          <span class="ml-1 text-xs opacity-70">({countByFilter(filter)})</span>
+          <span class="text-xs opacity-70">({countByFilter(filter)})</span>
         </button>
       {/each}
     </div>
@@ -319,7 +319,7 @@
           {#if routines.length === 0}
             <p class="text-sm font-medium text-muted-foreground">No routines yet</p>
             <p class="text-xs text-muted-foreground/60">Create a routine to automate recurring tasks.</p>
-            <Button onclick={() => (showCreate = true)} class="mt-2">
+            <Button variant="outline" onclick={() => (showCreate = true)} class="mt-2">
               <Plus class="h-4 w-4" />
               New Routine
             </Button>
@@ -333,6 +333,12 @@
   <!-- Routines list -->
   {:else}
     <Card class="p-0 overflow-hidden">
+        <div class="flex items-center gap-4 border-b border-border px-5 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <span class="w-2 shrink-0"></span>
+          <span class="min-w-0 flex-1">Routine</span>
+          <span class="shrink-0 w-20 text-right">Last Run</span>
+          <span class="h-4 w-4 shrink-0"></span>
+        </div>
         {#each filteredRoutines as routine, i (routine.id)}
           <a
             href="/{prefix}/routines/{routine.id}"

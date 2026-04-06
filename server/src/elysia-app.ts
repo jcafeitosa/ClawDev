@@ -69,6 +69,13 @@ import {
   budgetRoutes,
   searchRoutes,
   modelRoutes,
+  agentTeamRoutes,
+  agentDelegationRoutes,
+  agentPipelineRoutes,
+  agentDeliberationRoutes,
+  agentTemplateRoutes,
+  teamKnowledgeRoutes,
+  channelRoutes,
 } from "./routes/index.js";
 import { llmRoutes } from "./routes/llms.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
@@ -361,7 +368,14 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     .use(budgetRoutes(db))
     .use(assetRoutes(db, storage))
     .use(searchRoutes(db, opts.embeddingConfig ?? null))
-    .use(modelRoutes(db));
+    .use(modelRoutes(db))
+    .use(agentTeamRoutes(db))
+    .use(agentDelegationRoutes(db))
+    .use(agentPipelineRoutes(db))
+    .use(agentDeliberationRoutes(db))
+    .use(agentTemplateRoutes(db))
+    .use(teamKnowledgeRoutes(db))
+    .use(channelRoutes(db));
 
   // -- Plugins (conditional — requires plugin deps) --
   if (pluginDeps) {

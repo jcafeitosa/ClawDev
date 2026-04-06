@@ -81,6 +81,9 @@ export const companyStore = {
       issuePrefix: selectedId,
     };
   },
+  get company() {
+    return this.selectedCompany;
+  },
   get loading() {
     return loading;
   },

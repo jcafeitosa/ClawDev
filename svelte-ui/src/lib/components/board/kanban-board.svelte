@@ -4,7 +4,7 @@
    * Uses native HTML5 Drag & Drop API for cross-column moves.
    */
   import { cn } from '$utils/index.js';
-  import { User, FolderKanban } from 'lucide-svelte';
+  import { User, FolderKanban, Plus } from 'lucide-svelte';
 
   // ── Types ──────────────────────────────────────────────────────────
   interface Issue {
@@ -26,9 +26,47 @@
     issues: Issue[];
     prefix: string;
     onStatusChange?: (issueId: string, newStatus: string) => Promise<void>;
+    onCreateIssue?: (title: string, status: string) => Promise<void>;
   }
 
-  let { issues, prefix, onStatusChange }: Props = $props();
+  let { issues, prefix, onStatusChange, onCreateIssue }: Props = $props();
+
+  // ── Inline add state ──────────────────────────────────────────────
+  let addingInColumn = $state<string | null>(null);
+  let newIssueTitle = $state('');
+  let newIssueTitleInput = $state<HTMLInputElement | null>(null);
+  let creatingIssue = $state(false);
+
+  function startAdding(status: string) {
+    addingInColumn = status;
+    newIssueTitle = '';
+  }
+
+  function cancelAdding() {
+    addingInColumn = null;
+    newIssueTitle = '';
+  }
+
+  $effect(() => {
+    if (!addingInColumn || !newIssueTitleInput) return;
+    queueMicrotask(() => {
+      newIssueTitleInput?.focus();
+    });
+  });
+
+  async function submitNewIssue(status: string) {
+    if (!newIssueTitle.trim() || !onCreateIssue || creatingIssue) return;
+    creatingIssue = true;
+    try {
+      await onCreateIssue(newIssueTitle.trim(), status);
+      newIssueTitle = '';
+      addingInColumn = null;
+    } catch {
+      /* keep form open on error */
+    } finally {
+      creatingIssue = false;
+    }
+  }
 
   // ── Column definitions ─────────────────────────────────────────────
   const COLUMNS = [
@@ -280,6 +318,54 @@
       <!-- Drop indicator at bottom of column -->
       {#if isDropTarget && columnIssues.length > 0}
         <div class="mx-2 mb-2 h-1 rounded-full bg-accent transition-all"></div>
+      {/if}
+
+      <!-- Inline add issue -->
+      {#if onCreateIssue}
+        <div class="px-2 pb-2">
+          {#if addingInColumn === col.status}
+            <form
+              onsubmit={(e) => { e.preventDefault(); submitNewIssue(col.status); }}
+              class="space-y-1.5"
+            >
+              <input
+                type="text"
+                bind:this={newIssueTitleInput}
+                bind:value={newIssueTitle}
+                placeholder="Issue title..."
+                disabled={creatingIssue}
+                class="w-full rounded-md border border-border bg-secondary px-2.5 py-1.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                onkeydown={(e) => { if (e.key === 'Escape') cancelAdding(); }}
+              />
+              <div class="flex items-center gap-1.5">
+                <button
+                  type="submit"
+                  disabled={creatingIssue || !newIssueTitle.trim()}
+                  class="cursor-pointer rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {creatingIssue ? 'Adding...' : 'Add'}
+                </button>
+                <button
+                  type="button"
+                  onclick={cancelAdding}
+                  disabled={creatingIssue}
+                  class="cursor-pointer rounded-md px-2 py-1 text-xs text-muted-foreground hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          {:else}
+            <button
+              type="button"
+              onclick={() => startAdding(col.status)}
+              class="cursor-pointer flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-xs text-muted-foreground hover:bg-accent/40 hover:text-foreground transition-colors"
+            >
+              <Plus class="size-3.5" />
+              Add issue
+            </button>
+          {/if}
+        </div>
       {/if}
     </div>
   {/each}

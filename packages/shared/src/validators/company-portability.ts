@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hierarchyPresetSchema } from "../company-hierarchy.js";
 
 export const portabilityIncludeSchema = z
   .object({
@@ -36,6 +37,7 @@ export const portabilityCompanyManifestEntrySchema = z.object({
   brandColor: z.string().nullable(),
   logoPath: z.string().nullable(),
   requireBoardApprovalForNewAgents: z.boolean(),
+  hierarchyPreset: hierarchyPresetSchema.optional().default("classic_pyramid"),
 });
 
 export const portabilitySidebarOrderSchema = z.object({

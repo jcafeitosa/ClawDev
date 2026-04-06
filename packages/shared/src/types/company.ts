@@ -1,4 +1,5 @@
 import type { CompanyStatus, PauseReason } from "../constants.js";
+import type { HierarchyPreset } from "../company-hierarchy.js";
 
 export interface Company {
   id: string;
@@ -12,6 +13,7 @@ export interface Company {
   budgetMonthlyCents: number;
   spentMonthlyCents: number;
   requireBoardApprovalForNewAgents: boolean;
+  hierarchyPreset: HierarchyPreset;
   brandColor: string | null;
   logoAssetId: string | null;
   logoUrl: string | null;

@@ -9,7 +9,7 @@
   import {
     Inbox as InboxIcon, AlertTriangle, XCircle, X, RotateCcw,
     UserPlus, ChevronRight, Loader2, CheckCheck, Radio,
-    Search, Columns3, Check,
+    Search, Columns3, Check, Clock, Filter,
   } from 'lucide-svelte';
   import SwipeToArchive from '$lib/components/swipe-to-archive.svelte';
   import StatusBadge from '$lib/components/status-badge.svelte';
@@ -823,25 +823,59 @@
 </script>
 
 <PageLayout title="Inbox">
-  <div class="flex flex-col gap-3">
-    <div class="flex items-center justify-between gap-2">
+  <div class="flex flex-col gap-0 font-card">
+    <!-- ClickUp-style tab bar -->
+    <div class="flex items-center border-b border-border">
+      {#each tabs as tab (tab.key)}
+        {@const iconMap = { mine: InboxIcon, recent: Radio, unread: Clock, all: CheckCheck }}
+        {@const TabIcon = iconMap[tab.key]}
+        <button
+          onclick={() => switchTab(tab.key)}
+          class="inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 font-card text-sm font-medium transition-colors
+            {activeTab === tab.key
+              ? 'border-b-2 border-blue-500 text-foreground'
+              : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
+        >
+          <TabIcon class="h-4 w-4" />
+          {tab.label}
+        </button>
+      {/each}
+    </div>
+
+    <!-- Toolbar row -->
+    <div class="flex items-center justify-between gap-2 py-2">
+      <!-- Left side: filter controls (only on "All" tab) -->
       <div class="flex flex-wrap items-center gap-2">
-        <!-- Tab bar -->
-        <div class="flex items-center gap-1 rounded-lg border border-border bg-card p-1">
-          {#each tabs as tab (tab.key)}
-            <button
-              onclick={() => switchTab(tab.key)}
-              class="relative rounded-md px-3 py-1.5 text-sm font-medium transition-colors
-                {activeTab === tab.key
-                  ? 'bg-accent text-foreground'
-                  : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'}"
+        {#if activeTab === 'all'}
+          <div class="inline-flex items-center gap-1.5 text-muted-foreground">
+            <Filter class="h-3.5 w-3.5" />
+          </div>
+          <select
+            bind:value={allCategoryFilter}
+            class="h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
+          >
+            <option value="everything">All categories</option>
+            <option value="issues_i_touched">My recent issues</option>
+            <option value="join_requests">Join requests</option>
+            <option value="approvals">Approvals</option>
+            <option value="failed_runs">Failed runs</option>
+            <option value="alerts">Alerts</option>
+          </select>
+
+          {#if showApprovalsCategory}
+            <select
+              bind:value={allApprovalFilter}
+              class="h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
-              {tab.label}
-            </button>
-          {/each}
-        </div>
+              <option value="all">All approval statuses</option>
+              <option value="actionable">Needs action</option>
+              <option value="resolved">Resolved</option>
+            </select>
+          {/if}
+        {/if}
       </div>
 
+      <!-- Right side: search + columns + mark all read / clear all -->
       <div class="flex items-center gap-2">
         <!-- Search field -->
         <div class="relative">
@@ -862,7 +896,7 @@
             class="inline-flex h-8 shrink-0 items-center gap-1 rounded-lg px-2 text-xs text-muted-foreground transition-colors hover:bg-accent/50 hover:text-foreground"
           >
             <Columns3 class="h-3.5 w-3.5" />
-            <span class="hidden sm:inline">Show / hide columns</span>
+            <span class="hidden sm:inline">Columns</span>
           </button>
           {#if columnsDropdownOpen}
             <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -910,7 +944,7 @@
           {/if}
         </div>
 
-        <!-- Mark all read -->
+        <!-- Mark all read / Clear all -->
         {#if canMarkAllRead}
           <button
             onclick={handleMarkAllRead}
@@ -919,43 +953,15 @@
           >
             {#if markAllReadPending}
               <Loader2 class="h-3.5 w-3.5 animate-spin" />
-              Marking...
+              Clearing...
             {:else}
               <CheckCheck class="h-3.5 w-3.5" />
-              Mark all as read
+              Clear all
             {/if}
           </button>
         {/if}
       </div>
     </div>
-
-    <!-- Filters for "All" tab -->
-    {#if activeTab === 'all'}
-      <div class="flex flex-wrap items-center gap-2">
-        <select
-          bind:value={allCategoryFilter}
-          class="h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
-        >
-          <option value="everything">All categories</option>
-          <option value="issues_i_touched">My recent issues</option>
-          <option value="join_requests">Join requests</option>
-          <option value="approvals">Approvals</option>
-          <option value="failed_runs">Failed runs</option>
-          <option value="alerts">Alerts</option>
-        </select>
-
-        {#if showApprovalsCategory}
-          <select
-            bind:value={allApprovalFilter}
-            class="h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-blue-500"
-          >
-            <option value="all">All approval statuses</option>
-            <option value="actionable">Needs action</option>
-            <option value="resolved">Resolved</option>
-          </select>
-        {/if}
-      </div>
-    {/if}
   </div>
 
   <!-- Error banner -->
@@ -996,7 +1002,7 @@
   {:else}
     <!-- Work items section -->
     {#if showWorkItemsSection}
-      <div class="overflow-hidden rounded-xl border border-border/50 bg-background">
+      <div class="glass-card overflow-hidden font-card">
         {#each workItemsToRender as item, i (`${item.kind}:${item.issue?.id ?? item.approval?.id ?? item.run?.id ?? item.joinRequest?.id ?? i}`)}
           {@const isMineTab = activeTab === 'mine'}
 

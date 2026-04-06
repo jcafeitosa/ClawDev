@@ -721,8 +721,64 @@ export function issueService(db: Db) {
       const withLabels = await withIssueLabels(db, rows);
       const runMap = await activeRunMapForIssues(db, withLabels);
       const withRuns = withActiveRuns(withLabels, runMap);
+
+      // Compute lastActivityAt: MAX(issue.updatedAt, latest comment createdAt, latest linked run finishedAt)
+      const allIssueIds = withRuns.map((row) => row.id);
+      const lastCommentMap = new Map<string, Date>();
+      if (allIssueIds.length > 0) {
+        const commentStats = await db
+          .select({
+            issueId: issueComments.issueId,
+            lastCommentAt: sql<Date | null>`MAX(${issueComments.createdAt})`,
+          })
+          .from(issueComments)
+          .where(
+            and(
+              eq(issueComments.companyId, companyId),
+              inArray(issueComments.issueId, allIssueIds),
+            ),
+          )
+          .groupBy(issueComments.issueId);
+        for (const row of commentStats) {
+          if (row.lastCommentAt) lastCommentMap.set(row.issueId, row.lastCommentAt);
+        }
+      }
+      const lastRunMap = new Map<string, Date>();
+      const runIssueIds = withRuns.filter((r) => r.executionRunId != null).map((r) => r.id);
+      if (runIssueIds.length > 0) {
+        const runIds = withRuns
+          .filter((r) => r.executionRunId != null)
+          .map((r) => r.executionRunId!);
+        const runStats = await db
+          .select({
+            id: heartbeatRuns.id,
+            finishedAt: heartbeatRuns.finishedAt,
+          })
+          .from(heartbeatRuns)
+          .where(inArray(heartbeatRuns.id, runIds));
+        const runFinishById = new Map(runStats.filter((r) => r.finishedAt).map((r) => [r.id, r.finishedAt!]));
+        for (const row of withRuns) {
+          if (row.executionRunId) {
+            const fin = runFinishById.get(row.executionRunId);
+            if (fin) lastRunMap.set(row.id, fin);
+          }
+        }
+      }
+
+      function computeLastActivityAt(row: { id: string; updatedAt: Date }): Date {
+        const candidates = [row.updatedAt];
+        const commentAt = lastCommentMap.get(row.id);
+        if (commentAt) candidates.push(commentAt);
+        const runAt = lastRunMap.get(row.id);
+        if (runAt) candidates.push(runAt);
+        return candidates.reduce((a, b) => (a > b ? a : b));
+      }
+
       if (!contextUserId || withRuns.length === 0) {
-        return withRuns;
+        return withRuns.map((row) => ({
+          ...row,
+          lastActivityAt: computeLastActivityAt(row),
+        }));
       }
 
       const issueIds = withRuns.map((row) => row.id);
@@ -767,6 +823,7 @@ export function issueService(db: Db) {
 
       return withRuns.map((row) => ({
         ...row,
+        lastActivityAt: computeLastActivityAt(row),
         ...deriveIssueUserContext(row, contextUserId, {
           myLastCommentAt: statsByIssueId.get(row.id)?.myLastCommentAt ?? null,
           myLastReadAt: readByIssueId.get(row.id) ?? null,
@@ -1548,7 +1605,7 @@ export function issueService(db: Db) {
       return redactIssueComment(removed, currentUserRedactionOptions.enabled);
     },
 
-    addComment: async (issueId: string, body: string, actor: { agentId?: string; userId?: string }) => {
+    addComment: async (issueId: string, body: string, actor: { agentId?: string; userId?: string; runId?: string }) => {
       const issue = await db
         .select({ companyId: issues.companyId })
         .from(issues)
@@ -1568,6 +1625,7 @@ export function issueService(db: Db) {
           issueId,
           authorAgentId: actor.agentId ?? null,
           authorUserId: actor.userId ?? null,
+          createdByRunId: actor.runId ?? null,
           body: redactedBody,
         })
         .returning();

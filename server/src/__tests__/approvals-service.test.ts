@@ -4,6 +4,7 @@ import { approvalService } from "../services/approvals.ts";
 const mockAgentService = vi.hoisted(() => ({
   activatePendingApproval: vi.fn(),
   create: vi.fn(),
+  getById: vi.fn(),
   terminate: vi.fn(),
 }));
 
@@ -60,6 +61,7 @@ describe("approvalService resolution idempotency", () => {
     vi.clearAllMocks();
     mockAgentService.activatePendingApproval.mockResolvedValue(undefined);
     mockAgentService.create.mockResolvedValue({ id: "agent-1" });
+    mockAgentService.getById.mockResolvedValue({ id: "agent-1", adapterConfig: {} });
     mockAgentService.terminate.mockResolvedValue(undefined);
     mockNotifyHireApproved.mockResolvedValue(undefined);
   });

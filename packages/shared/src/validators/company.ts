@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { hierarchyPresetSchema } from "../company-hierarchy.js";
 import { COMPANY_STATUSES } from "../constants.js";
 
 const logoAssetIdSchema = z.string().uuid().nullable().optional();
@@ -8,6 +9,7 @@ export const createCompanySchema = z.object({
   name: z.string().min(1),
   description: z.string().optional().nullable(),
   budgetMonthlyCents: z.number().int().nonnegative().optional().default(0),
+  hierarchyPreset: hierarchyPresetSchema.optional().default("classic_pyramid"),
 });
 
 export type CreateCompany = z.infer<typeof createCompanySchema>;

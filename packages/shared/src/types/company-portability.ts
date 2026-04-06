@@ -1,3 +1,5 @@
+import type { HierarchyPreset } from "../company-hierarchy.js";
+
 export interface CompanyPortabilityInclude {
   company: boolean;
   agents: boolean;
@@ -31,6 +33,7 @@ export interface CompanyPortabilityCompanyManifestEntry {
   brandColor: string | null;
   logoPath: string | null;
   requireBoardApprovalForNewAgents: boolean;
+  hierarchyPreset: HierarchyPreset;
 }
 
 export interface CompanyPortabilitySidebarOrder {

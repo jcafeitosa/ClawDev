@@ -7,8 +7,8 @@
   import { onMount } from 'svelte';
   import { Plus, Search, List, LayoutGrid, Filter, ArrowUpDown, Layers, ChevronRight, X, Check, User } from 'lucide-svelte';
   import KanbanBoard from '$lib/components/board/kanban-board.svelte';
-  import { Badge, Button, Input, Skeleton, Alert, AlertTitle, AlertDescription, Separator, Card } from '$components/ui/index.js';
-  import { PageLayout } from '$components/layout/index.js';
+  import { Badge, Button, Input, Skeleton, Alert, AlertTitle, AlertDescription, Separator } from '$components/ui/index.js';
+  import { PageLayout } from '$lib/components/layout/index.js';
 
   onMount(() => breadcrumbStore.set([{ label: 'Issues' }]));
 
@@ -326,10 +326,10 @@
 {#snippet issueRow(issue: Issue, i: number, total: number)}
   <a
     href="/{currentPrefix}/issues/{issue.id}"
-    class="group flex items-center gap-3 border-b border-border/50 px-4 py-2.5 text-sm no-underline text-inherit transition-colors hover:bg-accent/50 last:border-b-0"
+    class="group flex items-center border-b border-border/30 px-4 py-2.5 text-sm no-underline text-inherit transition-colors hover:bg-accent/50 last:border-b-0"
   >
     <!-- Status dot (clickable picker) -->
-    <div class="relative shrink-0" data-popover>
+    <div class="relative w-5 shrink-0" data-popover>
       <button
         type="button"
         onclick={(e) => { e.preventDefault(); e.stopPropagation(); statusPickerIssueId = statusPickerIssueId === issue.id ? null : issue.id; assigneePickerIssueId = null; }}
@@ -353,36 +353,24 @@
     </div>
 
     <!-- Identifier -->
-    {#if issue.identifier}
-      <span class="w-20 shrink-0 truncate font-mono text-xs text-muted-foreground">{issue.identifier}</span>
-    {/if}
+    <span class="w-20 shrink-0 truncate font-mono text-xs text-muted-foreground">
+      {issue.identifier ?? ''}
+    </span>
 
-    <!-- Live badge -->
-    {#if hasActiveRun(issue)}
-      <Badge variant="ghost" class="shrink-0 gap-1 bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400">
-        <span class="relative flex h-2 w-2">
-          <span class="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75"></span>
-          <span class="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
-        </span>
-        Live
-      </Badge>
-    {/if}
-
-    <!-- Title -->
-    <span class="min-w-0 flex-1 truncate text-sm text-foreground">{issue.title}</span>
-
-    <!-- Trailing -->
-    <span class="ml-auto hidden shrink-0 items-center gap-2 sm:flex sm:gap-3">
-      <!-- Priority -->
-      {#if issue.priority && PRIORITY_VISUALS[issue.priority]}
-        <Badge variant="outline" class="text-[10px] font-bold leading-none rounded px-1.5 py-0.5 {PRIORITY_VISUALS[issue.priority].badgeClass}">
-          {PRIORITY_VISUALS[issue.priority].label}
+    <!-- Title + live badge + labels inline -->
+    <span class="min-w-0 flex-1 flex items-center gap-2 truncate">
+      <span class="truncate text-sm text-foreground">{issue.title}</span>
+      {#if hasActiveRun(issue)}
+        <Badge variant="ghost" class="shrink-0 gap-1 bg-blue-500/10 px-1.5 py-0.5 text-[11px] font-medium text-blue-600 dark:text-blue-400">
+          <span class="relative flex h-2 w-2">
+            <span class="absolute inline-flex h-full w-full animate-pulse rounded-full bg-blue-400 opacity-75"></span>
+            <span class="relative inline-flex h-2 w-2 rounded-full bg-blue-500"></span>
+          </span>
+          Live
         </Badge>
       {/if}
-
-      <!-- Labels (up to 3) -->
       {#if issue.labels?.length}
-        <span class="hidden items-center gap-1 overflow-hidden md:flex md:max-w-[200px]">
+        <span class="hidden items-center gap-1 overflow-hidden md:flex md:max-w-[200px] shrink-0">
           {#each issue.labels.slice(0, 3) as label}
             <Badge
               variant="outline"
@@ -397,99 +385,90 @@
           {/if}
         </span>
       {/if}
+    </span>
 
-      <!-- Assignee (clickable picker) -->
-      <div class="relative" data-popover>
-        <button
-          type="button"
-          onclick={(e) => { e.preventDefault(); e.stopPropagation(); assigneePickerIssueId = assigneePickerIssueId === issue.id ? null : issue.id; statusPickerIssueId = null; }}
-          class="flex w-[160px] shrink-0 items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors hover:bg-accent/50"
-        >
-          {#if assigneeInitials(issue)}
-            <span class="assignee-badge">{assigneeInitials(issue)}</span>
-            <span class="hidden truncate text-muted-foreground lg:block">{assigneeLabel(issue)}</span>
-          {:else}
-            <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
-              <User class="h-3 w-3 text-muted-foreground" />
-            </span>
-            <span class="hidden text-muted-foreground lg:block">Unassigned</span>
-          {/if}
-        </button>
-        {#if assigneePickerIssueId === issue.id}
-          <div class="absolute right-0 top-full z-40 mt-1 w-48 rounded-lg border border-border bg-card py-1 shadow-xl">
+    <!-- Assignee (clickable picker) -->
+    <div class="relative hidden w-[100px] shrink-0 sm:block" data-popover>
+      <button
+        type="button"
+        onclick={(e) => { e.preventDefault(); e.stopPropagation(); assigneePickerIssueId = assigneePickerIssueId === issue.id ? null : issue.id; statusPickerIssueId = null; }}
+        class="flex w-full items-center gap-1.5 rounded-md px-1 py-1 text-xs transition-colors hover:bg-accent/50"
+      >
+        {#if assigneeInitials(issue)}
+          <span class="assignee-badge">{assigneeInitials(issue)}</span>
+          <span class="hidden truncate text-muted-foreground lg:block">{assigneeLabel(issue)}</span>
+        {:else}
+          <span class="inline-flex h-5 w-5 items-center justify-center rounded-full border border-dashed border-muted-foreground/35 bg-muted/30">
+            <User class="h-3 w-3 text-muted-foreground" />
+          </span>
+        {/if}
+      </button>
+      {#if assigneePickerIssueId === issue.id}
+        <div class="absolute right-0 top-full z-40 mt-1 w-48 rounded-lg border border-border bg-card py-1 shadow-xl">
+          <button
+            type="button"
+            onclick={(e) => { e.preventDefault(); e.stopPropagation(); handleAssigneeChange(issue.id, null); }}
+            class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-accent/40 hover:text-foreground {!issue.assigneeAgentId && !issue.assigneeUserId ? 'text-foreground' : ''}"
+          >
+            Unassigned
+          </button>
+          {#each agents as agent}
             <button
               type="button"
-              onclick={(e) => { e.preventDefault(); e.stopPropagation(); handleAssigneeChange(issue.id, null); }}
-              class="flex w-full items-center gap-2 px-3 py-1.5 text-sm text-muted-foreground transition hover:bg-accent/40 hover:text-foreground {!issue.assigneeAgentId && !issue.assigneeUserId ? 'text-foreground' : ''}"
+              onclick={(e) => { e.preventDefault(); e.stopPropagation(); handleAssigneeChange(issue.id, agent.id); }}
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-sm transition hover:bg-accent/40 {issue.assigneeAgentId === agent.id ? 'text-foreground bg-accent/30' : 'text-muted-foreground hover:text-foreground'}"
             >
-              Unassigned
+              {agent.name}
             </button>
-            {#each agents as agent}
-              <button
-                type="button"
-                onclick={(e) => { e.preventDefault(); e.stopPropagation(); handleAssigneeChange(issue.id, agent.id); }}
-                class="flex w-full items-center gap-2 px-3 py-1.5 text-sm transition hover:bg-accent/40 {issue.assigneeAgentId === agent.id ? 'text-foreground bg-accent/30' : 'text-muted-foreground hover:text-foreground'}"
-              >
-                {agent.name}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
 
-      <!-- Time ago -->
-      <span class="hidden min-w-[5rem] text-right text-xs tabular-nums text-muted-foreground sm:block">
-        {timeAgo(issue.updatedAt || issue.createdAt)}
-      </span>
+    <!-- Priority -->
+    <span class="hidden w-[80px] shrink-0 sm:flex items-center">
+      {#if issue.priority && PRIORITY_VISUALS[issue.priority]}
+        <Badge variant="outline" class="text-[10px] font-bold leading-none rounded px-1.5 py-0.5 {PRIORITY_VISUALS[issue.priority].badgeClass}">
+          {PRIORITY_VISUALS[issue.priority].label}
+        </Badge>
+      {/if}
+    </span>
+
+    <!-- Time ago -->
+    <span class="hidden w-[100px] shrink-0 text-right text-xs tabular-nums text-muted-foreground sm:block">
+      {timeAgo(issue.updatedAt || issue.createdAt)}
     </span>
   </a>
 {/snippet}
 
 <svelte:window onclick={closePopovers} />
 
-<PageLayout title="Issues" description="Track and manage tasks">
-  {#snippet actions()}
-    <Button variant="outline" size="sm" href="/{currentPrefix}/issues/new" class="cursor-pointer">
-      <Plus class="h-4 w-4" />
-      <span class="hidden sm:inline">New Issue</span>
-    </Button>
-  {/snippet}
+<PageLayout title="Issues" fullWidth class="font-card">
+<div class="flex flex-col gap-0">
+  <!-- View tabs -->
+  <div class="flex items-center gap-1 border-b border-border px-1">
+    <button
+      type="button"
+      onclick={() => updateView({ viewMode: 'board' })}
+      class="flex items-center gap-1.5 px-3 pb-2 pt-1.5 text-sm transition-colors {viewState.viewMode === 'board' ? 'border-b-2 border-blue-500 text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}"
+    >
+      <LayoutGrid class="h-4 w-4" />
+      Board
+    </button>
+    <button
+      type="button"
+      onclick={() => updateView({ viewMode: 'list' })}
+      class="flex items-center gap-1.5 px-3 pb-2 pt-1.5 text-sm transition-colors {viewState.viewMode === 'list' ? 'border-b-2 border-blue-500 text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'}"
+    >
+      <List class="h-4 w-4" />
+      List
+    </button>
+  </div>
 
-  <!-- Toolbar -->
-  <div class="flex items-center justify-between gap-2 sm:gap-3">
-    <!-- Left: Search -->
-    <div class="flex min-w-0 items-center gap-2 sm:gap-3">
-      <div class="relative">
-        <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground z-10" />
-        <Input
-          type="text"
-          placeholder="Search issues..."
-          bind:value={searchQuery}
-          class="w-48 pl-8 sm:w-64 md:w-80"
-        />
-      </div>
-    </div>
-
-    <!-- Right: View toggle + Filter + Sort + Group -->
-    <div class="flex shrink-0 items-center gap-0.5 sm:gap-1">
-      <!-- View toggle -->
-      <div class="mr-1 flex items-center overflow-hidden rounded-md border border-border">
-        <button
-          type="button"
-          onclick={() => updateView({ viewMode: 'list' })}
-          class="p-1.5 transition-colors {viewState.viewMode === 'list' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}"
-          title="List view"
-          aria-label="List view"
-        ><List class="h-3.5 w-3.5" /></button>
-        <button
-          type="button"
-          onclick={() => updateView({ viewMode: 'board' })}
-          class="p-1.5 transition-colors {viewState.viewMode === 'board' ? 'bg-accent text-foreground' : 'text-muted-foreground hover:text-foreground'}"
-          title="Board view"
-          aria-label="Board view"
-        ><LayoutGrid class="h-3.5 w-3.5" /></button>
-      </div>
-
+  <!-- Toolbar row -->
+  <div class="flex items-center justify-between gap-2 px-2 py-1.5">
+    <!-- Left: filter/sort/group -->
+    <div class="flex items-center gap-1">
       <!-- Filter popover -->
       <div class="relative" data-popover>
         <button
@@ -512,7 +491,7 @@
         {/if}
 
         {#if filterOpen}
-          <div class="absolute right-0 top-full z-30 mt-1 w-[min(480px,calc(100vw-2rem))] rounded-lg border border-border bg-card p-3 shadow-xl space-y-3">
+          <div class="absolute left-0 top-full z-30 mt-1 w-[min(480px,calc(100vw-2rem))] rounded-lg border border-border bg-card p-3 shadow-xl space-y-3">
             <div class="flex items-center justify-between">
               <span class="text-sm font-medium">Filters</span>
               {#if activeFilterCount > 0}
@@ -621,7 +600,7 @@
         {/if}
       </div>
 
-      <!-- Sort (list view only) -->
+      <!-- Sort -->
       {#if viewState.viewMode === 'list'}
         <div class="relative" data-popover>
           <button
@@ -633,7 +612,7 @@
             <span class="hidden sm:inline">Sort</span>
           </button>
           {#if sortOpen}
-            <div class="absolute right-0 top-full z-30 mt-1 w-48 rounded-lg border border-border bg-card p-2 shadow-xl space-y-0.5">
+            <div class="absolute left-0 top-full z-30 mt-1 w-48 rounded-lg border border-border bg-card p-2 shadow-xl space-y-0.5">
               {#each SORT_FIELDS as field}
                 <button
                   type="button"
@@ -653,7 +632,7 @@
           {/if}
         </div>
 
-        <!-- Group (list view only) -->
+        <!-- Group -->
         <div class="relative" data-popover>
           <button
             type="button"
@@ -664,7 +643,7 @@
             <span class="hidden sm:inline">Group</span>
           </button>
           {#if groupOpen}
-            <div class="absolute right-0 top-full z-30 mt-1 w-44 rounded-lg border border-border bg-card p-2 shadow-xl space-y-0.5">
+            <div class="absolute left-0 top-full z-30 mt-1 w-44 rounded-lg border border-border bg-card p-2 shadow-xl space-y-0.5">
               {#each GROUP_OPTIONS as opt}
                 <button
                   type="button"
@@ -680,12 +659,32 @@
         </div>
       {/if}
     </div>
+
+    <!-- Right: search + new issue -->
+    <div class="flex items-center gap-2">
+      <div class="relative">
+        <Search class="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground z-10" />
+        <Input
+          type="text"
+          placeholder="Search..."
+          bind:value={searchQuery}
+          class="h-8 w-40 pl-8 text-sm sm:w-56"
+        />
+      </div>
+      <a
+        href="/{currentPrefix}/issues/new"
+        class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
+      >
+        <Plus class="h-4 w-4" />
+        <span class="hidden sm:inline">New Issue</span>
+      </a>
+    </div>
   </div>
 
   <!-- Content -->
   {#if loading}
     {#if viewState.viewMode === 'board'}
-      <div class="flex gap-3 overflow-x-auto pb-4">
+      <div class="flex gap-3 overflow-x-auto px-2 pb-4">
         {#each Array(5) as _}
           <div class="w-72 shrink-0 space-y-2 rounded-xl border border-border/50 bg-accent/25 p-3">
             <Skeleton class="h-4 w-24" />
@@ -696,7 +695,7 @@
         {/each}
       </div>
     {:else}
-      <div class="space-y-2">
+      <div class="space-y-2 px-2">
         {#each Array(8) as _}
           <Skeleton class="h-[52px] rounded-xl" />
         {/each}
@@ -704,14 +703,18 @@
     {/if}
 
   {:else if error}
-    <Alert variant="destructive">
-      <AlertTitle>Failed to load issues</AlertTitle>
-      <AlertDescription>{error}</AlertDescription>
-      <Button variant="link" size="sm" class="mt-2 cursor-pointer" onclick={loadIssues}>Retry</Button>
-    </Alert>
+    <div class="px-2">
+      <Alert variant="destructive">
+        <AlertTitle>Failed to load issues</AlertTitle>
+        <AlertDescription>{error}</AlertDescription>
+        <Button variant="link" size="sm" class="mt-2 cursor-pointer" onclick={loadIssues}>Retry</Button>
+      </Alert>
+    </div>
 
   {:else if viewState.viewMode === 'board'}
-    <KanbanBoard issues={filteredIssues} prefix={currentPrefix ?? ''} onStatusChange={handleStatusChange} />
+    <div class="px-2">
+      <KanbanBoard issues={filteredIssues} prefix={currentPrefix ?? ''} onStatusChange={handleStatusChange} />
+    </div>
 
   {:else if filteredIssues.length === 0}
     <div class="flex flex-col items-center justify-center py-16 text-center">
@@ -727,55 +730,71 @@
     </div>
 
   {:else}
-    <div class="space-y-4">
+    <div class="glass-card overflow-hidden font-card mx-2">
+      <!-- Table header -->
+      <div class="flex items-center border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <span class="w-5 shrink-0"></span>
+        <span class="w-20 shrink-0">ID</span>
+        <span class="min-w-0 flex-1">Name</span>
+        <span class="hidden w-[100px] shrink-0 sm:block">Assignee</span>
+        <span class="hidden w-[80px] shrink-0 sm:block">Priority</span>
+        <span class="hidden w-[100px] shrink-0 text-right sm:block">Updated</span>
+      </div>
+
+      <!-- Issue rows -->
       {#each groupedIssues as group (group.key)}
         {@const isCollapsed = viewState.collapsedGroups.includes(group.key)}
         {#if group.key === '__all'}
-          <Card class="overflow-hidden rounded-xl py-0 gap-0">
+          {#each group.issues as issue, i (issue.id)}
+            {@render issueRow(issue, i, group.issues.length)}
+          {/each}
+        {:else}
+          <!-- Status group header -->
+          <div class="flex items-center gap-2 border-b border-border/30 px-2 py-2">
+            <button
+              type="button"
+              onclick={() => toggleGroup(group.key)}
+              class="flex items-center gap-2"
+            >
+              <ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform {isCollapsed ? '' : 'rotate-90'}" />
+              {#if viewState.groupBy === 'status' && ISSUE_STATUS_VISUALS[group.key]}
+                <span
+                  class="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white"
+                  style="background-color: {ISSUE_STATUS_VISUALS[group.key].hex}"
+                >
+                  <span class="h-2 w-2 rounded-full bg-white/30"></span>
+                  {group.label}
+                </span>
+              {:else if viewState.groupBy === 'priority' && PRIORITY_VISUALS[group.key]}
+                <span
+                  class="inline-flex items-center gap-1.5 rounded px-2 py-0.5 text-[11px] font-bold uppercase tracking-wide text-white"
+                  style="background-color: {PRIORITY_VISUALS[group.key].hex}"
+                >
+                  {PRIORITY_VISUALS[group.key].label} - {group.label}
+                </span>
+              {:else}
+                <span class="text-sm font-semibold uppercase tracking-wide">{group.label}</span>
+              {/if}
+              <span class="text-[11px] text-muted-foreground/60">{group.issues.length}</span>
+            </button>
+            <a href="/{currentPrefix}/issues/new" class="ml-auto rounded p-0.5 text-muted-foreground hover:text-foreground">
+              <Plus class="h-3.5 w-3.5" />
+            </a>
+          </div>
+          {#if !isCollapsed}
             {#each group.issues as issue, i (issue.id)}
               {@render issueRow(issue, i, group.issues.length)}
             {/each}
-          </Card>
-        {:else}
-          <div>
-            <div class="flex items-center gap-1.5 py-1.5 pl-1 pr-3">
-              <button
-                type="button"
-                onclick={() => toggleGroup(group.key)}
-                class="flex items-center gap-1.5"
-              >
-                <ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform {isCollapsed ? '' : 'rotate-90'}" />
-                {#if viewState.groupBy === 'status' && group.key}
-                  <span class="h-2 w-2 rounded-full {statusDotClass(group.key)}"></span>
-                {/if}
-                {#if viewState.groupBy === 'priority' && PRIORITY_VISUALS[group.key]}
-                  <span class="inline-flex items-center rounded border px-1.5 py-0.5 text-[10px] font-bold leading-none {PRIORITY_VISUALS[group.key].badgeClass}">
-                    {PRIORITY_VISUALS[group.key].label}
-                  </span>
-                {/if}
-                <span class="text-sm font-semibold uppercase tracking-wide">{group.label}</span>
-                <span class="text-xs text-muted-foreground">({group.issues.length})</span>
-              </button>
-              <a href="/{currentPrefix}/issues/new" class="ml-auto rounded p-0.5 text-muted-foreground hover:text-foreground">
-                <Plus class="h-3.5 w-3.5" />
-              </a>
-            </div>
-            {#if !isCollapsed}
-              <Card class="overflow-hidden rounded-xl py-0 gap-0">
-                {#each group.issues as issue, i (issue.id)}
-                  {@render issueRow(issue, i, group.issues.length)}
-                {/each}
-              </Card>
-            {/if}
-          </div>
+          {/if}
         {/if}
       {/each}
     </div>
 
-    <p class="text-right text-xs text-muted-foreground">
+    <p class="mt-2 px-2 text-right text-xs text-muted-foreground">
       {filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''}
     </p>
   {/if}
+</div>
 </PageLayout>
 
 <style>

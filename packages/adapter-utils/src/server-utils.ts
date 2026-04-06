@@ -201,7 +201,10 @@ export function redactEnvForLogs(env: Record<string, string>): Record<string, st
   return redacted;
 }
 
-export function buildClawDevEnv(agent: { id: string; companyId: string }): Record<string, string> {
+export function buildClawDevEnv(
+  agent: { id: string; companyId: string },
+  context?: Record<string, unknown> | null,
+): Record<string, string> {
   const resolveHostForUrl = (rawHost: string): string => {
     const host = rawHost.trim();
     if (!host || host === "0.0.0.0" || host === "::") return "localhost";
@@ -221,6 +224,28 @@ export function buildClawDevEnv(agent: { id: string; companyId: string }): Recor
   vars.PAPERCLIP_AGENT_ID = agent.id;
   vars.PAPERCLIP_COMPANY_ID = agent.companyId;
   vars.PAPERCLIP_API_URL = apiUrl;
+
+  // Wake context variables — let the agent know why it was woken
+  if (context) {
+    const str = (key: string) => {
+      const v = context[key];
+      return typeof v === "string" && v.length > 0 ? v : null;
+    };
+    const wakeReason = str("wakeReason");
+    if (wakeReason) vars.CLAWDEV_WAKE_REASON = wakeReason;
+    const taskId = str("taskId") ?? str("taskKey") ?? str("issueId");
+    if (taskId) vars.CLAWDEV_TASK_ID = taskId;
+    const commentId = str("wakeCommentId") ?? str("commentId");
+    if (commentId) vars.CLAWDEV_WAKE_COMMENT_ID = commentId;
+    // Channel message context
+    const channelId = str("channelId");
+    if (channelId) vars.CLAWDEV_CHANNEL_ID = channelId;
+    const messageId = str("messageId");
+    if (messageId) vars.CLAWDEV_MESSAGE_ID = messageId;
+    const threadId = str("threadId");
+    if (threadId) vars.CLAWDEV_THREAD_ID = threadId;
+  }
+
   return vars;
 }
 

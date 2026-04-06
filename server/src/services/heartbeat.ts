@@ -41,6 +41,7 @@ import {
   sanitizeRuntimeServiceBaseEnv,
 } from "./workspace-runtime.js";
 import { issueService } from "./issues.js";
+import { channelMessageService } from "./channel-messages.js";
 import { executionWorkspaceService, mergeExecutionWorkspaceConfig } from "./execution-workspaces.js";
 import { workspaceOperationService } from "./workspace-operations.js";
 import {
@@ -756,6 +757,26 @@ function enrichWakeContextSnapshot(input: {
   }
   if (!readNonEmptyString(contextSnapshot["wakeTriggerDetail"]) && triggerDetail) {
     contextSnapshot.wakeTriggerDetail = triggerDetail;
+  }
+  // Propagate channel message context from payload
+  const channelIdFromPayload = readNonEmptyString(payload?.["channelId"]);
+  if (!readNonEmptyString(contextSnapshot["channelId"]) && channelIdFromPayload) {
+    contextSnapshot.channelId = channelIdFromPayload;
+  }
+  const messageIdFromPayload = readNonEmptyString(payload?.["messageId"]);
+  if (!readNonEmptyString(contextSnapshot["messageId"]) && messageIdFromPayload) {
+    contextSnapshot.messageId = messageIdFromPayload;
+  }
+  const threadIdFromPayload = readNonEmptyString(payload?.["threadId"]);
+  if (!readNonEmptyString(contextSnapshot["threadId"]) && threadIdFromPayload) {
+    contextSnapshot.threadId = threadIdFromPayload;
+  }
+  // Propagate channel message display fields from payload
+  for (const key of ["senderDisplayName", "bodyPreview", "channelName"] as const) {
+    const val = readNonEmptyString(payload?.[key]);
+    if (val && !readNonEmptyString(contextSnapshot[key])) {
+      contextSnapshot[key] = val;
+    }
   }
 
   return {
@@ -2643,7 +2664,7 @@ export function heartbeatService(db: Db) {
               workspace: executionWorkspace,
               runtimeServices,
             }),
-            { agentId: agent.id },
+            { agentId: agent.id, runId: run.id },
           );
         } catch (err) {
           await onLog(
@@ -2839,7 +2860,7 @@ export function heartbeatService(db: Db) {
                 workspace: executionWorkspace,
                 runtimeServices: adapterManagedRuntimeServices,
               }),
-              { agentId: agent.id },
+              { agentId: agent.id, runId: run.id },
             );
           } catch (err) {
             await onLog(
@@ -2997,6 +3018,39 @@ export function heartbeatService(db: Db) {
           },
         });
         await releaseIssueExecutionAndPromote(finalizedRun);
+      }
+
+      // --- Post-execution: post agent response to channel if woken by channel message ---
+      if (outcome === "succeeded" && context.source === "channel_message") {
+        try {
+          const channelId = readNonEmptyString(context.channelId);
+          const parentMessageId = readNonEmptyString(context.messageId);
+          if (channelId) {
+            // Extract response text from adapter result or stdout
+            const resultSummary = summarizeHeartbeatRunResultJson(adapterResult.resultJson ?? null);
+            const responseBody =
+              readNonEmptyString(resultSummary?.summary as string) ??
+              readNonEmptyString(resultSummary?.result as string) ??
+              readNonEmptyString(resultSummary?.message as string) ??
+              readNonEmptyString((adapterResult.resultJson as Record<string, unknown>)?.stdout as string) ??
+              (stdoutExcerpt.trim() || null);
+
+            if (responseBody) {
+              const msgSvc = channelMessageService(db);
+              await msgSvc.send(channelId, agent.companyId, { agentId: agent.id }, {
+                body: responseBody,
+                parentMessageId: parentMessageId ?? undefined,
+                threadId: readNonEmptyString(context.threadId) ?? undefined,
+              });
+              logger.info(
+                { agentId: agent.id, channelId, runId: run.id },
+                "posted agent response to channel after run",
+              );
+            }
+          }
+        } catch (channelErr) {
+          logger.warn({ err: channelErr, runId: run.id }, "failed to post channel response after run");
+        }
       }
 
       if (finalizedRun) {

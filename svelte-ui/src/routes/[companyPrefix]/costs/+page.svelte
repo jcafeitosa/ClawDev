@@ -434,7 +434,7 @@
   {#if loading}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {#each Array(4) as _}
-        <div class="h-28 animate-pulse rounded-xl border border-border bg-card"></div>
+        <Skeleton class="h-28 rounded-xl" />
       {/each}
     </div>
   {:else}
@@ -522,7 +522,7 @@
         <div class="flex flex-wrap items-center gap-2 px-5 pt-4 pb-2">
           {#each DATE_PRESETS as preset}
             <button
-              class="cursor-pointer rounded-md px-3 py-1.5 text-xs font-medium transition-colors duration-150 {datePreset === preset.key
+              class="cursor-pointer rounded-lg px-3 py-1.5 text-xs font-medium transition-colors duration-150 {datePreset === preset.key
                 ? 'bg-blue-500/20 text-blue-600 dark:text-blue-400 border border-blue-500/30'
                 : 'bg-secondary text-muted-foreground border border-border hover:bg-accent hover:text-foreground'}"
               onclick={() => { datePreset = preset.key; }}
@@ -569,7 +569,7 @@
         {#if loading}
           <div class="p-5 space-y-3">
             {#each Array(5) as _}
-              <div class="h-10 animate-pulse rounded bg-secondary"></div>
+              <Skeleton class="h-10 rounded" />
             {/each}
           </div>
         {:else if entries.length === 0}
@@ -769,7 +769,7 @@
         {#if budgetsLoading}
           <div class="p-5 space-y-3">
             {#each Array(4) as _}
-              <div class="h-20 animate-pulse rounded-lg bg-secondary"></div>
+              <Skeleton class="h-20 rounded-lg" />
             {/each}
           </div>
         {:else if budgetsData.length === 0}
@@ -820,7 +820,7 @@
         {#if byProviderLoading}
           <div class="p-5 space-y-3">
             {#each Array(5) as _}
-              <div class="h-10 animate-pulse rounded bg-secondary"></div>
+              <Skeleton class="h-10 rounded" />
             {/each}
           </div>
         {:else}
@@ -907,7 +907,7 @@
         {#if billersLoading}
           <div class="p-5 space-y-3">
             {#each Array(5) as _}
-              <div class="h-10 animate-pulse rounded bg-secondary"></div>
+              <Skeleton class="h-10 rounded" />
             {/each}
           </div>
         {:else}
@@ -994,12 +994,12 @@
           <div class="p-5 space-y-4">
             <div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
               {#each Array(2) as _}
-                <div class="h-24 animate-pulse rounded-lg bg-secondary"></div>
+                <Skeleton class="h-24 rounded-lg" />
               {/each}
             </div>
             <div class="space-y-3">
               {#each Array(5) as _}
-                <div class="h-10 animate-pulse rounded bg-secondary"></div>
+                <Skeleton class="h-10 rounded" />
               {/each}
             </div>
           </div>
@@ -1063,7 +1063,7 @@
             <div class="px-5 pb-4 space-y-3">
               <h4 class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Provider Quotas</h4>
               {#each Array(3) as _}
-                <div class="h-16 animate-pulse rounded-lg bg-secondary"></div>
+                <Skeleton class="h-16 rounded-lg" />
               {/each}
             </div>
           {:else if quotaWindows.length > 0}

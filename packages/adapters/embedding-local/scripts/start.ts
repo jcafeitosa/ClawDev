@@ -3,17 +3,17 @@
  * Start the llama-server as an OpenAI-compatible embedding endpoint.
  *
  * Usage:
- *   pnpm start                  — foreground server on port 8085
+ *   pnpm start                  — foreground server on port 8080
  *   PORT=9000 pnpm start        — custom port
  *   THREADS=8 pnpm start        — custom thread count
  *   pnpm start --background     — write PID file and run in background
  *
  * The server exposes:
- *   POST http://localhost:8085/v1/embeddings
+ *   POST http://localhost:8080/v1/embeddings
  *
  * Compatible with ClawDev:
  *   EMBEDDING_PROVIDER=local
- *   EMBEDDING_BASE_URL=http://localhost:8085
+ *   EMBEDDING_BASE_URL=http://localhost:8080
  *   EMBEDDING_MODEL=Qwen3-Embedding-0.6B
  *   EMBEDDING_DIMENSIONS=1024
  */
@@ -34,7 +34,7 @@ const PID_FILE = path.join(ROOT, "server.pid");
 // Config
 // ---------------------------------------------------------------------------
 
-const PORT = parseInt(process.env.PORT ?? "8085", 10);
+const PORT = parseInt(process.env.PORT ?? "8080", 10);
 const HOST = process.env.HOST ?? "127.0.0.1";
 const THREADS = parseInt(process.env.THREADS ?? String(Math.max(4, os.cpus().length - 2)), 10);
 const CTX_SIZE = parseInt(process.env.CTX_SIZE ?? "512", 10);

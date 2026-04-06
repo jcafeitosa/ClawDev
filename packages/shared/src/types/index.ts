@@ -207,3 +207,19 @@ export type {
   PluginJobRunRecord,
   PluginWebhookDeliveryRecord,
 } from "./plugin.js";
+export type {
+  AgentTeam,
+  AgentTeamMember,
+  AgentTeamDetail,
+  AgentTeamListItem,
+  AgentMessage,
+  AgentMessageType,
+  AgentMessageWithSender,
+  TeamTask,
+  TeamTaskStatus,
+  TeamTaskWithAgent,
+  AgentDelegation,
+  DelegationType,
+  DelegationStatus,
+  AgentDelegationWithAgents,
+} from "./agent-team.js";

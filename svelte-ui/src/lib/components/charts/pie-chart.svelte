@@ -50,7 +50,7 @@
       itemStyle: { borderRadius: doughnut ? 6 : 0, borderColor: 'transparent', borderWidth: 2 },
       label: { show: false },
       emphasis: {
-        label: { show: true, fontSize: 13, fontWeight: 'bold', color: '#f8fafc' },
+        label: { show: true, fontSize: 13, fontWeight: 'bold', fontFamily: 'Inter, sans-serif' },
         itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.3)' },
       },
       data: data.map((d, i) => ({

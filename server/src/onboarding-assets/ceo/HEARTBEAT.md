@@ -14,6 +14,7 @@ Run this checklist on every heartbeat. This covers both your local planning/memo
 3. For any blockers, resolve them yourself or escalate to the board.
 4. If you're ahead, start on the next highest priority.
 5. Record progress updates in the daily notes.
+6. Verify the current task belongs to your department or to a direct report. If not, delegate instead of crossing the boundary.
 
 ## 3. Approval Follow-Up
 
@@ -40,6 +41,7 @@ If `CLAWDEV_APPROVAL_ID` is set:
 - Create subtasks with `POST /api/companies/{companyId}/issues`. Always set `parentId` and `goalId`.
 - Use `clawdev-create-agent` skill when hiring new agents.
 - Assign work to the right agent for the job.
+- Keep ownership explicit. Use the chain of command, not side-channel takeovers, to move work.
 
 ## 7. Fact Extraction
 
@@ -48,7 +50,19 @@ If `CLAWDEV_APPROVAL_ID` is set:
 3. Update `$AGENT_HOME/memory/YYYY-MM-DD.md` with timeline entries.
 4. Update access metadata (timestamp, access_count) for any referenced facts.
 
-## 8. Exit
+## 8. Channel Messages (PRIORITY)
+
+If `CLAWDEV_WAKE_REASON` is `channel_message_received`:
+
+1. The wake context already contains the message details (sender, body preview, channel).
+2. Fetch recent messages for full context: `GET /api/channels/{channelId}/messages?limit=10`.
+3. **Respond directly to stdout** -- your stdout output becomes the channel reply automatically.
+4. If it's a strategic question, answer directly with decision + rationale.
+5. If it's IC work, delegate to the right report and say so.
+6. If it's a status request, summarize current state from your assignments and daily notes.
+7. Be concise and direct. **Do NOT** run the full heartbeat checklist -- just respond and exit.
+
+## 9. Exit
 
 - Comment on any in_progress work before exiting.
 - If no assignments and no valid mention-handoff, exit cleanly.
@@ -70,3 +84,4 @@ If `CLAWDEV_APPROVAL_ID` is set:
 - Always include `X-ClawDev-Run-Id` header on mutating API calls.
 - Comment in concise markdown: status line + bullets + links.
 - Self-assign via checkout only when explicitly @-mentioned.
+- Prefer approvals and delegations over direct edits when the work is outside your lane.

@@ -7,6 +7,13 @@
   import { Users, Plus, UserMinus, Mail, Shield, Clock, Search, X, ChevronDown } from 'lucide-svelte';
   import { Card, CardHeader, CardTitle, CardContent, Badge, Button, Alert, AlertTitle, AlertDescription, Skeleton, Separator, Avatar, AvatarFallback } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
+  import {
+    getHierarchyPresetDefinition,
+    getHierarchyPresetDepartments,
+    getHierarchyPresetOperatingRules,
+    isLevelCAgentRole,
+    type HierarchyPreset,
+  } from '@clawdev/shared';
 
   onMount(() => breadcrumbStore.set([{ label: 'Members' }]));
 
@@ -53,6 +60,18 @@
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
+  let selectedHierarchyPreset = $derived<HierarchyPreset | null>(
+    (companyStore.selectedCompany?.hierarchyPreset as HierarchyPreset | undefined) ?? null
+  );
+  let hierarchyPresetDefinition = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDefinition(selectedHierarchyPreset) : null
+  );
+  let hierarchyPresetDepartments = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDepartments(selectedHierarchyPreset) : []
+  );
+  let hierarchyPresetOperatingRules = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetOperatingRules(selectedHierarchyPreset) : []
+  );
 
   // ---------------------------------------------------------------------------
   // Filtered & tabbed list
@@ -235,6 +254,10 @@
     return member.email.charAt(0).toUpperCase();
   }
 
+  function memberLayer(role: string | null | undefined): string {
+    return isLevelCAgentRole(role) ? 'Level C' : 'Execution';
+  }
+
   const ROLE_OPTIONS: { value: InviteRole; label: string; description: string }[] = [
     { value: 'admin', label: 'Admin', description: 'Full access to all resources and settings' },
     { value: 'member', label: 'Member', description: 'Can manage agents, issues, and projects' },
@@ -254,6 +277,48 @@
       {/if}
     </Button>
   {/snippet}
+
+  {#if hierarchyPresetDefinition}
+    <Card class="border-border/60">
+      <CardContent class="pt-5">
+        <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div class="max-w-3xl">
+            <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hierarchy preset</p>
+            <h2 class="mt-1 text-lg font-semibold text-foreground">{hierarchyPresetDefinition.label}</h2>
+            <p class="mt-1 text-sm text-muted-foreground">{hierarchyPresetDefinition.description}</p>
+          </div>
+          <div class="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Operating principle</p>
+            <p class="mt-1 text-sm text-foreground">{hierarchyPresetDefinition.fit}</p>
+          </div>
+        </div>
+
+        <div class="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          {#each hierarchyPresetDepartments as department}
+            <div class="rounded-xl border border-border/60 bg-background/60 p-3">
+              <p class="text-sm font-medium text-foreground">{department.label}</p>
+              <p class="mt-1 text-xs text-muted-foreground">{department.description}</p>
+              <p class="mt-2 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+                {department.level.toUpperCase().replace('_', ' ')}
+              </p>
+            </div>
+          {/each}
+        </div>
+
+        <div class="mt-4 space-y-2">
+          <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Operating rules</p>
+          <div class="grid gap-2 lg:grid-cols-3">
+            {#each hierarchyPresetOperatingRules as rule}
+              <div class="rounded-xl border border-border/60 bg-background/60 p-3">
+                <p class="text-sm font-medium text-foreground">{rule.title}</p>
+                <p class="mt-1 text-xs text-muted-foreground">{rule.description}</p>
+              </div>
+            {/each}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
 
   <!-- Invite form -->
   {#if showInviteForm}
@@ -360,33 +425,33 @@
   <!-- Tabs + Search -->
   <div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
     <!-- Tabs -->
-    <div class="flex items-center gap-1 border-b border-border">
+    <div class="flex items-center border-b border-border">
       <button
         onclick={() => { activeTab = 'all'; }}
-        class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
-          {activeTab === 'all' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+        class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+          {activeTab === 'all'
+            ? 'border-b-2 border-blue-500 text-foreground'
+            : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
       >
         All
         <span class="ml-1 text-xs opacity-70">({members.length})</span>
-        {#if activeTab === 'all'}
-          <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full"></span>
-        {/if}
       </button>
       <button
         onclick={() => { activeTab = 'active'; }}
-        class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
-          {activeTab === 'active' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+        class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+          {activeTab === 'active'
+            ? 'border-b-2 border-blue-500 text-foreground'
+            : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
       >
         Active
         <span class="ml-1 text-xs opacity-70">({activeMembers.length})</span>
-        {#if activeTab === 'active'}
-          <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full"></span>
-        {/if}
       </button>
       <button
         onclick={() => { activeTab = 'pending'; }}
-        class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
-          {activeTab === 'pending' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+        class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+          {activeTab === 'pending'
+            ? 'border-b-2 border-blue-500 text-foreground'
+            : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
       >
         Pending
         {#if pendingMembers.length > 0}
@@ -395,9 +460,6 @@
           </span>
         {:else}
           <span class="ml-1 text-xs opacity-70">(0)</span>
-        {/if}
-        {#if activeTab === 'pending'}
-          <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-blue-500 rounded-full"></span>
         {/if}
       </button>
     </div>
@@ -466,6 +528,12 @@
   <!-- Members list -->
   {:else}
     <Card class="p-0 overflow-hidden">
+      <div class="flex items-center gap-4 border-b border-border px-5 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+        <span class="shrink-0 w-9"></span>
+        <span class="min-w-0 flex-1">Member</span>
+        <span class="hidden md:flex items-center shrink-0">Joined</span>
+        <span class="shrink-0 w-[68px]">Actions</span>
+      </div>
       {#each filteredMembers as member, i (member.id)}
         <div
           class="flex items-center gap-4 px-5 py-4 transition hover:bg-accent/40
@@ -495,6 +563,7 @@
               <Badge variant="outline" class="text-[10px] {roleBadgeColor(member.role)}">
                 {member.role}
               </Badge>
+              <Badge variant="outline" class="text-[10px] uppercase tracking-wider">{memberLayer(member.role)}</Badge>
               <Badge variant="secondary" class="text-[10px] {statusBadgeColor(member.status)}">
                 {member.status}
               </Badge>

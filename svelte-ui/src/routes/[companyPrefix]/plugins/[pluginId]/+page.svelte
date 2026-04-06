@@ -260,15 +260,18 @@
 
 </script>
 
-<div class="space-y-6 p-6">
-  {#if loading}
+{#if loading}
+  <div class="p-6">
     <PageSkeleton />
-  {:else if !plugin}
+  </div>
+{:else if !plugin}
+  <div class="p-6">
     <EmptyState title="Plugin not found" description="The plugin you're looking for doesn't exist or you don't have access." icon="🧩">
       <a href="/{prefix}/plugins" class="text-sm text-primary hover:underline">Back to plugins</a>
     </EmptyState>
-  {:else}
-    <PageLayout title={displayName} description={pluginDescription} fullWidth>
+  </div>
+{:else}
+  <PageLayout title={displayName} description={pluginDescription} fullWidth>
       {#snippet actions()}
         <div class="flex items-center gap-2">
           <StatusBadge status={plugin!.enabled ? "enabled" : "disabled"} />
@@ -328,8 +331,6 @@
           {/if}
         </div>
       {/snippet}
-
-      <div class="space-y-4">
 
       <div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <span>Author: {author}</span>
@@ -633,7 +634,5 @@
           {/if}
         </TabsContent>
       </Tabs>
-    </div>
-    </PageLayout>
-  {/if}
-</div>
+  </PageLayout>
+{/if}

@@ -327,10 +327,16 @@
     errorMessage = '';
 
     try {
+      const derivedSpec = description.trim() || title.trim();
+      const derivedDesign = `Use the selected project context and keep the change isolated to a single execution slice.`;
+      const derivedValidation = `Confirm the issue is ready for execution before moving it to in_progress.`;
       const body: Record<string, unknown> = {
         title: title.trim(),
         status,
         priority,
+        sddSpec: derivedSpec,
+        sddDesign: derivedDesign,
+        sddValidation: derivedValidation,
       };
       if (description.trim()) body.description = description.trim();
       if (assigneeAgentId) body.assigneeAgentId = assigneeAgentId;

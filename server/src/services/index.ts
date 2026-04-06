@@ -37,3 +37,16 @@ export {
   restartDesiredRuntimeServicesOnStartup,
 } from "./workspace-runtime.js";
 export { createStorageServiceFromConfig, getStorageService } from "../storage/index.js";
+export { agentTeamService } from "./agent-teams.js";
+export { agentMessageService } from "./agent-messages.js";
+export { teamTaskService } from "./team-tasks.js";
+export { agentDelegationService } from "./agent-delegations.js";
+export { agentEscalationService } from "./agent-escalation.js";
+export { agentPipelineService } from "./agent-pipelines.js";
+export { agentDeliberationService } from "./agent-deliberations.js";
+export { agentTemplateService } from "./agent-templates.js";
+export { teamKnowledgeService } from "./team-knowledge.js";
+export { agentExpertiseService } from "./agent-expertise.js";
+export { channelService } from "./channels.js";
+export { channelMessageService } from "./channel-messages.js";
+export { queueChannelMessageWakeups } from "./channel-message-wakeup.js";

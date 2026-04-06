@@ -45,6 +45,11 @@
     Server,
     Database,
     Cloud,
+    Users,
+    GitBranch,
+    Vote,
+    Copy,
+    MessagesSquare,
   } from "lucide-svelte";
   import type { ComponentType } from "svelte";
 
@@ -292,10 +297,15 @@
       label: "Work",
       defaultOpen: true,
       items: [
+        { label: "Chat", href: "channels", icon: MessagesSquare },
         { label: "Issues", href: "issues", icon: ListTodo },
+        { label: "Teams", href: "teams", icon: Users },
+        { label: "Pipelines", href: "pipelines", icon: GitBranch },
+        { label: "Deliberations", href: "deliberations", icon: Vote },
         { label: "Runs", href: "runs", icon: Play },
         { label: "Routines", href: "routines", icon: RotateCcw, betaBadge: true },
         { label: "Goals", href: "goals", icon: Target },
+        { label: "Templates", href: "templates", icon: Copy },
       ],
     },
   ];

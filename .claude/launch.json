@@ -3,10 +3,11 @@
   "configurations": [
     {
       "name": "clawdev",
-      "runtimeExecutable": "pnpm",
+      "runtimeExecutable": "/opt/homebrew/bin/pnpm",
       "runtimeArgs": ["--filter", "@clawdev/server", "dev"],
       "port": 3100,
       "env": {
+        "PATH": "/opt/homebrew/bin:/usr/local/bin:/Users/juliocezaraquinofeitosa/.bun/bin:/usr/bin:/bin",
         "PORT": "3100",
         "EMBEDDING_PROVIDER": "local",
         "EMBEDDING_BASE_URL": "http://localhost:8085",

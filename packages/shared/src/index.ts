@@ -136,6 +136,31 @@ export {
   type PluginBridgeErrorCode,
 } from "./constants.js";
 
+export {
+  HIERARCHY_PRESETS,
+  HIERARCHY_LEVELS,
+  HIERARCHY_PRESET_DEFINITIONS,
+  LEVEL_C_AGENT_ROLES,
+  hasLevelCAgentPermissions,
+  getHierarchyPresetDefinition,
+  getHierarchyPresetDepartments,
+  getHierarchyPresetOperatingRules,
+  getHierarchyPresetSeedAgents,
+  isLevelCAgentRole,
+  listHierarchyPresetDefinitions,
+  hierarchyPresetSchema,
+  hierarchyLevelSchema,
+  type HierarchyPreset,
+  type HierarchyLevel,
+  type HierarchyDepartmentDefinition,
+  type HierarchyOperatingRule,
+  type HierarchySeedBlueprint,
+  type HierarchyPresetDefinition,
+  type LevelCAgentRole,
+} from "./company-hierarchy.js";
+export { composeStructuredSddDescription } from "./sdd.js";
+export type { StructuredSddInput } from "./sdd.js";
+
 export type {
   Company,
   CompanySkillSourceType,

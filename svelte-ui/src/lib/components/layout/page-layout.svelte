@@ -22,7 +22,7 @@
   <!-- Page Header -->
   <div class="flex flex-col gap-1.5 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
     <div class="min-w-0">
-      <h1 class="text-2xl font-semibold tracking-tight text-foreground">{title}</h1>
+      <h1 class="font-heading text-2xl font-bold tracking-tight text-foreground">{title}</h1>
       {#if description}
         <p class="mt-0.5 text-sm text-muted-foreground/70">{description}</p>
       {/if}

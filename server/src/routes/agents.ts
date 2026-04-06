@@ -41,6 +41,7 @@ import {
   normalizeRuntimeConfigForAdapterType,
 } from "../services/index.js";
 import { detectAdapterModel, findServerAdapter, listAdapterModels } from "../adapters/index.js";
+import { isLevelCAgentRole } from "@clawdev/shared";
 // Note: we use inline t.Object({ companyId: t.String() }) instead of companyIdParam
 // because companyIdParam enforces UUID format which some callers don't use.
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo, type Actor } from "../middleware/authz.js";
@@ -48,7 +49,9 @@ import { redactEventPayload } from "../redaction.js";
 import { redactCurrentUserValue } from "../log-redaction.js";
 import { renderOrgChartSvg, renderOrgChartPng, type OrgNode, type OrgChartStyle, ORG_CHART_STYLES } from "./org-chart-svg.js";
 import { runClaudeLogin } from "@clawdev/adapter-claude-local/server";
-import { unprocessable } from "../errors.js";
+import { forbidden, unprocessable } from "../errors.js";
+import { channelService } from "../services/channels.js";
+import { resolveDefaultAgentInstructionsBundleRole } from "../services/default-agent-instructions.js";
 
 const LOCAL_ADAPTERS = new Set(["claude_local", "codex_local", "gemini_local", "opencode_local"]);
 const MANAGED_CONFIG_KEYS = [
@@ -206,7 +209,7 @@ async function loadOnboardingFiles(role: string): Promise<Record<string, string>
     import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname),
     "..",
     "onboarding-assets",
-    role === "ceo" ? "ceo" : "default",
+    resolveDefaultAgentInstructionsBundleRole(role),
   );
   const files: Record<string, string> = {};
   try {
@@ -242,12 +245,12 @@ export function agentRoutes(db: Db) {
   }
 
     async function resolveAgentForRequest(agentId: string, companyId?: string | null) {
+      const isUuid = isUuidLike(agentId);
+      if (isUuid) return await svc.getById(agentId);
       if (typeof companyId !== "string" || companyId.trim().length === 0) {
         throw unprocessable("Agent shortname lookup requires companyId query parameter");
       }
       const normalizedCompanyId = companyId.trim();
-      const isUuid = isUuidLike(agentId);
-      if (isUuid) return await svc.getById(agentId);
       const resolved = await svc.resolveByReference(normalizedCompanyId, agentId);
       return resolved.agent ?? null;
     }
@@ -274,15 +277,17 @@ export function agentRoutes(db: Db) {
   }
 
   async function buildAccessInfo(
-    agent: { id: string; companyId: string; permissions?: Record<string, unknown> | null },
+    agent: { id: string; companyId: string; role: string; permissions?: Record<string, unknown> | null },
   ) {
     const grants = await access.listPrincipalGrants(agent.companyId, "agent", agent.id);
     const hasTasksAssign = grants.some((g: any) => g.permissionKey === "tasks:assign");
-    const canCreate = (agent.permissions as any)?.canCreateAgents === true;
+    const canCreate = isLevelCAgentRole(agent.role) || (agent.permissions as any)?.canCreateAgents === true;
 
     let canAssignTasks = hasTasksAssign || canCreate;
     let taskAssignSource: string | null = null;
-    if (canCreate) {
+    if (isLevelCAgentRole(agent.role)) {
+      taskAssignSource = "level_c_role";
+    } else if (canCreate) {
       taskAssignSource = "agent_creator";
     } else if (hasTasksAssign) {
       taskAssignSource = "explicit_grant";
@@ -292,6 +297,31 @@ export function agentRoutes(db: Db) {
       canAssignTasks,
       taskAssignSource,
     };
+  }
+
+  async function assertAgentMutationScope(
+    actor: Actor | undefined,
+    targetAgent: { id: string; companyId: string },
+    action: string,
+    options: { allowSelf?: boolean; allowLevelC?: boolean } = {},
+  ) {
+    assertCompanyAccess(actor ?? ({ type: "none" } as Actor), targetAgent.companyId);
+    if (!actor || actor.type === "board") return;
+    if (!actor.agentId) throw forbidden("Agent authentication required");
+
+    if (options.allowSelf !== false && actor.agentId === targetAgent.id) {
+      return;
+    }
+
+    const actorAgent = await svc.getById(actor.agentId);
+    if (!actorAgent || actorAgent.companyId !== targetAgent.companyId) {
+      throw forbidden("Agent key cannot access another company");
+    }
+    if (options.allowLevelC !== false && isLevelCAgentRole(actorAgent.role)) {
+      return;
+    }
+
+    throw forbidden(`Only level C agents or the agent itself can ${action}`);
   }
 
   /**
@@ -430,9 +460,6 @@ export function agentRoutes(db: Db) {
       async ({ params, query, ...ctx }: any) => {
         const actor = ctx.actor;
         const companyId = query.companyId as string | undefined;
-        if (!companyId || companyId.trim().length === 0) {
-          throw unprocessable("Agent shortname lookup requires companyId query parameter");
-        }
 
         const agent = await resolveAgentForRequest(params.id, companyId);
         if (!agent) return { skills: [] };
@@ -449,7 +476,7 @@ export function agentRoutes(db: Db) {
         }
 
         // First call listSkills to determine mode
-        const initialSkillEntries = await skills.listRuntimeSkillEntries(companyId, {
+        const initialSkillEntries = await skills.listRuntimeSkillEntries(agent.companyId, {
           materializeMissing: false,
         });
 
@@ -465,7 +492,7 @@ export function agentRoutes(db: Db) {
 
         // If mode is persistent (not ephemeral), re-fetch with materialization
         if (listResult.mode === "persistent") {
-          await skills.listRuntimeSkillEntries(companyId, {
+          await skills.listRuntimeSkillEntries(agent.companyId, {
             materializeMissing: true,
           });
         }
@@ -695,6 +722,16 @@ export function agentRoutes(db: Db) {
           );
         }
 
+        // Auto-join agent to #general channel
+        try {
+          const ch = channelService(db);
+          const general = await ch.getOrCreateGeneral(params.companyId);
+          await ch.join(general.id, { agentId: created.id, role: "member" });
+        } catch (channelErr) {
+          // Non-fatal: log but don't fail agent creation
+          console.warn("Failed to auto-join agent to #general:", channelErr);
+        }
+
         // Log activity
         await logActivity(db, {
           companyId: params.companyId,
@@ -761,20 +798,29 @@ export function agentRoutes(db: Db) {
           name: input.name,
           role: input.role,
           title: input.title,
+          icon: input.icon,
           reportsTo,
           adapterType: input.adapterType,
           adapterConfig,
           budgetMonthlyCents: input.budgetMonthlyCents,
+          capabilities: input.capabilities,
           desiredSkills: desiredSkills ?? input.desiredSkills,
+          metadata: input.metadata,
+          runtimeConfig: input.runtimeConfig,
+          requestedByAgentId: actor?.type === "agent" ? actor.agentId ?? null : null,
           requestedConfigurationSnapshot: {
             name: input.name,
             role: input.role,
             title: input.title,
+            icon: input.icon,
             reportsTo,
             adapterType: input.adapterType,
             adapterConfig,
             budgetMonthlyCents: input.budgetMonthlyCents,
+            capabilities: input.capabilities,
             desiredSkills: desiredSkills ?? input.desiredSkills,
+            metadata: input.metadata,
+            runtimeConfig: input.runtimeConfig,
           },
         };
 
@@ -804,6 +850,7 @@ export function agentRoutes(db: Db) {
           set.status = 404;
           return { error: "Agent not found" };
         }
+        await assertAgentMutationScope(actor, existing, "update this agent", { allowSelf: true, allowLevelC: true });
 
         const patch: Record<string, unknown> = {};
 
@@ -893,6 +940,7 @@ export function agentRoutes(db: Db) {
           return { error: "Agent not found" };
         }
         assertCompanyAccess(actor, agent.companyId);
+        await assertAgentMutationScope(actor, agent, "change another agent's permissions", { allowSelf: false, allowLevelC: true });
 
         const updated = await svc.updatePermissions(params.id, {
           canCreateAgents: input.canCreateAgents ?? false,
@@ -923,7 +971,11 @@ export function agentRoutes(db: Db) {
     // ── Lifecycle: pause ────────────────────────────────────────────
     .post(
       "/agents/:id/pause",
-      async ({ params }) => {
+      async ({ params, ...ctx }: any) => {
+        const actor = ctx.actor as Actor | undefined;
+        const agent = await svc.getById(params.id);
+        if (!agent) return { success: false };
+        await assertAgentMutationScope(actor, agent, "pause an agent", { allowSelf: true, allowLevelC: true });
         await svc.pause(params.id);
         return { success: true };
       },
@@ -933,7 +985,11 @@ export function agentRoutes(db: Db) {
     // ── Lifecycle: resume ───────────────────────────────────────────
     .post(
       "/agents/:id/resume",
-      async ({ params }) => {
+      async ({ params, ...ctx }: any) => {
+        const actor = ctx.actor as Actor | undefined;
+        const agent = await svc.getById(params.id);
+        if (!agent) return { success: false };
+        await assertAgentMutationScope(actor, agent, "resume an agent", { allowSelf: true, allowLevelC: true });
         await svc.resume(params.id);
         return { success: true };
       },
@@ -943,7 +999,11 @@ export function agentRoutes(db: Db) {
     // ── Lifecycle: terminate ────────────────────────────────────────
     .post(
       "/agents/:id/terminate",
-      async ({ params }) => {
+      async ({ params, ...ctx }: any) => {
+        const actor = ctx.actor as Actor | undefined;
+        const agent = await svc.getById(params.id);
+        if (!agent) return { success: false };
+        await assertAgentMutationScope(actor, agent, "terminate an agent", { allowSelf: true, allowLevelC: true });
         await svc.terminate(params.id);
         return { success: true };
       },
@@ -961,11 +1021,7 @@ export function agentRoutes(db: Db) {
           return { error: "Agent not found" };
         }
         assertCompanyAccess(actor, agent.companyId);
-
-        if (actor.type === "agent" && actor.agentId !== params.id) {
-          set.status = 403;
-          return { error: "Agent can only invoke itself" };
-        }
+        await assertAgentMutationScope(actor, agent, "invoke an agent", { allowSelf: true, allowLevelC: true });
 
         const result = await heartbeats.wakeup(params.id, {
           source: body?.source ?? "on_demand",
@@ -1036,6 +1092,7 @@ export function agentRoutes(db: Db) {
           return { success: false };
         }
         assertCompanyAccess(actor, agent.companyId);
+        await assertAgentMutationScope(actor, agent, "sync another agent's skills", { allowSelf: true, allowLevelC: true });
 
         // Resolve desired skills
         let desiredSkills = input?.desiredSkills ?? [];
@@ -1222,6 +1279,7 @@ export function agentRoutes(db: Db) {
           set.status = 404;
           return { error: "Agent not found" };
         }
+        await assertAgentMutationScope(actor, agent, "update heartbeat settings", { allowSelf: false, allowLevelC: true });
 
         const input = body as { enabled?: boolean };
         if (typeof input.enabled !== "boolean") {
@@ -1514,6 +1572,7 @@ export function agentRoutes(db: Db) {
         const agent = await svc.getById(params.id);
         if (!agent) { set.status = 404; return { error: "Agent not found" }; }
         assertCompanyAccess(actor!, agent.companyId);
+        await assertAgentMutationScope(actor, agent, "reset another agent's runtime session", { allowSelf: true, allowLevelC: true });
 
         const taskKey =
           typeof (body as any)?.taskKey === "string" && (body as any).taskKey.trim().length > 0
@@ -1547,6 +1606,7 @@ export function agentRoutes(db: Db) {
           return { error: "Agent not found" };
         }
         assertCompanyAccess(actor!, existing.companyId);
+        await assertAgentMutationScope(actor, existing, "update instructions path", { allowSelf: true, allowLevelC: true });
 
         const input = body as { path: string | null; adapterConfigKey?: string };
         const existingAdapterConfig = isPlain(existing.adapterConfig) ? { ...existing.adapterConfig as Record<string, unknown> } : {};
@@ -1637,6 +1697,7 @@ export function agentRoutes(db: Db) {
           return { error: "Agent not found" };
         }
         assertCompanyAccess(actor!, existing.companyId);
+        await assertAgentMutationScope(actor, existing, "update instructions bundle", { allowSelf: true, allowLevelC: true });
 
         const { bundle, adapterConfig } = await instructionsSvc.updateBundle(existing, body as any);
         const normalizedAdapterConfig = await secrets.normalizeAdapterConfigForPersistence(
@@ -1685,6 +1746,7 @@ export function agentRoutes(db: Db) {
           return { error: "Agent not found" };
         }
         assertCompanyAccess(actor!, existing.companyId);
+        await assertAgentMutationScope(actor, existing, "delete instructions bundle files", { allowSelf: true, allowLevelC: true });
 
         const relativePath = typeof query.path === "string" ? query.path : "";
         if (!relativePath.trim()) {
@@ -1774,11 +1836,7 @@ export function agentRoutes(db: Db) {
           return { error: "Agent not found" };
         }
         assertCompanyAccess(actor, agent.companyId);
-
-        if (actor.type === "agent" && actor.agentId !== params.id) {
-          set.status = 403;
-          return { error: "Agent can only invoke itself" };
-        }
+        await assertAgentMutationScope(actor, agent, "invoke an agent", { allowSelf: true, allowLevelC: true });
 
         const run = await heartbeats.invoke(
           params.id,

@@ -24,6 +24,7 @@ export {
   type UpdateCompany,
   type UpdateCompanyBranding,
 } from "./company.js";
+export { hierarchyPresetSchema } from "../company-hierarchy.js";
 export {
   companySkillSourceTypeSchema,
   companySkillTrustLevelSchema,

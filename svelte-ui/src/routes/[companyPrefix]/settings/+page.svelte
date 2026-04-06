@@ -308,7 +308,7 @@
       {#if companyId}
         <div>
           <span class="block text-sm font-medium text-foreground mb-1">Company ID</span>
-          <div class="rounded-md border border-border bg-accent/25 px-3 py-2 text-sm text-muted-foreground font-mono select-all">
+          <div class="rounded-lg border border-border bg-accent/25 px-3 py-2 text-sm text-muted-foreground font-mono select-all">
             {companyId}
           </div>
         </div>
@@ -316,7 +316,7 @@
     </CardContent>
 
     <CardFooter class="gap-3">
-      <Button onclick={saveGeneral} disabled={saving || !companyName.trim()}>
+      <Button size="sm" onclick={saveGeneral} disabled={saving || !companyName.trim()}>
         <Save class="h-4 w-4" />
         {saving ? 'Saving...' : 'Save Changes'}
       </Button>
@@ -388,12 +388,12 @@
               class="hidden"
               id="logo-upload"
             />
-            <Button variant="outline" onclick={() => logoInput?.click()} disabled={logoUploading}>
+            <Button size="sm" variant="outline" onclick={() => logoInput?.click()} disabled={logoUploading}>
               <Upload class="h-4 w-4" />
               {logoUploading ? 'Uploading...' : 'Upload Logo'}
             </Button>
             {#if logoPreview}
-              <Button variant="outline" onclick={clearLogo} disabled={logoUploading} class="text-muted-foreground hover:text-red-400">
+              <Button size="sm" variant="outline" onclick={clearLogo} disabled={logoUploading} class="text-muted-foreground hover:text-red-400">
                 <X class="h-4 w-4" />
                 Clear
               </Button>
@@ -429,11 +429,11 @@
             placeholder="#3B82F6"
             class="w-28 font-mono"
           />
-          <Button onclick={saveBrandColor} disabled={savingBrandColor}>
+          <Button size="sm" onclick={saveBrandColor} disabled={savingBrandColor}>
             <Save class="h-4 w-4" />
             {savingBrandColor ? 'Saving...' : 'Save'}
           </Button>
-          <Button variant="outline" onclick={clearBrandColor} disabled={savingBrandColor} class="text-muted-foreground">
+          <Button size="sm" variant="outline" onclick={clearBrandColor} disabled={savingBrandColor} class="text-muted-foreground">
             <X class="h-3.5 w-3.5" />
             Reset
           </Button>
@@ -477,7 +477,7 @@
         </button>
       </div>
 
-      <Button onclick={saveHiring} disabled={savingHiring}>
+      <Button size="sm" onclick={saveHiring} disabled={savingHiring}>
         <Save class="h-4 w-4" />
         {savingHiring ? 'Saving...' : 'Save Hiring Settings'}
       </Button>
@@ -489,7 +489,7 @@
           <p class="text-sm font-medium text-foreground mb-1">Company Invite URL</p>
           <p class="text-xs text-muted-foreground mb-2">Share this link to invite people to your company</p>
           <div class="flex items-center gap-2">
-            <div class="flex-1 rounded-md border border-border bg-accent/25 px-3 py-2 text-xs text-muted-foreground font-mono truncate select-all">
+            <div class="flex-1 rounded-lg border border-border bg-accent/25 px-3 py-2 text-xs text-muted-foreground font-mono truncate select-all">
               {inviteUrl}
             </div>
             <Button variant="outline" size="sm" onclick={copyInviteUrl}>
@@ -509,7 +509,7 @@
       <div>
         <p class="text-sm font-medium text-foreground mb-1">OpenClaw Invite Prompt</p>
         <p class="text-xs text-muted-foreground mb-2">Generate a prompt that can be used to invite agents via OpenClaw</p>
-        <Button variant="outline" onclick={generateInvitePrompt} disabled={generatingInvitePrompt}>
+        <Button size="sm" variant="outline" onclick={generateInvitePrompt} disabled={generatingInvitePrompt}>
           <Sparkles class="h-4 w-4" />
           {generatingInvitePrompt ? 'Generating...' : 'Generate OpenClaw Invite Prompt'}
         </Button>
@@ -537,7 +537,7 @@
           <p class="text-sm font-medium text-foreground">Export Company</p>
           <p class="text-xs text-muted-foreground">Download your company configuration as a portable package</p>
         </div>
-        <Button variant="outline" href="/{companyPrefix}/export">
+        <Button size="sm" variant="outline" href="/{companyPrefix}/export">
           <Download class="h-4 w-4" />
           Export
         </Button>
@@ -550,7 +550,7 @@
           <p class="text-sm font-medium text-foreground">Import Company</p>
           <p class="text-xs text-muted-foreground">Import agents, configs, and data from a company package</p>
         </div>
-        <Button variant="outline" href="/{companyPrefix}/import">
+        <Button size="sm" variant="outline" href="/{companyPrefix}/import">
           <Upload class="h-4 w-4" />
           Import
         </Button>
@@ -559,7 +559,7 @@
   </Card>
 
   <!-- Danger Zone -->
-  <Card class="p-0 overflow-hidden" style="border-color: rgba(239, 68, 68, 0.2)">
+  <Card class="p-0 overflow-hidden border-red-500/20">
     <CardHeader>
       <div class="flex items-center gap-3">
         <div class="rounded-lg bg-red-500/10 p-2">
@@ -580,7 +580,7 @@
             <p class="text-sm font-medium text-foreground">Archive this company</p>
             <p class="text-xs text-muted-foreground">Deactivates the company and hides it from the dashboard. Data is preserved.</p>
           </div>
-          <Button variant="outline" onclick={() => (confirmArchive = true)} class="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
+          <Button size="sm" variant="outline" onclick={() => (confirmArchive = true)} class="border-amber-500/30 text-amber-400 hover:bg-amber-500/10">
             <Archive class="h-4 w-4" />
             Archive Company
           </Button>
@@ -592,11 +592,11 @@
           <AlertDescription>
             <p>The company will be deactivated and hidden. You can restore it later from the admin panel.</p>
             <div class="flex items-center gap-3 mt-3">
-              <Button variant="destructive" onclick={archiveCompany} disabled={archiving} class="bg-amber-600 hover:bg-amber-700">
+              <Button size="sm" variant="destructive" onclick={archiveCompany} disabled={archiving} class="bg-amber-600 hover:bg-amber-700">
                 <Archive class="h-4 w-4" />
                 {archiving ? 'Archiving...' : 'Yes, Archive Company'}
               </Button>
-              <Button variant="outline" onclick={() => (confirmArchive = false)}>
+              <Button size="sm" variant="outline" onclick={() => (confirmArchive = false)}>
                 Cancel
               </Button>
             </div>
@@ -613,7 +613,7 @@
             <p class="text-sm font-medium text-foreground">Delete this company</p>
             <p class="text-xs text-muted-foreground">Once deleted, all data will be permanently removed</p>
           </div>
-          <Button variant="outline" onclick={() => (confirmDelete = true)} class="border-red-500/30 text-red-400 hover:bg-red-500/10">
+          <Button size="sm" variant="outline" onclick={() => (confirmDelete = true)} class="border-red-500/30 text-red-400 hover:bg-red-500/10">
             <Trash2 class="h-4 w-4" />
             Delete Company
           </Button>
@@ -632,11 +632,11 @@
               class="mt-2 border-red-500/20 focus-visible:border-red-500 focus-visible:ring-red-500/50"
             />
             <div class="flex items-center gap-3 mt-3">
-              <Button variant="destructive" onclick={deleteCompany} disabled={deleting || confirmText !== currentCompany?.name}>
+              <Button size="sm" variant="destructive" onclick={deleteCompany} disabled={deleting || confirmText !== currentCompany?.name}>
                 <Trash2 class="h-4 w-4" />
                 {deleting ? 'Deleting...' : 'Permanently Delete'}
               </Button>
-              <Button variant="outline" onclick={() => { confirmDelete = false; confirmText = ''; }}>
+              <Button size="sm" variant="outline" onclick={() => { confirmDelete = false; confirmText = ''; }}>
                 Cancel
               </Button>
             </div>

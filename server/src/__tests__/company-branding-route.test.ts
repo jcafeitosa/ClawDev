@@ -90,7 +90,7 @@ describe("PATCH /api/companies/:companyId/branding", () => {
     mockLogActivity.mockReset();
   });
 
-  it("rejects non-CEO agent callers", async () => {
+  it("rejects non-level-C agent callers", async () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
@@ -114,16 +114,16 @@ describe("PATCH /api/companies/:companyId/branding", () => {
 
     const body = await res.json();
     expect(res.status).toBe(403);
-    expect(body.error).toContain("Only CEO agents");
+    expect(body.error).toContain("Only level C agents");
     expect(mockCompanyService.update).not.toHaveBeenCalled();
   });
 
-  it("allows CEO agent callers to update branding fields", async () => {
+  it("allows level C agent callers to update branding fields", async () => {
     const company = createCompany();
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "company-1",
-      role: "ceo",
+      role: "coo",
     });
     mockCompanyService.update.mockResolvedValue(company);
     const app = createApp({
@@ -279,6 +279,7 @@ describe("POST /api/companies", () => {
     expect(mockCompanyService.create).toHaveBeenCalledWith({
       name: "ClawDev",
       budgetMonthlyCents: 0,
+      hierarchyPreset: "classic_pyramid",
     });
     expect(mockAccessService.ensureMembership).toHaveBeenCalledWith(
       company.id,

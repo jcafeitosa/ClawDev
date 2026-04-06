@@ -52,32 +52,55 @@
     });
   });
 
-  const tooltipStyle = {
-    backgroundColor: 'rgba(0,0,0,0.85)',
-    borderColor: 'transparent',
-    textStyle: { color: '#fff', fontSize: 11 },
-  };
+  // Detect theme for chart styling
+  function isDark(): boolean {
+    if (typeof document === 'undefined') return true;
+    return document.documentElement.classList.contains('dark');
+  }
+
+  function getChartColors() {
+    const dark = isDark();
+    return {
+      splitLine: dark ? '#27272a' : '#f1f5f9',
+      axisLabel: dark ? '#71717a' : '#94a3b8',
+      tooltipBg: dark ? 'rgba(0,0,0,0.85)' : 'rgba(255,255,255,0.95)',
+      tooltipBorder: dark ? 'transparent' : '#e2e8f0',
+      tooltipText: dark ? '#fff' : '#334155',
+      emptyBar: dark ? '#27272a' : '#e2e8f0',
+    };
+  }
+
+  function makeTooltipStyle() {
+    const c = getChartColors();
+    return {
+      backgroundColor: c.tooltipBg,
+      borderColor: c.tooltipBorder,
+      textStyle: { color: c.tooltipText, fontSize: 11, fontFamily: 'Inter, DM Sans, sans-serif' },
+    };
+  }
 
   const chartGrid = { left: 0, right: 0, top: 4, bottom: 20, containLabel: false };
 
   function makeXAxis(days: string[]) {
+    const c = getChartColors();
     return {
       type: 'category' as const,
       data: days.map((d, i) => formatDayLabel(d, i)),
       axisLine: { show: false },
       axisTick: { show: false },
-      axisLabel: { color: '#71717a', fontSize: 9 },
+      axisLabel: { color: c.axisLabel, fontSize: 9, fontFamily: 'Inter, sans-serif' },
     };
   }
 
   function makeYAxis() {
+    const c = getChartColors();
     return {
       type: 'value' as const,
       show: true,
       axisLabel: { show: false },
       axisTick: { show: false },
       axisLine: { show: false },
-      splitLine: { lineStyle: { color: '#27272a' } },
+      splitLine: { lineStyle: { color: c.splitLine } },
     };
   }
 
@@ -110,7 +133,7 @@
 
     return {
       backgroundColor: 'transparent',
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...tooltipStyle },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...makeTooltipStyle() },
       grid: chartGrid,
       xAxis: makeXAxis(days),
       yAxis: makeYAxis(),
@@ -172,7 +195,7 @@
 
     return {
       backgroundColor: 'transparent',
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...tooltipStyle },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...makeTooltipStyle() },
       grid: chartGrid,
       xAxis: makeXAxis(days),
       yAxis: makeYAxis(),
@@ -219,7 +242,7 @@
 
     return {
       backgroundColor: 'transparent',
-      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...tooltipStyle },
+      tooltip: { trigger: 'axis', axisPointer: { type: 'shadow' }, ...makeTooltipStyle() },
       grid: chartGrid,
       xAxis: makeXAxis(days),
       yAxis: makeYAxis(),
@@ -260,7 +283,7 @@
       tooltip: {
         trigger: 'axis',
         axisPointer: { type: 'shadow' },
-        ...tooltipStyle,
+        ...makeTooltipStyle(),
         formatter: (params: any) => {
           const p = Array.isArray(params) ? params[0] : params;
           const idx = p.dataIndex;
@@ -280,7 +303,7 @@
           data: days.map((d) => {
             const total = totalMap.get(d) ?? 0;
             if (total === 0) {
-              return { value: 5, itemStyle: { color: '#27272a' } };
+              return { value: 5, itemStyle: { color: getChartColors().emptyBar } };
             }
             const rate = (succeededMap.get(d) ?? 0) / total;
             const pct = Math.round(rate * 100);
@@ -296,7 +319,7 @@
 {#if loading}
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
     {#each Array(4) as _}
-      <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+      <div class="glass-card-static rounded-lg p-4 space-y-2">
         <div class="h-3 w-20 animate-pulse rounded bg-accent/75"></div>
         <div class="h-[80px] animate-pulse rounded bg-accent/40"></div>
       </div>
@@ -305,7 +328,7 @@
 {:else}
   <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
     <!-- Chart 1: Run Activity -->
-    <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+    <div class="glass-card-static rounded-lg p-4 space-y-2">
       <div>
         <h3 class="text-xs font-medium text-muted-foreground">Run Activity</h3>
         <span class="text-[10px] text-muted-foreground/60">Last 14 days</span>
@@ -320,7 +343,7 @@
     </div>
 
     <!-- Chart 2: Issues by Priority -->
-    <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+    <div class="glass-card-static rounded-lg p-4 space-y-2">
       <div>
         <h3 class="text-xs font-medium text-muted-foreground">Issues by Priority</h3>
         <span class="text-[10px] text-muted-foreground/60">Last 14 days</span>
@@ -343,7 +366,7 @@
     </div>
 
     <!-- Chart 3: Issues by Status -->
-    <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+    <div class="glass-card-static rounded-lg p-4 space-y-2">
       <div>
         <h3 class="text-xs font-medium text-muted-foreground">Issues by Status</h3>
         <span class="text-[10px] text-muted-foreground/60">Last 14 days</span>
@@ -366,7 +389,7 @@
     </div>
 
     <!-- Chart 4: Success Rate -->
-    <div class="border border-border rounded-lg p-4 space-y-2 bg-card">
+    <div class="glass-card-static rounded-lg p-4 space-y-2">
       <div>
         <h3 class="text-xs font-medium text-muted-foreground">Success Rate</h3>
         <span class="text-[10px] text-muted-foreground/60">Last 14 days</span>

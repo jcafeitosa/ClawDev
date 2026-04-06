@@ -23,6 +23,7 @@ import {
 } from "../services/index.js";
 import type { StorageService } from "../storage/types.js";
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo, type Actor } from "../middleware/authz.js";
+import { isLevelCAgentRole } from "@clawdev/shared";
 
 export function companyRoutes(db: Db, storage?: StorageService) {
   const svc = companyService(db);
@@ -37,7 +38,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     if (!actor.agentId) throw forbidden("Agent authentication required");
     const actorAgent = await agentSvc.getById(actor.agentId);
     if (!actorAgent || actorAgent.companyId !== companyId) throw forbidden("Agent key cannot access another company");
-    if (actorAgent.role !== "ceo") throw forbidden("Only CEO agents can update company branding");
+    if (!isLevelCAgentRole(actorAgent.role)) throw forbidden("Only level C agents can update company branding");
   }
 
   async function assertCanManagePortability(actor: Actor, companyId: string, capability: "imports" | "exports") {
@@ -46,7 +47,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
     if (!actor.agentId) throw forbidden("Agent authentication required");
     const actorAgent = await agentSvc.getById(actor.agentId);
     if (!actorAgent || actorAgent.companyId !== companyId) throw forbidden("Agent key cannot access another company");
-    if (actorAgent.role !== "ceo") throw forbidden(`Only CEO agents can manage company ${capability}`);
+    if (!isLevelCAgentRole(actorAgent.role)) throw forbidden(`Only level C agents can manage company ${capability}`);
   }
 
   return new Elysia({ prefix: "/companies" })
@@ -117,7 +118,7 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       let parsed: Record<string, unknown>;
       if (actor.type === "agent") {
         const actorAgent = actor.agentId ? await agentSvc.getById(actor.agentId) : null;
-        if (!actorAgent || actorAgent.role !== "ceo") throw forbidden("Only CEO agents or board users may update company settings");
+        if (!actorAgent || !isLevelCAgentRole(actorAgent.role)) throw forbidden("Only level C agents or board users may update company settings");
         if (actorAgent.companyId !== companyId) throw forbidden("Agent key cannot access another company");
         parsed = updateCompanyBrandingSchema.parse(ctx.body);
       } else {

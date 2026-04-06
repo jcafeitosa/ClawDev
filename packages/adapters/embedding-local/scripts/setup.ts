@@ -335,7 +335,7 @@ function writeEnvConfig(binaryPath?: string, modelPath?: string) {
     "# Add these to your server/.env or docker-compose override",
     "",
     "EMBEDDING_PROVIDER=local",
-    `EMBEDDING_BASE_URL=http://localhost:8085`,
+    `EMBEDDING_BASE_URL=http://localhost:8080`,
     `EMBEDDING_MODEL=${QWEN3_EMBEDDING_MODEL_NAME}`,
     `EMBEDDING_DIMENSIONS=${QWEN3_EMBEDDING_DIMENSIONS}`,
   ];
@@ -377,10 +377,10 @@ async function main() {
   console.log("\nTo start the embedding server:");
   console.log("  pnpm start");
   console.log("\nOr with custom port:");
-  console.log("  PORT=8085 pnpm start");
+  console.log("  PORT=8080 pnpm start");
   console.log("\nEnvironment variables for ClawDev server:");
   console.log("  EMBEDDING_PROVIDER=local");
-  console.log("  EMBEDDING_BASE_URL=http://localhost:8085");
+  console.log("  EMBEDDING_BASE_URL=http://localhost:8080");
   console.log(`  EMBEDDING_MODEL=${QWEN3_EMBEDDING_MODEL_NAME}`);
   console.log(`  EMBEDDING_DIMENSIONS=${QWEN3_EMBEDDING_DIMENSIONS}`);
   console.log("");

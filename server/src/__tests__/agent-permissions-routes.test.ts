@@ -93,6 +93,10 @@ const mockCompanySkillService = vi.hoisted(() => ({
   resolveRequestedSkillKeys: vi.fn(),
 }));
 const mockWorkspaceOperationService = vi.hoisted(() => ({}));
+const mockChannelService = vi.hoisted(() => ({
+  getOrCreateGeneral: vi.fn(),
+  join: vi.fn(),
+}));
 const mockLogActivity = vi.hoisted(() => vi.fn());
 
 vi.mock("../services/index.js", () => ({
@@ -110,7 +114,12 @@ vi.mock("../services/index.js", () => ({
   normalizeRuntimeConfigForAdapterType: vi.fn((_adapterType, runtimeConfig) => runtimeConfig),
   syncInstructionsBundleConfigFromFilePath: vi.fn((_agent, config) => config),
   workspaceOperationService: () => mockWorkspaceOperationService,
+  channelService: () => mockChannelService,
   instanceSettingsService: () => ({ getGeneral: vi.fn(async () => ({ censorUsernameInLogs: false })) }),
+}));
+
+vi.mock("../services/channels.js", () => ({
+  channelService: () => mockChannelService,
 }));
 
 vi.mock("../redaction.js", () => ({
@@ -228,6 +237,8 @@ describe("agent permission routes", () => {
     );
     mockSecretService.normalizeAdapterConfigForPersistence.mockImplementation(async (_companyId, config) => config);
     mockSecretService.resolveAdapterConfigForRuntime.mockImplementation(async (_companyId, config) => ({ config }));
+    mockChannelService.getOrCreateGeneral.mockResolvedValue({ id: "general-channel", companyId, type: "general" });
+    mockChannelService.join.mockResolvedValue(undefined);
     mockLogActivity.mockResolvedValue(undefined);
   });
 

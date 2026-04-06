@@ -8,7 +8,7 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { checkoutIssueSchema } from "@clawdev/shared";
+import { checkoutIssueSchema, composeStructuredSddDescription, isLevelCAgentRole } from "@clawdev/shared";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, assertBoard, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logger } from "../middleware/logger.js";
@@ -83,7 +83,7 @@ export function issueRoutes(db: Db, _storage?: any) {
   }
 
   function canCreateAgentsLegacy(agent: { permissions: Record<string, unknown> | null | undefined; role: string }) {
-    if (agent.role === "ceo") return true;
+    if (isLevelCAgentRole(agent.role)) return true;
     if (!agent.permissions || typeof agent.permissions !== "object") return false;
     return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
   }
@@ -154,7 +154,7 @@ export function issueRoutes(db: Db, _storage?: any) {
     if (!actor.agentId) throw forbidden("Agent authentication required");
     const actorAgent = await agentsSvc.getById(actor.agentId);
     if (!actorAgent || actorAgent.companyId !== companyId) throw forbidden("Forbidden");
-    if (actorAgent.role === "ceo" || Boolean(actorAgent.permissions?.canCreateAgents)) return;
+    if (isLevelCAgentRole(actorAgent.role) || Boolean(actorAgent.permissions?.canCreateAgents)) return;
     throw forbidden("Missing permission to link approvals");
   }
 
@@ -495,6 +495,7 @@ export function issueRoutes(db: Db, _storage?: any) {
         const comment = await svc.addComment(id, ctx.body.body, {
           agentId: actorInfo.agentId ?? undefined,
           userId: actorInfo.actorType === "user" ? actorInfo.actorId : undefined,
+          runId: actorInfo.runId ?? undefined,
         });
 
         if (actorInfo.runId) {
@@ -746,6 +747,7 @@ export function issueRoutes(db: Db, _storage?: any) {
           comment = await svc.addComment(id, commentBody, {
             agentId: actorInfo.agentId ?? undefined,
             userId: actorInfo.actorType === "user" ? actorInfo.actorId : undefined,
+            runId: actorInfo.runId ?? undefined,
           });
 
           await logActivity(db, {
@@ -1560,7 +1562,7 @@ export function companyIssueRoutes(db: Db) {
             if (!allowedByGrant) {
               const actorAgent = await agentsSvc.getById(actor.agentId);
               const canCreate = actorAgent && actorAgent.companyId === companyId &&
-                (actorAgent.role === "ceo" || Boolean(actorAgent.permissions?.canCreateAgents));
+                (isLevelCAgentRole(actorAgent.role) || Boolean(actorAgent.permissions?.canCreateAgents));
               if (!canCreate) throw forbidden("Missing permission: tasks:assign");
             }
           } else {
@@ -1569,8 +1571,30 @@ export function companyIssueRoutes(db: Db) {
         }
 
         const actorInfo = getActorInfo(actor);
+        const {
+          sddSpec,
+          sddDesign,
+          sddValidation,
+          description,
+          ...issueData
+        } = ctx.body;
+        const normalizedSpec = typeof sddSpec === "string" ? sddSpec.trim() : "";
+        const normalizedDesign = typeof sddDesign === "string" ? sddDesign.trim() : "";
+        const normalizedValidation = typeof sddValidation === "string" ? sddValidation.trim() : "";
+        if (!normalizedSpec || !normalizedDesign) {
+          set.status = 422;
+          return { error: "SDD spec and design are required for issue creation" };
+        }
+
         const issue = await svc.create(companyId, {
-          ...ctx.body,
+          ...issueData,
+          description: composeStructuredSddDescription({
+            subjectLabel: `Issue: ${typeof issueData.title === "string" ? issueData.title : "Untitled issue"}`,
+            summary: typeof description === "string" ? description : description == null ? null : String(description),
+            spec: normalizedSpec,
+            design: normalizedDesign,
+            validation: normalizedValidation || null,
+          }),
           createdByAgentId: actorInfo.agentId,
           createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
         });
@@ -1605,6 +1629,9 @@ export function companyIssueRoutes(db: Db) {
         body: t.Object({
           title: t.String(),
           description: t.Optional(t.Nullable(t.String())),
+          sddSpec: t.Optional(t.Nullable(t.String())),
+          sddDesign: t.Optional(t.Nullable(t.String())),
+          sddValidation: t.Optional(t.Nullable(t.String())),
           status: t.Optional(t.String()),
           priority: t.Optional(t.String()),
           assigneeAgentId: t.Optional(t.Nullable(t.String())),

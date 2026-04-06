@@ -9,9 +9,17 @@
   import { PluginLauncherOutlet, PluginRenderer } from "$lib/components/plugins/index.js";
   import { PageLayout } from "$components/layout/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
-  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent } from "$components/ui/index.js";
-  import { Pencil, Trash2, Plus, X } from "lucide-svelte";
+  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Input } from "$components/ui/index.js";
+  import { Pencil, Trash2, Plus, X, List, LayoutGrid, ChevronRight, Search } from "lucide-svelte";
+  import { ISSUE_STATUS_ORDER, ISSUE_STATUS_VISUALS } from '$lib/constants/visual';
+  import KanbanBoard from '$lib/components/board/kanban-board.svelte';
   import { onMount } from "svelte";
+  import {
+    getHierarchyPresetDefinition,
+    getHierarchyPresetDepartments,
+    getHierarchyPresetOperatingRules,
+    type HierarchyPreset,
+  } from "@clawdev/shared";
 
   // ---------------------------------------------------------------------------
   // Types
@@ -110,7 +118,7 @@
   let pluginDetailTabs = $state<PluginDetailTab[]>([]);
   let loading = $state(true);
   let notFound = $state(false);
-  let activeTab = $state("issues");
+  let activeTab = $state("overview");
   let workspacesLoading = $state(false);
   let workspacesLoadError = $state<string | null>(null);
   let pluginTabsLoading = $state(false);
@@ -158,6 +166,21 @@
   let policyTeardownCommand = $state("");
   let savingSettings = $state(false);
 
+  // Issues view state
+  let issueViewMode = $state<'list' | 'board'>('list');
+  let issueSearchQuery = $state('');
+  let issueGroupBy = $state<'status' | 'none'>('status');
+  let collapsedGroups = $state<string[]>([]);
+
+  // Status filter chips
+  let activeStatusFilters = $state<string[]>([]);
+
+  // Inline add issue state (list view)
+  let addingInGroup = $state<string | null>(null);
+  let newIssueTitleList = $state('');
+  let newIssueTitleListInput = $state<HTMLInputElement | null>(null);
+  let creatingIssueList = $state(false);
+
   // ---------------------------------------------------------------------------
   // Derived
   // ---------------------------------------------------------------------------
@@ -167,6 +190,25 @@
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
+  let selectedHierarchyPreset = $derived<HierarchyPreset | null>(
+    (companyStore.selectedCompany?.hierarchyPreset as HierarchyPreset | undefined) ?? null
+  );
+  let hierarchyPresetDefinition = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDefinition(selectedHierarchyPreset) : null
+  );
+  let hierarchyPresetDepartments = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDepartments(selectedHierarchyPreset) : []
+  );
+  let hierarchyPresetOperatingRules = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetOperatingRules(selectedHierarchyPreset) : []
+  );
+  const SDD_FLOW = [
+    { key: "spec", label: "Spec", description: "Define scope, constraints, and acceptance criteria." },
+    { key: "design", label: "Design", description: "Map the solution, dependencies, and UX/architecture." },
+    { key: "decompose", label: "Decompose", description: "Split work into safe, single-owner tasks." },
+    { key: "validate", label: "Validate", description: "Review risks, tests, and failure modes before coding." },
+    { key: "implement", label: "Implement", description: "Ship the smallest safe change and verify it." },
+  ] as const;
   let projectPluginHostContext = $derived({
     companyId,
     companyPrefix: prefix ?? null,
@@ -568,6 +610,132 @@
     }
     return counts;
   });
+
+  let doneCount = $derived((statusCounts().done ?? 0) + (statusCounts().cancelled ?? 0));
+  let progressPercent = $derived(issues.length > 0 ? Math.round((doneCount / issues.length) * 100) : 0);
+  let recentIssues = $derived(
+    [...issues]
+      .sort((a, b) => new Date(b.updatedAt ?? 0).getTime() - new Date(a.updatedAt ?? 0).getTime())
+      .slice(0, 5)
+  );
+
+  let filteredIssues = $derived.by(() => {
+    let list = issues;
+    if (activeStatusFilters.length > 0) {
+      list = list.filter(i => activeStatusFilters.includes(i.status));
+    }
+    if (issueSearchQuery.trim()) {
+      const q = issueSearchQuery.trim().toLowerCase();
+      list = list.filter(i => i.title.toLowerCase().includes(q) || (i.identifier ?? '').toLowerCase().includes(q));
+    }
+    return list;
+  });
+
+  function toggleStatusFilter(status: string) {
+    if (activeStatusFilters.includes(status)) {
+      activeStatusFilters = activeStatusFilters.filter(s => s !== status);
+    } else {
+      activeStatusFilters = [...activeStatusFilters, status];
+    }
+  }
+
+  interface IssueGroup { key: string; label: string; issues: Issue[]; }
+
+  let groupedIssues = $derived.by((): IssueGroup[] => {
+    if (issueGroupBy === 'none') {
+      return [{ key: '__all', label: 'All', issues: filteredIssues }];
+    }
+    const map = new Map<string, Issue[]>();
+    for (const issue of filteredIssues) {
+      const key = issue.status ?? 'unknown';
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(issue);
+    }
+    const sorted = [...map.entries()].sort((a, b) => {
+      const ai = ISSUE_STATUS_ORDER.indexOf(a[0]);
+      const bi = ISSUE_STATUS_ORDER.indexOf(b[0]);
+      return (ai === -1 ? 999 : ai) - (bi === -1 ? 999 : bi);
+    });
+    return sorted.map(([key, items]) => ({
+      key,
+      label: ISSUE_STATUS_VISUALS[key]?.label ?? key,
+      issues: items,
+    }));
+  });
+
+  function toggleIssueGroup(key: string) {
+    if (collapsedGroups.includes(key)) {
+      collapsedGroups = collapsedGroups.filter(k => k !== key);
+    } else {
+      collapsedGroups = [...collapsedGroups, key];
+    }
+  }
+
+  async function handleStatusChange(issueId: string, newStatus: string) {
+    if (!companyId) return;
+    try {
+      await api(`/api/companies/${companyId}/issues/${issueId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      loadIssues();
+    } catch { /* ignore */ }
+  }
+
+  async function handleCreateIssue(title: string, status: string) {
+    if (!companyId || !projectUuid) return;
+    const projectName = project?.name ?? "this project";
+    const issueSpec = `Implement "${title}" within ${projectName}. Keep the issue scoped to the selected status "${status}".`;
+    const issueDesign = `Use the project execution model for ${projectName}. Keep the change small, reviewable, and owned by a single agent.`;
+    const issueValidation = `Verify the work satisfies the issue title, the selected project context, and the expected status transition before marking it done.`;
+    const res = await api(`/api/companies/${companyId}/issues`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        title,
+        status,
+        projectId: projectUuid,
+        description: `Quick issue created from ${projectName}.`,
+        sddSpec: issueSpec,
+        sddDesign: issueDesign,
+        sddValidation: issueValidation,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await loadIssues();
+  }
+
+  function startAddingInGroup(groupKey: string) {
+    addingInGroup = groupKey;
+    newIssueTitleList = '';
+  }
+
+  function cancelAddingInGroup() {
+    addingInGroup = null;
+    newIssueTitleList = '';
+  }
+
+  $effect(() => {
+    if (!addingInGroup || !newIssueTitleListInput) return;
+    queueMicrotask(() => {
+      newIssueTitleListInput?.focus();
+    });
+  });
+
+  async function submitNewIssueInGroup(status: string) {
+    if (!newIssueTitleList.trim() || creatingIssueList) return;
+    creatingIssueList = true;
+    try {
+      await handleCreateIssue(newIssueTitleList.trim(), status);
+      newIssueTitleList = '';
+      addingInGroup = null;
+    } catch {
+      /* keep form open on error */
+    } finally {
+      creatingIssueList = false;
+    }
+  }
 </script>
 
 {#if loading}
@@ -691,6 +859,7 @@
       <div class="flex-1 min-w-0">
         <Tabs bind:value={activeTab}>
           <TabsList>
+            <TabsTrigger value="overview">Overview</TabsTrigger>
             <TabsTrigger value="issues">Issues ({issues.length})</TabsTrigger>
             <TabsTrigger value="goals">Goals ({goals.length})</TabsTrigger>
             <TabsTrigger value="workspaces">Workspaces ({workspaces.length})</TabsTrigger>
@@ -700,42 +869,388 @@
             {/each}
           </TabsList>
 
-          <TabsContent value="issues">
-            <div class="mt-4">
-              <!-- Status summary -->
+          <TabsContent value="overview">
+            <div class="mt-4 space-y-5">
+              {#if hierarchyPresetDefinition}
+                <div class="grid gap-4 xl:grid-cols-[1.4fr_0.9fr]">
+                  <div class="rounded-lg border border-border bg-card p-4">
+                    <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                      <div>
+                        <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Hierarchy preset</p>
+                        <h3 class="mt-1 text-base font-semibold text-foreground">{hierarchyPresetDefinition.label}</h3>
+                        <p class="mt-1 text-sm text-muted-foreground">{hierarchyPresetDefinition.description}</p>
+                      </div>
+                      <Badge variant="outline" class="text-[10px] uppercase tracking-wider">{hierarchyPresetDefinition.rootTitle}</Badge>
+                    </div>
+                    <p class="mt-3 text-sm text-foreground/90">{hierarchyPresetDefinition.fit}</p>
+                    <div class="mt-4 flex flex-wrap gap-1.5">
+                      {#each hierarchyPresetDepartments as department}
+                        <Badge variant="secondary" class="text-[10px] uppercase tracking-wider">{department.label}</Badge>
+                      {/each}
+                    </div>
+                  </div>
+
+                  <div class="rounded-lg border border-border bg-card p-4">
+                    <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">SDD flow</p>
+                    <div class="mt-3 space-y-2">
+                      {#each SDD_FLOW as step, index}
+                        <div class="flex gap-3 rounded-md border border-border/60 bg-background/60 p-3">
+                          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary/10 text-xs font-semibold text-primary">
+                            {index + 1}
+                          </div>
+                          <div>
+                            <p class="text-sm font-medium text-foreground">{step.label}</p>
+                            <p class="text-xs text-muted-foreground">{step.description}</p>
+                          </div>
+                        </div>
+                      {/each}
+                    </div>
+                  </div>
+                </div>
+
+                <div class="rounded-lg border border-border bg-card p-4">
+                  <div class="flex items-center justify-between gap-3">
+                    <div>
+                      <p class="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Operating rules</p>
+                      <p class="mt-1 text-sm text-foreground">These guardrails apply to planning, decomposition, and implementation.</p>
+                    </div>
+                    <Badge variant="outline" class="text-[10px] uppercase tracking-wider">{hierarchyPresetOperatingRules.length} rules</Badge>
+                  </div>
+                  <div class="mt-4 grid gap-3 lg:grid-cols-3">
+                    {#each hierarchyPresetOperatingRules as rule}
+                      <div class="rounded-md border border-border/60 bg-background/60 p-3">
+                        <p class="text-sm font-medium text-foreground">{rule.title}</p>
+                        <p class="mt-1 text-xs text-muted-foreground">{rule.description}</p>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Stats row -->
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div class="rounded-lg border border-border bg-card p-3">
+                  <p class="text-xs text-muted-foreground mb-1">Total Issues</p>
+                  <p class="text-2xl font-bold tabular-nums">{issues.length}</p>
+                </div>
+                <div class="rounded-lg border border-border bg-card p-3">
+                  <p class="text-xs text-muted-foreground mb-1">Completed</p>
+                  <p class="text-2xl font-bold tabular-nums text-emerald-500">{doneCount}</p>
+                </div>
+                <div class="rounded-lg border border-border bg-card p-3">
+                  <p class="text-xs text-muted-foreground mb-1">In Progress</p>
+                  <p class="text-2xl font-bold tabular-nums text-amber-500">{statusCounts().in_progress ?? 0}</p>
+                </div>
+                <div class="rounded-lg border border-border bg-card p-3">
+                  <p class="text-xs text-muted-foreground mb-1">To Do</p>
+                  <p class="text-2xl font-bold tabular-nums text-blue-500">{statusCounts().todo ?? 0}</p>
+                </div>
+              </div>
+
+              <!-- Progress bar -->
+              <div class="rounded-lg border border-border bg-card p-4">
+                <div class="flex items-center justify-between mb-2">
+                  <p class="text-sm font-medium">Progress</p>
+                  <p class="text-sm font-bold tabular-nums">{progressPercent}%</p>
+                </div>
+                <div class="h-2.5 w-full rounded-full bg-muted overflow-hidden">
+                  <div
+                    class="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                    style="width: {progressPercent}%"
+                  ></div>
+                </div>
+                <p class="text-xs text-muted-foreground mt-1.5">
+                  {doneCount} of {issues.length} issue{issues.length !== 1 ? 's' : ''} completed
+                </p>
+              </div>
+
+              <!-- Status breakdown -->
               {#if issues.length > 0}
                 {@const counts = statusCounts()}
-                <div class="flex flex-wrap gap-2 mb-4">
+                <div class="rounded-lg border border-border bg-card p-4">
+                  <p class="text-sm font-medium mb-3">Status Breakdown</p>
+                  <div class="space-y-2">
+                    {#each ISSUE_STATUS_ORDER.filter(s => counts[s]) as status}
+                      {@const count = counts[status] ?? 0}
+                      {@const pct = Math.round((count / issues.length) * 100)}
+                      <div class="flex items-center gap-3">
+                        <span class="w-2 h-2 rounded-full shrink-0 {ISSUE_STATUS_VISUALS[status]?.dotClass ?? 'bg-zinc-500'}"></span>
+                        <span class="text-xs font-medium w-24 shrink-0">{ISSUE_STATUS_VISUALS[status]?.label ?? status}</span>
+                        <div class="flex-1 h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div
+                            class="h-full rounded-full transition-all duration-300"
+                            style="width: {pct}%; background-color: {ISSUE_STATUS_VISUALS[status]?.hex ?? '#64748b'}"
+                          ></div>
+                        </div>
+                        <span class="text-xs text-muted-foreground tabular-nums w-10 text-right">{count}</span>
+                      </div>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Recent issues -->
+              {#if recentIssues.length > 0}
+                <div class="rounded-lg border border-border bg-card p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <p class="text-sm font-medium">Recent Activity</p>
+                    <button
+                      type="button"
+                      onclick={() => { activeTab = 'issues'; }}
+                      class="cursor-pointer text-xs text-primary hover:underline"
+                    >
+                      View all
+                    </button>
+                  </div>
+                  <div class="divide-y divide-border">
+                    {#each recentIssues as issue (issue.id)}
+                      <a
+                        href="/{prefix}/issues/{issue.id}"
+                        class="flex items-center gap-3 py-2 text-sm hover:bg-accent/30 -mx-2 px-2 rounded transition-colors"
+                      >
+                        <span class="w-2 h-2 rounded-full shrink-0 {ISSUE_STATUS_VISUALS[issue.status]?.dotClass ?? 'bg-zinc-500'}"></span>
+                        {#if issue.identifier}
+                          <span class="text-xs font-mono text-muted-foreground shrink-0">{issue.identifier}</span>
+                        {/if}
+                        <span class="min-w-0 flex-1 truncate">{issue.title}</span>
+                        <TimeAgo date={issue.updatedAt} class="text-xs text-muted-foreground shrink-0" />
+                      </a>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+
+              <!-- Linked goals -->
+              {#if goals.length > 0}
+                <div class="rounded-lg border border-border bg-card p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <p class="text-sm font-medium">Linked Goals</p>
+                    <button
+                      type="button"
+                      onclick={() => { activeTab = 'goals'; }}
+                      class="cursor-pointer text-xs text-primary hover:underline"
+                    >
+                      View all
+                    </button>
+                  </div>
+                  <div class="divide-y divide-border">
+                    {#each goals as goal (goal.id)}
+                      <a
+                        href="/{prefix}/goals/{goal.id}"
+                        class="flex items-center gap-3 py-2 text-sm hover:bg-accent/30 -mx-2 px-2 rounded transition-colors"
+                      >
+                        <StatusBadge status={goal.status} />
+                        <span class="min-w-0 flex-1 truncate">{goal.title}</span>
+                        {#if goal.level}
+                          <Badge variant="outline" class="text-[10px] capitalize">{goal.level}</Badge>
+                        {/if}
+                      </a>
+                    {/each}
+                  </div>
+                </div>
+              {/if}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="issues">
+            <div class="mt-4 space-y-4">
+              <!-- Toolbar: View toggle + Search -->
+              <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div class="flex items-center border-b border-border">
+                  <button
+                    onclick={() => { issueViewMode = 'list'; }}
+                    class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+                      {issueViewMode === 'list'
+                        ? 'border-b-2 border-blue-500 text-foreground'
+                        : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
+                  >
+                    <List class="size-4" />
+                    List
+                  </button>
+                  <button
+                    onclick={() => { issueViewMode = 'board'; }}
+                    class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+                      {issueViewMode === 'board'
+                        ? 'border-b-2 border-blue-500 text-foreground'
+                        : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
+                  >
+                    <LayoutGrid class="size-4" />
+                    Board
+                  </button>
+                </div>
+
+                <div class="relative">
+                  <Search class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    type="text"
+                    placeholder="Search issues..."
+                    bind:value={issueSearchQuery}
+                    class="w-full sm:w-64 pl-9"
+                  />
+                </div>
+              </div>
+
+              <!-- Status filter chips -->
+              {#if issues.length > 0}
+                {@const counts = statusCounts()}
+                <div class="flex flex-wrap items-center gap-2">
+                  {#if activeStatusFilters.length > 0}
+                    <button
+                      type="button"
+                      onclick={() => { activeStatusFilters = []; }}
+                      class="cursor-pointer text-xs text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      Clear filters
+                    </button>
+                  {/if}
                   {#each Object.entries(counts) as [status, count]}
-                    <div class="flex items-center gap-1.5 text-xs">
-                      <StatusBadge {status} />
-                      <span class="text-muted-foreground">{count}</span>
-                    </div>
+                    <button
+                      type="button"
+                      onclick={() => toggleStatusFilter(status)}
+                      class="cursor-pointer flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition-all border
+                        {activeStatusFilters.includes(status)
+                          ? (ISSUE_STATUS_VISUALS[status]?.badgeClass ?? '') + ' border-current ring-1 ring-current/20'
+                          : activeStatusFilters.length > 0
+                            ? 'border-transparent opacity-50 hover:opacity-80 ' + (ISSUE_STATUS_VISUALS[status]?.badgeClass ?? '')
+                            : 'border-transparent ' + (ISSUE_STATUS_VISUALS[status]?.badgeClass ?? '')}"
+                    >
+                      <span class="w-1.5 h-1.5 rounded-full {ISSUE_STATUS_VISUALS[status]?.dotClass ?? 'bg-zinc-500'}"></span>
+                      {ISSUE_STATUS_VISUALS[status]?.label ?? status}
+                      <span class="font-semibold">{count}</span>
+                    </button>
                   {/each}
                 </div>
               {/if}
 
-              {#if issues.length === 0}
-                <EmptyState title="No issues" description="No issues are linked to this project yet." icon="📋" />
+              <!-- Board View -->
+              {#if issueViewMode === 'board'}
+                {#if filteredIssues.length === 0}
+                  <EmptyState title="No issues" description="No issues are linked to this project yet." icon="📋" />
+                {:else}
+                  <KanbanBoard issues={filteredIssues} prefix={prefix ?? ''} onStatusChange={handleStatusChange} onCreateIssue={handleCreateIssue} />
+                {/if}
+
+              <!-- List View -->
               {:else}
-                <div class="border rounded-lg divide-y divide-border border-border">
-                  {#each issues as issue}
-                    <a
-                      href="/{prefix}/issues/{issue.id}"
-                      class="flex items-center justify-between p-3 text-sm hover:bg-muted/50 transition-colors cursor-pointer"
-                    >
-                      <div class="flex items-center gap-3 min-w-0">
-                        <PriorityIcon priority={issue.priority} />
-                        <StatusBadge status={issue.status} />
-                        {#if issue.identifier}
-                          <span class="text-xs font-mono text-muted-foreground shrink-0">{issue.identifier}</span>
+                {#if filteredIssues.length === 0}
+                  <EmptyState title="No issues" description="No issues are linked to this project yet." icon="📋" />
+                {:else}
+                  <Card class="p-0 overflow-hidden">
+                    <!-- Table header -->
+                    <div class="flex items-center border-b border-border px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                      <span class="w-5 shrink-0"></span>
+                      <span class="w-20 shrink-0">ID</span>
+                      <span class="min-w-0 flex-1">Name</span>
+                      <span class="hidden w-[80px] shrink-0 sm:block">Priority</span>
+                      <span class="hidden w-[100px] shrink-0 text-right sm:block">Updated</span>
+                    </div>
+
+                    {#each groupedIssues as group (group.key)}
+                      {#if group.key === '__all'}
+                        {#each group.issues as issue (issue.id)}
+                          <a
+                            href="/{prefix}/issues/{issue.id}"
+                            class="flex items-center gap-3 px-4 py-2.5 text-sm hover:bg-accent/40 transition-colors border-b border-border/50 last:border-b-0"
+                          >
+                            <span class="w-2 h-2 rounded-full shrink-0 {ISSUE_STATUS_VISUALS[issue.status]?.dotClass ?? 'bg-zinc-500'}"></span>
+                            {#if issue.identifier}
+                              <span class="w-20 shrink-0 text-xs font-mono text-muted-foreground truncate">{issue.identifier}</span>
+                            {:else}
+                              <span class="w-20 shrink-0"></span>
+                            {/if}
+                            <span class="min-w-0 flex-1 truncate">{issue.title}</span>
+                            <span class="hidden sm:block w-[80px] shrink-0">
+                              <PriorityIcon priority={issue.priority} />
+                            </span>
+                            <span class="hidden sm:block w-[100px] shrink-0 text-right">
+                              <TimeAgo date={issue.updatedAt} class="text-xs" />
+                            </span>
+                          </a>
+                        {/each}
+                      {:else}
+                        <!-- Group header -->
+                        <button
+                          type="button"
+                          onclick={() => toggleIssueGroup(group.key)}
+                          class="flex items-center gap-2 w-full px-4 py-2 border-b border-border/50 bg-muted/30 hover:bg-muted/50 transition-colors"
+                        >
+                          <ChevronRight class="h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform {collapsedGroups.includes(group.key) ? '' : 'rotate-90'}" />
+                          <span class="w-2 h-2 rounded-full shrink-0 {ISSUE_STATUS_VISUALS[group.key]?.dotClass ?? 'bg-zinc-500'}"></span>
+                          <span class="text-xs font-semibold uppercase tracking-wide">{group.label}</span>
+                          <Badge variant="secondary" class="text-[10px] px-1.5 py-0">{group.issues.length}</Badge>
+                        </button>
+                        {#if !collapsedGroups.includes(group.key)}
+                          {#each group.issues as issue (issue.id)}
+                            <a
+                              href="/{prefix}/issues/{issue.id}"
+                              class="flex items-center gap-3 px-4 py-2.5 pl-10 text-sm hover:bg-accent/40 transition-colors border-b border-border/50 last:border-b-0"
+                            >
+                              {#if issue.identifier}
+                                <span class="w-20 shrink-0 text-xs font-mono text-muted-foreground truncate">{issue.identifier}</span>
+                              {:else}
+                                <span class="w-20 shrink-0"></span>
+                              {/if}
+                              <span class="min-w-0 flex-1 truncate">{issue.title}</span>
+                              <span class="hidden sm:block w-[80px] shrink-0">
+                                <PriorityIcon priority={issue.priority} />
+                              </span>
+                              <span class="hidden sm:block w-[100px] shrink-0 text-right">
+                                <TimeAgo date={issue.updatedAt} class="text-xs" />
+                              </span>
+                            </a>
+                          {/each}
+                          <!-- Inline add issue row -->
+                          <div class="px-4 py-1.5 pl-10 border-b border-border/50">
+                            {#if addingInGroup === group.key}
+                              <form
+                                onsubmit={(e) => { e.preventDefault(); submitNewIssueInGroup(group.key); }}
+                                class="flex items-center gap-2"
+                              >
+                                <input
+                                  type="text"
+                                  bind:this={newIssueTitleListInput}
+                                  bind:value={newIssueTitleList}
+                                  placeholder="Issue title..."
+                                  disabled={creatingIssueList}
+                                  class="flex-1 rounded-md border border-border bg-background px-2.5 py-1 text-sm text-foreground placeholder:text-muted-foreground focus:border-ring focus:outline-none focus:ring-1 focus:ring-ring"
+                                  onkeydown={(e) => { if (e.key === 'Escape') cancelAddingInGroup(); }}
+                                />
+                                <button
+                                  type="submit"
+                                  disabled={creatingIssueList || !newIssueTitleList.trim()}
+                                  class="cursor-pointer rounded-md bg-primary px-2.5 py-1 text-xs font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                                >
+                                  {creatingIssueList ? 'Adding...' : 'Add'}
+                                </button>
+                                <button
+                                  type="button"
+                                  onclick={cancelAddingInGroup}
+                                  disabled={creatingIssueList}
+                                  class="cursor-pointer text-xs text-muted-foreground hover:text-foreground"
+                                >
+                                  Cancel
+                                </button>
+                              </form>
+                            {:else}
+                              <button
+                                type="button"
+                                onclick={() => startAddingInGroup(group.key)}
+                                class="cursor-pointer flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors py-0.5"
+                              >
+                                <Plus class="size-3.5" />
+                                Add issue
+                              </button>
+                            {/if}
+                          </div>
                         {/if}
-                        <span class="truncate">{issue.title}</span>
-                      </div>
-                      <TimeAgo date={issue.updatedAt} class="text-xs shrink-0" />
-                    </a>
-                  {/each}
-                </div>
+                      {/if}
+                    {/each}
+                  </Card>
+
+                  <p class="text-xs text-muted-foreground text-right">
+                    {filteredIssues.length} issue{filteredIssues.length !== 1 ? 's' : ''}
+                  </p>
+                {/if}
               {/if}
             </div>
           </TabsContent>
@@ -1139,6 +1654,23 @@
           <span class="font-medium">{issues.length}</span>
         </PropertyRow>
         <Separator />
+        {#if hierarchyPresetDefinition}
+          <PropertyRow label="Hierarchy preset">
+            <div class="space-y-1">
+              <p class="text-sm font-medium text-foreground">{hierarchyPresetDefinition.label}</p>
+              <p class="text-xs text-muted-foreground">{hierarchyPresetDefinition.rootSubtitle}</p>
+            </div>
+          </PropertyRow>
+          <Separator />
+          <PropertyRow label="Departments">
+            <div class="flex flex-wrap gap-1.5">
+              {#each hierarchyPresetDepartments as department}
+                <Badge variant="outline" class="text-[10px] uppercase tracking-wider">{department.label}</Badge>
+              {/each}
+            </div>
+          </PropertyRow>
+          <Separator />
+        {/if}
         <PropertyRow label="Goals">
           <span class="font-medium">{goals.length}</span>
         </PropertyRow>

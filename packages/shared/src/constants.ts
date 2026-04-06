@@ -37,9 +37,11 @@ export type AgentAdapterType = (typeof AGENT_ADAPTER_TYPES)[number];
 
 export const AGENT_ROLES = [
   "ceo",
+  "hr",
   "cto",
   "cmo",
   "cfo",
+  "coo",
   "engineer",
   "designer",
   "pm",
@@ -52,9 +54,11 @@ export type AgentRole = (typeof AGENT_ROLES)[number];
 
 export const AGENT_ROLE_LABELS: Record<AgentRole, string> = {
   ceo: "CEO",
+  hr: "HR",
   cto: "CTO",
   cmo: "CMO",
   cfo: "CFO",
+  coo: "COO",
   engineer: "Engineer",
   designer: "Designer",
   pm: "PM",
@@ -328,6 +332,24 @@ export const LIVE_EVENT_TYPES = [
   "plugin.ui.updated",
   "plugin.worker.crashed",
   "plugin.worker.restarted",
+  "agent_message.created",
+  "delegation.created",
+  "delegation.updated",
+  "escalation.created",
+  "pipeline.created",
+  "pipeline.execution.started",
+  "pipeline.execution.updated",
+  "deliberation.created",
+  "deliberation.updated",
+  "channel.created",
+  "channel.updated",
+  "channel.archived",
+  "channel_message.created",
+  "channel_message.updated",
+  "channel_message.deleted",
+  "channel_member.joined",
+  "channel_member.left",
+  "channel.typing",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 

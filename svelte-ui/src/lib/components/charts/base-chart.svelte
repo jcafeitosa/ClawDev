@@ -24,9 +24,35 @@
 
   echarts.use([CanvasRenderer]);
 
-  function detectTheme(): string | undefined {
+  // Register a soft light theme to avoid harsh black lines
+  echarts.registerTheme('clawdev-light', {
+    color: ['#3b82f6', '#22c55e', '#f97316', '#ef4444', '#8b5cf6', '#06b6d4', '#ec4899', '#f59e0b'],
+    backgroundColor: 'transparent',
+    textStyle: { color: '#64748b', fontFamily: 'Inter, DM Sans, sans-serif' },
+    title: { textStyle: { color: '#334155' } },
+    legend: { textStyle: { color: '#64748b' } },
+    categoryAxis: {
+      axisLine: { lineStyle: { color: '#e2e8f0' } },
+      axisTick: { lineStyle: { color: '#e2e8f0' } },
+      axisLabel: { color: '#94a3b8' },
+      splitLine: { lineStyle: { color: '#f1f5f9' } },
+    },
+    valueAxis: {
+      axisLine: { lineStyle: { color: '#e2e8f0' } },
+      axisTick: { lineStyle: { color: '#e2e8f0' } },
+      axisLabel: { color: '#94a3b8' },
+      splitLine: { lineStyle: { color: '#f1f5f9' } },
+    },
+    tooltip: {
+      backgroundColor: 'rgba(255,255,255,0.95)',
+      borderColor: '#e2e8f0',
+      textStyle: { color: '#334155', fontFamily: 'Inter, DM Sans, sans-serif' },
+    },
+  });
+
+  function detectTheme(): string {
     if (typeof document === 'undefined') return 'dark';
-    return document.documentElement.classList.contains('dark') ? 'dark' : undefined;
+    return document.documentElement.classList.contains('dark') ? 'dark' : 'clawdev-light';
   }
 
   function initChart() {

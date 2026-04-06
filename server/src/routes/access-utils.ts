@@ -6,6 +6,7 @@
  */
 
 import crypto from "node:crypto";
+import { isLevelCAgentRole } from "@clawdev/shared";
 
 // ---------------------------------------------------------------------------
 // Invite expiry
@@ -51,21 +52,23 @@ interface AgentStub {
 }
 
 /**
- * Given the list of agents in a company, returns the id of the CEO that
+ * Given the list of agents in a company, returns the id of the level C agent that
  * should manage a newly-joined agent.
  *
  * Preference order:
  *   1. Root CEO (role === "ceo" && reportsTo === null)
- *   2. First CEO in list order
- *   3. null if no CEO exists
+ *   2. Root level C agent
+ *   3. First level C agent in list order
+ *   4. null if no level C agent exists
  */
 export function resolveJoinRequestAgentManagerId(
   agents: AgentStub[],
 ): string | null {
-  const ceos = agents.filter((a) => a.role === "ceo");
-  if (ceos.length === 0) return null;
-  const rootCeo = ceos.find((a) => a.reportsTo === null);
-  return rootCeo ? rootCeo.id : ceos[0]!.id;
+  const leaders = agents.filter((a) => isLevelCAgentRole(a.role));
+  if (leaders.length === 0) return null;
+  const rootCeo = leaders.find((a) => a.role === "ceo" && a.reportsTo === null);
+  const rootLeader = leaders.find((a) => a.reportsTo === null);
+  return rootCeo ? rootCeo.id : rootLeader ? rootLeader.id : leaders[0]!.id;
 }
 
 // ---------------------------------------------------------------------------

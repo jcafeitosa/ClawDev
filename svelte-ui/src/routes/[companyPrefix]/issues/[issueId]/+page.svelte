@@ -732,9 +732,16 @@
     if (!issueId || !companyId || !newSubIssueTitle.trim()) return;
     submittingSubIssue = true;
     try {
+      const parentTitle = issue?.title ?? "parent issue";
       const res = await api(`/api/companies/${companyId}/issues`, {
         method: "POST",
-        body: JSON.stringify({ title: newSubIssueTitle.trim(), parentId: issueId }),
+        body: JSON.stringify({
+          title: newSubIssueTitle.trim(),
+          parentId: issueId,
+          sddSpec: `Resolve the sub-task "${newSubIssueTitle.trim()}" under ${parentTitle}.`,
+          sddDesign: `Keep the work scoped to the parent issue, with a single owner and minimal cross-team coordination.`,
+          sddValidation: "Confirm the sub-task satisfies the parent issue's acceptance criteria before closing.",
+        }),
       });
       if (!res.ok) throw new Error(await res.text());
       toastStore.push({ title: "Sub-issue created", tone: "success" });

@@ -1,32 +1,74 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=DM+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Fira+Code:wght@400;500;600;700&display=swap');
 @import "tailwindcss";
-@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap');
 @plugin "@tailwindcss/typography";
 
 @custom-variant dark (&:is(.dark *));
 
-/* ── Glass Card Utility (UUPM.cc style) ── */
+/* ── UUPM.cc Design System ── */
+
+/* Font utility classes */
+.font-heading { font-family: 'Space Grotesk', system-ui, sans-serif; }
+.font-body { font-family: 'DM Sans', system-ui, sans-serif; }
+.font-card { font-family: 'Inter', system-ui, sans-serif; }
+.font-mono, code, pre, .font-code { font-family: 'Fira Code', 'Fira Mono', monospace; }
+
+/* Gradient text */
+.gradient-text {
+  background: linear-gradient(135deg, #3B82F6, #8B5CF6, #F97316);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Glass Card — UUPM.cc glassmorphism */
 .glass-card {
-  border-radius: 1rem;
+  border-radius: 0.75rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.01) 100%);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  transition: all 0.2s ease;
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 0 0 1px rgba(255,255,255,0.02) inset;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 .glass-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.15);
-  transform: translateY(-1px);
+  border-color: rgba(255, 255, 255, 0.14);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.2), 0 0 0 1px rgba(255,255,255,0.04) inset;
+  transform: translateY(-2px);
 }
 :root:not(.dark) .glass-card {
   border-color: rgba(0, 0, 0, 0.06);
-  background: linear-gradient(135deg, rgba(255,255,255,0.8) 0%, rgba(255,255,255,0.5) 100%);
+  background: linear-gradient(135deg, rgba(255,255,255,0.85) 0%, rgba(255,255,255,0.6) 100%);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04), 0 0 0 1px rgba(0,0,0,0.02) inset;
 }
 :root:not(.dark) .glass-card:hover {
   border-color: rgba(0, 0, 0, 0.1);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.08);
+  box-shadow: 0 12px 40px rgba(0,0,0,0.06), 0 0 0 1px rgba(0,0,0,0.03) inset;
 }
+
+/* Glass card with no hover transform (for nested/interactive cards) */
+.glass-card-static {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+:root:not(.dark) .glass-card-static {
+  border-color: rgba(0, 0, 0, 0.04);
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* Gradient icon container */
+.icon-gradient {
+  background: linear-gradient(135deg, rgba(59,130,246,0.15), rgba(139,92,246,0.1));
+  border: 1px solid rgba(59,130,246,0.1);
+  border-radius: 0.75rem;
+  transition: transform 0.2s ease;
+}
+.icon-gradient:hover, .group:hover .icon-gradient { transform: scale(1.1); }
+
+/* Section padding */
+.section-padding { padding-top: 2rem; padding-bottom: 2rem; }
 
 /* ── ClawDev Design System ── */
 /* Light mode (default) */
@@ -89,13 +131,13 @@
   --color-sidebar-ring: var(--sidebar-ring);
   --radius-sm: 0.375rem;
   --radius-md: 0.5rem;
-  --radius-lg: 0px;
-  --radius-xl: 0px;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
 }
 
 :root {
   color-scheme: light;
-  --radius: 0;
+  --radius: 0.75rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
@@ -176,7 +218,7 @@
   }
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Plus Jakarta Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-family: 'Inter', 'DM Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
     height: 100%;
     overflow: hidden;
   }
@@ -236,4 +278,159 @@
 
 .dark *::-webkit-scrollbar-thumb:hover {
   background: oklch(0.5 0 0);
+}
+
+/* Chat animations */
+@keyframes bounce-dot {
+  0%, 80%, 100% { transform: translateY(0); }
+  40% { transform: translateY(-6px); }
+}
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4); }
+  100% { box-shadow: 0 0 0 6px rgba(16, 185, 129, 0); }
+}
+@keyframes highlight-sweep {
+  0% { background-position: -100% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes beam-flow {
+  0% { stroke-dashoffset: 20; }
+  100% { stroke-dashoffset: 0; }
+}
+.mention-chip {
+  background: color-mix(in srgb, var(--clawdev-primary) 12%, transparent);
+  color: var(--clawdev-primary);
+  border-radius: 0.25rem;
+  padding: 0.125rem 0.375rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.mention-chip:hover {
+  background: color-mix(in srgb, var(--clawdev-primary) 20%, transparent);
+}
+.search-highlight {
+  background: linear-gradient(90deg, transparent, rgba(250, 204, 21, 0.3), transparent);
+  background-size: 200% 100%;
+  animation: highlight-sweep 2s ease-in-out infinite;
+  border-radius: 0.125rem;
+  padding: 0 0.125rem;
+}
+:root:not(.dark) .search-highlight {
+  background: linear-gradient(90deg, transparent, rgba(250, 204, 21, 0.4), transparent);
+  background-size: 200% 100%;
+  animation: highlight-sweep 2s ease-in-out infinite;
+}
+
+/* ── Chat Aceternity-inspired effects ── */
+
+/* Profile hover card entrance */
+.profile-hover-card-inner {
+  animation: profile-hover-enter 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes profile-hover-enter {
+  from { opacity: 0; transform: scale(0.92) translateY(4px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* Floating action dock entrance */
+.floating-action-dock {
+  animation: dock-fade-in 0.15s ease-out both;
+}
+@keyframes dock-fade-in {
+  from { opacity: 0; transform: translateY(4px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* Animated tooltip spring entrance */
+.animated-tooltip-popup {
+  animation: tooltip-spring 0.2s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes tooltip-spring {
+  from { opacity: 0; transform: translateX(-50%) scale(0.9); }
+  to { opacity: 1; transform: translateX(-50%) scale(1); }
+}
+
+/* Sidebar active channel glow */
+.channel-glow-active {
+  box-shadow: 0 0 8px 1px color-mix(in srgb, var(--clawdev-primary) 40%, transparent),
+              inset 0 0 4px color-mix(in srgb, var(--clawdev-primary) 10%, transparent);
+  animation: channel-glow-pulse 2.5s ease-in-out infinite;
+}
+.channel-glow-unread {
+  box-shadow: 0 0 12px 2px color-mix(in srgb, var(--clawdev-primary) 60%, transparent),
+              inset 0 0 6px color-mix(in srgb, var(--clawdev-primary) 15%, transparent);
+  animation: channel-glow-pulse 1.8s ease-in-out infinite;
+}
+@keyframes channel-glow-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+/* Flip words animation */
+.flip-word {
+  display: inline-block;
+  transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+}
+.flip-word-enter {
+  transform: rotateX(0deg);
+  opacity: 1;
+}
+.flip-word-exit {
+  transform: rotateX(90deg);
+  opacity: 0;
+}
+
+/* Vanish input — characters scatter upward on send */
+.vanish-send {
+  animation: vanish-up 0.4s cubic-bezier(0.4, 0, 1, 1) forwards;
+}
+@keyframes vanish-up {
+  0% { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  60% { opacity: 0.3; transform: translateY(-12px) scale(0.95); filter: blur(2px); }
+  100% { opacity: 0; transform: translateY(-24px) scale(0.9); filter: blur(4px); }
+}
+
+/* Presence avatar float/bob */
+.presence-avatar-bob {
+  animation: avatar-bob 3s ease-in-out infinite;
+}
+@keyframes avatar-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* Keyboard shortcut badge */
+.kbd-hint {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.0625rem 0.3rem;
+  border-radius: 0.25rem;
+  font-size: 0.625rem;
+  line-height: 1;
+  font-family: 'Fira Code', monospace;
+  border: 1px solid var(--clawdev-bg-surface-border);
+  background: var(--clawdev-bg-surface);
+  color: var(--clawdev-text-muted);
+  opacity: 0.7;
+  white-space: nowrap;
+}
+
+
+/* Reduced motion: disable all chat animations */
+@media (prefers-reduced-motion: reduce) {
+  .profile-hover-card-inner,
+  .floating-action-dock,
+  .animated-tooltip-popup,
+  .vanish-send {
+    animation: none !important;
+  }
+  .flip-word { transition: none !important; }
+  .flip-word-exit { transform: none; opacity: 0; }
+  .channel-glow-active,
+  .channel-glow-unread { animation: none !important; }
+  .presence-avatar-bob { animation: none !important; }
+  .floating-dock-item { transition: none !important; }
 }

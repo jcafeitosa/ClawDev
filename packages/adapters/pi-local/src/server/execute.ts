@@ -188,7 +188,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
     typeof envConfig.CLAWDEV_API_KEY === "string" && envConfig.CLAWDEV_API_KEY.trim().length > 0;
-  const env: Record<string, string> = { ...buildClawDevEnv(agent) };
+  const env: Record<string, string> = { ...buildClawDevEnv(agent, context) };
   env.CLAWDEV_RUN_ID = runId;
   
   const wakeTaskId =
@@ -336,9 +336,32 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const sessionHandoffNote = asString(context.clawdevSessionHandoffMarkdown, "").trim();
+
+  // Inject channel message context so the agent knows what was asked
+  let channelMessageContext = "";
+  if (wakeReason === "channel_message_received") {
+    const channelId = typeof context.channelId === "string" ? context.channelId : "";
+    const messageId = typeof context.messageId === "string" ? context.messageId : "";
+    const senderName = typeof context.senderDisplayName === "string" ? context.senderDisplayName : "someone";
+    const bodyPreview = typeof context.bodyPreview === "string" ? context.bodyPreview : "";
+    const channelName = typeof context.channelName === "string" ? context.channelName : "";
+    channelMessageContext = [
+      `## Wake Context: Channel Message`,
+      `You were woken because ${senderName} sent a message${channelName ? ` in #${channelName}` : ""}.`,
+      bodyPreview ? `**Message:** "${bodyPreview}"` : "",
+      `**Channel ID:** ${channelId}`,
+      messageId ? `**Message ID:** ${messageId}` : "",
+      ``,
+      `Read recent channel messages with: GET /api/channels/${channelId}/messages?limit=10`,
+      `Then respond helpfully. Your stdout will be posted as a reply in the channel.`,
+      `Focus on answering the question directly. Be concise and useful.`,
+    ].filter(Boolean).join("\n");
+  }
+
   const userPrompt = joinPromptSections([
     renderedBootstrapPrompt,
     sessionHandoffNote,
+    channelMessageContext,
     renderedHeartbeatPrompt,
   ]);
   const promptMetrics = {

@@ -9,6 +9,12 @@
   import { Plus, Bot, List, GitBranch, SlidersHorizontal } from 'lucide-svelte';
   import { Card, Badge, Skeleton, Avatar, AvatarFallback, Alert, AlertDescription, Button } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
+  import {
+    getHierarchyPresetDefinition,
+    getHierarchyPresetDepartments,
+    isLevelCAgentRole,
+    type HierarchyPreset,
+  } from '@clawdev/shared';
 
   onMount(() => breadcrumbStore.set([{ label: 'Agents' }]));
 
@@ -60,6 +66,15 @@
 
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
+  let selectedHierarchyPreset = $derived<HierarchyPreset | null>(
+    (companyStore.selectedCompany?.hierarchyPreset as HierarchyPreset | undefined) ?? null
+  );
+  let hierarchyPresetDefinition = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDefinition(selectedHierarchyPreset) : null
+  );
+  let hierarchyPresetDepartments = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDepartments(selectedHierarchyPreset) : []
+  );
 
   // ---------------------------------------------------------------------------
   // Live run map: agentId -> { runId, liveCount }
@@ -236,6 +251,10 @@
     return name.split(/\s+/).map(w => w[0]).join('').slice(0, 2).toUpperCase();
   }
 
+  function agentTierLabel(role: string): string {
+    return isLevelCAgentRole(role) ? 'Level C' : 'Execution';
+  }
+
   const STATUS_AVATAR_BG: Record<string, string> = {
     idle:             'bg-emerald-500/15',
     active:           'bg-emerald-500/15',
@@ -264,6 +283,7 @@
   {@const liveInfo = liveRunByAgent.get(agent.id)}
   {@const subtitle = `${roleLabel(agent.role)}${agent.title ? ` - ${agent.title}` : ''}`}
   {@const agentHref = `/{$page.params.companyPrefix}/agents/{agent.urlKey ?? agent.id}`}
+  {@const tierLabel = agentTierLabel(agent.role)}
   <div
     role="link"
     tabindex="0"
@@ -328,6 +348,9 @@
         <span class="text-xs text-muted-foreground font-mono w-14 text-right">
           {ADAPTER_LABELS[agent.adapterType] ?? agent.adapterType}
         </span>
+        <Badge variant="ghost" class="text-[10px] px-1.5 py-0 leading-none">
+          {tierLabel}
+        </Badge>
         <span class="text-xs text-muted-foreground w-16 text-right">
           {timeAgo(agent.lastHeartbeatAt)}
         </span>
@@ -359,6 +382,33 @@
   ------------------------------------------------------------------------- -->
 
 <PageLayout title="Agents" description="Your AI workforce">
+  {#if hierarchyPresetDefinition}
+    <Card class="border-border/60 backdrop-blur-sm">
+      <div class="px-4 py-3 sm:px-5 sm:py-4">
+        <div class="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div class="max-w-3xl">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Hierarchy preset</p>
+            <h2 class="mt-1 text-base font-semibold text-foreground">{hierarchyPresetDefinition.label}</h2>
+            <p class="mt-1 text-sm text-muted-foreground">{hierarchyPresetDefinition.description}</p>
+          </div>
+          <div class="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Operating rule</p>
+            <p class="mt-1 text-sm text-foreground">{hierarchyPresetDefinition.operatingRules[0]?.title ?? 'SDD first'}</p>
+          </div>
+        </div>
+
+        <div class="mt-4 flex flex-wrap gap-2">
+          {#each hierarchyPresetDepartments as department}
+            <Badge variant="outline" class="text-[11px]">
+              {department.label}
+              <span class="ml-1 text-muted-foreground">({department.level.toUpperCase().replace('_', ' ')})</span>
+            </Badge>
+          {/each}
+        </div>
+      </div>
+    </Card>
+  {/if}
+
   {#snippet actions()}
     <!-- Filters dropdown -->
     <div class="relative" data-filters-dropdown>
@@ -419,17 +469,17 @@
   {/snippet}
 
   <!-- Filter tabs -->
-  <div class="flex items-center gap-1.5 flex-wrap">
+  <div class="flex items-center border-b border-border">
     {#each FILTER_TABS as tab}
       <button
         onclick={() => { activeFilter = tab.value; }}
-        class="rounded-lg px-3 py-1.5 text-sm font-medium transition
+        class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
           {activeFilter === tab.value
-            ? 'bg-[#2563EB] text-white'
-            : 'bg-accent/60 text-muted-foreground hover:bg-accent hover:text-foreground'}"
+            ? 'border-b-2 border-blue-500 text-foreground'
+            : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
       >
         {tab.label}
-        <span class="ml-1 text-xs opacity-70">({countByTab(tab.value)})</span>
+        <span class="text-xs opacity-70">({countByTab(tab.value)})</span>
       </button>
     {/each}
   </div>
@@ -480,6 +530,15 @@
   {:else if viewMode === 'list'}
     {#if filteredAgents.length > 0}
       <Card class="border-border/60 backdrop-blur-sm p-0 gap-0 divide-y divide-border/40">
+        <!-- Table header -->
+        <div class="hidden sm:flex items-center gap-3 px-3 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          <span class="w-8 shrink-0"></span>
+          <span class="min-w-0 flex-1">Agent</span>
+          <span class="w-14 shrink-0 text-right">Adapter</span>
+          <span class="w-16 shrink-0 text-right">Layer</span>
+          <span class="w-16 shrink-0 text-right">Heartbeat</span>
+          <span class="w-20 shrink-0 text-right">Status</span>
+        </div>
         {#each filteredAgents as agent (agent.id)}
           {@render agentRowContent(agent)}
         {/each}

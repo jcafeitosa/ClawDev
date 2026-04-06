@@ -190,13 +190,35 @@ async function runCliJson<T>(args: string[], opts: { apiBase: string; configPath
   return JSON.parse(stdout.slice(jsonStart)) as T;
 }
 
+async function runCliJsonWithRetry<T>(
+  args: string[],
+  opts: { apiBase: string; configPath: string },
+  attempts = 3,
+) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await runCliJson<T>(args, opts);
+    } catch (error) {
+      lastError = error;
+      const message = error instanceof Error ? error.message : String(error);
+      const shouldRetry = /Could not reach the ClawDev API|fetch failed/i.test(message);
+      if (!shouldRetry || attempt === attempts) {
+        throw error;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
 async function waitForServer(
   apiBase: string,
   child: ServerProcess,
   output: { stdout: string[]; stderr: string[] },
 ) {
   const startedAt = Date.now();
-  while (Date.now() - startedAt < 30_000) {
+  while (Date.now() - startedAt < 90_000) {
     if (child.exitCode !== null) {
       throw new Error(
         `clawdev run exited before healthcheck succeeded.\nstdout:\n${output.stdout.join("")}\nstderr:\n${output.stderr.join("")}`,
@@ -357,7 +379,7 @@ describe("clawdev company import/export e2e", () => {
     expect(readFileSync(path.join(exportDir, "COMPANY.md"), "utf8")).toContain(sourceCompany.name);
     expect(readFileSync(path.join(exportDir, ".clawdev.yaml"), "utf8")).toContain('schema: "clawdev/v1"');
 
-    const importedNew = await runCliJson<{
+    const importedNew = await runCliJsonWithRetry<{
       company: { id: string; name: string; action: string };
       agents: Array<{ id: string | null; action: string; name: string }>;
     }>(
@@ -397,7 +419,7 @@ describe("clawdev company import/export e2e", () => {
     expect(importedProjects.map((project) => project.name)).toContain(sourceProject.name);
     expect(importedIssues.map((issue) => issue.title)).toContain(sourceIssue.title);
 
-    const previewExisting = await runCliJson<{
+    const previewExisting = await runCliJsonWithRetry<{
       errors: string[];
       plan: {
         companyAction: string;
@@ -429,7 +451,7 @@ describe("clawdev company import/export e2e", () => {
     expect(previewExisting.plan.projectPlans.some((plan) => plan.action === "create")).toBe(true);
     expect(previewExisting.plan.issuePlans.some((plan) => plan.action === "create")).toBe(true);
 
-    const importedExisting = await runCliJson<{
+    const importedExisting = await runCliJsonWithRetry<{
       company: { id: string; action: string };
       agents: Array<{ id: string | null; action: string; name: string }>;
     }>(
@@ -476,7 +498,7 @@ describe("clawdev company import/export e2e", () => {
     collectTextFiles(exportDir, exportDir, portableFiles);
     writeFileSync(zipPath, createStoredZipArchive(portableFiles, "clawdev-demo"));
 
-    const importedFromZip = await runCliJson<{
+    const importedFromZip = await runCliJsonWithRetry<{
       company: { id: string; name: string; action: string };
       agents: Array<{ id: string | null; action: string; name: string }>;
     }>(

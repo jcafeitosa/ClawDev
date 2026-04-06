@@ -111,7 +111,7 @@
 
 <PageLayout title="Goals" description="Track objectives and key results">
   {#snippet actions()}
-    <Button onclick={() => (showCreate = !showCreate)}>
+    <Button variant="outline" size="sm" onclick={() => (showCreate = !showCreate)}>
       <Plus class="h-4 w-4" />
       New Goal
     </Button>
@@ -139,7 +139,7 @@
               <select
                 id="goal-level"
                 bind:value={newLevel}
-                class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground capitalize focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                class="w-full selection:bg-primary selection:text-primary-foreground border-input dark:bg-input/30 rounded-md px-4 py-2 text-sm text-foreground capitalize focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
               >
                 <option value="task">Task</option>
                 <option value="milestone">Milestone</option>
@@ -153,7 +153,7 @@
               <select
                 id="goal-parent"
                 bind:value={selectedParentId}
-                class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                class="w-full selection:bg-primary selection:text-primary-foreground border-input dark:bg-input/30 rounded-md px-4 py-2 text-sm text-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none"
               >
                 <option value={null}>None (root goal)</option>
                 {#each goals as g (g.id)}
@@ -192,7 +192,7 @@
           </div>
           <p class="text-sm font-medium text-muted-foreground">No goals yet</p>
           <p class="text-xs text-muted-foreground/60">Create your first goal to get started.</p>
-          <Button onclick={() => (showCreate = true)} class="mt-2">
+          <Button variant="outline" onclick={() => (showCreate = true)} class="mt-2">
             <Plus class="h-4 w-4" />
             New Goal
           </Button>

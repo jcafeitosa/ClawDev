@@ -4,13 +4,16 @@
   import { companyStore } from '$stores/company.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { Building2, Plus, ArrowRight, Zap, Sparkles, MoreVertical, Pencil, Trash2, Bot, ListTodo, DollarSign, X, Check } from 'lucide-svelte';
+  import { listHierarchyPresetDefinitions, type HierarchyPreset } from '@clawdev/shared';
 
   let companies = $state<any[]>([]);
   let stats = $state<Record<string, any>>({});
   let loading = $state(true);
   let showCreate = $state(false);
   let newName = $state('');
+  let newHierarchyPreset = $state<HierarchyPreset>('classic_pyramid');
   let creating = $state(false);
+  const hierarchyPresetOptions = listHierarchyPresetDefinitions();
 
   // Rename state
   let renamingId = $state<string | null>(null);
@@ -64,11 +67,12 @@
     try {
       const res = await api('/api/companies', {
         method: 'POST',
-        body: JSON.stringify({ name: newName.trim() }),
+        body: JSON.stringify({ name: newName.trim(), hierarchyPreset: newHierarchyPreset }),
       });
       const c = await res.json();
       companies = [...companies, c];
       newName = '';
+      newHierarchyPreset = 'classic_pyramid';
       showCreate = false;
       select(c);
     } catch (e) {
@@ -192,11 +196,24 @@
             placeholder="e.g. Acme AI Corp"
           />
         </div>
+        <div class="companies-field">
+          <label for="company-hierarchy-preset">Hierarchy preset</label>
+          <select id="company-hierarchy-preset" bind:value={newHierarchyPreset}>
+            {#each hierarchyPresetOptions as preset}
+              <option value={preset.id}>{preset.label}</option>
+            {/each}
+          </select>
+          <p class="companies-field-help">
+            {#if hierarchyPresetOptions.find((preset) => preset.id === newHierarchyPreset)}
+              {hierarchyPresetOptions.find((preset) => preset.id === newHierarchyPreset)?.fit}
+            {/if}
+          </p>
+        </div>
         <div class="companies-form-actions">
           <button type="submit" class="companies-btn-primary" disabled={creating || !newName.trim()}>
             {creating ? 'Creating...' : 'Create Company'}
           </button>
-          <button type="button" class="companies-btn-ghost" onclick={() => { showCreate = false; newName = ''; }}>
+          <button type="button" class="companies-btn-ghost" onclick={() => { showCreate = false; newName = ''; newHierarchyPreset = 'classic_pyramid'; }}>
             Cancel
           </button>
         </div>
@@ -501,6 +518,31 @@
   .companies-field input:focus {
     border-color: #2563eb;
     box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  }
+
+  .companies-field select {
+    width: 100%;
+    height: 42px;
+    padding: 0 14px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: #11111a;
+    color: #f8fafc;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+
+  .companies-field select:focus {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+  }
+
+  .companies-field-help {
+    margin: 0.4rem 0 0;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: #64748b;
   }
 
   .companies-form-actions {

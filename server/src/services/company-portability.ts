@@ -27,6 +27,7 @@ import type {
   CompanyPortabilitySidebarOrder,
   CompanyPortabilitySkillManifestEntry,
   CompanySkill,
+  HierarchyPreset,
 } from "@clawdev/shared";
 import {
   ISSUE_PRIORITIES,
@@ -2289,7 +2290,7 @@ function buildManifestFromPackageFiles(
   const skillPaths = Array.from(new Set([...referencedSkillPaths, ...discoveredSkillPaths])).sort();
 
   const manifest: CompanyPortabilityManifest = {
-    schemaVersion: 4,
+    schemaVersion: 5,
     generatedAt: new Date().toISOString(),
     source: opts?.sourceLabel ?? null,
     includes: {
@@ -2309,6 +2310,7 @@ function buildManifestFromPackageFiles(
         typeof clawdevCompany.requireBoardApprovalForNewAgents === "boolean"
           ? clawdevCompany.requireBoardApprovalForNewAgents
           : readCompanyApprovalDefault(companyFrontmatter),
+      hierarchyPreset: (asString(clawdevCompany.hierarchyPreset) ?? "classic_pyramid") as HierarchyPreset,
     },
     sidebar: clawdevSidebar,
     agents: [],
@@ -3744,6 +3746,9 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         requireBoardApprovalForNewAgents: include.company
           ? (sourceManifest.company?.requireBoardApprovalForNewAgents ?? true)
           : true,
+        hierarchyPreset: include.company
+          ? (sourceManifest.company?.hierarchyPreset ?? "classic_pyramid")
+          : "classic_pyramid",
       });
       if (mode === "agent_safe" && options?.sourceCompanyId) {
         await access.copyActiveUserMemberships(options.sourceCompanyId, created.id);
@@ -3761,6 +3766,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           description: sourceManifest.company.description,
           brandColor: sourceManifest.company.brandColor,
           requireBoardApprovalForNewAgents: sourceManifest.company.requireBoardApprovalForNewAgents,
+          hierarchyPreset: sourceManifest.company.hierarchyPreset,
         });
         targetCompany = updated ?? targetCompany;
         companyAction = "updated";

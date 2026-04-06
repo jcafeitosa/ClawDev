@@ -14,7 +14,7 @@
  *
  * // Use in ClawDev server/src/index.ts:
  * const embeddingConfig = buildEmbeddingConfig();
- * // → { type: "local", baseUrl: "http://localhost:8085", model: "Qwen3-Embedding-0.6B", dimensions: 1024 }
+ * // → { type: "local", baseUrl: "http://localhost:8080", model: "Qwen3-Embedding-0.6B", dimensions: 1024 }
  * ```
  */
 
@@ -22,7 +22,7 @@ import type { EmbeddingProviderConfig } from "@clawdev/shared";
 
 // Re-export constants for consumers
 export const LOCAL_EMBEDDING_DEFAULTS = {
-  baseUrl: "http://localhost:8085",
+  baseUrl: "http://localhost:8080",
   model: "Qwen3-Embedding-0.6B",
   dimensions: 1024,
   modelFile: "Qwen3-Embedding-0.6B-Q4_K_M.gguf",
@@ -34,7 +34,7 @@ export const LOCAL_EMBEDDING_DEFAULTS = {
  * Reads from environment variables, falls back to defaults.
  *
  * Env vars:
- *   EMBEDDING_BASE_URL   (default: http://localhost:8085)
+ *   EMBEDDING_BASE_URL   (default: http://localhost:8080)
  *   EMBEDDING_MODEL      (default: Qwen3-Embedding-0.6B)
  *   EMBEDDING_DIMENSIONS (default: 1024)
  */

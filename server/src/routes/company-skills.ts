@@ -9,13 +9,15 @@ import type { Db } from "@clawdev/db";
 import { accessService, companySkillService, agentService, logActivity } from "../services/index.js";
 import { companyIdParam } from "../middleware/index.js";
 import { assertBoard, assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
+import { isLevelCAgentRole } from "@clawdev/shared";
 
 export function companySkillRoutes(db: Db) {
   const svc = companySkillService(db);
   const agents = agentService(db);
   const access = accessService(db);
 
-  function canCreateAgents(agent: { permissions: Record<string, unknown> | null | undefined }) {
+  function canCreateAgents(agent: { permissions: Record<string, unknown> | null | undefined; role?: string }) {
+    if (agent.role && isLevelCAgentRole(agent.role)) return true;
     if (!agent.permissions || typeof agent.permissions !== "object") return false;
     return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
   }

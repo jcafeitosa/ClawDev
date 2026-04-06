@@ -13,6 +13,13 @@
   import { onMount } from "svelte";
   import { Bot, Play, Pause, Zap, Key, FileText, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Plus, X, Save, RotateCcw, Check, Loader2, MoreHorizontal, AlertCircle, ClipboardList, StopCircle, Brain, Cpu, Terminal, Crown, Code, Rocket, Globe, Server, Database, Cloud } from "lucide-svelte";
   import type { ComponentType } from "svelte";
+  import {
+    getHierarchyPresetDefinition,
+    getHierarchyPresetDepartments,
+    getHierarchyPresetOperatingRules,
+    isLevelCAgentRole,
+    type HierarchyPreset,
+  } from "@clawdev/shared";
 
   const AGENT_ICON_COMPONENTS: Record<string, ComponentType> = {
     bot: Bot, brain: Brain, cpu: Cpu, zap: Zap, terminal: Terminal, crown: Crown,
@@ -69,6 +76,14 @@
     reportsTo: null as string | null,
   });
   let editSaving = $state(false);
+
+  // Delegations state
+  let delegations = $state<any[]>([]);
+  let delegationsLoading = $state(false);
+  let showDelegateForm = $state(false);
+  let delegateForm = $state({ toAgentId: '', delegationType: 'task', instructions: '', issueId: '' });
+  let delegateCreating = $state(false);
+  let companyAgents = $state<any[]>([]);
 
   // API Keys state
   let apiKeys = $state<any[]>([]);
@@ -162,6 +177,19 @@
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix(prefix));
   let companyId = $derived(routeCompanyId);
   let agentIsUuid = $derived(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(agentId ?? ""));
+  let selectedHierarchyPreset = $derived<HierarchyPreset | null>(
+    (companyStore.selectedCompany?.hierarchyPreset as HierarchyPreset | undefined) ?? null
+  );
+  let hierarchyPresetDefinition = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDefinition(selectedHierarchyPreset) : null
+  );
+  let hierarchyPresetDepartments = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDepartments(selectedHierarchyPreset) : []
+  );
+  let hierarchyPresetOperatingRules = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetOperatingRules(selectedHierarchyPreset) : []
+  );
+  let agentLayer = $derived(isLevelCAgentRole(agent?.role) ? "Level C" : "Execution");
 
   let budgetFormatted = $derived(agent?.budgetMonthlyCents ? `$${(agent.budgetMonthlyCents / 100).toFixed(2)}` : "No budget");
   let spentFormatted = $derived(agent?.spentMonthlyCents ? `$${(agent.spentMonthlyCents / 100).toFixed(2)}` : "$0.00");
@@ -1049,6 +1077,61 @@
     if (activeTab === "keys" && agentId) loadApiKeys();
   });
 
+  // Load delegations when switching to the delegations tab
+  $effect(() => {
+    if (activeTab === "delegations" && agentId) loadDelegations();
+  });
+
+  async function loadDelegations() {
+    if (!agentId) return;
+    delegationsLoading = true;
+    try {
+      const res = await api(`/api/agents/${agentId}/delegations`);
+      delegations = await res.json();
+    } catch (e) { console.error(e); }
+    finally { delegationsLoading = false; }
+  }
+
+  async function loadCompanyAgentsForDelegate() {
+    if (!companyId || companyAgents.length > 0) return;
+    try {
+      const res = await api(`/api/companies/${companyId}/agents`);
+      const data = await res.json();
+      companyAgents = (Array.isArray(data) ? data : data.agents ?? []).filter((a: any) => a.id !== agentId);
+    } catch (e) { console.error(e); }
+  }
+
+  async function createDelegation() {
+    if (!delegateForm.toAgentId || !delegateForm.instructions.trim() || !companyId) return;
+    delegateCreating = true;
+    try {
+      await api(`/api/agents/${agentId}/delegations`, {
+        method: 'POST',
+        body: JSON.stringify({
+          companyId,
+          toAgentId: delegateForm.toAgentId,
+          delegationType: delegateForm.delegationType,
+          instructions: delegateForm.instructions.trim(),
+          issueId: delegateForm.issueId || undefined,
+        }),
+      });
+      delegateForm = { toAgentId: '', delegationType: 'task', instructions: '', issueId: '' };
+      showDelegateForm = false;
+      await loadDelegations();
+    } catch (e) { console.error(e); }
+    finally { delegateCreating = false; }
+  }
+
+  async function handleDelegationAction(delegationId: string, action: string, payload?: Record<string, unknown>) {
+    try {
+      await api(`/api/agent-delegations/${delegationId}/${action}`, {
+        method: 'POST',
+        body: JSON.stringify({ agentId, ...payload }),
+      });
+      await loadDelegations();
+    } catch (e) { console.error(e); }
+  }
+
   // ---------------------------------------------------------------------------
   // Inline name edit
   // ---------------------------------------------------------------------------
@@ -1385,6 +1468,7 @@
             <TabsTrigger value="budget">Budget</TabsTrigger>
             <TabsTrigger value="keys">API Keys</TabsTrigger>
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
+            <TabsTrigger value="delegations">Delegations</TabsTrigger>
           </TabsList>
 
           <!-- OVERVIEW TAB -->
@@ -2719,6 +2803,116 @@
               </Card>
             </div>
           </TabsContent>
+
+          <!-- ── Delegations Tab ─────────────────────────────────────── -->
+          <TabsContent value="delegations">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-medium text-foreground">Delegations</h3>
+                <Button size="sm" onclick={() => { showDelegateForm = !showDelegateForm; if (showDelegateForm) loadCompanyAgentsForDelegate(); }}>
+                  <Plus class="h-3.5 w-3.5" />
+                  New Delegation
+                </Button>
+              </div>
+
+              {#if showDelegateForm}
+                <Card>
+                  <CardContent class="pt-5">
+                    <form onsubmit={(e) => { e.preventDefault(); createDelegation(); }} class="space-y-3">
+                      <div>
+                        <label for="delegate-to" class="block text-xs font-medium text-foreground mb-1">Delegate To</label>
+                        <select id="delegate-to" bind:value={delegateForm.toAgentId} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none">
+                          <option value="">Select agent...</option>
+                          {#each companyAgents as a}
+                            <option value={a.id}>{a.name} ({a.role})</option>
+                          {/each}
+                        </select>
+                      </div>
+                      <div>
+                        <label for="delegate-type" class="block text-xs font-medium text-foreground mb-1">Type</label>
+                        <select id="delegate-type" bind:value={delegateForm.delegationType} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none">
+                          <option value="task">Task</option>
+                          <option value="review">Review</option>
+                          <option value="consultation">Consultation</option>
+                          <option value="escalation">Escalation</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label for="delegate-instructions" class="block text-xs font-medium text-foreground mb-1">Instructions</label>
+                        <textarea id="delegate-instructions" bind:value={delegateForm.instructions} rows="3" placeholder="What do you need from this agent?" class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none resize-none"></textarea>
+                      </div>
+                      <div class="flex items-center gap-2">
+                        <Button type="submit" size="sm" disabled={delegateCreating || !delegateForm.toAgentId || !delegateForm.instructions.trim()}>
+                          {delegateCreating ? 'Creating...' : 'Create Delegation'}
+                        </Button>
+                        <Button variant="outline" size="sm" type="button" onclick={() => (showDelegateForm = false)}>Cancel</Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              {/if}
+
+              {#if delegationsLoading}
+                <div class="text-center py-8 text-sm text-muted-foreground">Loading delegations...</div>
+              {:else if delegations.length === 0}
+                <Card>
+                  <CardContent class="p-8 text-center">
+                    <p class="text-sm text-muted-foreground">No delegations yet</p>
+                    <p class="text-xs text-muted-foreground/60 mt-1">Create a delegation to assign work to other agents.</p>
+                  </CardContent>
+                </Card>
+              {:else}
+                <div class="glass-card overflow-hidden font-card">
+                  <div class="flex items-center border-b border-border/50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <span class="min-w-0 flex-1">Instructions</span>
+                    <span class="w-[80px] shrink-0">Type</span>
+                    <span class="w-[80px] shrink-0">Status</span>
+                    <span class="w-[100px] shrink-0">From / To</span>
+                    <span class="w-[100px] shrink-0 text-right">Actions</span>
+                  </div>
+                  {#each delegations as d}
+                    {@const del = d.delegation ?? d}
+                    {@const isIncoming = del.toAgentId === agentId}
+                    {@const statusColors: Record<string, string> = { pending: '#f59e0b', accepted: '#3b82f6', rejected: '#ef4444', completed: '#10b981', cancelled: '#6b7280' }}
+                    <div class="flex items-center border-b border-border/30 px-4 py-3 text-sm last:border-b-0">
+                      <div class="min-w-0 flex-1">
+                        <span class="text-foreground truncate block">{del.instructions?.slice(0, 80)}{del.instructions?.length > 80 ? '...' : ''}</span>
+                        {#if del.result}
+                          <span class="text-xs text-muted-foreground/60 truncate block mt-0.5">Result: {del.result.slice(0, 60)}</span>
+                        {/if}
+                      </div>
+                      <span class="w-[80px] shrink-0">
+                        <Badge variant="outline" class="text-[10px]">{del.delegationType}</Badge>
+                      </span>
+                      <span class="w-[80px] shrink-0">
+                        <span class="inline-flex items-center gap-1 rounded px-2 py-0.5 text-[10px] font-bold uppercase text-white" style="background-color: {statusColors[del.status] ?? '#6b7280'}">
+                          {del.status}
+                        </span>
+                      </span>
+                      <span class="w-[100px] shrink-0 text-xs text-muted-foreground">
+                        {#if isIncoming}
+                          <span class="text-blue-400">← {d.fromAgentName ?? 'Agent'}</span>
+                        {:else}
+                          <span class="text-green-400">→ {d.toAgentName ?? 'Agent'}</span>
+                        {/if}
+                      </span>
+                      <span class="w-[100px] shrink-0 flex items-center justify-end gap-1">
+                        {#if isIncoming && del.status === 'pending'}
+                          <Button size="sm" variant="outline" class="h-6 px-2 text-[10px]" onclick={() => handleDelegationAction(del.id, 'accept')}>Accept</Button>
+                          <Button size="sm" variant="outline" class="h-6 px-2 text-[10px] text-red-400" onclick={() => handleDelegationAction(del.id, 'reject', { reason: 'Rejected by agent' })}>Reject</Button>
+                        {:else if isIncoming && del.status === 'accepted'}
+                          <Button size="sm" variant="outline" class="h-6 px-2 text-[10px] text-green-400" onclick={() => handleDelegationAction(del.id, 'complete', { result: 'Completed' })}>Complete</Button>
+                        {:else if !isIncoming && del.status === 'pending'}
+                          <Button size="sm" variant="outline" class="h-6 px-2 text-[10px]" onclick={() => handleDelegationAction(del.id, 'escalate')}>Escalate</Button>
+                        {/if}
+                      </span>
+                    </div>
+                  {/each}
+                </div>
+                <p class="mt-2 text-right text-xs text-muted-foreground/60">{delegations.length} delegation{delegations.length === 1 ? '' : 's'}</p>
+              {/if}
+            </div>
+          </TabsContent>
         </Tabs>
       </div>
 
@@ -2727,6 +2921,42 @@
         <PropertyRow label="Status"><StatusBadge status={agent.status} /></PropertyRow>
         <Separator />
         <PropertyRow label="Role"><span class="capitalize">{agent.role}</span></PropertyRow>
+        <Separator />
+        <PropertyRow label="Layer">
+          <Badge variant="outline" class="text-[10px] uppercase tracking-wider">
+            {agentLayer}
+          </Badge>
+        </PropertyRow>
+        {#if hierarchyPresetDefinition}
+          <Separator />
+          <PropertyRow label="Hierarchy preset">
+            <div class="space-y-1">
+              <p class="text-sm font-medium text-foreground">{hierarchyPresetDefinition.label}</p>
+              <p class="text-xs text-muted-foreground">{hierarchyPresetDefinition.fit}</p>
+            </div>
+          </PropertyRow>
+          <Separator />
+          <PropertyRow label="Departments">
+            <div class="flex flex-wrap gap-1.5">
+              {#each hierarchyPresetDepartments as department}
+                <Badge variant="outline" class="text-[10px] uppercase tracking-wider">
+                  {department.label}
+                </Badge>
+              {/each}
+            </div>
+          </PropertyRow>
+          <Separator />
+          <PropertyRow label="Operating rules">
+            <div class="space-y-2">
+              {#each hierarchyPresetOperatingRules as rule}
+                <div class="rounded-md border border-border/60 bg-muted/20 px-3 py-2">
+                  <p class="text-xs font-medium text-foreground">{rule.title}</p>
+                  <p class="mt-0.5 text-[11px] leading-snug text-muted-foreground">{rule.description}</p>
+                </div>
+              {/each}
+            </div>
+          </PropertyRow>
+        {/if}
         {#if agent.title}
           <Separator />
           <PropertyRow label="Title">{agent.title}</PropertyRow>

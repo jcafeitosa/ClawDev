@@ -104,11 +104,13 @@
 
 <PageLayout title="Approvals" description="Review and approve pending requests">
   <!-- Tabs -->
-  <div class="flex items-center gap-1 border-b border-border">
+  <div class="flex items-center border-b border-border">
     <button
       onclick={() => (activeTab = 'pending')}
-      class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
-        {activeTab === 'pending' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+      class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+        {activeTab === 'pending'
+          ? 'border-b-2 border-blue-500 text-foreground'
+          : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
     >
       Pending
       {#if pendingCount > 0}
@@ -116,45 +118,39 @@
           {pendingCount}
         </Badge>
       {/if}
-      {#if activeTab === 'pending'}
-        <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></span>
-      {/if}
     </button>
     <button
       onclick={() => (activeTab = 'approved')}
-      class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
-        {activeTab === 'approved' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+      class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+        {activeTab === 'approved'
+          ? 'border-b-2 border-blue-500 text-foreground'
+          : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
     >
       Approved
       {#if approvedCount > 0}
         <span class="ml-1 text-xs text-muted-foreground">({approvedCount})</span>
       {/if}
-      {#if activeTab === 'approved'}
-        <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></span>
-      {/if}
     </button>
     <button
       onclick={() => (activeTab = 'rejected')}
-      class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
-        {activeTab === 'rejected' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+      class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+        {activeTab === 'rejected'
+          ? 'border-b-2 border-blue-500 text-foreground'
+          : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
     >
       Rejected
       {#if rejectedCount > 0}
         <span class="ml-1 text-xs text-muted-foreground">({rejectedCount})</span>
       {/if}
-      {#if activeTab === 'rejected'}
-        <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></span>
-      {/if}
     </button>
     <button
       onclick={() => (activeTab = 'all')}
-      class="cursor-pointer relative px-4 py-2.5 text-sm font-medium transition-colors duration-150
-        {activeTab === 'all' ? 'text-foreground' : 'text-muted-foreground hover:text-foreground'}"
+      class="cursor-pointer inline-flex items-center gap-1.5 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors
+        {activeTab === 'all'
+          ? 'border-b-2 border-blue-500 text-foreground'
+          : 'border-b-2 border-transparent text-muted-foreground hover:text-foreground'}"
     >
       All
-      {#if activeTab === 'all'}
-        <span class="absolute bottom-0 left-0 right-0 h-0.5 bg-primary rounded-full"></span>
-      {/if}
     </button>
   </div>
 
@@ -189,7 +185,11 @@
     <!-- Approval cards -->
     <Card class="border-border/60 overflow-hidden">
       <CardContent class="p-0">
-        <div class="divide-y divide-border/50">
+        <div class="flex items-center border-b border-border px-5 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+            <span class="min-w-0 flex-1">Request</span>
+            <span class="w-44 shrink-0 text-right">Actions</span>
+          </div>
+          <div class="divide-y divide-border/50">
           {#each displayedApprovals as approval (approval.id)}
             <a href={`/${prefix}/approvals/${approval.id}`} class="group block cursor-pointer transition-colors duration-150">
               <div class="px-5 py-5 transition-colors hover:bg-accent/40">

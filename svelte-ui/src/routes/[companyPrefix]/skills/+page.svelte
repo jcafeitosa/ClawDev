@@ -354,11 +354,11 @@
 </script>
 
 <PageLayout title="Skills" fullWidth>
-<div class="flex h-[calc(100vh-8rem)]">
+<div class="flex flex-col md:flex-row min-h-0 flex-1 max-h-[calc(100vh-12rem)]">
   <!-- ===================================================================== -->
   <!-- LEFT PANEL: Skill list with search, import, file trees                -->
   <!-- ===================================================================== -->
-  <aside class="w-[19rem] shrink-0 border-r border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden">
+  <aside class="w-full md:w-[19rem] shrink-0 border-b md:border-b-0 md:border-r border-zinc-200 dark:border-zinc-800 flex flex-col overflow-hidden max-h-[50vh] md:max-h-none">
     <!-- Header -->
     <div class="border-b border-zinc-200 dark:border-zinc-800 px-4 py-3">
       <div class="flex items-center justify-between gap-2">

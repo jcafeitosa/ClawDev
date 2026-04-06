@@ -7,13 +7,14 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { AGENT_ICON_NAMES } from "@clawdev/shared";
+import { AGENT_ICON_NAMES, isLevelCAgentRole } from "@clawdev/shared";
 import { listServerAdapters } from "../adapters/index.js";
 import { agentService } from "../services/agents.js";
 import { assertBoard, type Actor } from "../middleware/authz.js";
 import { forbidden } from "../errors.js";
 
 function hasCreatePermission(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
+  if (isLevelCAgentRole(agent.role)) return true;
   if (!agent.permissions || typeof agent.permissions !== "object") return false;
   return Boolean((agent.permissions as Record<string, unknown>).canCreateAgents);
 }

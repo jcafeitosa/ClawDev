@@ -13,6 +13,13 @@
   import { Bot, User, Settings, Zap, FileText, ChevronDown } from 'lucide-svelte';
   import { Card, CardContent, CardHeader, CardTitle, Button, Input, Label, Alert, AlertDescription, Badge, Skeleton, Separator } from '$components/ui/index.js';
   import { PageLayout } from '$components/layout/index.js';
+  import {
+    getHierarchyPresetDefinition,
+    getHierarchyPresetDepartments,
+    getHierarchyPresetOperatingRules,
+    getHierarchyPresetSeedAgents,
+    type HierarchyPreset,
+  } from '@clawdev/shared';
 
   // ---------------------------------------------------------------------------
   // Constants
@@ -61,6 +68,21 @@
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let isFirstAgent = $derived(agentsLoaded && existingAgents.length === 0);
+  let selectedHierarchyPreset = $derived<HierarchyPreset | null>(
+    (companyStore.selectedCompany?.hierarchyPreset as HierarchyPreset | undefined) ?? null
+  );
+  let hierarchyPresetDefinition = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDefinition(selectedHierarchyPreset) : null
+  );
+  let hierarchyPresetDepartments = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDepartments(selectedHierarchyPreset) : []
+  );
+  let hierarchyPresetRules = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetOperatingRules(selectedHierarchyPreset) : []
+  );
+  let hierarchyPresetSeedAgents = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetSeedAgents(selectedHierarchyPreset) : []
+  );
 
   // ---------------------------------------------------------------------------
   // CSS helpers
@@ -73,6 +95,7 @@
   const helpCls = 'mt-1 text-xs text-[#64748B]';
   const sectionHeadingCls =
     'flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-[#64748B] border-b border-white/[0.06] pb-2 mb-5';
+  const chipCls = 'inline-flex items-center gap-1 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 py-1 text-[11px] font-medium text-[#CBD5E1]';
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -184,6 +207,78 @@
       </p>
     </CardHeader>
     <CardContent>
+
+  {#if hierarchyPresetDefinition}
+    <Card class="mb-8 border-white/[0.08] bg-white/[0.02]">
+      <CardHeader class="pb-4">
+        <CardTitle class="text-base">Company hierarchy blueprint</CardTitle>
+        <p class="text-sm text-muted-foreground">
+          This company uses the <span class="font-medium text-foreground">{hierarchyPresetDefinition.label}</span> preset.
+          The departments and operating rules below shape how new agents should be staffed and delegated.
+        </p>
+      </CardHeader>
+      <CardContent class="space-y-6">
+        <div class="grid gap-3 md:grid-cols-3">
+          <div class="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Root model</p>
+            <p class="mt-2 text-sm font-medium text-foreground">{hierarchyPresetDefinition.rootTitle}</p>
+            <p class="mt-1 text-xs text-muted-foreground">{hierarchyPresetDefinition.rootSubtitle}</p>
+          </div>
+          <div class="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Departments</p>
+            <p class="mt-2 text-sm font-medium text-foreground">{hierarchyPresetDepartments.length} active lanes</p>
+            <p class="mt-1 text-xs text-muted-foreground">Use these to keep ownership explicit and non-overlapping.</p>
+          </div>
+          <div class="rounded-xl border border-white/[0.06] bg-white/[0.02] p-4">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-[#64748B]">Operating rules</p>
+            <p class="mt-2 text-sm font-medium text-foreground">{hierarchyPresetRules.length} guardrails</p>
+            <p class="mt-1 text-xs text-muted-foreground">SDD, delegation, approvals, and collaboration stay visible.</p>
+          </div>
+        </div>
+
+        <div class="grid gap-6 lg:grid-cols-2">
+          <div>
+            <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-[#64748B]">Departments</p>
+            <div class="flex flex-wrap gap-2">
+              {#each hierarchyPresetDepartments as department}
+                <span class={chipCls}>
+                  {department.label}
+                  <span class="text-[#64748B]">({department.level.toUpperCase().replace('_', ' ')})</span>
+                </span>
+              {/each}
+            </div>
+          </div>
+
+          <div>
+            <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-[#64748B]">Seed leadership</p>
+            <div class="space-y-2">
+              {#each hierarchyPresetSeedAgents.slice(0, 5) as seed}
+                <div class="flex items-center justify-between rounded-xl border border-white/[0.06] bg-white/[0.02] px-3 py-2">
+                  <div>
+                    <p class="text-sm font-medium text-foreground">{seed.name}</p>
+                    <p class="text-xs text-muted-foreground">{seed.title} · reports to {seed.reportsToKey}</p>
+                  </div>
+                  <Badge variant="ghost" class="text-[11px]">{seed.level.toUpperCase()}</Badge>
+                </div>
+              {/each}
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <p class="mb-3 text-xs font-semibold uppercase tracking-wider text-[#64748B]">Operating rules</p>
+          <div class="grid gap-2 md:grid-cols-2">
+            {#each hierarchyPresetRules as rule}
+              <div class="rounded-xl border border-white/[0.06] bg-white/[0.02] p-3">
+                <p class="text-sm font-medium text-foreground">{rule.title}</p>
+                <p class="mt-1 text-xs text-muted-foreground">{rule.description}</p>
+              </div>
+            {/each}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
 
   <form onsubmit={(e) => { e.preventDefault(); create(); }} class="space-y-10">
     <!-- ===================================================================== -->

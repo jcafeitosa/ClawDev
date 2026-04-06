@@ -1,10 +1,12 @@
+import { hasLevelCAgentPermissions } from "@clawdev/shared";
+
 export type NormalizedAgentPermissions = Record<string, unknown> & {
   canCreateAgents: boolean;
 };
 
 export function defaultPermissionsForRole(role: string): NormalizedAgentPermissions {
   return {
-    canCreateAgents: role === "ceo",
+    canCreateAgents: hasLevelCAgentPermissions(role),
   };
 }
 
@@ -19,8 +21,9 @@ export function normalizeAgentPermissions(
 
   const record = permissions as Record<string, unknown>;
   return {
-    canCreateAgents:
-      typeof record.canCreateAgents === "boolean"
+    canCreateAgents: hasLevelCAgentPermissions(role)
+      ? true
+      : typeof record.canCreateAgents === "boolean"
         ? record.canCreateAgents
         : defaults.canCreateAgents,
   };

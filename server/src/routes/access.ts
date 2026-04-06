@@ -13,6 +13,7 @@ import { Elysia, t } from "elysia";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import type { PermissionKey } from "@clawdev/shared";
+import { isLevelCAgentRole } from "@clawdev/shared";
 import { agentApiKeys, authUsers, companies, invites, joinRequests } from "@clawdev/db";
 import {
   accessService,
@@ -1183,7 +1184,7 @@ export function accessRoutes(db: Db) {
           const managerId = resolveJoinRequestAgentManagerId(existingAgents);
           if (!managerId) {
             set.status = 409;
-            return { error: "Join request cannot be approved because this company has no active CEO" };
+            return { error: "Join request cannot be approved because this company has no active level C agent" };
           }
 
           const agentName = deduplicateAgentName(
@@ -1558,12 +1559,12 @@ export function accessRoutes(db: Db) {
           if (a.type === "agent") {
             if (!a.agentId) {
               set.status = 403;
-              return { error: "Only CEO agents can create openclaw invite prompts" };
+              return { error: "Only level C agents can create openclaw invite prompts" };
             }
             const agent = await agents.getById(a.agentId);
-            if (!agent || agent.role !== "ceo") {
+            if (!agent || !isLevelCAgentRole(agent.role)) {
               set.status = 403;
-              return { error: "Only CEO agents can create openclaw invite prompts" };
+              return { error: "Only level C agents can create openclaw invite prompts" };
             }
           } else if (a.type === "board") {
             const allowed =

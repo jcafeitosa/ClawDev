@@ -8,6 +8,13 @@
   import WebcamPixelGrid from "$lib/components/ui/webcam-pixel-grid/WebcamPixelGrid.svelte";
   import AgentConfigForm from "$lib/components/agent-config-form.svelte";
   import { AGENT_ADAPTER_OPTIONS } from "$lib/constants/agent-adapters";
+  import {
+    getHierarchyPresetDefinition,
+    getHierarchyPresetDepartments,
+    getHierarchyPresetOperatingRules,
+    listHierarchyPresetDefinitions,
+    type HierarchyPreset,
+  } from "@clawdev/shared";
 
   const TOTAL_STEPS = 4;
 
@@ -31,6 +38,7 @@
   // Step 1: Company
   let companyName = $state("");
   let companyMission = $state("");
+  let hierarchyPreset = $state<HierarchyPreset>("research_lab");
   let createdCompany = $state<{ id: string; slug?: string; issuePrefix?: string; name: string } | null>(null);
   let createdCompanyId = $state<string | null>(null);
   let createdCompanyPrefix = $state<string | null>(null);
@@ -39,7 +47,9 @@
   let agentName = $state("CEO");
   let adapterType = $state("claude_local");
   let createdAgent = $state<{ id: string; name: string; role: string } | null>(null);
+  let createdAgentTitle = $state<string | null>(null);
   let adapterConfig = $state<Record<string, any>>({});
+  const hierarchyPresetOptions = listHierarchyPresetDefinitions();
   const MODEL_DISCOVERY_ADAPTERS = new Set([
     "claude_local",
     "codex_local",
@@ -78,7 +88,10 @@
 
   // Step 3: Task
   let taskTitle = $state("Hire your first engineer and create a hiring plan");
-  let taskDescription = $state("You are the CEO. You set the direction for the company.\n\n- hire a founding engineer\n- write a hiring plan\n- break the roadmap into concrete tasks and start delegating work");
+  let taskDescription = $state("Use SDD to turn the company plan into action.\n\n- confirm the spec and acceptance criteria\n- break the roadmap into concrete workstreams\n- delegate execution to the right department and validate the result");
+  let taskSpec = $state("Define the first actionable work item for the company launch plan and make it clear enough to execute.");
+  let taskDesign = $state("Map the work into a single-owner execution slice that can be completed without cross-team ambiguity.");
+  let taskValidation = $state("Confirm the work is scoped, assigned, and ready for the first execution pass.");
   let adminNameId = "setup-admin-name";
   let adminEmailId = "setup-admin-email";
   let adminPasswordId = "setup-admin-password";
@@ -201,6 +214,18 @@
 
   function setAdapterConfigField(key: string, value: unknown) {
     adapterConfig = { ...adapterConfig, [key]: value };
+  }
+
+  function selectedHierarchyPresetDefinition() {
+    return getHierarchyPresetDefinition(hierarchyPreset) ?? hierarchyPresetOptions[0] ?? null;
+  }
+
+  function selectedHierarchyPresetDepartments() {
+    return getHierarchyPresetDepartments(hierarchyPreset);
+  }
+
+  function selectedHierarchyPresetOperatingRules() {
+    return getHierarchyPresetOperatingRules(hierarchyPreset);
   }
 
   function filterAdapterModels(models: AdapterModel[]): AdapterModel[] {
@@ -349,7 +374,11 @@
       // Create company
       const companyRes = await api("/api/companies", {
         method: "POST",
-        body: JSON.stringify({ name: companyName, mission: companyMission || undefined }),
+        body: JSON.stringify({
+          name: companyName,
+          description: companyMission || undefined,
+          hierarchyPreset,
+        }),
       });
       if (!companyRes.ok) {
         const body = await companyRes.json().catch(() => null);
@@ -387,7 +416,7 @@
           name: agentName,
           role: "ceo",
           adapterType,
-          title: "Chief Executive Officer",
+          title: selectedHierarchyPresetDefinition()?.rootTitle ?? "Chief Executive Officer",
           status: "idle",
         }),
       });
@@ -398,6 +427,7 @@
       }
       const agent = await res.json();
       createdAgent = agent;
+      createdAgentTitle = selectedHierarchyPresetDefinition()?.rootTitle ?? "Chief Executive Officer";
       markCompleted(2);
       currentStep = 3;
     } catch (err) {
@@ -441,6 +471,10 @@
         const projectPayload: Record<string, unknown> = {
           name: "Onboarding",
           status: "in_progress",
+          description: companyMission || undefined,
+          sddSpec: `Establish the first operational project for ${companyName || "the company"}.`,
+          sddDesign: `Use the ${selectedHierarchyPresetDefinition()?.label ?? "selected"} hierarchy to organize the onboarding work into a safe delivery path.`,
+          sddValidation: "Confirm the onboarding project can support agent setup, task intake, and launch readiness.",
         };
         if (createdGoalId) {
           projectPayload.goalIds = [createdGoalId];
@@ -459,6 +493,9 @@
       const issueBody: Record<string, unknown> = {
         title: taskTitle,
         description: taskDescription || undefined,
+        sddSpec: taskSpec,
+        sddDesign: taskDesign,
+        sddValidation: taskValidation || undefined,
         status: "todo",
       };
       if (createdAgent) issueBody.assigneeAgentId = createdAgent.id;
@@ -612,6 +649,71 @@
               bind:value={companyMission}
             ></textarea>
           </div>
+
+          <div class="group">
+            <label for="hierarchy-preset" class="text-xs mb-1 block transition-colors text-gray-400 group-focus-within:text-gray-900">Hierarchy preset</label>
+            <select
+              id="hierarchy-preset"
+              class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 text-gray-900"
+              bind:value={hierarchyPreset}
+            >
+              {#each hierarchyPresetOptions as preset}
+                <option value={preset.id}>
+                  {preset.label}
+                </option>
+              {/each}
+            </select>
+            {#if selectedHierarchyPresetDefinition()}
+              <p class="text-[10px] text-gray-400 mt-1">
+                {selectedHierarchyPresetDefinition()?.fit}
+              </p>
+            {/if}
+          </div>
+
+          {#if selectedHierarchyPresetDefinition()}
+            {@const hierarchyPresetDefinition = selectedHierarchyPresetDefinition()}
+            <div class="rounded-lg border border-gray-200 bg-white/80 p-4">
+              <div class="mb-2">
+                <h4 class="text-sm font-medium text-gray-900">{hierarchyPresetDefinition.label}</h4>
+                <p class="text-xs text-gray-500">{hierarchyPresetDefinition.description}</p>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                <span class="inline-flex items-center rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] font-medium text-gray-700">
+                  {hierarchyPresetDefinition.rootSubtitle}
+                </span>
+                {#each hierarchyPresetDefinition.seedAgents.slice(0, 4) as seed}
+                  <span class="inline-flex items-center rounded-full border border-gray-200 px-2 py-1 text-[10px] text-gray-600">
+                    {seed.level.toUpperCase()}:
+                    {seed.title}
+                  </span>
+                {/each}
+              </div>
+              <div class="mt-3 grid gap-3 sm:grid-cols-2">
+                <div>
+                  <p class="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-400">Departments</p>
+                  <div class="flex flex-wrap gap-1.5">
+                    {#each selectedHierarchyPresetDepartments() as department}
+                      <span class="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-gray-50 px-2 py-1 text-[10px] text-gray-700">
+                        {department.label}
+                        <span class="text-gray-400">·</span>
+                        {department.level.toUpperCase().replace("_", " ")}
+                      </span>
+                    {/each}
+                  </div>
+                </div>
+                <div>
+                  <p class="mb-1 text-[10px] font-semibold uppercase tracking-[0.2em] text-gray-400">Operating rules</p>
+                  <ul class="space-y-1 text-[10px] text-gray-600">
+                    {#each selectedHierarchyPresetOperatingRules() as rule}
+                      <li class="rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5">
+                        <span class="font-medium text-gray-700">{rule.title}:</span> {rule.description}
+                      </li>
+                    {/each}
+                  </ul>
+                </div>
+              </div>
+            </div>
+          {/if}
         </div>
 
       <!-- Step 2: Agent -->
@@ -708,9 +810,11 @@
             <div class="text-xs text-gray-400 mb-1 block">Role</div>
             <div class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-md text-xs font-medium text-gray-900">
               <Bot class="h-3.5 w-3.5" />
-              CEO
+              {selectedHierarchyPresetDefinition()?.rootTitle ?? "Chief Executive Officer"}
             </div>
-            <p class="text-[10px] text-gray-400 mt-1">The first agent is always the CEO.</p>
+            <p class="text-[10px] text-gray-400 mt-1">
+              The first agent anchors the selected hierarchy preset.
+            </p>
           </div>
 
           <div class="rounded-lg border border-gray-200 bg-white/80 p-4">
@@ -756,6 +860,32 @@
               bind:value={taskDescription}
             ></textarea>
           </div>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Spec *</label>
+              <textarea
+                class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[110px] text-gray-900"
+                placeholder="State the problem and acceptance criteria..."
+                bind:value={taskSpec}
+              ></textarea>
+            </div>
+            <div>
+              <label class="text-xs text-gray-400 mb-1 block">Design *</label>
+              <textarea
+                class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[110px] text-gray-900"
+                placeholder="Map the delivery path and ownership..."
+                bind:value={taskDesign}
+              ></textarea>
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-400 mb-1 block">Validation</label>
+            <textarea
+              class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[80px] text-gray-900"
+              placeholder="How will we confirm the result is safe and correct?"
+              bind:value={taskValidation}
+            ></textarea>
+          </div>
         </div>
 
       <!-- Step 4: Launch -->
@@ -790,8 +920,13 @@
             {#if createdAgent}
               <div class="flex items-center gap-3 px-4 py-3">
                 <Bot class="h-4 w-4 text-gray-400" />
-                <span class="text-xs text-gray-500">CEO Agent</span>
-                <span class="text-sm font-medium text-gray-900 ml-auto">{createdAgent.name}</span>
+                <span class="text-xs text-gray-500">Founder Agent</span>
+                <span class="text-sm font-medium text-gray-900 ml-auto">
+                  {createdAgent.name}
+                  {#if createdAgentTitle}
+                    <span class="text-xs text-gray-500"> · {createdAgentTitle}</span>
+                  {/if}
+                </span>
                 <Check class="h-4 w-4 text-green-500" />
               </div>
             {/if}

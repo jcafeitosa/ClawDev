@@ -193,7 +193,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
     typeof envConfig.CLAWDEV_API_KEY === "string" && envConfig.CLAWDEV_API_KEY.trim().length > 0;
-  const env: Record<string, string> = { ...buildClawDevEnv(agent) };
+  const env: Record<string, string> = { ...buildClawDevEnv(agent, context) };
   env.CLAWDEV_RUN_ID = runId;
   const wakeTaskId =
     (typeof context.taskId === "string" && context.taskId.trim().length > 0 && context.taskId.trim()) ||

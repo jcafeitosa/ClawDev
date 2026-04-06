@@ -913,7 +913,39 @@ export async function startServer(): Promise<StartedServer> {
     .catch((err) => {
       logger.error({ err }, "startup restart of desired runtime services failed");
     });
-  
+
+  // Reconcile: ensure all agents are members of their company's #general channel
+  void (async () => {
+    try {
+      const { channelService } = await import("./services/channels.js");
+      const { agents: agentsTable } = await import("@clawdev/db");
+      const allAgents = await (db as any).select({ id: agentsTable.id, companyId: agentsTable.companyId, status: agentsTable.status }).from(agentsTable);
+      const companiesSeen = new Map<string, string>(); // companyId → generalChannelId
+      const ch = channelService(db as any);
+      let joined = 0;
+      for (const agent of allAgents) {
+        if (agent.status === "terminated") continue;
+        let generalId = companiesSeen.get(agent.companyId);
+        if (!generalId) {
+          try {
+            const general = await ch.getOrCreateGeneral(agent.companyId);
+            generalId = general.id;
+            companiesSeen.set(agent.companyId, generalId);
+          } catch { continue; }
+        }
+        try {
+          await ch.join(generalId, { agentId: agent.id, role: "member" });
+          joined++;
+        } catch { /* already a member or other conflict */ }
+      }
+      if (joined > 0) {
+        logger.info({ joined }, "reconciled agent channel memberships on startup");
+      }
+    } catch (err) {
+      logger.warn({ err }, "startup channel membership reconciliation failed");
+    }
+  })();
+
   if (config.heartbeatSchedulerEnabled) {
     const heartbeat = heartbeatService(db as any);
     const routines = routineService(db as any);

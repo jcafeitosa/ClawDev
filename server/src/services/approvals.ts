@@ -7,6 +7,7 @@ import { agentService } from "./agents.js";
 import { budgetService } from "./budgets.js";
 import { notifyHireApproved } from "./hire-hook.js";
 import { instanceSettingsService } from "./instance-settings.js";
+import { channelService } from "./channels.js";
 
 export function approvalService(db: Db) {
   const agentsSvc = agentService(db);
@@ -203,6 +204,11 @@ export function approvalService(db: Db) {
             sourceId: id,
             approvedAt: now,
           }).catch(() => {});
+          // Auto-join hired agent to #general channel
+          const ch = channelService(db);
+          void ch.getOrCreateGeneral(updated.companyId).then((general) =>
+            ch.join(general.id, { agentId: hireApprovedAgentId!, role: "member" }),
+          ).catch(() => {});
         }
       }
 

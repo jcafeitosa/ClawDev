@@ -1,8 +1,10 @@
 import fs from "node:fs/promises";
+import { isLevelCAgentRole } from "@clawdev/shared";
 
 const DEFAULT_AGENT_BUNDLE_FILES = {
-  default: ["AGENTS.md"],
+  default: ["AGENTS.md", "HEARTBEAT.md", "TOOLS.md"],
   ceo: ["AGENTS.md", "HEARTBEAT.md", "SOUL.md", "TOOLS.md"],
+  level_c: ["AGENTS.md", "HEARTBEAT.md", "SOUL.md", "TOOLS.md"],
 } as const;
 
 type DefaultAgentBundleRole = keyof typeof DEFAULT_AGENT_BUNDLE_FILES;
@@ -23,5 +25,6 @@ export async function loadDefaultAgentInstructionsBundle(role: DefaultAgentBundl
 }
 
 export function resolveDefaultAgentInstructionsBundleRole(role: string): DefaultAgentBundleRole {
-  return role === "ceo" ? "ceo" : "default";
+  if (role === "ceo") return "ceo";
+  return isLevelCAgentRole(role) ? "level_c" : "default";
 }

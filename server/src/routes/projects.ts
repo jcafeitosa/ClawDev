@@ -6,12 +6,12 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { projects } from "@clawdev/db";
-import { eq, desc } from "drizzle-orm";
+import { projects, issues } from "@clawdev/db";
+import { eq, desc, sql, and } from "drizzle-orm";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { projectService, logActivity, workspaceOperationService } from "../services/index.js";
-import { isUuidLike, deriveProjectUrlKey } from "@clawdev/shared";
+import { isUuidLike, deriveProjectUrlKey, composeStructuredSddDescription } from "@clawdev/shared";
 import { conflict } from "../errors.js";
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
 import { readProjectWorkspaceRuntimeConfig } from "../services/project-workspace-runtime-config.js";
@@ -54,12 +54,27 @@ export function projectRoutes(db: Db) {
         const { params } = ctx;
         const actor = ctx.actor as Actor;
         assertCompanyAccess(actor, params.companyId);
-        const rows = await db
-          .select()
-          .from(projects)
-          .where(eq(projects.companyId, params.companyId))
-          .orderBy(desc(projects.createdAt));
-        return rows.map((r) => ({ ...r, urlKey: deriveProjectUrlKey(r.name, r.id) }));
+        const projectList = await svc.list(params.companyId);
+
+        // Enrich with issue counts per project
+        const issueCounts = await db
+          .select({
+            projectId: issues.projectId,
+            total: sql<number>`count(*)::int`,
+            done: sql<number>`count(*) filter (where ${issues.status} = 'done')::int`,
+          })
+          .from(issues)
+          .where(eq(issues.companyId, params.companyId))
+          .groupBy(issues.projectId);
+
+        const countMap = new Map(
+          issueCounts.map((ic) => [ic.projectId, { total: ic.total, done: ic.done }])
+        );
+
+        return projectList.map((p) => {
+          const counts = countMap.get(p.id) ?? { total: 0, done: 0 };
+          return { ...p, issueCount: counts.total, issueDoneCount: counts.done };
+        });
       },
       { params: companyIdParam },
     )
@@ -100,8 +115,32 @@ export function projectRoutes(db: Db) {
         const actor = ctx.actor as Actor;
         assertCompanyAccess(actor, params.companyId);
 
-        const { workspace, ...projectData } = body;
-        const project = await svc.create(params.companyId, projectData);
+        const {
+          workspace,
+          sddSpec,
+          sddDesign,
+          sddValidation,
+          description,
+          ...projectData
+        } = body;
+        const normalizedSpec = typeof sddSpec === "string" ? sddSpec.trim() : "";
+        const normalizedDesign = typeof sddDesign === "string" ? sddDesign.trim() : "";
+        const normalizedValidation = typeof sddValidation === "string" ? sddValidation.trim() : "";
+        if (!normalizedSpec || !normalizedDesign) {
+          set.status = 422;
+          return { error: "SDD spec and design are required for project creation" };
+        }
+
+        const project = await svc.create(params.companyId, {
+          ...projectData,
+          description: composeStructuredSddDescription({
+            subjectLabel: `Project: ${typeof projectData.name === "string" ? projectData.name : "Untitled project"}`,
+            summary: typeof description === "string" ? description : description == null ? null : String(description),
+            spec: normalizedSpec,
+            design: normalizedDesign,
+            validation: normalizedValidation || null,
+          }),
+        });
         let createdWorkspaceId: string | null = null;
         if (workspace) {
           const createdWorkspace = await svc.createWorkspace(project.id, workspace);

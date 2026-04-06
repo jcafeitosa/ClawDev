@@ -70,7 +70,7 @@ describe("company portability routes", () => {
     mockLogActivity.mockReset();
   });
 
-  it("rejects non-CEO agents from CEO-safe export preview routes", async () => {
+  it("rejects non-level-C agents from level-C-safe export preview routes", async () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "11111111-1111-4111-8111-111111111111",
@@ -94,15 +94,15 @@ describe("company portability routes", () => {
 
     const body = await res.json();
     expect(res.status).toBe(403);
-    expect(body.error).toContain("Only CEO agents");
+    expect(body.error).toContain("Only level C agents");
     expect(mockCompanyPortabilityService.previewExport).not.toHaveBeenCalled();
   });
 
-  it("allows CEO agents to use company-scoped export preview routes", async () => {
+  it("allows level C agents to use company-scoped export preview routes", async () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "11111111-1111-4111-8111-111111111111",
-      role: "ceo",
+      role: "cto",
     });
     mockCompanyPortabilityService.previewExport.mockResolvedValue({
       rootPath: "clawdev",
@@ -136,11 +136,11 @@ describe("company portability routes", () => {
     });
   });
 
-  it("rejects replace collision strategy on CEO-safe import routes", async () => {
+  it("rejects replace collision strategy on level-C-safe import routes", async () => {
     mockAgentService.getById.mockResolvedValue({
       id: "agent-1",
       companyId: "11111111-1111-4111-8111-111111111111",
-      role: "ceo",
+      role: "cfo",
     });
     const app = await createApp({
       type: "agent",

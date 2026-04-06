@@ -6,8 +6,14 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { PageLayout } from '$components/layout/index.js';
-  import { Skeleton } from '$lib/components/ui/index.js';
+  import { Card, CardContent, CardHeader, CardTitle, Badge, Skeleton } from '$lib/components/ui/index.js';
   import { Download, Upload, Network, ZoomIn, ZoomOut, Maximize } from 'lucide-svelte';
+  import {
+    getHierarchyPresetDefinition,
+    getHierarchyPresetDepartments,
+    isLevelCAgentRole,
+    type HierarchyPreset,
+  } from '@clawdev/shared';
 
   // ── Constants ───────────────────────────────────────────────────
   const CARD_W = 200;
@@ -81,6 +87,15 @@
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
+  let selectedHierarchyPreset = $derived<HierarchyPreset | null>(
+    (companyStore.selectedCompany?.hierarchyPreset as HierarchyPreset | undefined) ?? null,
+  );
+  let hierarchyPresetDefinition = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDefinition(selectedHierarchyPreset) : null,
+  );
+  let hierarchyPresetDepartments = $derived(
+    selectedHierarchyPreset ? getHierarchyPresetDepartments(selectedHierarchyPreset) : [],
+  );
 
   // Pan/zoom state
   let panX = $state(0);
@@ -302,6 +317,10 @@
     const key = agent.urlKey ?? agent.id;
     goto(`/${prefix}/agents/${key}`);
   }
+
+  function agentTierLabel(agent: any): string {
+    return isLevelCAgentRole(agent?.role) ? 'Level C' : 'Execution';
+  }
 </script>
 
 <PageLayout title="Organization Chart" fullWidth>
@@ -323,6 +342,47 @@
       </a>
     </div>
   {/snippet}
+
+  {#if hierarchyPresetDefinition}
+    <Card class="border-border/60">
+      <CardHeader class="pb-4">
+        <CardTitle class="text-base">Hierarchy preset</CardTitle>
+        <p class="text-sm text-muted-foreground">
+          {hierarchyPresetDefinition.label} shapes how the org tree is intended to operate.
+          Use the structure below to keep leadership, execution, and cross-functional collaboration clear.
+        </p>
+      </CardHeader>
+      <CardContent class="space-y-4">
+        <div class="grid gap-3 lg:grid-cols-3">
+          <div class="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Root model</p>
+            <p class="mt-1 text-sm font-medium text-foreground">{hierarchyPresetDefinition.rootTitle}</p>
+            <p class="mt-1 text-xs text-muted-foreground">{hierarchyPresetDefinition.rootSubtitle}</p>
+          </div>
+          <div class="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Leadership</p>
+            <p class="mt-1 text-sm font-medium text-foreground">{agents.filter((agent) => isLevelCAgentRole(agent.role)).length} level C agents</p>
+            <p class="mt-1 text-xs text-muted-foreground">These leaders should orchestrate, not absorb IC execution.</p>
+          </div>
+          <div class="rounded-xl border border-border/60 bg-muted/20 px-4 py-3">
+            <p class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Operating rule</p>
+            <p class="mt-1 text-sm font-medium text-foreground">{hierarchyPresetDefinition.operatingRules[0]?.title ?? 'SDD first'}</p>
+            <p class="mt-1 text-xs text-muted-foreground">{hierarchyPresetDefinition.operatingRules[0]?.description ?? 'Specification before implementation.'}</p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <span class="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">Departments</span>
+          {#each hierarchyPresetDepartments as department}
+            <Badge variant="outline" class="text-[11px]">
+              {department.label}
+              <span class="ml-1 text-muted-foreground">({department.level.toUpperCase().replace('_', ' ')})</span>
+            </Badge>
+          {/each}
+        </div>
+      </CardContent>
+    </Card>
+  {/if}
 
   <div class="flex flex-col" style="height: calc(100vh - 220px);">
   <!-- Chart container -->
@@ -406,8 +466,13 @@
           {@const firstChar = (agent.name ?? '?')[0].toUpperCase()}
           {@const statusColor = dotColor(agent.status)}
           {@const label = adapterLabel(agent.adapterType)}
+          {@const tierLabel = agentTierLabel(agent)}
+          {@const isLeadership = isLevelCAgentRole(agent.role)}
+          {@const cardClass = isLeadership
+            ? 'absolute bg-amber-500/5 border border-amber-400/30 rounded-lg shadow-sm hover:shadow-md hover:border-amber-400/60 transition-[box-shadow,border-color] cursor-pointer select-none'
+            : 'absolute bg-card border border-border rounded-lg shadow-sm hover:shadow-md hover:border-foreground/20 transition-[box-shadow,border-color] cursor-pointer select-none'}
           <div
-            class="absolute bg-card border border-border rounded-lg shadow-sm hover:shadow-md hover:border-foreground/20 transition-[box-shadow,border-color] cursor-pointer select-none"
+            class={cardClass}
             style="left: {node.x}px; top: {node.y}px; width: 200px; min-height: 100px;"
             onmousedown={(e) => e.stopPropagation()}
             onclick={() => handleCardClick(agent)}
@@ -415,7 +480,7 @@
             tabindex="0"
             onkeydown={(e) => { if (e.key === 'Enter') handleCardClick(agent); }}
           >
-            <div class="flex items-center px-4 py-3 gap-3">
+            <div class="flex items-start px-4 py-3 gap-3">
               <!-- Icon circle with status dot -->
               <div class="relative shrink-0">
                 <div class="w-9 h-9 rounded-full bg-muted flex items-center justify-center text-sm font-bold">
@@ -431,6 +496,16 @@
                 <span class="text-[11px] text-muted-foreground leading-tight mt-0.5 truncate">
                   {agent.title ?? agent.role ?? ''}
                 </span>
+                <div class="mt-1 flex flex-wrap gap-1">
+                  <Badge variant="outline" class="text-[10px] px-1.5 py-0 leading-none">
+                    {tierLabel}
+                  </Badge>
+                  {#if agent.role}
+                    <Badge variant="ghost" class="text-[10px] px-1.5 py-0 leading-none">
+                      {agent.role}
+                    </Badge>
+                  {/if}
+                </div>
                 {#if label}
                   <span class="text-[10px] text-muted-foreground/60 font-mono leading-tight mt-1 truncate">
                     {label}
