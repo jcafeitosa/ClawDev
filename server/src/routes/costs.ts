@@ -22,6 +22,9 @@ import { costAggregateService, type DailyCostTrend } from "../services/cost-aggr
 // because companyIdParam enforces UUID format which some callers don't use.
 import { assertBoard, assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { badRequest, forbidden } from "../errors.js";
+import { logger } from "../middleware/logger.js";
+
+const log = logger.child({ service: "costs-routes" });
 
 export function costRoutes(db: Db) {
   const heartbeat = heartbeatService(db);
@@ -63,32 +66,38 @@ export function costRoutes(db: Db) {
     .post(
       "/companies/:companyId/cost-events",
       async (ctx: any) => {
-        const { params, body } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params, body } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        if (actor.type === "agent" && actor.agentId !== body.agentId) {
-          throw forbidden("Agent can only report its own costs");
+          if (actor.type === "agent" && actor.agentId !== body.agentId) {
+            throw forbidden("Agent can only report its own costs");
+          }
+
+          const event = await costs.createEvent(params.companyId, {
+            ...body,
+            occurredAt: new Date(body.occurredAt),
+          });
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: params.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "cost.reported",
+            entityType: "cost_event",
+            entityId: event.id,
+            details: { costCents: event.costCents, model: event.model },
+          });
+
+          return event;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create cost event");
+          throw err;
         }
-
-        const event = await costs.createEvent(params.companyId, {
-          ...body,
-          occurredAt: new Date(body.occurredAt),
-        });
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: params.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "cost.reported",
-          entityType: "cost_event",
-          entityId: event.id,
-          details: { costCents: event.costCents, model: event.model },
-        });
-
-        return event;
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -97,34 +106,40 @@ export function costRoutes(db: Db) {
     .post(
       "/companies/:companyId/finance-events",
       async (ctx: any) => {
-        const { params, body } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        assertBoard(actor);
+        try {
+          const { params, body } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          assertBoard(actor);
 
-        const event = await finance.createEvent(params.companyId, {
-          ...body,
-          occurredAt: new Date(body.occurredAt),
-        });
+          const event = await finance.createEvent(params.companyId, {
+            ...body,
+            occurredAt: new Date(body.occurredAt),
+          });
 
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: params.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "finance_event.reported",
-          entityType: "finance_event",
-          entityId: event.id,
-          details: {
-            amountCents: event.amountCents,
-            biller: event.biller,
-            eventKind: event.eventKind,
-            direction: event.direction,
-          },
-        });
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: params.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "finance_event.reported",
+            entityType: "finance_event",
+            entityId: event.id,
+            details: {
+              amountCents: event.amountCents,
+              biller: event.biller,
+              eventKind: event.eventKind,
+              direction: event.direction,
+            },
+          });
 
-        return event;
+          return event;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create finance event");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -135,11 +150,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return costs.summary(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return costs.summary(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get cost summary");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -148,11 +169,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/summary",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return costs.summary(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return costs.summary(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get cost summary");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -161,11 +188,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/by-agent",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return costs.byAgent(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return costs.byAgent(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get cost by agent");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -174,11 +207,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/by-agent-model",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return costs.byAgentModel(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return costs.byAgentModel(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get cost by agent and model");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -187,11 +226,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/by-provider",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return costs.byProvider(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return costs.byProvider(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get cost by provider");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -200,11 +245,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/by-biller",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return costs.byBiller(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return costs.byBiller(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get cost by biller");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -213,11 +264,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/by-project",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return costs.byProject(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return costs.byProject(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get cost by project");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -226,11 +283,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/daily",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const days = Number(query.days) || 30;
-        return costAggregates.dailyTrend(params.companyId, days);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const days = Number(query.days) || 30;
+          return costAggregates.dailyTrend(params.companyId, days);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get daily cost trend");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -239,10 +302,16 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/window-spend",
       async (ctx: any) => {
-        const { params } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        return costs.windowSpend(params.companyId);
+        try {
+          const { params } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          return costs.windowSpend(params.companyId);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get window spend");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -251,16 +320,22 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/quota-windows",
       async (ctx: any) => {
-        const { params, set } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        assertBoard(actor);
-        const company = await companies.getById(params.companyId);
-        if (!company) {
-          set.status = 404;
-          return { error: "Company not found" };
+        try {
+          const { params, set } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          assertBoard(actor);
+          const company = await companies.getById(params.companyId);
+          if (!company) {
+            set.status = 404;
+            return { error: "Company not found" };
+          }
+          return fetchAllQuotaWindows();
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get quota windows");
+          throw err;
         }
-        return fetchAllQuotaWindows();
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -271,11 +346,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/finance-summary",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return finance.summary(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return finance.summary(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get finance summary");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -284,11 +365,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/finance-by-biller",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return finance.byBiller(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return finance.byBiller(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get finance by biller");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -297,11 +384,17 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/finance-by-kind",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        return finance.byKind(params.companyId, range);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          return finance.byKind(params.companyId, range);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get finance by kind");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -310,12 +403,18 @@ export function costRoutes(db: Db) {
     .get(
       "/companies/:companyId/costs/finance-events",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const range = parseDateRange(query);
-        const limit = parseLimit(query);
-        return finance.list(params.companyId, range, limit);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const range = parseDateRange(query);
+          const limit = parseLimit(query);
+          return finance.list(params.companyId, range, limit);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list finance events");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -326,11 +425,17 @@ export function costRoutes(db: Db) {
     .post(
       "/companies/:companyId/budgets/policies",
       async (ctx: any) => {
-        const { params, body } = ctx;
-        const actor = ctx.actor as Actor;
-        assertBoard(actor);
-        assertCompanyAccess(actor, params.companyId);
-        return budgets.upsertPolicy(params.companyId, body, actor.userId ?? "board");
+        try {
+          const { params, body } = ctx;
+          const actor = ctx.actor as Actor;
+          assertBoard(actor);
+          assertCompanyAccess(actor, params.companyId);
+          return budgets.upsertPolicy(params.companyId, body, actor.userId ?? "board");
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to upsert budget policy");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -339,11 +444,17 @@ export function costRoutes(db: Db) {
     .post(
       "/companies/:companyId/budget-incidents/:incidentId/resolve",
       async (ctx: any) => {
-        const { params, body } = ctx;
-        const actor = ctx.actor as Actor;
-        assertBoard(actor);
-        assertCompanyAccess(actor, params.companyId);
-        return budgets.resolveIncident(params.companyId, params.incidentId, body, actor.userId ?? "board");
+        try {
+          const { params, body } = ctx;
+          const actor = ctx.actor as Actor;
+          assertBoard(actor);
+          assertCompanyAccess(actor, params.companyId);
+          return budgets.resolveIncident(params.companyId, params.incidentId, body, actor.userId ?? "board");
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to resolve budget incident");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String(), incidentId: t.String() }) },
     )
@@ -352,38 +463,44 @@ export function costRoutes(db: Db) {
     .patch(
       "/companies/:companyId/budgets",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        assertBoard(actor);
-        assertCompanyAccess(actor, params.companyId);
-        const company = await companies.update(params.companyId, { budgetMonthlyCents: body.budgetMonthlyCents });
-        if (!company) {
-          set.status = 404;
-          return { error: "Company not found" };
+        try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          assertBoard(actor);
+          assertCompanyAccess(actor, params.companyId);
+          const company = await companies.update(params.companyId, { budgetMonthlyCents: body.budgetMonthlyCents });
+          if (!company) {
+            set.status = 404;
+            return { error: "Company not found" };
+          }
+
+          await logActivity(db, {
+            companyId: params.companyId,
+            actorType: "user",
+            actorId: actor.userId ?? "board",
+            action: "company.budget_updated",
+            entityType: "company",
+            entityId: params.companyId,
+            details: { budgetMonthlyCents: body.budgetMonthlyCents },
+          });
+
+          await budgets.upsertPolicy(
+            params.companyId,
+            {
+              scopeType: "company",
+              scopeId: params.companyId,
+              amount: body.budgetMonthlyCents,
+              windowKind: "calendar_month_utc",
+            },
+            actor.userId ?? "board",
+          );
+
+          return company;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update company budget");
+          throw err;
         }
-
-        await logActivity(db, {
-          companyId: params.companyId,
-          actorType: "user",
-          actorId: actor.userId ?? "board",
-          action: "company.budget_updated",
-          entityType: "company",
-          entityId: params.companyId,
-          details: { budgetMonthlyCents: body.budgetMonthlyCents },
-        });
-
-        await budgets.upsertPolicy(
-          params.companyId,
-          {
-            scopeType: "company",
-            scopeId: params.companyId,
-            amount: body.budgetMonthlyCents,
-            windowKind: "calendar_month_utc",
-          },
-          actor.userId ?? "board",
-        );
-
-        return company;
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -392,52 +509,58 @@ export function costRoutes(db: Db) {
     .patch(
       "/agents/:id/budgets",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const agent = await agents.getById(params.id);
-        if (!agent) {
-          set.status = 404;
-          return { error: "Agent not found" };
-        }
-
-        assertCompanyAccess(actor, agent.companyId);
-
-        if (actor.type === "agent") {
-          if (actor.agentId !== params.id) {
-            throw forbidden("Agent can only change its own budget");
+        try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const agent = await agents.getById(params.id);
+          if (!agent) {
+            set.status = 404;
+            return { error: "Agent not found" };
           }
+
+          assertCompanyAccess(actor, agent.companyId);
+
+          if (actor.type === "agent") {
+            if (actor.agentId !== params.id) {
+              throw forbidden("Agent can only change its own budget");
+            }
+          }
+
+          const updated = await agents.update(params.id, { budgetMonthlyCents: body.budgetMonthlyCents });
+          if (!updated) {
+            set.status = 404;
+            return { error: "Agent not found" };
+          }
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: updated.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "agent.budget_updated",
+            entityType: "agent",
+            entityId: updated.id,
+            details: { budgetMonthlyCents: updated.budgetMonthlyCents },
+          });
+
+          await budgets.upsertPolicy(
+            updated.companyId,
+            {
+              scopeType: "agent",
+              scopeId: updated.id,
+              amount: updated.budgetMonthlyCents,
+              windowKind: "calendar_month_utc",
+            },
+            actor.type === "board" ? actor.userId ?? "board" : null,
+          );
+
+          return updated;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update agent budget");
+          throw err;
         }
-
-        const updated = await agents.update(params.id, { budgetMonthlyCents: body.budgetMonthlyCents });
-        if (!updated) {
-          set.status = 404;
-          return { error: "Agent not found" };
-        }
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: updated.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "agent.budget_updated",
-          entityType: "agent",
-          entityId: updated.id,
-          details: { budgetMonthlyCents: updated.budgetMonthlyCents },
-        });
-
-        await budgets.upsertPolicy(
-          updated.companyId,
-          {
-            scopeType: "agent",
-            scopeId: updated.id,
-            amount: updated.budgetMonthlyCents,
-            windowKind: "calendar_month_utc",
-          },
-          actor.type === "board" ? actor.userId ?? "board" : null,
-        );
-
-        return updated;
       },
       { params: t.Object({ id: t.String() }) },
     );

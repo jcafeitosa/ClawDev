@@ -8,7 +8,7 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { checkoutIssueSchema, composeStructuredSddDescription, isLevelCAgentRole } from "@clawdev/shared";
+import { checkoutIssueSchema, composeStructuredSddDescription, isLevelCAgentRole, parseStructuredSddDescription, validateStructuredSddInput } from "@clawdev/shared";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, assertBoard, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logger } from "../middleware/logger.js";
@@ -28,10 +28,12 @@ import {
   agentService,
 } from "../services/index.js";
 import { queueIssueAssignmentWakeup } from "../services/issue-assignment-wakeup.js";
+import { agentHookService } from "../services/agent-hooks.js";
 import { shouldWakeAssigneeOnCheckout } from "./issues-checkout-wakeup.js";
 import { isAllowedContentType, MAX_ATTACHMENT_BYTES } from "../attachment-types.js";
 
 const MAX_ISSUE_COMMENT_LIMIT = 500;
+const log = logger.child({ service: "issues-routes" });
 
 export function issueRoutes(db: Db, _storage?: any) {
   const svc = issueService(db);
@@ -45,6 +47,7 @@ export function issueRoutes(db: Db, _storage?: any) {
   const routinesSvc = routineService(db);
   const issueApprovalsSvc = issueApprovalService(db);
   const agentsSvc = agentService(db);
+  const hookSvc = agentHookService(db);
 
   async function resolveIssueProjectAndGoal(issue: {
     companyId: string;
@@ -214,41 +217,47 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id",
       async (ctx: any) => {
-        const rawId = ctx.params.id;
-        const id = await normalizeIssueIdentifier(rawId);
-        // Support both UUID and identifier (e.g. "CLA-1") lookups
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
-        const issue = isUuid
-          ? (await svc.getById(id) ?? (svc.getByIdentifier ? await svc.getByIdentifier(id) : null))
-          : (svc.getByIdentifier ? await svc.getByIdentifier(id) : null);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+        try {
+          const rawId = ctx.params.id;
+          const id = await normalizeIssueIdentifier(rawId);
+          // Support both UUID and identifier (e.g. "CLA-1") lookups
+          const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+          const issue = isUuid
+            ? (await svc.getById(id) ?? (svc.getByIdentifier ? await svc.getByIdentifier(id) : null))
+            : (svc.getByIdentifier ? await svc.getByIdentifier(id) : null);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
 
-        const [{ project, goal }, ancestors, mentionedProjectIds, documentPayload] = await Promise.all([
-          resolveIssueProjectAndGoal(issue),
-          svc.getAncestors(issue.id),
-          svc.findMentionedProjectIds ? svc.findMentionedProjectIds(issue.id) : Promise.resolve([]),
-          documentsSvc.getIssueDocumentPayload ? documentsSvc.getIssueDocumentPayload(issue) : Promise.resolve({}),
-        ]);
-        const mentionedProjects = mentionedProjectIds.length > 0
-          ? await projectsSvc.listByIds(issue.companyId, mentionedProjectIds)
-          : [];
-        const currentExecutionWorkspace = issue.executionWorkspaceId
-          ? await executionWorkspacesSvc.getById(issue.executionWorkspaceId)
-          : null;
-        const workProducts = workProductsSvc.listForIssue
-          ? await workProductsSvc.listForIssue(issue.id)
-          : [];
-        return {
-          ...issue,
-          goalId: goal?.id ?? issue.goalId,
-          ancestors,
-          ...documentPayload,
-          project: project ?? null,
-          goal: goal ?? null,
-          mentionedProjects,
-          currentExecutionWorkspace,
-          workProducts,
-        };
+          const [{ project, goal }, ancestors, mentionedProjectIds, documentPayload] = await Promise.all([
+            resolveIssueProjectAndGoal(issue),
+            svc.getAncestors(issue.id),
+            svc.findMentionedProjectIds ? svc.findMentionedProjectIds(issue.id) : Promise.resolve([]),
+            documentsSvc.getIssueDocumentPayload ? documentsSvc.getIssueDocumentPayload(issue) : Promise.resolve({}),
+          ]);
+          const mentionedProjects = mentionedProjectIds.length > 0
+            ? await projectsSvc.listByIds(issue.companyId, mentionedProjectIds)
+            : [];
+          const currentExecutionWorkspace = issue.executionWorkspaceId
+            ? await executionWorkspacesSvc.getById(issue.executionWorkspaceId)
+            : null;
+          const workProducts = workProductsSvc.listForIssue
+            ? await workProductsSvc.listForIssue(issue.id)
+            : [];
+          return {
+            ...issue,
+            goalId: goal?.id ?? issue.goalId,
+            ancestors,
+            ...documentPayload,
+            project: project ?? null,
+            goal: goal ?? null,
+            mentionedProjects,
+            currentExecutionWorkspace,
+            workProducts,
+          };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get issue");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -259,67 +268,73 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/heartbeat-context",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
 
-        const wakeCommentId =
-          typeof ctx.query?.wakeCommentId === "string" && ctx.query.wakeCommentId.trim().length > 0
-            ? ctx.query.wakeCommentId.trim()
-            : null;
+          const wakeCommentId =
+            typeof ctx.query?.wakeCommentId === "string" && ctx.query.wakeCommentId.trim().length > 0
+              ? ctx.query.wakeCommentId.trim()
+              : null;
 
-        const [{ project, goal }, ancestors, commentCursor, wakeComment] = await Promise.all([
-          resolveIssueProjectAndGoal(issue),
-          svc.getAncestors(issue.id),
-          svc.getCommentCursor(issue.id),
-          wakeCommentId ? svc.getComment(wakeCommentId) : null,
-        ]);
+          const [{ project, goal }, ancestors, commentCursor, wakeComment] = await Promise.all([
+            resolveIssueProjectAndGoal(issue),
+            svc.getAncestors(issue.id),
+            svc.getCommentCursor(issue.id),
+            wakeCommentId ? svc.getComment(wakeCommentId) : null,
+          ]);
 
-        return {
-          issue: {
-            id: issue.id,
-            identifier: issue.identifier,
-            title: issue.title,
-            description: issue.description,
-            status: issue.status,
-            priority: issue.priority,
-            projectId: issue.projectId,
-            goalId: goal?.id ?? issue.goalId,
-            parentId: issue.parentId,
-            assigneeAgentId: issue.assigneeAgentId,
-            assigneeUserId: issue.assigneeUserId,
-            updatedAt: issue.updatedAt,
-          },
-          ancestors: (ancestors ?? []).map((ancestor: any) => ({
-            id: ancestor.id,
-            identifier: ancestor.identifier,
-            title: ancestor.title,
-            status: ancestor.status,
-            priority: ancestor.priority,
-          })),
-          project: project
-            ? {
-                id: project.id,
-                name: project.name,
-                status: project.status,
-                targetDate: project.targetDate,
-              }
-            : null,
-          goal: goal
-            ? {
-                id: goal.id,
-                title: goal.title,
-                status: goal.status,
-                level: goal.level,
-                parentId: goal.parentId,
-              }
-            : null,
-          commentCursor,
-          wakeComment:
-            wakeComment && wakeComment.issueId === issue.id
-              ? wakeComment
+          return {
+            issue: {
+              id: issue.id,
+              identifier: issue.identifier,
+              title: issue.title,
+              description: issue.description,
+              status: issue.status,
+              priority: issue.priority,
+              projectId: issue.projectId,
+              goalId: goal?.id ?? issue.goalId,
+              parentId: issue.parentId,
+              assigneeAgentId: issue.assigneeAgentId,
+              assigneeUserId: issue.assigneeUserId,
+              updatedAt: issue.updatedAt,
+            },
+            ancestors: (ancestors ?? []).map((ancestor: any) => ({
+              id: ancestor.id,
+              identifier: ancestor.identifier,
+              title: ancestor.title,
+              status: ancestor.status,
+              priority: ancestor.priority,
+            })),
+            project: project
+              ? {
+                  id: project.id,
+                  name: project.name,
+                  status: project.status,
+                  targetDate: project.targetDate,
+                }
               : null,
-        };
+            goal: goal
+              ? {
+                  id: goal.id,
+                  title: goal.title,
+                  status: goal.status,
+                  level: goal.level,
+                  parentId: goal.parentId,
+                }
+              : null,
+            commentCursor,
+            wakeComment:
+              wakeComment && wakeComment.issueId === issue.id
+                ? wakeComment
+                : null,
+          };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get heartbeat context");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -330,33 +345,39 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/comments",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
 
-        const afterCommentId =
-          typeof ctx.query?.after === "string" && ctx.query.after.trim().length > 0
-            ? ctx.query.after.trim()
-            : typeof ctx.query?.afterCommentId === "string" && ctx.query.afterCommentId.trim().length > 0
-              ? ctx.query.afterCommentId.trim()
+          const afterCommentId =
+            typeof ctx.query?.after === "string" && ctx.query.after.trim().length > 0
+              ? ctx.query.after.trim()
+              : typeof ctx.query?.afterCommentId === "string" && ctx.query.afterCommentId.trim().length > 0
+                ? ctx.query.afterCommentId.trim()
+                : null;
+          const order =
+            typeof ctx.query?.order === "string" && ctx.query.order.trim().toLowerCase() === "asc"
+              ? ("asc" as const)
+              : ("desc" as const);
+          const limitRaw =
+            typeof ctx.query?.limit === "string" && ctx.query.limit.trim().length > 0
+              ? Number(ctx.query.limit)
               : null;
-        const order =
-          typeof ctx.query?.order === "string" && ctx.query.order.trim().toLowerCase() === "asc"
-            ? ("asc" as const)
-            : ("desc" as const);
-        const limitRaw =
-          typeof ctx.query?.limit === "string" && ctx.query.limit.trim().length > 0
-            ? Number(ctx.query.limit)
-            : null;
-        const limit =
-          limitRaw && Number.isFinite(limitRaw) && limitRaw > 0
-            ? Math.min(Math.floor(limitRaw), MAX_ISSUE_COMMENT_LIMIT)
-            : null;
+          const limit =
+            limitRaw && Number.isFinite(limitRaw) && limitRaw > 0
+              ? Math.min(Math.floor(limitRaw), MAX_ISSUE_COMMENT_LIMIT)
+              : null;
 
-        if (svc.listComments) {
-          return await svc.listComments(id, { afterCommentId, order, limit });
+          if (svc.listComments) {
+            return await svc.listComments(id, { afterCommentId, order, limit });
+          }
+          return [];
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list comments");
+          throw err;
         }
-        return [];
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -367,16 +388,22 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/comments/:commentId",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const commentId = ctx.params.commentId;
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const comment = await svc.getComment(commentId);
-        if (!comment || comment.issueId !== id) {
-          ctx.set.status = 404;
-          return { error: "Comment not found" };
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const commentId = ctx.params.commentId;
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const comment = await svc.getComment(commentId);
+          if (!comment || comment.issueId !== id) {
+            ctx.set.status = 404;
+            return { error: "Comment not found" };
+          }
+          return comment;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get comment");
+          throw err;
         }
-        return comment;
       },
       { params: t.Object({ id: t.String(), commentId: t.String() }) },
     )
@@ -386,14 +413,20 @@ export function issueRoutes(db: Db, _storage?: any) {
     .delete(
       "/:id/comments/:commentId",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
-        const result = await deleteCommentForBoardActor(actor, ctx.params.commentId, { issueId: issue.id });
-        ctx.set.status = result.status;
-        return result.body;
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
+          const result = await deleteCommentForBoardActor(actor, ctx.params.commentId, { issueId: issue.id });
+          ctx.set.status = result.status;
+          return result.body;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete comment");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String(), commentId: t.String() }) },
     )
@@ -404,21 +437,22 @@ export function issueRoutes(db: Db, _storage?: any) {
     .post(
       "/:id/comments",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
-        await assertAgentRunCheckoutOwnership(actor, issue);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
+          await assertAgentRunCheckoutOwnership(actor, issue);
 
-        const actorInfo = getActorInfo(actor);
-        const reopenRequested = ctx.body.reopen === true;
-        const interruptRequested = ctx.body.interrupt === true;
-        const isClosed = issue.status === "done" || issue.status === "cancelled";
-        let reopened = false;
-        let reopenFromStatus: string | null = null;
-        let interruptedRunId: string | null = null;
-        let currentIssue = issue;
+          const actorInfo = getActorInfo(actor);
+          const reopenRequested = ctx.body.reopen === true;
+          const interruptRequested = ctx.body.interrupt === true;
+          const isClosed = issue.status === "done" || issue.status === "cancelled";
+          let reopened = false;
+          let reopenFromStatus: string | null = null;
+          let interruptedRunId: string | null = null;
+          let currentIssue = issue;
 
         if (reopenRequested && isClosed) {
           const reopenedIssue = await svc.update(id, { status: "todo" });
@@ -614,8 +648,13 @@ export function issueRoutes(db: Db, _storage?: any) {
           }
         })();
 
-        ctx.set.status = 201;
-        return comment;
+          ctx.set.status = 201;
+          return comment;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to add comment");
+          throw err;
+        }
       },
       {
         params: t.Object({ id: t.String() }),
@@ -633,11 +672,12 @@ export function issueRoutes(db: Db, _storage?: any) {
     .patch(
       "/:id",
       async (ctx: any) => {
-        const { params, body, actor, set } = ctx;
-        const id = await normalizeIssueIdentifier(params.id);
-        const existing = await svc.getById(id);
-        if (!existing) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        assertCompanyAccess(actor, existing.companyId);
+        try {
+          const { params, body, actor, set } = ctx;
+          const id = await normalizeIssueIdentifier(params.id);
+          const existing = await svc.getById(id);
+          if (!existing) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          assertCompanyAccess(actor, existing.companyId);
 
         const assigneeWillChange =
           (body.assigneeAgentId !== undefined && body.assigneeAgentId !== existing.assigneeAgentId) ||
@@ -661,14 +701,68 @@ export function issueRoutes(db: Db, _storage?: any) {
 
         const actorInfo = getActorInfo(actor);
         const isClosed = existing.status === "done" || existing.status === "cancelled";
-        const { comment: commentBody, reopen: reopenRequested, hiddenAt: hiddenAtRaw, ...updateFields } = body;
+        const {
+          comment: commentBody,
+          reopen: reopenRequested,
+          hiddenAt: hiddenAtRaw,
+          sddSpec,
+          sddDesign,
+          sddRisk,
+          sddRollout,
+          sddRollback,
+          sddValidation,
+          description,
+          ...updateFields
+        } = body;
 
         if (hiddenAtRaw !== undefined) {
           updateFields.hiddenAt = hiddenAtRaw ? new Date(hiddenAtRaw) : null;
         }
+        if (description !== undefined) {
+          updateFields.description = description;
+        }
 
         if (commentBody && reopenRequested === true && isClosed && updateFields.status === undefined) {
           updateFields.status = "todo";
+        }
+
+        const structuredSddPatchKeys = [sddSpec, sddDesign, sddRisk, sddRollout, sddRollback, sddValidation];
+        const hasStructuredSddPatch = structuredSddPatchKeys.some((value) => value !== undefined);
+        if (hasStructuredSddPatch) {
+          const normalizedSpec = typeof sddSpec === "string" ? sddSpec.trim() : "";
+          const normalizedDesign = typeof sddDesign === "string" ? sddDesign.trim() : "";
+          const normalizedRisk = typeof sddRisk === "string" ? sddRisk.trim() : "";
+          const normalizedRollout = typeof sddRollout === "string" ? sddRollout.trim() : "";
+          const normalizedRollback = typeof sddRollback === "string" ? sddRollback.trim() : "";
+          const normalizedValidation = typeof sddValidation === "string" ? sddValidation.trim() : "";
+          const sddIssues = validateStructuredSddInput({
+            spec: normalizedSpec,
+            design: normalizedDesign,
+            risk: normalizedRisk,
+            rollout: normalizedRollout,
+            rollback: normalizedRollback,
+            validation: normalizedValidation,
+          });
+          if (sddIssues.length > 0) {
+            set.status = 422;
+            return {
+              error: "SDD payload is too weak for issue update",
+              details: sddIssues,
+            };
+          }
+          const summary = typeof description === "string"
+            ? description
+            : parseStructuredSddDescription(existing.description).summary || null;
+          updateFields.description = composeStructuredSddDescription({
+            subjectLabel: `Issue: ${existing.identifier ?? existing.title}`,
+            summary,
+            spec: normalizedSpec,
+            design: normalizedDesign,
+            risk: normalizedRisk,
+            rollout: normalizedRollout,
+            rollback: normalizedRollback,
+            validation: normalizedValidation,
+          });
         }
 
         let issue;
@@ -741,6 +835,15 @@ export function issueRoutes(db: Db, _storage?: any) {
             _previous: hasFieldChanges ? previous : undefined,
           },
         });
+
+        if (body.status && issue.assigneeAgentId) {
+          const hookEvent = body.status === "done" ? "task.completed" : body.status === "blocked" ? "task.blocked" : null;
+          if (hookEvent) {
+            hookSvc.fireEvent(issue.companyId, issue.assigneeAgentId, hookEvent as any, {
+              issueId: issue.id, title: issue.title, status: body.status, previousStatus: existing.status,
+            }).catch(() => {});
+          }
+        }
 
         let comment = null;
         if (commentBody) {
@@ -840,7 +943,12 @@ export function issueRoutes(db: Db, _storage?: any) {
           }
         })();
 
-        return { ...issue, comment };
+          return { ...issue, comment };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update issue");
+          throw err;
+        }
       },
       {
         params: t.Object({ id: t.String() }),
@@ -850,6 +958,12 @@ export function issueRoutes(db: Db, _storage?: any) {
           assigneeUserId: t.Optional(t.Nullable(t.String())),
           title: t.Optional(t.String()),
           description: t.Optional(t.Nullable(t.String())),
+          sddSpec: t.Optional(t.Nullable(t.String())),
+          sddDesign: t.Optional(t.Nullable(t.String())),
+          sddRisk: t.Optional(t.Nullable(t.String())),
+          sddRollout: t.Optional(t.Nullable(t.String())),
+          sddRollback: t.Optional(t.Nullable(t.String())),
+          sddValidation: t.Optional(t.Nullable(t.String())),
           priority: t.Optional(t.String()),
           comment: t.Optional(t.String()),
           reopen: t.Optional(t.Boolean()),
@@ -857,6 +971,7 @@ export function issueRoutes(db: Db, _storage?: any) {
           projectId: t.Optional(t.Nullable(t.String())),
           goalId: t.Optional(t.Nullable(t.String())),
           parentId: t.Optional(t.Nullable(t.String())),
+          labelIds: t.Optional(t.Array(t.String())),
         }),
       },
     )
@@ -867,39 +982,45 @@ export function issueRoutes(db: Db, _storage?: any) {
     .delete(
       "/:id",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const existing = await svc.getById(id);
-        if (!existing) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, existing.companyId);
-        const attachments = await svc.listAttachments(id);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const existing = await svc.getById(id);
+          if (!existing) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, existing.companyId);
+          const attachments = await svc.listAttachments(id);
 
-        const issue = await svc.remove(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const issue = await svc.remove(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
 
-        if (_storage) {
-          for (const attachment of attachments) {
-            try {
-              await _storage.deleteObject(attachment.companyId, attachment.objectKey);
-            } catch (err) {
-              logger.warn({ err, issueId: id, attachmentId: attachment.id }, "failed to delete attachment object during issue delete");
+          if (_storage) {
+            for (const attachment of attachments) {
+              try {
+                await _storage.deleteObject(attachment.companyId, attachment.objectKey);
+              } catch (err) {
+                logger.warn({ err, issueId: id, attachmentId: attachment.id }, "failed to delete attachment object during issue delete");
+              }
             }
           }
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.deleted",
+            entityType: "issue",
+            entityId: issue.id,
+          });
+
+          return issue;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete issue");
+          throw err;
         }
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.deleted",
-          entityType: "issue",
-          entityId: issue.id,
-        });
-
-        return issue;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -910,82 +1031,94 @@ export function issueRoutes(db: Db, _storage?: any) {
     .post(
       "/:id/checkout",
       async (ctx: any) => {
-        const parsedBody = checkoutIssueSchema.safeParse(ctx.body);
-        if (!parsedBody.success) {
-          ctx.set.status = 400;
-          return { error: "Validation error", details: parsedBody.error.issues };
-        }
-        const { agentId, expectedStatuses } = parsedBody.data;
-
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
-
-        if (issue.projectId) {
-          const project = await projectsSvc.getById(issue.projectId);
-          if (project?.pausedAt) {
-            ctx.set.status = 409;
-            return {
-              error:
-                project.pauseReason === "budget"
-                  ? "Project is paused because its budget hard-stop was reached"
-                  : "Project is paused",
-            };
+        try {
+          const parsedBody = checkoutIssueSchema.safeParse(ctx.body);
+          if (!parsedBody.success) {
+            ctx.set.status = 400;
+            return { error: "Validation error", details: parsedBody.error.issues };
           }
-        }
+          const { agentId, expectedStatuses } = parsedBody.data;
 
-        if (actor.type === "agent" && actor.agentId !== agentId) {
-          ctx.set.status = 403;
-          return { error: "Agent can only checkout as itself" };
-        }
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
 
-        const checkoutRunId = requireAgentRunId(actor);
-        if (actor.type === "agent" && !checkoutRunId) {
-          ctx.set.status = 401;
-          return { error: "Agent run id required" };
-        }
+          if (issue.projectId) {
+            const project = await projectsSvc.getById(issue.projectId);
+            if (project?.pausedAt) {
+              ctx.set.status = 409;
+              return {
+                error:
+                  project.pauseReason === "budget"
+                    ? "Project is paused because its budget hard-stop was reached"
+                    : "Project is paused",
+              };
+            }
+          }
 
-        const updated = await svc.checkout(id, agentId, expectedStatuses, checkoutRunId);
-        const actorInfo = getActorInfo(actor);
+          if (actor.type === "agent" && actor.agentId !== agentId) {
+            ctx.set.status = 403;
+            return { error: "Agent can only checkout as itself" };
+          }
 
-        void logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.checked_out",
-          entityType: "issue",
-          entityId: issue.id,
-          details: { agentId },
-        }).catch((err: unknown) => {
-          logger.warn({ err, issueId: issue.id }, "failed to log issue checkout");
-        });
+          const checkoutRunId = requireAgentRunId(actor);
+          if (actor.type === "agent" && !checkoutRunId) {
+            ctx.set.status = 401;
+            return { error: "Agent run id required" };
+          }
 
-        if (
-          shouldWakeAssigneeOnCheckout({
-            actorType: actor.type,
-            actorAgentId: actor.type === "agent" ? actor.agentId ?? null : null,
-            checkoutAgentId: agentId,
-            checkoutRunId,
-          })
-        ) {
-          void heartbeat
-            .wakeup(agentId, {
-              source: "assignment",
-              triggerDetail: "system",
-              reason: "issue_checked_out",
-              payload: { issueId: issue.id, mutation: "checkout" },
-              requestedByActorType: actorInfo.actorType,
-              requestedByActorId: actorInfo.actorId,
-              contextSnapshot: { issueId: issue.id, source: "issue.checkout" },
+          const updated = await svc.checkout(id, agentId, expectedStatuses, checkoutRunId);
+          const actorInfo = getActorInfo(actor);
+
+          void logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.checked_out",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { agentId },
+          }).catch((err: unknown) => {
+            logger.warn({ err, issueId: issue.id }, "failed to log issue checkout");
+          });
+
+          if (updated.assigneeAgentId) {
+            hookSvc.fireEvent(issue.companyId, updated.assigneeAgentId, "task.checkout" as any, {
+              issueId: issue.id, title: issue.title,
+            }).catch(() => {});
+          }
+
+          if (
+            shouldWakeAssigneeOnCheckout({
+              actorType: actor.type,
+              actorAgentId: actor.type === "agent" ? actor.agentId ?? null : null,
+              checkoutAgentId: agentId,
+              checkoutRunId,
             })
-            .catch((err: unknown) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue checkout"));
-        }
+          ) {
+            void heartbeat
+              .wakeup(agentId, {
+                source: "assignment",
+                triggerDetail: "system",
+                reason: "issue_checked_out",
+                payload: { issueId: issue.id, mutation: "checkout" },
+                requestedByActorType: actorInfo.actorType,
+                requestedByActorId: actorInfo.actorId,
+                contextSnapshot: { issueId: issue.id, source: "issue.checkout" },
+              })
+              .catch((err: unknown) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue checkout"));
+          }
 
-        return updated;
+          return updated;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to checkout issue");
+          throw err;
+        }
       },
       {
         params: t.Object({ id: t.String() }),
@@ -998,39 +1131,45 @@ export function issueRoutes(db: Db, _storage?: any) {
     .post(
       "/:id/release",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const existing = await svc.getById(id);
-        if (!existing) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, existing.companyId);
-        await assertAgentRunCheckoutOwnership(actor, existing);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const existing = await svc.getById(id);
+          if (!existing) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, existing.companyId);
+          await assertAgentRunCheckoutOwnership(actor, existing);
 
-        const actorRunId = requireAgentRunId(actor);
-        if (actor.type === "agent" && !actorRunId) {
-          ctx.set.status = 401;
-          return { error: "Agent run id required" };
+          const actorRunId = requireAgentRunId(actor);
+          if (actor.type === "agent" && !actorRunId) {
+            ctx.set.status = 401;
+            return { error: "Agent run id required" };
+          }
+
+          const released = await svc.release(
+            id,
+            actor.type === "agent" ? actor.agentId : undefined,
+            actorRunId,
+          );
+          if (!released) { ctx.set.status = 404; return { error: "Issue not found" }; }
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: released.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.released",
+            entityType: "issue",
+            entityId: released.id,
+          });
+
+          return released;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to release issue");
+          throw err;
         }
-
-        const released = await svc.release(
-          id,
-          actor.type === "agent" ? actor.agentId : undefined,
-          actorRunId,
-        );
-        if (!released) { ctx.set.status = 404; return { error: "Issue not found" }; }
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: released.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.released",
-          entityType: "issue",
-          entityId: released.id,
-        });
-
-        return released;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -1041,28 +1180,34 @@ export function issueRoutes(db: Db, _storage?: any) {
     .post(
       "/:id/read",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
-        if (actor.type !== "board") { ctx.set.status = 403; return { error: "Board authentication required" }; }
-        if (!actor.userId) { ctx.set.status = 403; return { error: "Board user context required" }; }
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
+          if (actor.type !== "board") { ctx.set.status = 403; return { error: "Board authentication required" }; }
+          if (!actor.userId) { ctx.set.status = 403; return { error: "Board user context required" }; }
 
-        const readState = await svc.markRead(issue.companyId, issue.id, actor.userId, new Date());
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.read_marked",
-          entityType: "issue",
-          entityId: issue.id,
-          details: { userId: actor.userId, lastReadAt: readState.lastReadAt },
-        });
-        return readState;
+          const readState = await svc.markRead(issue.companyId, issue.id, actor.userId, new Date());
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.read_marked",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { userId: actor.userId, lastReadAt: readState.lastReadAt },
+          });
+          return readState;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to mark issue as read");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -1073,28 +1218,34 @@ export function issueRoutes(db: Db, _storage?: any) {
     .post(
       "/:id/inbox-archive",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
-        if (actor.type !== "board") { ctx.set.status = 403; return { error: "Board authentication required" }; }
-        if (!actor.userId) { ctx.set.status = 403; return { error: "Board user context required" }; }
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
+          if (actor.type !== "board") { ctx.set.status = 403; return { error: "Board authentication required" }; }
+          if (!actor.userId) { ctx.set.status = 403; return { error: "Board user context required" }; }
 
-        const archiveState = await svc.archiveInbox(issue.companyId, issue.id, actor.userId, new Date());
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.inbox_archived",
-          entityType: "issue",
-          entityId: issue.id,
-          details: { userId: actor.userId, archivedAt: archiveState.archivedAt },
-        });
-        return archiveState;
+          const archiveState = await svc.archiveInbox(issue.companyId, issue.id, actor.userId, new Date());
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.inbox_archived",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { userId: actor.userId, archivedAt: archiveState.archivedAt },
+          });
+          return archiveState;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to archive issue from inbox");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -1105,28 +1256,34 @@ export function issueRoutes(db: Db, _storage?: any) {
     .delete(
       "/:id/inbox-archive",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
-        if (actor.type !== "board") { ctx.set.status = 403; return { error: "Board authentication required" }; }
-        if (!actor.userId) { ctx.set.status = 403; return { error: "Board user context required" }; }
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
+          if (actor.type !== "board") { ctx.set.status = 403; return { error: "Board authentication required" }; }
+          if (!actor.userId) { ctx.set.status = 403; return { error: "Board user context required" }; }
 
-        const removed = await svc.unarchiveInbox(issue.companyId, issue.id, actor.userId);
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.inbox_unarchived",
-          entityType: "issue",
-          entityId: issue.id,
-          details: { userId: actor.userId },
-        });
-        return removed ?? { ok: true };
+          const removed = await svc.unarchiveInbox(issue.companyId, issue.id, actor.userId);
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.inbox_unarchived",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { userId: actor.userId },
+          });
+          return removed ?? { ok: true };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to unarchive issue from inbox");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -1137,11 +1294,17 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/approvals",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        assertCompanyAccess(ctx.actor, issue.companyId);
-        return await issueApprovalsSvc.listApprovalsForIssue(id);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          assertCompanyAccess(ctx.actor, issue.companyId);
+          return await issueApprovalsSvc.listApprovalsForIssue(id);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list issue approvals");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -1152,33 +1315,39 @@ export function issueRoutes(db: Db, _storage?: any) {
     .post(
       "/:id/approvals",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        await assertCanManageIssueApprovalLinks(actor, issue.companyId);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          await assertCanManageIssueApprovalLinks(actor, issue.companyId);
 
-        const actorInfo = getActorInfo(actor);
-        await issueApprovalsSvc.link(id, ctx.body.approvalId, {
-          agentId: actorInfo.agentId,
-          userId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-        });
+          const actorInfo = getActorInfo(actor);
+          await issueApprovalsSvc.link(id, ctx.body.approvalId, {
+            agentId: actorInfo.agentId,
+            userId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+          });
 
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.approval_linked",
-          entityType: "issue",
-          entityId: issue.id,
-          details: { approvalId: ctx.body.approvalId },
-        });
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.approval_linked",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { approvalId: ctx.body.approvalId },
+          });
 
-        const approvals = await issueApprovalsSvc.listApprovalsForIssue(id);
-        ctx.set.status = 201;
-        return approvals;
+          const approvals = await issueApprovalsSvc.listApprovalsForIssue(id);
+          ctx.set.status = 201;
+          return approvals;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to link approval to issue");
+          throw err;
+        }
       },
       {
         params: t.Object({ id: t.String() }),
@@ -1192,29 +1361,35 @@ export function issueRoutes(db: Db, _storage?: any) {
     .delete(
       "/:id/approvals/:approvalId",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const approvalId = ctx.params.approvalId;
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        await assertCanManageIssueApprovalLinks(actor, issue.companyId);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const approvalId = ctx.params.approvalId;
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          await assertCanManageIssueApprovalLinks(actor, issue.companyId);
 
-        await issueApprovalsSvc.unlink(id, approvalId);
+          await issueApprovalsSvc.unlink(id, approvalId);
 
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.approval_unlinked",
-          entityType: "issue",
-          entityId: issue.id,
-          details: { approvalId },
-        });
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.approval_unlinked",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { approvalId },
+          });
 
-        return { ok: true };
+          return { ok: true };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to unlink approval from issue");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String(), approvalId: t.String() }) },
     )
@@ -1225,11 +1400,17 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/work-products",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        assertCompanyAccess(ctx.actor, issue.companyId);
-        return await workProductsSvc.listForIssue(issue.id);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          assertCompanyAccess(ctx.actor, issue.companyId);
+          return await workProductsSvc.listForIssue(issue.id);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list issue work products");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -1240,33 +1421,39 @@ export function issueRoutes(db: Db, _storage?: any) {
     .post(
       "/:id/work-products",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
 
-        const product = await workProductsSvc.createForIssue(issue.id, issue.companyId, {
-          ...ctx.body,
-          projectId: ctx.body.projectId ?? issue.projectId ?? null,
-        });
-        if (!product) { ctx.set.status = 422; return { error: "Invalid work product payload" }; }
+          const product = await workProductsSvc.createForIssue(issue.id, issue.companyId, {
+            ...ctx.body,
+            projectId: ctx.body.projectId ?? issue.projectId ?? null,
+          });
+          if (!product) { ctx.set.status = 422; return { error: "Invalid work product payload" }; }
 
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.work_product_created",
-          entityType: "issue",
-          entityId: issue.id,
-          details: { workProductId: product.id, type: product.type, provider: product.provider },
-        });
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.work_product_created",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { workProductId: product.id, type: product.type, provider: product.provider },
+          });
 
-        ctx.set.status = 201;
-        return product;
+          ctx.set.status = 201;
+          return product;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create issue work product");
+          throw err;
+        }
       },
       {
         params: t.Object({ id: t.String() }),
@@ -1290,11 +1477,17 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/documents",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        assertCompanyAccess(ctx.actor, issue.companyId);
-        return await documentsSvc.listIssueDocuments(issue.id);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          assertCompanyAccess(ctx.actor, issue.companyId);
+          return await documentsSvc.listIssueDocuments(issue.id);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list issue documents");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -1305,15 +1498,21 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/documents/:key",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        assertCompanyAccess(ctx.actor, issue.companyId);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          assertCompanyAccess(ctx.actor, issue.companyId);
 
-        const rawKey = String(ctx.params.key ?? "").trim().toLowerCase();
-        const doc = await documentsSvc.getIssueDocumentByKey(issue.id, rawKey);
-        if (!doc) { ctx.set.status = 404; return { error: "Document not found" }; }
-        return doc;
+          const rawKey = String(ctx.params.key ?? "").trim().toLowerCase();
+          const doc = await documentsSvc.getIssueDocumentByKey(issue.id, rawKey);
+          if (!doc) { ctx.set.status = 404; return { error: "Document not found" }; }
+          return doc;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get issue document");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String(), key: t.String() }) },
     )
@@ -1324,47 +1523,53 @@ export function issueRoutes(db: Db, _storage?: any) {
     .put(
       "/:id/documents/:key",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
 
-        const rawKey = String(ctx.params.key ?? "").trim().toLowerCase();
-        const actorInfo = getActorInfo(actor);
-        const result = await documentsSvc.upsertIssueDocument({
-          issueId: issue.id,
-          key: rawKey,
-          title: ctx.body.title ?? null,
-          format: ctx.body.format,
-          body: ctx.body.body,
-          changeSummary: ctx.body.changeSummary ?? null,
-          baseRevisionId: ctx.body.baseRevisionId ?? null,
-          createdByAgentId: actorInfo.agentId ?? null,
-          createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-        });
-        const doc = result.document;
+          const rawKey = String(ctx.params.key ?? "").trim().toLowerCase();
+          const actorInfo = getActorInfo(actor);
+          const result = await documentsSvc.upsertIssueDocument({
+            issueId: issue.id,
+            key: rawKey,
+            title: ctx.body.title ?? null,
+            format: ctx.body.format,
+            body: ctx.body.body,
+            changeSummary: ctx.body.changeSummary ?? null,
+            baseRevisionId: ctx.body.baseRevisionId ?? null,
+            createdByAgentId: actorInfo.agentId ?? null,
+            createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+          });
+          const doc = result.document;
 
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: result.created ? "issue.document_created" : "issue.document_updated",
-          entityType: "issue",
-          entityId: issue.id,
-          details: {
-            key: doc.key,
-            documentId: doc.id,
-            title: doc.title,
-            format: doc.format,
-            revisionNumber: doc.latestRevisionNumber,
-          },
-        });
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: result.created ? "issue.document_created" : "issue.document_updated",
+            entityType: "issue",
+            entityId: issue.id,
+            details: {
+              key: doc.key,
+              documentId: doc.id,
+              title: doc.title,
+              format: doc.format,
+              revisionNumber: doc.latestRevisionNumber,
+            },
+          });
 
-        ctx.set.status = result.created ? 201 : 200;
-        return doc;
+          ctx.set.status = result.created ? 201 : 200;
+          return doc;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to upsert issue document");
+          throw err;
+        }
       },
       {
         params: t.Object({ id: t.String(), key: t.String() }),
@@ -1384,13 +1589,19 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/documents/:key/revisions",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        assertCompanyAccess(ctx.actor, issue.companyId);
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          assertCompanyAccess(ctx.actor, issue.companyId);
 
-        const rawKey = String(ctx.params.key ?? "").trim().toLowerCase();
-        return await documentsSvc.listIssueDocumentRevisions(issue.id, rawKey);
+          const rawKey = String(ctx.params.key ?? "").trim().toLowerCase();
+          return await documentsSvc.listIssueDocumentRevisions(issue.id, rawKey);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list issue document revisions");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String(), key: t.String() }) },
     )
@@ -1401,35 +1612,41 @@ export function issueRoutes(db: Db, _storage?: any) {
     .delete(
       "/:id/documents/:key",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, issue.companyId);
-        if (actor.type !== "board") { ctx.set.status = 403; return { error: "Board authentication required" }; }
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, issue.companyId);
+          if (actor.type !== "board") { ctx.set.status = 403; return { error: "Board authentication required" }; }
 
-        const rawKey = String(ctx.params.key ?? "").trim().toLowerCase();
-        const removed = await documentsSvc.deleteIssueDocument(issue.id, rawKey);
-        if (!removed) { ctx.set.status = 404; return { error: "Document not found" }; }
+          const rawKey = String(ctx.params.key ?? "").trim().toLowerCase();
+          const removed = await documentsSvc.deleteIssueDocument(issue.id, rawKey);
+          if (!removed) { ctx.set.status = 404; return { error: "Document not found" }; }
 
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: issue.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.document_deleted",
-          entityType: "issue",
-          entityId: issue.id,
-          details: {
-            key: removed.key,
-            documentId: removed.id,
-            title: removed.title,
-          },
-        });
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: issue.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.document_deleted",
+            entityType: "issue",
+            entityId: issue.id,
+            details: {
+              key: removed.key,
+              documentId: removed.id,
+              title: removed.title,
+            },
+          });
 
-        return { ok: true };
+          return { ok: true };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete issue document");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String(), key: t.String() }) },
     )
@@ -1440,15 +1657,21 @@ export function issueRoutes(db: Db, _storage?: any) {
     .get(
       "/:id/attachments",
       async (ctx: any) => {
-        const id = await normalizeIssueIdentifier(ctx.params.id);
-        const issue = await svc.getById(id);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        assertCompanyAccess(ctx.actor, issue.companyId);
-        const attachments = await svc.listAttachments(id);
-        return attachments.map((a: any) => ({
-          ...a,
-          contentPath: `/api/attachments/${a.id}/content`,
-        }));
+        try {
+          const id = await normalizeIssueIdentifier(ctx.params.id);
+          const issue = await svc.getById(id);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          assertCompanyAccess(ctx.actor, issue.companyId);
+          const attachments = await svc.listAttachments(id);
+          return attachments.map((a: any) => ({
+            ...a,
+            contentPath: `/api/attachments/${a.id}/content`,
+          }));
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list issue attachments");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     );
@@ -1471,67 +1694,73 @@ export function companyIssueRoutes(db: Db) {
     .get(
       "/companies/:companyId/issues",
       async (ctx: any) => {
-        const companyId = ctx.params.companyId;
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, companyId);
+        try {
+          const companyId = ctx.params.companyId;
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, companyId);
 
-        const assigneeUserFilterRaw = ctx.query?.assigneeUserId as string | undefined;
-        const touchedByUserFilterRaw = ctx.query?.touchedByUserId as string | undefined;
-        const inboxArchivedByUserFilterRaw = ctx.query?.inboxArchivedByUserId as string | undefined;
-        const unreadForUserFilterRaw = ctx.query?.unreadForUserId as string | undefined;
+          const assigneeUserFilterRaw = ctx.query?.assigneeUserId as string | undefined;
+          const touchedByUserFilterRaw = ctx.query?.touchedByUserId as string | undefined;
+          const inboxArchivedByUserFilterRaw = ctx.query?.inboxArchivedByUserId as string | undefined;
+          const unreadForUserFilterRaw = ctx.query?.unreadForUserId as string | undefined;
 
-        const assigneeUserId =
-          assigneeUserFilterRaw === "me" && actor.type === "board"
-            ? actor.userId
-            : assigneeUserFilterRaw;
-        const touchedByUserId =
-          touchedByUserFilterRaw === "me" && actor.type === "board"
-            ? actor.userId
-            : touchedByUserFilterRaw;
-        const inboxArchivedByUserId =
-          inboxArchivedByUserFilterRaw === "me" && actor.type === "board"
-            ? actor.userId
-            : inboxArchivedByUserFilterRaw;
-        const unreadForUserId =
-          unreadForUserFilterRaw === "me" && actor.type === "board"
-            ? actor.userId
-            : unreadForUserFilterRaw;
+          const assigneeUserId =
+            assigneeUserFilterRaw === "me" && actor.type === "board"
+              ? actor.userId
+              : assigneeUserFilterRaw;
+          const touchedByUserId =
+            touchedByUserFilterRaw === "me" && actor.type === "board"
+              ? actor.userId
+              : touchedByUserFilterRaw;
+          const inboxArchivedByUserId =
+            inboxArchivedByUserFilterRaw === "me" && actor.type === "board"
+              ? actor.userId
+              : inboxArchivedByUserFilterRaw;
+          const unreadForUserId =
+            unreadForUserFilterRaw === "me" && actor.type === "board"
+              ? actor.userId
+              : unreadForUserFilterRaw;
 
-        if (assigneeUserFilterRaw === "me" && (!assigneeUserId || actor.type !== "board")) {
-          ctx.set.status = 403;
-          return { error: "assigneeUserId=me requires board authentication" };
-        }
-        if (touchedByUserFilterRaw === "me" && (!touchedByUserId || actor.type !== "board")) {
-          ctx.set.status = 403;
-          return { error: "touchedByUserId=me requires board authentication" };
-        }
-        if (inboxArchivedByUserFilterRaw === "me" && (!inboxArchivedByUserId || actor.type !== "board")) {
-          ctx.set.status = 403;
-          return { error: "inboxArchivedByUserId=me requires board authentication" };
-        }
-        if (unreadForUserFilterRaw === "me" && (!unreadForUserId || actor.type !== "board")) {
-          ctx.set.status = 403;
-          return { error: "unreadForUserId=me requires board authentication" };
-        }
+          if (assigneeUserFilterRaw === "me" && (!assigneeUserId || actor.type !== "board")) {
+            ctx.set.status = 403;
+            return { error: "assigneeUserId=me requires board authentication" };
+          }
+          if (touchedByUserFilterRaw === "me" && (!touchedByUserId || actor.type !== "board")) {
+            ctx.set.status = 403;
+            return { error: "touchedByUserId=me requires board authentication" };
+          }
+          if (inboxArchivedByUserFilterRaw === "me" && (!inboxArchivedByUserId || actor.type !== "board")) {
+            ctx.set.status = 403;
+            return { error: "inboxArchivedByUserId=me requires board authentication" };
+          }
+          if (unreadForUserFilterRaw === "me" && (!unreadForUserId || actor.type !== "board")) {
+            ctx.set.status = 403;
+            return { error: "unreadForUserId=me requires board authentication" };
+          }
 
-        const result = await svc.list(companyId, {
-          status: ctx.query?.status as string | undefined,
-          assigneeAgentId: ctx.query?.assigneeAgentId as string | undefined,
-          participantAgentId: ctx.query?.participantAgentId as string | undefined,
-          assigneeUserId,
-          touchedByUserId,
-          inboxArchivedByUserId,
-          unreadForUserId,
-          projectId: ctx.query?.projectId as string | undefined,
-          parentId: ctx.query?.parentId as string | undefined,
-          labelId: ctx.query?.labelId as string | undefined,
-          originKind: ctx.query?.originKind as string | undefined,
-          originId: ctx.query?.originId as string | undefined,
-          includeRoutineExecutions:
-            ctx.query?.includeRoutineExecutions === "true" || ctx.query?.includeRoutineExecutions === "1",
-          q: ctx.query?.q as string | undefined,
-        });
-        return result;
+          const result = await svc.list(companyId, {
+            status: ctx.query?.status as string | undefined,
+            assigneeAgentId: ctx.query?.assigneeAgentId as string | undefined,
+            participantAgentId: ctx.query?.participantAgentId as string | undefined,
+            assigneeUserId,
+            touchedByUserId,
+            inboxArchivedByUserId,
+            unreadForUserId,
+            projectId: ctx.query?.projectId as string | undefined,
+            parentId: ctx.query?.parentId as string | undefined,
+            labelId: ctx.query?.labelId as string | undefined,
+            originKind: ctx.query?.originKind as string | undefined,
+            originId: ctx.query?.originId as string | undefined,
+            includeRoutineExecutions:
+              ctx.query?.includeRoutineExecutions === "true" || ctx.query?.includeRoutineExecutions === "1",
+            q: ctx.query?.q as string | undefined,
+          });
+          return result;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list company issues");
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -1542,87 +1771,113 @@ export function companyIssueRoutes(db: Db) {
     .post(
       "/companies/:companyId/issues",
       async (ctx: any) => {
-        const companyId = ctx.params.companyId;
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, companyId);
+        try {
+          const companyId = ctx.params.companyId;
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, companyId);
 
-        const accessSvc = accessService(db);
-        const agentsSvc = agentService(db);
+          const accessSvc = accessService(db);
+          const agentsSvc = agentService(db);
 
-        if (ctx.body.assigneeAgentId || ctx.body.assigneeUserId) {
-          // Inline assertCanAssignTasks logic
-          if (actor.type === "board") {
-            if (actor.source !== "local_implicit" && !actor.isInstanceAdmin) {
-              const allowed = await accessSvc.canUser(companyId, actor.userId!, "tasks:assign");
-              if (!allowed) throw forbidden("Missing permission: tasks:assign");
+          if (ctx.body.assigneeAgentId || ctx.body.assigneeUserId) {
+            // Inline assertCanAssignTasks logic
+            if (actor.type === "board") {
+              if (actor.source !== "local_implicit" && !actor.isInstanceAdmin) {
+                const allowed = await accessSvc.canUser(companyId, actor.userId!, "tasks:assign");
+                if (!allowed) throw forbidden("Missing permission: tasks:assign");
+              }
+            } else if (actor.type === "agent") {
+              if (!actor.agentId) throw forbidden("Agent authentication required");
+              const allowedByGrant = await accessSvc.hasPermission(companyId, "agent", actor.agentId, "tasks:assign");
+              if (!allowedByGrant) {
+                const actorAgent = await agentsSvc.getById(actor.agentId);
+                const canCreate = actorAgent && actorAgent.companyId === companyId &&
+                  (isLevelCAgentRole(actorAgent.role) || Boolean(actorAgent.permissions?.canCreateAgents));
+                if (!canCreate) throw forbidden("Missing permission: tasks:assign");
+              }
+            } else {
+              throw unauthorized();
             }
-          } else if (actor.type === "agent") {
-            if (!actor.agentId) throw forbidden("Agent authentication required");
-            const allowedByGrant = await accessSvc.hasPermission(companyId, "agent", actor.agentId, "tasks:assign");
-            if (!allowedByGrant) {
-              const actorAgent = await agentsSvc.getById(actor.agentId);
-              const canCreate = actorAgent && actorAgent.companyId === companyId &&
-                (isLevelCAgentRole(actorAgent.role) || Boolean(actorAgent.permissions?.canCreateAgents));
-              if (!canCreate) throw forbidden("Missing permission: tasks:assign");
-            }
-          } else {
-            throw unauthorized();
           }
+
+          const actorInfo = getActorInfo(actor);
+          const {
+            sddSpec,
+            sddDesign,
+            sddRisk,
+            sddRollout,
+            sddRollback,
+            sddValidation,
+            description,
+            ...issueData
+          } = ctx.body;
+          const normalizedSpec = typeof sddSpec === "string" ? sddSpec.trim() : "";
+          const normalizedDesign = typeof sddDesign === "string" ? sddDesign.trim() : "";
+          const normalizedRisk = typeof sddRisk === "string" ? sddRisk.trim() : "";
+          const normalizedRollout = typeof sddRollout === "string" ? sddRollout.trim() : "";
+          const normalizedRollback = typeof sddRollback === "string" ? sddRollback.trim() : "";
+          const normalizedValidation = typeof sddValidation === "string" ? sddValidation.trim() : "";
+          // Only validate SDD when at least one section is provided
+          const hasSddContent = [normalizedSpec, normalizedDesign, normalizedRisk, normalizedRollout, normalizedRollback, normalizedValidation].some(Boolean);
+          if (hasSddContent) {
+            const sddIssues = validateStructuredSddInput({
+              spec: normalizedSpec,
+              design: normalizedDesign,
+              risk: normalizedRisk,
+              rollout: normalizedRollout,
+              rollback: normalizedRollback,
+              validation: normalizedValidation,
+            });
+            if (sddIssues.length > 0) {
+              log.warn({ category: "http", sddIssues }, "SDD validation warning for issue creation");
+            }
+          }
+
+          const issue = await svc.create(companyId, {
+            ...issueData,
+            description: composeStructuredSddDescription({
+              subjectLabel: `Issue: ${typeof issueData.title === "string" ? issueData.title : "Untitled issue"}`,
+              summary: typeof description === "string" ? description : description == null ? null : String(description),
+              spec: normalizedSpec,
+              design: normalizedDesign,
+              risk: normalizedRisk,
+              rollout: normalizedRollout,
+              rollback: normalizedRollback,
+              validation: normalizedValidation,
+            }),
+            createdByAgentId: actorInfo.agentId,
+            createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+          });
+
+          await logActivity(db, {
+            companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.created",
+            entityType: "issue",
+            entityId: issue.id,
+            details: { title: issue.title, identifier: issue.identifier },
+          });
+
+          void queueIssueAssignmentWakeup({
+            heartbeat,
+            issue,
+            reason: "issue_assigned",
+            mutation: "create",
+            contextSource: "issue.create",
+            requestedByActorType: actorInfo.actorType,
+            requestedByActorId: actorInfo.actorId,
+          });
+
+          ctx.set.status = 201;
+          return issue;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create issue in company");
+          throw err;
         }
-
-        const actorInfo = getActorInfo(actor);
-        const {
-          sddSpec,
-          sddDesign,
-          sddValidation,
-          description,
-          ...issueData
-        } = ctx.body;
-        const normalizedSpec = typeof sddSpec === "string" ? sddSpec.trim() : "";
-        const normalizedDesign = typeof sddDesign === "string" ? sddDesign.trim() : "";
-        const normalizedValidation = typeof sddValidation === "string" ? sddValidation.trim() : "";
-        if (!normalizedSpec || !normalizedDesign) {
-          set.status = 422;
-          return { error: "SDD spec and design are required for issue creation" };
-        }
-
-        const issue = await svc.create(companyId, {
-          ...issueData,
-          description: composeStructuredSddDescription({
-            subjectLabel: `Issue: ${typeof issueData.title === "string" ? issueData.title : "Untitled issue"}`,
-            summary: typeof description === "string" ? description : description == null ? null : String(description),
-            spec: normalizedSpec,
-            design: normalizedDesign,
-            validation: normalizedValidation || null,
-          }),
-          createdByAgentId: actorInfo.agentId,
-          createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-        });
-
-        await logActivity(db, {
-          companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.created",
-          entityType: "issue",
-          entityId: issue.id,
-          details: { title: issue.title, identifier: issue.identifier },
-        });
-
-        void queueIssueAssignmentWakeup({
-          heartbeat,
-          issue,
-          reason: "issue_assigned",
-          mutation: "create",
-          contextSource: "issue.create",
-          requestedByActorType: actorInfo.actorType,
-          requestedByActorId: actorInfo.actorId,
-        });
-
-        ctx.set.status = 201;
-        return issue;
       },
       {
         params: companyIdParam,
@@ -1631,6 +1886,9 @@ export function companyIssueRoutes(db: Db) {
           description: t.Optional(t.Nullable(t.String())),
           sddSpec: t.Optional(t.Nullable(t.String())),
           sddDesign: t.Optional(t.Nullable(t.String())),
+          sddRisk: t.Optional(t.Nullable(t.String())),
+          sddRollout: t.Optional(t.Nullable(t.String())),
+          sddRollback: t.Optional(t.Nullable(t.String())),
           sddValidation: t.Optional(t.Nullable(t.String())),
           status: t.Optional(t.String()),
           priority: t.Optional(t.String()),
@@ -1650,9 +1908,15 @@ export function companyIssueRoutes(db: Db) {
     .get(
       "/companies/:companyId/labels",
       async (ctx: any) => {
-        const companyId = ctx.params.companyId;
-        assertCompanyAccess(ctx.actor, companyId);
-        return await svc.listLabels(companyId);
+        try {
+          const companyId = ctx.params.companyId;
+          assertCompanyAccess(ctx.actor, companyId);
+          return await svc.listLabels(companyId);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list company labels");
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -1663,24 +1927,30 @@ export function companyIssueRoutes(db: Db) {
     .post(
       "/companies/:companyId/labels",
       async (ctx: any) => {
-        const companyId = ctx.params.companyId;
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, companyId);
-        const label = await svc.createLabel(companyId, ctx.body);
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "label.created",
-          entityType: "label",
-          entityId: label.id,
-          details: { name: label.name, color: label.color },
-        });
-        ctx.set.status = 201;
-        return label;
+        try {
+          const companyId = ctx.params.companyId;
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, companyId);
+          const label = await svc.createLabel(companyId, ctx.body);
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "label.created",
+            entityType: "label",
+            entityId: label.id,
+            details: { name: label.name, color: label.color },
+          });
+          ctx.set.status = 201;
+          return label;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create label");
+          throw err;
+        }
       },
       {
         params: companyIdParam,
@@ -1697,26 +1967,32 @@ export function companyIssueRoutes(db: Db) {
     .delete(
       "/labels/:labelId",
       async (ctx: any) => {
-        const labelId = ctx.params.labelId;
-        const existing = await svc.getLabelById(labelId);
-        if (!existing) { ctx.set.status = 404; return { error: "Label not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, existing.companyId);
-        const removed = await svc.deleteLabel(labelId);
-        if (!removed) { ctx.set.status = 404; return { error: "Label not found" }; }
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: removed.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "label.deleted",
-          entityType: "label",
-          entityId: removed.id,
-          details: { name: removed.name, color: removed.color },
-        });
-        return removed;
+        try {
+          const labelId = ctx.params.labelId;
+          const existing = await svc.getLabelById(labelId);
+          if (!existing) { ctx.set.status = 404; return { error: "Label not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, existing.companyId);
+          const removed = await svc.deleteLabel(labelId);
+          if (!removed) { ctx.set.status = 404; return { error: "Label not found" }; }
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: removed.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "label.deleted",
+            entityType: "label",
+            entityId: removed.id,
+            details: { name: removed.name, color: removed.color },
+          });
+          return removed;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete label");
+          throw err;
+        }
       },
       { params: t.Object({ labelId: t.String() }) },
     )
@@ -1727,27 +2003,33 @@ export function companyIssueRoutes(db: Db) {
     .patch(
       "/work-products/:id",
       async (ctx: any) => {
-        const wpId = ctx.params.id;
-        const wpSvc = workProductService(db);
-        const existing = await wpSvc.getById(wpId);
-        if (!existing) { ctx.set.status = 404; return { error: "Work product not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, existing.companyId);
-        const product = await wpSvc.update(wpId, ctx.body);
-        if (!product) { ctx.set.status = 404; return { error: "Work product not found" }; }
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: existing.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.work_product_updated",
-          entityType: "issue",
-          entityId: existing.issueId,
-          details: { workProductId: product.id, changedKeys: Object.keys(ctx.body).sort() },
-        });
-        return product;
+        try {
+          const wpId = ctx.params.id;
+          const wpSvc = workProductService(db);
+          const existing = await wpSvc.getById(wpId);
+          if (!existing) { ctx.set.status = 404; return { error: "Work product not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, existing.companyId);
+          const product = await wpSvc.update(wpId, ctx.body);
+          if (!product) { ctx.set.status = 404; return { error: "Work product not found" }; }
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: existing.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.work_product_updated",
+            entityType: "issue",
+            entityId: existing.issueId,
+            details: { workProductId: product.id, changedKeys: Object.keys(ctx.body).sort() },
+          });
+          return product;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update work product");
+          throw err;
+        }
       },
       {
         params: t.Object({ id: t.String() }),
@@ -1771,27 +2053,33 @@ export function companyIssueRoutes(db: Db) {
     .delete(
       "/work-products/:id",
       async (ctx: any) => {
-        const wpId = ctx.params.id;
-        const wpSvc = workProductService(db);
-        const existing = await wpSvc.getById(wpId);
-        if (!existing) { ctx.set.status = 404; return { error: "Work product not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, existing.companyId);
-        const removed = await wpSvc.remove(wpId);
-        if (!removed) { ctx.set.status = 404; return { error: "Work product not found" }; }
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: existing.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.work_product_deleted",
-          entityType: "issue",
-          entityId: existing.issueId,
-          details: { workProductId: removed.id, type: removed.type },
-        });
-        return removed;
+        try {
+          const wpId = ctx.params.id;
+          const wpSvc = workProductService(db);
+          const existing = await wpSvc.getById(wpId);
+          if (!existing) { ctx.set.status = 404; return { error: "Work product not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, existing.companyId);
+          const removed = await wpSvc.remove(wpId);
+          if (!removed) { ctx.set.status = 404; return { error: "Work product not found" }; }
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: existing.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.work_product_deleted",
+            entityType: "issue",
+            entityId: existing.issueId,
+            details: { workProductId: removed.id, type: removed.type },
+          });
+          return removed;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete work product");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -1802,80 +2090,86 @@ export function companyIssueRoutes(db: Db) {
     .post(
       "/companies/:companyId/issues/:issueId/attachments",
       async (ctx: any) => {
-        const companyId = ctx.params.companyId;
-        const issueId = ctx.params.issueId;
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, companyId);
-        const issueSvc = issueService(db);
-        const issue = await issueSvc.getById(issueId);
-        if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
-        if (issue.companyId !== companyId) { ctx.set.status = 422; return { error: "Issue does not belong to company" }; }
+        try {
+          const companyId = ctx.params.companyId;
+          const issueId = ctx.params.issueId;
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, companyId);
+          const issueSvc = issueService(db);
+          const issue = await issueSvc.getById(issueId);
+          if (!issue) { ctx.set.status = 404; return { error: "Issue not found" }; }
+          if (issue.companyId !== companyId) { ctx.set.status = 422; return { error: "Issue does not belong to company" }; }
 
-        // Elysia file upload handling - body contains the parsed multipart form
-        const file = ctx.body?.file;
-        if (!file) { ctx.set.status = 400; return { error: "Missing file field 'file'" }; }
+          // Elysia file upload handling - body contains the parsed multipart form
+          const file = ctx.body?.file;
+          if (!file) { ctx.set.status = 400; return { error: "Missing file field 'file'" }; }
 
-        const contentType = (file.type || "").toLowerCase();
-        if (!isAllowedContentType(contentType)) {
-          ctx.set.status = 422;
-          return { error: `Unsupported attachment type: ${contentType || "unknown"}` };
+          const contentType = (file.type || "").toLowerCase();
+          if (!isAllowedContentType(contentType)) {
+            ctx.set.status = 422;
+            return { error: `Unsupported attachment type: ${contentType || "unknown"}` };
+          }
+
+          const buffer = Buffer.from(await file.arrayBuffer());
+          if (buffer.length <= 0) { ctx.set.status = 422; return { error: "Attachment is empty" }; }
+          if (buffer.length > MAX_ATTACHMENT_BYTES) {
+            ctx.set.status = 422;
+            return { error: `Attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes` };
+          }
+
+          const { getStorageService } = await import("../storage/index.js");
+          const storage = getStorageService();
+
+          const actorInfo = getActorInfo(actor);
+          const stored = await storage.putFile({
+            companyId,
+            namespace: `issues/${issueId}`,
+            originalFilename: file.name || null,
+            contentType,
+            body: buffer,
+          });
+
+          const issueCommentId = ctx.body?.issueCommentId ?? null;
+          const attachment = await issueSvc.createAttachment({
+            issueId,
+            issueCommentId,
+            provider: stored.provider,
+            objectKey: stored.objectKey,
+            contentType: stored.contentType,
+            byteSize: stored.byteSize,
+            sha256: stored.sha256,
+            originalFilename: stored.originalFilename,
+            createdByAgentId: actorInfo.agentId,
+            createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+          });
+
+          await logActivity(db, {
+            companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.attachment_added",
+            entityType: "issue",
+            entityId: issueId,
+            details: {
+              attachmentId: attachment.id,
+              originalFilename: attachment.originalFilename,
+              contentType: attachment.contentType,
+              byteSize: attachment.byteSize,
+            },
+          });
+
+          ctx.set.status = 201;
+          return {
+            ...attachment,
+            contentPath: `/api/attachments/${attachment.id}/content`,
+          };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create attachment");
+          throw err;
         }
-
-        const buffer = Buffer.from(await file.arrayBuffer());
-        if (buffer.length <= 0) { ctx.set.status = 422; return { error: "Attachment is empty" }; }
-        if (buffer.length > MAX_ATTACHMENT_BYTES) {
-          ctx.set.status = 422;
-          return { error: `Attachment exceeds ${MAX_ATTACHMENT_BYTES} bytes` };
-        }
-
-        const { getStorageService } = await import("../storage/index.js");
-        const storage = getStorageService();
-
-        const actorInfo = getActorInfo(actor);
-        const stored = await storage.putFile({
-          companyId,
-          namespace: `issues/${issueId}`,
-          originalFilename: file.name || null,
-          contentType,
-          body: buffer,
-        });
-
-        const issueCommentId = ctx.body?.issueCommentId ?? null;
-        const attachment = await issueSvc.createAttachment({
-          issueId,
-          issueCommentId,
-          provider: stored.provider,
-          objectKey: stored.objectKey,
-          contentType: stored.contentType,
-          byteSize: stored.byteSize,
-          sha256: stored.sha256,
-          originalFilename: stored.originalFilename,
-          createdByAgentId: actorInfo.agentId,
-          createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-        });
-
-        await logActivity(db, {
-          companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.attachment_added",
-          entityType: "issue",
-          entityId: issueId,
-          details: {
-            attachmentId: attachment.id,
-            originalFilename: attachment.originalFilename,
-            contentType: attachment.contentType,
-            byteSize: attachment.byteSize,
-          },
-        });
-
-        ctx.set.status = 201;
-        return {
-          ...attachment,
-          contentPath: `/api/attachments/${attachment.id}/content`,
-        };
       },
       {
         params: t.Object({ companyId: t.String(), issueId: t.String() }),
@@ -1892,23 +2186,29 @@ export function companyIssueRoutes(db: Db) {
     .get(
       "/attachments/:attachmentId/content",
       async (ctx: any) => {
-        const attachmentId = ctx.params.attachmentId;
-        const issueSvc = issueService(db);
-        const attachment = await issueSvc.getAttachmentById(attachmentId);
-        if (!attachment) { ctx.set.status = 404; return { error: "Attachment not found" }; }
-        assertCompanyAccess(ctx.actor, attachment.companyId);
+        try {
+          const attachmentId = ctx.params.attachmentId;
+          const issueSvc = issueService(db);
+          const attachment = await issueSvc.getAttachmentById(attachmentId);
+          if (!attachment) { ctx.set.status = 404; return { error: "Attachment not found" }; }
+          assertCompanyAccess(ctx.actor, attachment.companyId);
 
-        const { getStorageService } = await import("../storage/index.js");
-        const storage = getStorageService();
-        const object = await storage.getObject(attachment.companyId, attachment.objectKey);
+          const { getStorageService } = await import("../storage/index.js");
+          const storage = getStorageService();
+          const object = await storage.getObject(attachment.companyId, attachment.objectKey);
 
-        ctx.set.headers["content-type"] = attachment.contentType || object.contentType || "application/octet-stream";
-        ctx.set.headers["content-length"] = String(attachment.byteSize || object.contentLength || 0);
-        ctx.set.headers["cache-control"] = "private, max-age=60";
-        const filename = attachment.originalFilename ?? "attachment";
-        ctx.set.headers["content-disposition"] = `inline; filename="${filename.replaceAll("\"", "")}"`;
+          ctx.set.headers["content-type"] = attachment.contentType || object.contentType || "application/octet-stream";
+          ctx.set.headers["content-length"] = String(attachment.byteSize || object.contentLength || 0);
+          ctx.set.headers["cache-control"] = "private, max-age=60";
+          const filename = attachment.originalFilename ?? "attachment";
+          ctx.set.headers["content-disposition"] = `inline; filename="${filename.replaceAll("\"", "")}"`;
 
-        return object.stream;
+          return object.stream;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get attachment content");
+          throw err;
+        }
       },
       { params: t.Object({ attachmentId: t.String() }) },
     )
@@ -1919,40 +2219,46 @@ export function companyIssueRoutes(db: Db) {
     .delete(
       "/attachments/:attachmentId",
       async (ctx: any) => {
-        const attachmentId = ctx.params.attachmentId;
-        const issueSvc = issueService(db);
-        const attachment = await issueSvc.getAttachmentById(attachmentId);
-        if (!attachment) { ctx.set.status = 404; return { error: "Attachment not found" }; }
-        const actor: Actor = ctx.actor;
-        assertCompanyAccess(actor, attachment.companyId);
-
         try {
-          const { getStorageService } = await import("../storage/index.js");
-          const storage = getStorageService();
-          await storage.deleteObject(attachment.companyId, attachment.objectKey);
+          const attachmentId = ctx.params.attachmentId;
+          const issueSvc = issueService(db);
+          const attachment = await issueSvc.getAttachmentById(attachmentId);
+          if (!attachment) { ctx.set.status = 404; return { error: "Attachment not found" }; }
+          const actor: Actor = ctx.actor;
+          assertCompanyAccess(actor, attachment.companyId);
+
+          try {
+            const { getStorageService } = await import("../storage/index.js");
+            const storage = getStorageService();
+            await storage.deleteObject(attachment.companyId, attachment.objectKey);
+          } catch (err) {
+            logger.warn({ err, attachmentId }, "storage delete failed while removing attachment");
+          }
+
+          const removed = await issueSvc.removeAttachment(attachmentId);
+          if (!removed) { ctx.set.status = 404; return { error: "Attachment not found" }; }
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: removed.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "issue.attachment_removed",
+            entityType: "issue",
+            entityId: removed.issueId,
+            details: {
+              attachmentId: removed.id,
+            },
+          });
+
+          return { ok: true };
         } catch (err) {
-          logger.warn({ err, attachmentId }, "storage delete failed while removing attachment");
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete attachment");
+          throw err;
         }
-
-        const removed = await issueSvc.removeAttachment(attachmentId);
-        if (!removed) { ctx.set.status = 404; return { error: "Attachment not found" }; }
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: removed.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "issue.attachment_removed",
-          entityType: "issue",
-          entityId: removed.issueId,
-          details: {
-            attachmentId: removed.id,
-          },
-        });
-
-        return { ok: true };
       },
       { params: t.Object({ attachmentId: t.String() }) },
     );

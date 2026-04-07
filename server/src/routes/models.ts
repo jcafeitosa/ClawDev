@@ -17,6 +17,9 @@ import { createModelRouterService } from "../services/model-router.js";
 import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
 import { assertCompanyAccess, assertInstanceAdmin, type Actor } from "../middleware/authz.js";
 import { badRequest, notFound } from "../errors.js";
+import { logger } from "../middleware/logger.js";
+
+const log = logger.child({ service: "models-routes" });
 
 function parseDateParam(value: unknown, label: string): Date | undefined {
   if (!value || typeof value !== "string") return undefined;
@@ -41,47 +44,53 @@ export function modelRoutes(db: Db) {
     .get(
       "/models",
       async ({ query }) => {
-        const isFree =
-          query.isFree === "true" ? true : query.isFree === "false" ? false : undefined;
-        const isLocal =
-          query.isLocal === "true" ? true : query.isLocal === "false" ? false : undefined;
+        try {
+          const isFree =
+            query.isFree === "true" ? true : query.isFree === "false" ? false : undefined;
+          const isLocal =
+            query.isLocal === "true" ? true : query.isLocal === "false" ? false : undefined;
 
-        const catalogModels = await catalog.listModels({
-          adapterType: query.adapterType as string | undefined,
-          provider: query.provider as string | undefined,
-          tier: query.tier as string | undefined,
-          capability: query.capability as string | undefined,
-          isFree,
-          isLocal,
-          search: query.search as string | undefined,
-        });
+          const catalogModels = await catalog.listModels({
+            adapterType: query.adapterType as string | undefined,
+            provider: query.provider as string | undefined,
+            tier: query.tier as string | undefined,
+            capability: query.capability as string | undefined,
+            isFree,
+            isLocal,
+            search: query.search as string | undefined,
+          });
 
-        // Fetch all live status rows and build a lookup map
-        const statusRows = await db.select().from(providerModelStatus);
-        const statusMap = new Map(
-          statusRows.map((s) => [`${s.adapterType}::${s.modelId}`, s]),
-        );
+          // Fetch all live status rows and build a lookup map
+          const statusRows = await db.select().from(providerModelStatus);
+          const statusMap = new Map(
+            statusRows.map((s) => [`${s.adapterType}::${s.modelId}`, s]),
+          );
 
-        // Enrich catalog models with live status data
-        const models = catalogModels.map((m) => {
-          const status = statusMap.get(`${m.adapterType}::${m.modelId}`);
-          return {
-            ...m,
-            // Live status fields
-            circuitState: status?.status ?? "unknown",
-            avgLatencyMs: status?.avgLatencyMs ?? null,
-            p95LatencyMs: status?.p95LatencyMs ?? null,
-            errorRatePercent: status?.errorRatePercent ?? null,
-            consecutiveFailures: status?.consecutiveFailures ?? 0,
-            cooldownUntil: status?.cooldownUntil ?? null,
-            cooldownReason: status?.cooldownReason ?? null,
-            lastProbeStatus: status?.lastProbeStatus ?? null,
-            lastProbeAt: status?.lastProbeAt ?? m.lastProbedAt ?? null,
-            lastHealthCheck: status?.lastProbeAt ?? m.lastProbedAt ?? null,
-          };
-        });
+          // Enrich catalog models with live status data
+          const models = catalogModels.map((m) => {
+            const status = statusMap.get(`${m.adapterType}::${m.modelId}`);
+            return {
+              ...m,
+              // Live status fields
+              circuitState: status?.status ?? "unknown",
+              avgLatencyMs: status?.avgLatencyMs ?? null,
+              p95LatencyMs: status?.p95LatencyMs ?? null,
+              errorRatePercent: status?.errorRatePercent ?? null,
+              consecutiveFailures: status?.consecutiveFailures ?? 0,
+              cooldownUntil: status?.cooldownUntil ?? null,
+              cooldownReason: status?.cooldownReason ?? null,
+              lastProbeStatus: status?.lastProbeStatus ?? null,
+              lastProbeAt: status?.lastProbeAt ?? m.lastProbedAt ?? null,
+              lastHealthCheck: status?.lastProbeAt ?? m.lastProbedAt ?? null,
+            };
+          });
 
-        return { models };
+          return { models };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list models");
+          throw err;
+        }
       },
       {
         query: t.Object({
@@ -100,12 +109,18 @@ export function modelRoutes(db: Db) {
     .get(
       "/models/:adapterType/:modelId",
       async ({ params, set }) => {
-        const model = await catalog.getModel(params.adapterType, params.modelId);
-        if (!model) {
-          set.status = 404;
-          return { error: "Model not found in catalog" };
+        try {
+          const model = await catalog.getModel(params.adapterType, params.modelId);
+          if (!model) {
+            set.status = 404;
+            return { error: "Model not found in catalog" };
+          }
+          return model;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get model detail");
+          throw err;
         }
-        return model;
       },
       {
         params: t.Object({
@@ -119,10 +134,10 @@ export function modelRoutes(db: Db) {
     .put(
       "/models/:adapterType/:modelId",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        assertInstanceAdmin(actor);
         try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          assertInstanceAdmin(actor);
           const enriched = await catalog.enrichModel(
             params.adapterType,
             params.modelId,
@@ -130,10 +145,13 @@ export function modelRoutes(db: Db) {
           );
           return enriched;
         } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
           if (err instanceof Error && err.message.includes("not found")) {
+            const { set } = arguments[0];
             set.status = 404;
             return { error: err.message };
           }
+          log.error({ category: "http.error", err: errMsg }, "Failed to enrich model");
           throw err;
         }
       },
@@ -160,10 +178,16 @@ export function modelRoutes(db: Db) {
     .post(
       "/models/sync",
       async (ctx: any) => {
-        const actor = ctx.actor as Actor;
-        assertInstanceAdmin(actor);
-        const result = await discovery.runDiscoveryCycle();
-        return result;
+        try {
+          const actor = ctx.actor as Actor;
+          assertInstanceAdmin(actor);
+          const result = await discovery.runDiscoveryCycle();
+          return result;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to run discovery cycle");
+          throw err;
+        }
       },
     )
 
@@ -175,81 +199,89 @@ export function modelRoutes(db: Db) {
     .get(
       "/providers/summary",
       async () => {
-        const adapters = listServerAdapters();
-        const statusSummary = await providerStatus.getProviderSummary();
+        try {
+          const adapters = listServerAdapters();
+          const statusSummary = await providerStatus.getProviderSummary();
 
-        // Build a lookup from the status summary keyed by adapterType
-        const statusByAdapter = new Map(
-          statusSummary.map((s) => [s.provider, s]),
-        );
-
-        // Gather catalog models per adapter (for total count and model labels)
-        const catalogModels = await catalog.listModels();
-        const catalogByAdapter = new Map<string, typeof catalogModels>();
-        for (const m of catalogModels) {
-          const list = catalogByAdapter.get(m.adapterType) ?? [];
-          list.push(m);
-          catalogByAdapter.set(m.adapterType, list);
-        }
-
-        // Fetch all live status rows for per-model detail
-        const allStatusRows = await db.select().from(providerModelStatus);
-        const statusRowsByAdapter = new Map<string, typeof allStatusRows>();
-        for (const row of allStatusRows) {
-          const list = statusRowsByAdapter.get(row.adapterType) ?? [];
-          list.push(row);
-          statusRowsByAdapter.set(row.adapterType, list);
-        }
-
-        const summary = adapters.map((adapter) => {
-          const status = statusByAdapter.get(adapter.type);
-          const adapterCatalog = catalogByAdapter.get(adapter.type) ?? [];
-          const adapterStatuses = statusRowsByAdapter.get(adapter.type) ?? [];
-          const catalogTotal = adapterCatalog.length;
-
-          // Build a status lookup by modelId for this adapter
-          const statusByModelId = new Map(
-            adapterStatuses.map((s) => [s.modelId, s]),
+          // Build a lookup from the status summary keyed by adapterType
+          const statusByAdapter = new Map(
+            statusSummary.map((s) => [s.provider, s]),
           );
 
-          // Per-model details: merge catalog info with live status
-          const models = adapterCatalog.map((cm) => {
-            const ms = statusByModelId.get(cm.modelId);
+          // Gather catalog models per adapter (for total count and model labels)
+          const catalogModels = await catalog.listModels();
+          const catalogByAdapter = new Map<string, typeof catalogModels>();
+          for (const m of catalogModels) {
+            const list = catalogByAdapter.get(m.adapterType) ?? [];
+            list.push(m);
+            catalogByAdapter.set(m.adapterType, list);
+          }
+
+          // Fetch all live status rows for per-model detail
+          const allStatusRows = await db.select().from(providerModelStatus);
+          const statusRowsByAdapter = new Map<string, typeof allStatusRows>();
+          for (const row of allStatusRows) {
+            const list = statusRowsByAdapter.get(row.adapterType) ?? [];
+            list.push(row);
+            statusRowsByAdapter.set(row.adapterType, list);
+          }
+
+          const summary = adapters.map((adapter) => {
+            const status = statusByAdapter.get(adapter.type);
+            const adapterCatalog = catalogByAdapter.get(adapter.type) ?? [];
+            const adapterStatuses = statusRowsByAdapter.get(adapter.type) ?? [];
+            const catalogTotal = adapterCatalog.length;
+
+            // Build a status lookup by modelId for this adapter
+            const statusByModelId = new Map(
+              adapterStatuses.map((s) => [s.modelId, s]),
+            );
+
+            // Per-model details: merge catalog info with live status
+            const models = adapterCatalog.map((cm) => {
+              const ms = statusByModelId.get(cm.modelId);
+              return {
+                id: cm.modelId,
+                modelId: cm.modelId,
+                name: cm.label ?? cm.modelId,
+                circuitState: ms?.status ?? "unknown",
+                status: ms?.status ?? "unknown",
+                statusDetail: ms?.statusDetail ?? null,
+                avgLatencyMs: ms?.avgLatencyMs ?? null,
+                errorRate: ms?.errorRatePercent ?? null,
+                failureCount: ms?.consecutiveFailures ?? 0,
+                cooldownEndsAt: ms?.cooldownUntil ?? null,
+                cooldownReason: ms?.cooldownReason ?? null,
+                lastProbed: ms?.lastProbeAt ?? cm.lastProbedAt ?? null,
+                lastHealthCheck: ms?.lastProbeAt ?? cm.lastProbedAt ?? null,
+              };
+            });
+
+            // When provider_model_status has no rows for this adapter,
+            // fall back to catalog counts so the dashboard shows meaningful totals
+            const hasStatusRows = status && status.total > 0;
+
             return {
-              id: cm.modelId,
-              modelId: cm.modelId,
-              name: cm.label ?? cm.modelId,
-              circuitState: ms?.status ?? "unknown",
-              status: ms?.status ?? "unknown",
-              avgLatencyMs: ms?.avgLatencyMs ?? null,
-              errorRate: ms?.errorRatePercent ?? null,
-              failureCount: ms?.consecutiveFailures ?? 0,
-              cooldownEndsAt: ms?.cooldownUntil ?? null,
-              lastProbed: ms?.lastProbeAt ?? cm.lastProbedAt ?? null,
-              lastHealthCheck: ms?.lastProbeAt ?? cm.lastProbedAt ?? null,
+              adapterType: adapter.type,
+              label: adapter.agentConfigurationDoc
+                ? adapter.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+                : adapter.type,
+              provider: adapter.type,
+              totalCatalog: catalogTotal,
+              total: hasStatusRows ? status.total : catalogTotal,
+              available: hasStatusRows ? status.available : catalogTotal,
+              cooldown: status?.cooldown ?? 0,
+              unavailable: status?.unavailable ?? 0,
+              models,
             };
           });
 
-          // When provider_model_status has no rows for this adapter,
-          // fall back to catalog counts so the dashboard shows meaningful totals
-          const hasStatusRows = status && status.total > 0;
-
-          return {
-            adapterType: adapter.type,
-            label: adapter.agentConfigurationDoc
-              ? adapter.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-              : adapter.type,
-            provider: adapter.type,
-            totalCatalog: catalogTotal,
-            total: hasStatusRows ? status.total : catalogTotal,
-            available: hasStatusRows ? status.available : catalogTotal,
-            cooldown: status?.cooldown ?? 0,
-            unavailable: status?.unavailable ?? 0,
-            models,
-          };
-        });
-
-        return { providers: summary };
+          return { providers: summary };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get provider summary");
+          throw err;
+        }
       },
     )
 
@@ -257,12 +289,18 @@ export function modelRoutes(db: Db) {
     .get(
       "/providers/:adapterType/status",
       async ({ params }) => {
-        const rows = await db
-          .select()
-          .from(providerModelStatus)
-          .where(eq(providerModelStatus.adapterType, params.adapterType));
+        try {
+          const rows = await db
+            .select()
+            .from(providerModelStatus)
+            .where(eq(providerModelStatus.adapterType, params.adapterType));
 
-        return { models: rows };
+          return { models: rows };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get adapter status");
+          throw err;
+        }
       },
       {
         params: t.Object({ adapterType: t.String() }),
@@ -277,6 +315,8 @@ export function modelRoutes(db: Db) {
           const models = await listAdapterModels(params.adapterType);
           return { adapterType: params.adapterType, models };
         } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list adapter models");
           set.status = 502;
           const message = err instanceof Error ? err.message : String(err);
           return { error: `Failed to list models from adapter: ${message}` };
@@ -291,11 +331,17 @@ export function modelRoutes(db: Db) {
     .post(
       "/providers/:adapterType/probe",
       async (ctx: any) => {
-        const { params } = ctx;
-        const actor = ctx.actor as Actor;
-        assertInstanceAdmin(actor);
-        const result = await discovery.probeAdapter(params.adapterType);
-        return result;
+        try {
+          const { params } = ctx;
+          const actor = ctx.actor as Actor;
+          assertInstanceAdmin(actor);
+          const result = await discovery.probeAdapter(params.adapterType);
+          return result;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to probe adapter");
+          throw err;
+        }
       },
       {
         params: t.Object({ adapterType: t.String() }),
@@ -310,29 +356,35 @@ export function modelRoutes(db: Db) {
     .post(
       "/providers/:adapterType/models/:modelId/cooldown",
       async (ctx: any) => {
-        const { params, body } = ctx;
-        const actor = ctx.actor as Actor;
-        assertInstanceAdmin(actor);
-        const durationMs = body.durationMinutes
-          ? body.durationMinutes * 60 * 1000
-          : getCooldownDuration(params.adapterType);
-        const until = new Date(Date.now() + durationMs);
-        const reason = body.reason ?? "manual_cooldown";
+        try {
+          const { params, body } = ctx;
+          const actor = ctx.actor as Actor;
+          assertInstanceAdmin(actor);
+          const durationMs = body.durationMinutes
+            ? body.durationMinutes * 60 * 1000
+            : getCooldownDuration(params.adapterType);
+          const until = new Date(Date.now() + durationMs);
+          const reason = body.reason ?? "manual_cooldown";
 
-        await providerStatus.markCooldown(
-          params.adapterType,
-          params.modelId,
-          until,
-          reason,
-        );
+          await providerStatus.markCooldown(
+            params.adapterType,
+            params.modelId,
+            until,
+            reason,
+          );
 
-        return {
-          adapterType: params.adapterType,
-          modelId: params.modelId,
-          status: "cooldown",
-          cooldownUntil: until.toISOString(),
-          reason,
-        };
+          return {
+            adapterType: params.adapterType,
+            modelId: params.modelId,
+            status: "cooldown",
+            cooldownUntil: until.toISOString(),
+            reason,
+          };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to mark model cooldown");
+          throw err;
+        }
       },
       {
         params: t.Object({
@@ -350,37 +402,43 @@ export function modelRoutes(db: Db) {
     .delete(
       "/providers/:adapterType/models/:modelId/cooldown",
       async (ctx: any) => {
-        const { params } = ctx;
-        const actor = ctx.actor as Actor;
-        assertInstanceAdmin(actor);
-        await providerStatus.updateStatus(
-          params.adapterType,
-          params.modelId,
-          "available",
-          "cooldown cleared manually",
-        );
-
-        // Also clear the cooldown fields
-        await db
-          .update(providerModelStatus)
-          .set({
-            cooldownUntil: null,
-            cooldownReason: null,
-            updatedAt: new Date(),
-          })
-          .where(
-            and(
-              eq(providerModelStatus.adapterType, params.adapterType),
-              eq(providerModelStatus.modelId, params.modelId),
-            ),
+        try {
+          const { params } = ctx;
+          const actor = ctx.actor as Actor;
+          assertInstanceAdmin(actor);
+          await providerStatus.updateStatus(
+            params.adapterType,
+            params.modelId,
+            "available",
+            "cooldown cleared manually",
           );
 
-        return {
-          adapterType: params.adapterType,
-          modelId: params.modelId,
-          status: "available",
-          cooldownUntil: null,
-        };
+          // Also clear the cooldown fields
+          await db
+            .update(providerModelStatus)
+            .set({
+              cooldownUntil: null,
+              cooldownReason: null,
+              updatedAt: new Date(),
+            })
+            .where(
+              and(
+                eq(providerModelStatus.adapterType, params.adapterType),
+                eq(providerModelStatus.modelId, params.modelId),
+              ),
+            );
+
+          return {
+            adapterType: params.adapterType,
+            modelId: params.modelId,
+            status: "available",
+            cooldownUntil: null,
+          };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to clear model cooldown");
+          throw err;
+        }
       },
       {
         params: t.Object({
@@ -394,10 +452,16 @@ export function modelRoutes(db: Db) {
     .post(
       "/providers/clear-expired-cooldowns",
       async (ctx: any) => {
-        const actor = ctx.actor as Actor;
-        assertInstanceAdmin(actor);
-        const count = await providerStatus.clearExpiredCooldowns();
-        return { cleared: count };
+        try {
+          const actor = ctx.actor as Actor;
+          assertInstanceAdmin(actor);
+          const count = await providerStatus.clearExpiredCooldowns();
+          return { cleared: count };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to clear expired cooldowns");
+          throw err;
+        }
       },
     )
 
@@ -409,31 +473,37 @@ export function modelRoutes(db: Db) {
     .get(
       "/companies/:companyId/model-preferences",
       async (ctx: any) => {
-        const { params } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        const rows = await db
-          .select()
-          .from(companyModelPreferences)
-          .where(eq(companyModelPreferences.companyId, params.companyId))
-          .limit(1);
+          const rows = await db
+            .select()
+            .from(companyModelPreferences)
+            .where(eq(companyModelPreferences.companyId, params.companyId))
+            .limit(1);
 
-        if (!rows[0]) {
-          return {
-            companyId: params.companyId,
-            defaultAdapterType: null,
-            defaultModelId: null,
-            fallbackChain: [],
-            routingStrategy: "pinned",
-            allowCrossProviderFallback: true,
-            preferFreeModels: false,
-            preferLocalModels: false,
-            maxCostPerRequestMicro: null,
-          };
+          if (!rows[0]) {
+            return {
+              companyId: params.companyId,
+              defaultAdapterType: null,
+              defaultModelId: null,
+              fallbackChain: [],
+              routingStrategy: "pinned",
+              allowCrossProviderFallback: true,
+              preferFreeModels: false,
+              preferLocalModels: false,
+              maxCostPerRequestMicro: null,
+            };
+          }
+
+          return rows[0];
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get company model preferences");
+          throw err;
         }
-
-        return rows[0];
       },
       {
         params: t.Object({ companyId: t.String() }),
@@ -444,66 +514,72 @@ export function modelRoutes(db: Db) {
     .put(
       "/companies/:companyId/model-preferences",
       async (ctx: any) => {
-        const { params, body } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params, body } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        const input = body as Record<string, unknown>;
-        const setClauses: Record<string, unknown> = {
-          updatedAt: new Date(),
-        };
+          const input = body as Record<string, unknown>;
+          const setClauses: Record<string, unknown> = {
+            updatedAt: new Date(),
+          };
 
-        if (input.defaultAdapterType !== undefined) {
-          setClauses.defaultAdapterType = input.defaultAdapterType;
-        }
-        if (input.defaultModelId !== undefined) {
-          setClauses.defaultModelId = input.defaultModelId;
-        } else if (input.defaultModel !== undefined) {
-          setClauses.defaultModelId = input.defaultModel;
-        }
-        if (input.fallbackChain !== undefined) {
-          setClauses.fallbackChain = input.fallbackChain;
-        }
-        if (input.routingStrategy !== undefined) {
-          setClauses.routingStrategy = input.routingStrategy;
-        }
-        if (input.allowCrossProviderFallback !== undefined) {
-          setClauses.allowCrossProviderFallback = input.allowCrossProviderFallback;
-        }
-        if (input.preferFreeModels !== undefined) {
-          setClauses.preferFreeModels = input.preferFreeModels;
-        }
-        if (input.preferLocalModels !== undefined) {
-          setClauses.preferLocalModels = input.preferLocalModels;
-        }
-        if (input.maxCostPerRequestMicro !== undefined) {
-          setClauses.maxCostPerRequestMicro = input.maxCostPerRequestMicro;
-        }
+          if (input.defaultAdapterType !== undefined) {
+            setClauses.defaultAdapterType = input.defaultAdapterType;
+          }
+          if (input.defaultModelId !== undefined) {
+            setClauses.defaultModelId = input.defaultModelId;
+          } else if (input.defaultModel !== undefined) {
+            setClauses.defaultModelId = input.defaultModel;
+          }
+          if (input.fallbackChain !== undefined) {
+            setClauses.fallbackChain = input.fallbackChain;
+          }
+          if (input.routingStrategy !== undefined) {
+            setClauses.routingStrategy = input.routingStrategy;
+          }
+          if (input.allowCrossProviderFallback !== undefined) {
+            setClauses.allowCrossProviderFallback = input.allowCrossProviderFallback;
+          }
+          if (input.preferFreeModels !== undefined) {
+            setClauses.preferFreeModels = input.preferFreeModels;
+          }
+          if (input.preferLocalModels !== undefined) {
+            setClauses.preferLocalModels = input.preferLocalModels;
+          }
+          if (input.maxCostPerRequestMicro !== undefined) {
+            setClauses.maxCostPerRequestMicro = input.maxCostPerRequestMicro;
+          }
 
-        // Upsert: insert if not exists, update if exists
-        const existing = await db
-          .select({ id: companyModelPreferences.id })
-          .from(companyModelPreferences)
-          .where(eq(companyModelPreferences.companyId, params.companyId))
-          .limit(1);
-
-        if (existing[0]) {
-          const rows = await db
-            .update(companyModelPreferences)
-            .set(setClauses as any)
+          // Upsert: insert if not exists, update if exists
+          const existing = await db
+            .select({ id: companyModelPreferences.id })
+            .from(companyModelPreferences)
             .where(eq(companyModelPreferences.companyId, params.companyId))
+            .limit(1);
+
+          if (existing[0]) {
+            const rows = await db
+              .update(companyModelPreferences)
+              .set(setClauses as any)
+              .where(eq(companyModelPreferences.companyId, params.companyId))
+              .returning();
+            return rows[0]!;
+          }
+
+          const rows = await db
+            .insert(companyModelPreferences)
+            .values({
+              companyId: params.companyId,
+              ...setClauses,
+            } as any)
             .returning();
           return rows[0]!;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update company model preferences");
+          throw err;
         }
-
-        const rows = await db
-          .insert(companyModelPreferences)
-          .values({
-            companyId: params.companyId,
-            ...setClauses,
-          } as any)
-          .returning();
-        return rows[0]!;
       },
       {
         params: t.Object({ companyId: t.String() }),
@@ -536,19 +612,25 @@ export function modelRoutes(db: Db) {
     .post(
       "/companies/:companyId/model-resolve",
       async (ctx: any) => {
-        const { params, body } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params, body } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        const input = body as { agentId: string; adapterType: string; modelId?: string };
-        const resolution = await router.resolveModel(
-          params.companyId,
-          input.agentId,
-          input.adapterType,
-          input.modelId,
-        );
+          const input = body as { agentId: string; adapterType: string; modelId?: string };
+          const resolution = await router.resolveModel(
+            params.companyId,
+            input.agentId,
+            input.adapterType,
+            input.modelId,
+          );
 
-        return resolution;
+          return resolution;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to resolve model");
+          throw err;
+        }
       },
       {
         params: t.Object({ companyId: t.String() }),
@@ -564,25 +646,31 @@ export function modelRoutes(db: Db) {
     .get(
       "/companies/:companyId/model-routing-log",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        const from = parseDateParam(query.from, "from");
-        const to = parseDateParam(query.to, "to");
-        const limit = query.limit ? Math.min(Number(query.limit), 500) : 100;
-        if (query.limit && isNaN(Number(query.limit))) {
-          throw badRequest("Invalid 'limit': must be a number");
+          const from = parseDateParam(query.from, "from");
+          const to = parseDateParam(query.to, "to");
+          const limit = query.limit ? Math.min(Number(query.limit), 500) : 100;
+          if (query.limit && isNaN(Number(query.limit))) {
+            throw badRequest("Invalid 'limit': must be a number");
+          }
+
+          const entries = await router.getRoutingLog(params.companyId, {
+            agentId: query.agentId as string | undefined,
+            from,
+            to,
+            limit,
+          });
+
+          return { entries };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get routing log");
+          throw err;
         }
-
-        const entries = await router.getRoutingLog(params.companyId, {
-          agentId: query.agentId as string | undefined,
-          from,
-          to,
-          limit,
-        });
-
-        return { entries };
       },
       {
         params: t.Object({ companyId: t.String() }),

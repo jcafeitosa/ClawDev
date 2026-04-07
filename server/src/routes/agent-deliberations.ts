@@ -10,6 +10,9 @@ import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logActivity } from "../services/index.js";
 import { agentDeliberationService } from "../services/agent-deliberations.js";
+import { getLogger } from "../logger.js";
+
+const logger = getLogger("agent-deliberations");
 
 export function agentDeliberationRoutes(db: Db) {
   const deliberations = agentDeliberationService(db);
@@ -19,14 +22,19 @@ export function agentDeliberationRoutes(db: Db) {
     .get(
       "/companies/:companyId/agent-deliberations",
       async (ctx: any) => {
-        const { params, query } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        return deliberations.list(params.companyId, {
-          status: query?.status ?? undefined,
-          teamId: query?.teamId ?? undefined,
-          limit: query?.limit ? parseInt(query.limit) : undefined,
-        });
+        try {
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          return deliberations.list(params.companyId, {
+            status: query?.status ?? undefined,
+            teamId: query?.teamId ?? undefined,
+            limit: query?.limit ? parseInt(query.limit) : undefined,
+          });
+        } catch (err) {
+          logger.error("Error listing deliberations", err);
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -35,29 +43,34 @@ export function agentDeliberationRoutes(db: Db) {
     .post(
       "/companies/:companyId/agent-deliberations",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        const actorInfo = getActorInfo(actor);
-        const delib = await deliberations.create(params.companyId, body, {
-          agentId: actorInfo.agentId ?? undefined,
-          userId: actorInfo.actorType === "user" ? actorInfo.actorId : undefined,
-        });
+          const actorInfo = getActorInfo(actor);
+          const delib = await deliberations.create(params.companyId, body, {
+            agentId: actorInfo.agentId ?? undefined,
+            userId: actorInfo.actorType === "user" ? actorInfo.actorId : undefined,
+          });
 
-        await logActivity(db, {
-          companyId: params.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "deliberation.created",
-          entityType: "deliberation",
-          entityId: delib.id,
-          details: { topic: delib.topic, participantCount: body.participantAgentIds?.length ?? 0 },
-        });
+          await logActivity(db, {
+            companyId: params.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "deliberation.created",
+            entityType: "deliberation",
+            entityId: delib.id,
+            details: { topic: delib.topic, participantCount: body.participantAgentIds?.length ?? 0 },
+          });
 
-        set.status = 201;
-        return delib;
+          set.status = 201;
+          return delib;
+        } catch (err) {
+          logger.error("Error creating deliberation", err);
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -66,13 +79,18 @@ export function agentDeliberationRoutes(db: Db) {
     .get(
       "/agent-deliberations/:id",
       async (ctx: any) => {
-        const { params, set } = ctx;
-        const result = await deliberations.getById(params.id);
-        if (!result) {
-          set.status = 404;
-          return { error: "Deliberation not found" };
+        try {
+          const { params, set } = ctx;
+          const result = await deliberations.getById(params.id);
+          if (!result) {
+            set.status = 404;
+            return { error: "Deliberation not found" };
+          }
+          return result;
+        } catch (err) {
+          logger.error("Error getting deliberation", err);
+          throw err;
         }
-        return result;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -81,28 +99,33 @@ export function agentDeliberationRoutes(db: Db) {
     .post(
       "/agent-deliberations/:id/vote",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const vote = await deliberations.castVote(params.id, body.agentId, {
-          position: body.position,
-          reasoning: body.reasoning,
-          weight: body.weight,
-        });
+        try {
+          const { params, body, set } = ctx;
+          const vote = await deliberations.castVote(params.id, body.agentId, {
+            position: body.position,
+            reasoning: body.reasoning,
+            weight: body.weight,
+          });
 
-        const actorInfo = getActorInfo(ctx.actor as Actor);
-        const delibForLog = await deliberations.getById(params.id);
-        await logActivity(db, {
-          companyId: delibForLog?.deliberation?.companyId ?? body.companyId ?? "",
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "deliberation.vote_cast",
-          entityType: "deliberation",
-          entityId: params.id,
-          details: { position: body.position },
-        });
+          const actorInfo = getActorInfo(ctx.actor as Actor);
+          const delibForLog = await deliberations.getById(params.id);
+          await logActivity(db, {
+            companyId: delibForLog?.deliberation?.companyId ?? body.companyId ?? "",
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "deliberation.vote_cast",
+            entityType: "deliberation",
+            entityId: params.id,
+            details: { position: body.position },
+          });
 
-        set.status = 201;
-        return vote;
+          set.status = 201;
+          return vote;
+        } catch (err) {
+          logger.error("Error casting vote", err);
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -111,8 +134,13 @@ export function agentDeliberationRoutes(db: Db) {
     .get(
       "/agent-deliberations/:id/votes",
       async (ctx: any) => {
-        const { params } = ctx;
-        return deliberations.listVotes(params.id);
+        try {
+          const { params } = ctx;
+          return deliberations.listVotes(params.id);
+        } catch (err) {
+          logger.error("Error listing votes", err);
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -121,26 +149,31 @@ export function agentDeliberationRoutes(db: Db) {
     .post(
       "/agent-deliberations/:id/resolve",
       async (ctx: any) => {
-        const { params, set } = ctx;
-        const resolved = await deliberations.resolve(params.id);
-        if (!resolved) {
-          set.status = 422;
-          return { error: "Cannot resolve deliberation" };
+        try {
+          const { params, set } = ctx;
+          const resolved = await deliberations.resolve(params.id);
+          if (!resolved) {
+            set.status = 422;
+            return { error: "Cannot resolve deliberation" };
+          }
+
+          const actorInfo = getActorInfo(ctx.actor as Actor);
+          await logActivity(db, {
+            companyId: resolved.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "deliberation.resolved",
+            entityType: "deliberation",
+            entityId: params.id,
+            details: { decision: resolved.decision },
+          });
+
+          return resolved;
+        } catch (err) {
+          logger.error("Error resolving deliberation", err);
+          throw err;
         }
-
-        const actorInfo = getActorInfo(ctx.actor as Actor);
-        await logActivity(db, {
-          companyId: resolved.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "deliberation.resolved",
-          entityType: "deliberation",
-          entityId: params.id,
-          details: { decision: resolved.decision },
-        });
-
-        return resolved;
       },
       { params: t.Object({ id: t.String() }) },
     );

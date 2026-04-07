@@ -11,25 +11,33 @@ import { eq, desc } from "drizzle-orm";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { goalService, logActivity } from "../services/index.js";
+import { logger } from "../middleware/logger.js";
 
 export function goalRoutes(db: Db) {
   const svc = goalService(db);
+  const log = logger.child({ service: "goals-routes" });
 
   return new Elysia()
     // List goals for a company
     .get(
       "/companies/:companyId/goals",
       async (ctx: any) => {
-        const { params } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        const rows = await db
-          .select()
-          .from(goals)
-          .where(eq(goals.companyId, params.companyId))
-          .orderBy(desc(goals.createdAt));
-        return rows;
+          const rows = await db
+            .select()
+            .from(goals)
+            .where(eq(goals.companyId, params.companyId))
+            .orderBy(desc(goals.createdAt));
+          return rows;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list goals");
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -38,14 +46,20 @@ export function goalRoutes(db: Db) {
     .get(
       "/goals/:id",
       async (ctx: any) => {
-        const actor = ctx.actor as Actor;
-        const goal = await svc.getById(ctx.params.id);
-        if (!goal) {
-          ctx.set.status = 404;
-          return { error: "Goal not found" };
+        try {
+          const actor = ctx.actor as Actor;
+          const goal = await svc.getById(ctx.params.id);
+          if (!goal) {
+            ctx.set.status = 404;
+            return { error: "Goal not found" };
+          }
+          assertCompanyAccess(actor, goal.companyId);
+          return goal;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get goal");
+          throw err;
         }
-        assertCompanyAccess(actor, goal.companyId);
-        return goal;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -54,23 +68,29 @@ export function goalRoutes(db: Db) {
     .post(
       "/companies/:companyId/goals",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const goal = await svc.create(params.companyId, body);
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: params.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "goal.created",
-          entityType: "goal",
-          entityId: goal.id,
-          details: { title: goal.title },
-        });
-        set.status = 201;
-        return goal;
+        try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const goal = await svc.create(params.companyId, body);
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: params.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "goal.created",
+            entityType: "goal",
+            entityId: goal.id,
+            details: { title: goal.title },
+          });
+          set.status = 201;
+          return goal;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create goal");
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -79,33 +99,39 @@ export function goalRoutes(db: Db) {
     .patch(
       "/goals/:id",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const existing = await svc.getById(params.id);
-        if (!existing) {
-          set.status = 404;
-          return { error: "Goal not found" };
-        }
-        assertCompanyAccess(actor, existing.companyId);
-        const goal = await svc.update(params.id, body);
-        if (!goal) {
-          set.status = 404;
-          return { error: "Goal not found" };
-        }
+        try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const existing = await svc.getById(params.id);
+          if (!existing) {
+            set.status = 404;
+            return { error: "Goal not found" };
+          }
+          assertCompanyAccess(actor, existing.companyId);
+          const goal = await svc.update(params.id, body);
+          if (!goal) {
+            set.status = 404;
+            return { error: "Goal not found" };
+          }
 
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: goal.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "goal.updated",
-          entityType: "goal",
-          entityId: goal.id,
-          details: body,
-        });
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: goal.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "goal.updated",
+            entityType: "goal",
+            entityId: goal.id,
+            details: body,
+          });
 
-        return goal;
+          return goal;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update goal");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -114,32 +140,38 @@ export function goalRoutes(db: Db) {
     .delete(
       "/goals/:id",
       async (ctx: any) => {
-        const { params, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const existing = await svc.getById(params.id);
-        if (!existing) {
-          set.status = 404;
-          return { error: "Goal not found" };
-        }
-        assertCompanyAccess(actor, existing.companyId);
-        const goal = await svc.remove(params.id);
-        if (!goal) {
-          set.status = 404;
-          return { error: "Goal not found" };
-        }
+        try {
+          const { params, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const existing = await svc.getById(params.id);
+          if (!existing) {
+            set.status = 404;
+            return { error: "Goal not found" };
+          }
+          assertCompanyAccess(actor, existing.companyId);
+          const goal = await svc.remove(params.id);
+          if (!goal) {
+            set.status = 404;
+            return { error: "Goal not found" };
+          }
 
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: goal.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "goal.deleted",
-          entityType: "goal",
-          entityId: goal.id,
-        });
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: goal.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "goal.deleted",
+            entityType: "goal",
+            entityId: goal.id,
+          });
 
-        return goal;
+          return goal;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete goal");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     );

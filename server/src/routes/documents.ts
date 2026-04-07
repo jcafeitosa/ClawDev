@@ -16,6 +16,9 @@ import { documentRevisions, documents, issueDocuments, issues } from "@clawdev/d
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { badRequest, notFound } from "../errors.js";
 import { logActivity } from "../services/index.js";
+import { logger } from "../middleware/logger.js";
+
+const log = logger.child({ service: "documents-routes" });
 
 type DocumentRow = {
   id: string;
@@ -107,46 +110,52 @@ export function documentRoutes(db: Db) {
     .get(
       "/companies/:companyId/documents",
       async (ctx: any) => {
-        const actor: Actor = ctx.actor;
-        const { companyId } = ctx.params;
-        const q = typeof ctx.query?.q === "string" ? ctx.query.q.trim() : "";
-        assertCompanyAccess(actor, companyId);
-        const filters = [eq(documents.companyId, companyId)];
-        if (q) {
-          const search = `%${q}%`;
-          filters.push(
-            or(
-              ilike(documents.title, search),
-              ilike(documents.format, search),
-              ilike(documents.latestBody, search),
-            )!,
-          );
+        try {
+          const actor: Actor = ctx.actor;
+          const { companyId } = ctx.params;
+          const q = typeof ctx.query?.q === "string" ? ctx.query.q.trim() : "";
+          assertCompanyAccess(actor, companyId);
+          const filters = [eq(documents.companyId, companyId)];
+          if (q) {
+            const search = `%${q}%`;
+            filters.push(
+              or(
+                ilike(documents.title, search),
+                ilike(documents.format, search),
+                ilike(documents.latestBody, search),
+              )!,
+            );
+          }
+          const rows = await db
+            .select({
+              id: documents.id,
+              companyId: documents.companyId,
+              issueId: issueDocuments.issueId,
+              issueIdentifier: issues.identifier,
+              issueTitle: issues.title,
+              title: documents.title,
+              format: documents.format,
+              latestBody: documents.latestBody,
+              latestRevisionId: documents.latestRevisionId,
+              latestRevisionNumber: documents.latestRevisionNumber,
+              createdByAgentId: documents.createdByAgentId,
+              createdByUserId: documents.createdByUserId,
+              updatedByAgentId: documents.updatedByAgentId,
+              updatedByUserId: documents.updatedByUserId,
+              createdAt: documents.createdAt,
+              updatedAt: documents.updatedAt,
+            })
+            .from(documents)
+            .leftJoin(issueDocuments, eq(issueDocuments.documentId, documents.id))
+            .leftJoin(issues, eq(issues.id, issueDocuments.issueId))
+            .where(and(...filters))
+            .orderBy(desc(documents.updatedAt));
+          return rows.map(mapDocumentRow);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list documents");
+          throw err;
         }
-        const rows = await db
-          .select({
-            id: documents.id,
-            companyId: documents.companyId,
-            issueId: issueDocuments.issueId,
-            issueIdentifier: issues.identifier,
-            issueTitle: issues.title,
-            title: documents.title,
-            format: documents.format,
-            latestBody: documents.latestBody,
-            latestRevisionId: documents.latestRevisionId,
-            latestRevisionNumber: documents.latestRevisionNumber,
-            createdByAgentId: documents.createdByAgentId,
-            createdByUserId: documents.createdByUserId,
-            updatedByAgentId: documents.updatedByAgentId,
-            updatedByUserId: documents.updatedByUserId,
-            createdAt: documents.createdAt,
-            updatedAt: documents.updatedAt,
-          })
-          .from(documents)
-          .leftJoin(issueDocuments, eq(issueDocuments.documentId, documents.id))
-          .leftJoin(issues, eq(issues.id, issueDocuments.issueId))
-          .where(and(...filters))
-          .orderBy(desc(documents.updatedAt));
-        return rows.map(mapDocumentRow);
       },
       {
         params: t.Object({ companyId: t.String() }),
@@ -157,79 +166,85 @@ export function documentRoutes(db: Db) {
     .post(
       "/companies/:companyId/documents",
       async (ctx: any) => {
-        const actor: Actor = ctx.actor;
-        const { companyId } = ctx.params;
-        const body = ctx.body as {
-          title?: string | null;
-          format?: string | null;
-          body: string;
-          changeSummary?: string | null;
-        };
-        assertCompanyAccess(actor, companyId);
-        assertDocumentBody(body);
-
-        const actorInfo = getActorInfo(actor);
-        const now = new Date();
-        const created = await db.transaction(async (tx) => {
-          const [document] = await tx
-            .insert(documents)
-            .values({
-              companyId,
-              title: body.title ?? null,
-              format: body.format ?? "markdown",
-              latestBody: body.body,
-              latestRevisionId: null,
-              latestRevisionNumber: 1,
-              createdByAgentId: actorInfo.agentId,
-              createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-              updatedByAgentId: actorInfo.agentId,
-              updatedByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-              createdAt: now,
-              updatedAt: now,
-            })
-            .returning();
-
-          const [revision] = await tx
-            .insert(documentRevisions)
-            .values({
-              companyId,
-              documentId: document.id,
-              revisionNumber: 1,
-              body: body.body,
-              changeSummary: body.changeSummary ?? "Initial version",
-              createdByAgentId: actorInfo.agentId,
-              createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-              createdAt: now,
-            })
-            .returning();
-
-          const [updated] = await tx
-            .update(documents)
-            .set({ latestRevisionId: revision.id })
-            .where(eq(documents.id, document.id))
-            .returning();
-
-          return {
-            ...updated,
-            latestBody: body.body,
-            latestRevisionId: revision.id,
-            latestRevisionNumber: 1,
+        try {
+          const actor: Actor = ctx.actor;
+          const { companyId } = ctx.params;
+          const body = ctx.body as {
+            title?: string | null;
+            format?: string | null;
+            body: string;
+            changeSummary?: string | null;
           };
-        });
+          assertCompanyAccess(actor, companyId);
+          assertDocumentBody(body);
 
-        await logActivity(db, {
-          companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "document.created",
-          entityType: "document",
-          entityId: created.id,
-          details: { title: created.title, format: created.format },
-        });
+          const actorInfo = getActorInfo(actor);
+          const now = new Date();
+          const created = await db.transaction(async (tx) => {
+            const [document] = await tx
+              .insert(documents)
+              .values({
+                companyId,
+                title: body.title ?? null,
+                format: body.format ?? "markdown",
+                latestBody: body.body,
+                latestRevisionId: null,
+                latestRevisionNumber: 1,
+                createdByAgentId: actorInfo.agentId,
+                createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+                updatedByAgentId: actorInfo.agentId,
+                updatedByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+                createdAt: now,
+                updatedAt: now,
+              })
+              .returning();
 
-        return mapDocumentRow(created);
+            const [revision] = await tx
+              .insert(documentRevisions)
+              .values({
+                companyId,
+                documentId: document.id,
+                revisionNumber: 1,
+                body: body.body,
+                changeSummary: body.changeSummary ?? "Initial version",
+                createdByAgentId: actorInfo.agentId,
+                createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+                createdAt: now,
+              })
+              .returning();
+
+            const [updated] = await tx
+              .update(documents)
+              .set({ latestRevisionId: revision.id })
+              .where(eq(documents.id, document.id))
+              .returning();
+
+            return {
+              ...updated,
+              latestBody: body.body,
+              latestRevisionId: revision.id,
+              latestRevisionNumber: 1,
+            };
+          });
+
+          await logActivity(db, {
+            companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "document.created",
+            entityType: "document",
+            entityId: created.id,
+            details: { title: created.title, format: created.format },
+          });
+
+          return mapDocumentRow(created);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create document");
+          throw err;
+        }
       },
       { params: t.Object({ companyId: t.String() }) },
     )
@@ -237,11 +252,17 @@ export function documentRoutes(db: Db) {
     .get(
       "/documents/:id",
       async (ctx: any) => {
-        const actor: Actor = ctx.actor;
-        const document = await getDocumentById(ctx.params.id);
-        if (!document) throw notFound("Document not found");
-        assertCompanyAccess(actor, document.companyId);
-        return mapDocumentRow(document);
+        try {
+          const actor: Actor = ctx.actor;
+          const document = await getDocumentById(ctx.params.id);
+          if (!document) throw notFound("Document not found");
+          assertCompanyAccess(actor, document.companyId);
+          return mapDocumentRow(document);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get document");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -249,73 +270,79 @@ export function documentRoutes(db: Db) {
     .put(
       "/documents/:id",
       async (ctx: any) => {
-        const actor: Actor = ctx.actor;
-        const body = ctx.body as {
-          title?: string | null;
-          format?: string | null;
-          body: string;
-          changeSummary?: string | null;
-        };
-        assertDocumentBody(body);
-
-        const existing = await getDocumentById(ctx.params.id);
-        if (!existing) throw notFound("Document not found");
-        assertCompanyAccess(actor, existing.companyId);
-
-        const actorInfo = getActorInfo(actor);
-        const now = new Date();
-        const nextRevisionNumber = existing.latestRevisionNumber + 1;
-
-        const updated = await db.transaction(async (tx) => {
-          const [revision] = await tx
-            .insert(documentRevisions)
-            .values({
-              companyId: existing.companyId,
-              documentId: existing.id,
-              revisionNumber: nextRevisionNumber,
-              body: body.body,
-              changeSummary: body.changeSummary ?? null,
-              createdByAgentId: actorInfo.agentId,
-              createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-              createdAt: now,
-            })
-            .returning();
-
-          const [row] = await tx
-            .update(documents)
-            .set({
-              title: body.title ?? existing.title,
-              format: body.format ?? existing.format,
-              latestBody: body.body,
-              latestRevisionId: revision.id,
-              latestRevisionNumber: nextRevisionNumber,
-              updatedByAgentId: actorInfo.agentId,
-              updatedByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
-              updatedAt: now,
-            })
-            .where(eq(documents.id, existing.id))
-            .returning();
-
-          return {
-            ...row,
-            latestBody: body.body,
-            latestRevisionNumber: nextRevisionNumber,
+        try {
+          const actor: Actor = ctx.actor;
+          const body = ctx.body as {
+            title?: string | null;
+            format?: string | null;
+            body: string;
+            changeSummary?: string | null;
           };
-        });
+          assertDocumentBody(body);
 
-        await logActivity(db, {
-          companyId: existing.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "document.updated",
-          entityType: "document",
-          entityId: existing.id,
-          details: { title: updated.title, format: updated.format },
-        });
+          const existing = await getDocumentById(ctx.params.id);
+          if (!existing) throw notFound("Document not found");
+          assertCompanyAccess(actor, existing.companyId);
 
-        return mapDocumentRow(updated);
+          const actorInfo = getActorInfo(actor);
+          const now = new Date();
+          const nextRevisionNumber = existing.latestRevisionNumber + 1;
+
+          const updated = await db.transaction(async (tx) => {
+            const [revision] = await tx
+              .insert(documentRevisions)
+              .values({
+                companyId: existing.companyId,
+                documentId: existing.id,
+                revisionNumber: nextRevisionNumber,
+                body: body.body,
+                changeSummary: body.changeSummary ?? null,
+                createdByAgentId: actorInfo.agentId,
+                createdByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+                createdAt: now,
+              })
+              .returning();
+
+            const [row] = await tx
+              .update(documents)
+              .set({
+                title: body.title ?? existing.title,
+                format: body.format ?? existing.format,
+                latestBody: body.body,
+                latestRevisionId: revision.id,
+                latestRevisionNumber: nextRevisionNumber,
+                updatedByAgentId: actorInfo.agentId,
+                updatedByUserId: actorInfo.actorType === "user" ? actorInfo.actorId : null,
+                updatedAt: now,
+              })
+              .where(eq(documents.id, existing.id))
+              .returning();
+
+            return {
+              ...row,
+              latestBody: body.body,
+              latestRevisionNumber: nextRevisionNumber,
+            };
+          });
+
+          await logActivity(db, {
+            companyId: existing.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "document.updated",
+            entityType: "document",
+            entityId: existing.id,
+            details: { title: updated.title, format: updated.format },
+          });
+
+          return mapDocumentRow(updated);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update document");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -323,29 +350,35 @@ export function documentRoutes(db: Db) {
     .delete(
       "/documents/:id",
       async (ctx: any) => {
-        const actor: Actor = ctx.actor;
-        const existing = await getDocumentById(ctx.params.id);
-        if (!existing) throw notFound("Document not found");
-        assertCompanyAccess(actor, existing.companyId);
+        try {
+          const actor: Actor = ctx.actor;
+          const existing = await getDocumentById(ctx.params.id);
+          if (!existing) throw notFound("Document not found");
+          assertCompanyAccess(actor, existing.companyId);
 
-        const actorInfo = getActorInfo(actor);
-        await db.transaction(async (tx) => {
-          await tx.delete(documents).where(eq(documents.id, existing.id));
-        });
+          const actorInfo = getActorInfo(actor);
+          await db.transaction(async (tx) => {
+            await tx.delete(documents).where(eq(documents.id, existing.id));
+          });
 
-        await logActivity(db, {
-          companyId: existing.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          runId: actorInfo.runId,
-          action: "document.deleted",
-          entityType: "document",
-          entityId: existing.id,
-          details: { title: existing.title, format: existing.format },
-        });
+          await logActivity(db, {
+            companyId: existing.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "document.deleted",
+            entityType: "document",
+            entityId: existing.id,
+            details: { title: existing.title, format: existing.format },
+          });
 
-        return mapDocumentRow(existing);
+          return mapDocumentRow(existing);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete document");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -353,11 +386,17 @@ export function documentRoutes(db: Db) {
     .get(
       "/documents/:id/revisions",
       async (ctx: any) => {
-        const actor: Actor = ctx.actor;
-        const existing = await getDocumentById(ctx.params.id);
-        if (!existing) throw notFound("Document not found");
-        assertCompanyAccess(actor, existing.companyId);
-        return listDocumentRevisions(existing.id);
+        try {
+          const actor: Actor = ctx.actor;
+          const existing = await getDocumentById(ctx.params.id);
+          if (!existing) throw notFound("Document not found");
+          assertCompanyAccess(actor, existing.companyId);
+          return listDocumentRevisions(existing.id);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get document revisions");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     );

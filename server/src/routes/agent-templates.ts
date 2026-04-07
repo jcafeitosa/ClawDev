@@ -10,6 +10,9 @@ import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logActivity } from "../services/index.js";
 import { agentTemplateService } from "../services/agent-templates.js";
+import { getLogger } from "../logger.js";
+
+const logger = getLogger("agent-templates");
 
 export function agentTemplateRoutes(db: Db) {
   const templates = agentTemplateService(db);
@@ -19,10 +22,15 @@ export function agentTemplateRoutes(db: Db) {
     .get(
       "/companies/:companyId/agent-templates",
       async (ctx: any) => {
-        const { params } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        return templates.list(params.companyId);
+        try {
+          const { params } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          return templates.list(params.companyId);
+        } catch (err) {
+          logger.error("Error listing templates", err);
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -31,29 +39,34 @@ export function agentTemplateRoutes(db: Db) {
     .post(
       "/companies/:companyId/agent-templates",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        const actorInfo = getActorInfo(actor);
-        const tmpl = await templates.create(params.companyId, body, {
-          agentId: actorInfo.agentId ?? undefined,
-          userId: actorInfo.actorType === "user" ? actorInfo.actorId : undefined,
-        });
+          const actorInfo = getActorInfo(actor);
+          const tmpl = await templates.create(params.companyId, body, {
+            agentId: actorInfo.agentId ?? undefined,
+            userId: actorInfo.actorType === "user" ? actorInfo.actorId : undefined,
+          });
 
-        await logActivity(db, {
-          companyId: params.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "template.created",
-          entityType: "agent_template",
-          entityId: tmpl.id,
-          details: { name: tmpl.name },
-        });
+          await logActivity(db, {
+            companyId: params.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "template.created",
+            entityType: "agent_template",
+            entityId: tmpl.id,
+            details: { name: tmpl.name },
+          });
 
-        set.status = 201;
-        return tmpl;
+          set.status = 201;
+          return tmpl;
+        } catch (err) {
+          logger.error("Error creating template", err);
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -62,13 +75,18 @@ export function agentTemplateRoutes(db: Db) {
     .get(
       "/agent-templates/:id",
       async (ctx: any) => {
-        const { params, set } = ctx;
-        const tmpl = await templates.getById(params.id);
-        if (!tmpl) {
-          set.status = 404;
-          return { error: "Template not found" };
+        try {
+          const { params, set } = ctx;
+          const tmpl = await templates.getById(params.id);
+          if (!tmpl) {
+            set.status = 404;
+            return { error: "Template not found" };
+          }
+          return tmpl;
+        } catch (err) {
+          logger.error("Error getting template", err);
+          throw err;
         }
-        return tmpl;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -77,13 +95,18 @@ export function agentTemplateRoutes(db: Db) {
     .patch(
       "/agent-templates/:id",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const updated = await templates.update(params.id, body);
-        if (!updated) {
-          set.status = 404;
-          return { error: "Template not found" };
+        try {
+          const { params, body, set } = ctx;
+          const updated = await templates.update(params.id, body);
+          if (!updated) {
+            set.status = 404;
+            return { error: "Template not found" };
+          }
+          return updated;
+        } catch (err) {
+          logger.error("Error updating template", err);
+          throw err;
         }
-        return updated;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -92,13 +115,18 @@ export function agentTemplateRoutes(db: Db) {
     .delete(
       "/agent-templates/:id",
       async (ctx: any) => {
-        const { params, set } = ctx;
-        const deleted = await templates.remove(params.id);
-        if (!deleted) {
-          set.status = 404;
-          return { error: "Template not found" };
+        try {
+          const { params, set } = ctx;
+          const deleted = await templates.remove(params.id);
+          if (!deleted) {
+            set.status = 404;
+            return { error: "Template not found" };
+          }
+          return deleted;
+        } catch (err) {
+          logger.error("Error deleting template", err);
+          throw err;
         }
-        return deleted;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -107,27 +135,32 @@ export function agentTemplateRoutes(db: Db) {
     .post(
       "/agent-templates/:id/instantiate",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const agent = await templates.instantiate(params.id, body ?? {});
-        if (!agent) {
-          set.status = 404;
-          return { error: "Template not found" };
+        try {
+          const { params, body, set } = ctx;
+          const agent = await templates.instantiate(params.id, body ?? {});
+          if (!agent) {
+            set.status = 404;
+            return { error: "Template not found" };
+          }
+
+          const actorInfo = getActorInfo(ctx.actor as Actor);
+          await logActivity(db, {
+            companyId: agent.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "template.instantiated",
+            entityType: "agent",
+            entityId: agent.id,
+            details: { templateId: params.id, agentName: agent.name },
+          });
+
+          set.status = 201;
+          return agent;
+        } catch (err) {
+          logger.error("Error instantiating template", err);
+          throw err;
         }
-
-        const actorInfo = getActorInfo(ctx.actor as Actor);
-        await logActivity(db, {
-          companyId: agent.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "template.instantiated",
-          entityType: "agent",
-          entityId: agent.id,
-          details: { templateId: params.id, agentName: agent.name },
-        });
-
-        set.status = 201;
-        return agent;
       },
       { params: t.Object({ id: t.String() }) },
     );

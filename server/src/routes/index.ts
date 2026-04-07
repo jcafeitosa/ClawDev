@@ -33,3 +33,5 @@ export { agentDeliberationRoutes } from "./agent-deliberations.js";
 export { agentTemplateRoutes } from "./agent-templates.js";
 export { teamKnowledgeRoutes } from "./team-knowledge.js";
 export { channelRoutes } from "./channels.js";
+export { logsRoutes } from "./logs.js";
+export { agentHookRoutes } from "./agent-hooks.js";

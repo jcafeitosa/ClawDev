@@ -12,6 +12,7 @@ import { listServerAdapters } from "../adapters/index.js";
 import { agentService } from "../services/agents.js";
 import { assertBoard, type Actor } from "../middleware/authz.js";
 import { forbidden } from "../errors.js";
+import { logger } from "../logger.js";
 
 function hasCreatePermission(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
   if (isLevelCAgentRole(agent.role)) return true;
@@ -37,69 +38,84 @@ export function llmRoutes(db: Db) {
 
   return new Elysia({ prefix: "/llms" })
     .get("/agent-configuration.txt", async ({ set, ...ctx }: any) => {
-      await assertLlmAccess(ctx.actor, agentsSvc);
-      const adapters = listServerAdapters().sort((a, b) => a.type.localeCompare(b.type));
-      const lines = [
-        "# ClawDev Agent Configuration Index",
-        "",
-        "Installed adapters:",
-        ...adapters.map((adapter) => `- ${adapter.type}: /llms/agent-configuration/${adapter.type}.txt`),
-        "",
-        "Related API endpoints:",
-        "- GET /api/companies/:companyId/agent-configurations",
-        "- GET /api/agents/:id/configuration",
-        "- POST /api/companies/:companyId/agent-hires",
-        "",
-        "Agent identity references:",
-        "- GET /llms/agent-icons.txt",
-        "",
-        "Notes:",
-        "- Sensitive values are redacted in configuration read APIs.",
-        "- New hires may be created in pending_approval state depending on company settings.",
-        "",
-      ];
-      set.headers["content-type"] = "text/plain; charset=utf-8";
-      return lines.join("\n");
+      try {
+        await assertLlmAccess(ctx.actor, agentsSvc);
+        const adapters = listServerAdapters().sort((a, b) => a.type.localeCompare(b.type));
+        const lines = [
+          "# ClawDev Agent Configuration Index",
+          "",
+          "Installed adapters:",
+          ...adapters.map((adapter) => `- ${adapter.type}: /llms/agent-configuration/${adapter.type}.txt`),
+          "",
+          "Related API endpoints:",
+          "- GET /api/companies/:companyId/agent-configurations",
+          "- GET /api/agents/:id/configuration",
+          "- POST /api/companies/:companyId/agent-hires",
+          "",
+          "Agent identity references:",
+          "- GET /llms/agent-icons.txt",
+          "",
+          "Notes:",
+          "- Sensitive values are redacted in configuration read APIs.",
+          "- New hires may be created in pending_approval state depending on company settings.",
+          "",
+        ];
+        set.headers["content-type"] = "text/plain; charset=utf-8";
+        return lines.join("\n");
+      } catch (error) {
+        logger.error("GET /agent-configuration.txt error", error);
+        throw error;
+      }
     })
 
     .get("/agent-icons.txt", async ({ set, ...ctx }: any) => {
-      await assertLlmAccess(ctx.actor, agentsSvc);
-      const lines = [
-        "# ClawDev Agent Icon Names",
-        "",
-        "Set the `icon` field on hire/create payloads to one of:",
-        ...AGENT_ICON_NAMES.map((name) => `- ${name}`),
-        "",
-        "Example:",
-        '{ "name": "SearchOps", "role": "researcher", "icon": "search" }',
-        "",
-      ];
-      set.headers["content-type"] = "text/plain; charset=utf-8";
-      return lines.join("\n");
+      try {
+        await assertLlmAccess(ctx.actor, agentsSvc);
+        const lines = [
+          "# ClawDev Agent Icon Names",
+          "",
+          "Set the `icon` field on hire/create payloads to one of:",
+          ...AGENT_ICON_NAMES.map((name) => `- ${name}`),
+          "",
+          "Example:",
+          '{ "name": "SearchOps", "role": "researcher", "icon": "search" }',
+          "",
+        ];
+        set.headers["content-type"] = "text/plain; charset=utf-8";
+        return lines.join("\n");
+      } catch (error) {
+        logger.error("GET /agent-icons.txt error", error);
+        throw error;
+      }
     })
 
     .get(
       "/agent-configuration/*",
       async ({ params, set, ...ctx }: any) => {
-        await assertLlmAccess(ctx.actor, agentsSvc);
-        const rawTail = (params as Record<string, string>)["*"] ?? "";
-        const adapterType = rawTail.replace(/\.txt$/, "").trim();
-        if (!adapterType) {
-          set.status = 404;
+        try {
+          await assertLlmAccess(ctx.actor, agentsSvc);
+          const rawTail = (params as Record<string, string>)["*"] ?? "";
+          const adapterType = rawTail.replace(/\.txt$/, "").trim();
+          if (!adapterType) {
+            set.status = 404;
+            set.headers["content-type"] = "text/plain; charset=utf-8";
+            return "Unknown adapter type";
+          }
+          const adapter = listServerAdapters().find((entry) => entry.type === adapterType);
+          if (!adapter) {
+            set.status = 404;
+            set.headers["content-type"] = "text/plain; charset=utf-8";
+            return `Unknown adapter type: ${adapterType}`;
+          }
           set.headers["content-type"] = "text/plain; charset=utf-8";
-          return "Unknown adapter type";
+          return (
+            adapter.agentConfigurationDoc ??
+            `# ${adapterType} agent configuration\n\nNo adapter-specific documentation registered.`
+          );
+        } catch (error) {
+          logger.error("GET /agent-configuration/* error", error);
+          throw error;
         }
-        const adapter = listServerAdapters().find((entry) => entry.type === adapterType);
-        if (!adapter) {
-          set.status = 404;
-          set.headers["content-type"] = "text/plain; charset=utf-8";
-          return `Unknown adapter type: ${adapterType}`;
-        }
-        set.headers["content-type"] = "text/plain; charset=utf-8";
-        return (
-          adapter.agentConfigurationDoc ??
-          `# ${adapterType} agent configuration\n\nNo adapter-specific documentation registered.`
-        );
       },
     );
 }

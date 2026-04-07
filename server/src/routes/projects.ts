@@ -11,10 +11,13 @@ import { eq, desc, sql, and } from "drizzle-orm";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { projectService, logActivity, workspaceOperationService } from "../services/index.js";
-import { isUuidLike, deriveProjectUrlKey, composeStructuredSddDescription } from "@clawdev/shared";
+import { isUuidLike, deriveProjectUrlKey, composeStructuredSddDescription, parseStructuredSddDescription, validateStructuredSddInput } from "@clawdev/shared";
 import { conflict } from "../errors.js";
 import { startRuntimeServicesForWorkspaceControl, stopRuntimeServicesForProjectWorkspace } from "../services/workspace-runtime.js";
 import { readProjectWorkspaceRuntimeConfig } from "../services/project-workspace-runtime-config.js";
+import { logger } from "../middleware/logger.js";
+
+const log = logger.child({ service: "projects-routes" });
 
 export function projectRoutes(db: Db) {
   const svc = projectService(db);
@@ -51,30 +54,36 @@ export function projectRoutes(db: Db) {
     .get(
       "/companies/:companyId/projects",
       async (ctx: any) => {
-        const { params } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
-        const projectList = await svc.list(params.companyId);
+        try {
+          const { params } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
+          const projectList = await svc.list(params.companyId);
 
-        // Enrich with issue counts per project
-        const issueCounts = await db
-          .select({
-            projectId: issues.projectId,
-            total: sql<number>`count(*)::int`,
-            done: sql<number>`count(*) filter (where ${issues.status} = 'done')::int`,
-          })
-          .from(issues)
-          .where(eq(issues.companyId, params.companyId))
-          .groupBy(issues.projectId);
+          // Enrich with issue counts per project
+          const issueCounts = await db
+            .select({
+              projectId: issues.projectId,
+              total: sql<number>`count(*)::int`,
+              done: sql<number>`count(*) filter (where ${issues.status} = 'done')::int`,
+            })
+            .from(issues)
+            .where(eq(issues.companyId, params.companyId))
+            .groupBy(issues.projectId);
 
-        const countMap = new Map(
-          issueCounts.map((ic) => [ic.projectId, { total: ic.total, done: ic.done }])
-        );
+          const countMap = new Map(
+            issueCounts.map((ic) => [ic.projectId, { total: ic.total, done: ic.done }])
+          );
 
-        return projectList.map((p) => {
-          const counts = countMap.get(p.id) ?? { total: 0, done: 0 };
-          return { ...p, issueCount: counts.total, issueDoneCount: counts.done };
-        });
+          return projectList.map((p) => {
+            const counts = countMap.get(p.id) ?? { total: 0, done: 0 };
+            return { ...p, issueCount: counts.total, issueDoneCount: counts.done };
+          });
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list projects");
+          throw err;
+        }
       },
       { params: companyIdParam },
     )
@@ -83,26 +92,32 @@ export function projectRoutes(db: Db) {
     .get(
       "/projects/:id",
       async (ctx: any) => {
-        const { params, query, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+        try {
+          const { params, query, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
 
-        let project = null;
-        if (isUuidLike(resolvedId)) {
-          project = await svc.getById(resolvedId);
+          let project = null;
+          if (isUuidLike(resolvedId)) {
+            project = await svc.getById(resolvedId);
+          }
+          if (!project) {
+            // urlKey lookup fallback
+            const allRows = await db.select().from(projects);
+            const match = allRows.find((r) => deriveProjectUrlKey(r.name, r.id) === params.id);
+            if (match) project = await svc.getById(match.id);
+          }
+          if (!project) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+          assertCompanyAccess(actor, project.companyId);
+          return project;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get project");
+          throw err;
         }
-        if (!project) {
-          // urlKey lookup fallback
-          const allRows = await db.select().from(projects);
-          const match = allRows.find((r) => deriveProjectUrlKey(r.name, r.id) === params.id);
-          if (match) project = await svc.getById(match.id);
-        }
-        if (!project) {
-          set.status = 404;
-          return { error: "Project not found" };
-        }
-        assertCompanyAccess(actor, project.companyId);
-        return project;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -111,65 +126,91 @@ export function projectRoutes(db: Db) {
     .post(
       "/companies/:companyId/projects",
       async (ctx: any) => {
-        const { params, body, set } = ctx;
-        const actor = ctx.actor as Actor;
-        assertCompanyAccess(actor, params.companyId);
+        try {
+          const { params, body, set } = ctx;
+          const actor = ctx.actor as Actor;
+          assertCompanyAccess(actor, params.companyId);
 
-        const {
-          workspace,
-          sddSpec,
-          sddDesign,
-          sddValidation,
-          description,
-          ...projectData
-        } = body;
-        const normalizedSpec = typeof sddSpec === "string" ? sddSpec.trim() : "";
-        const normalizedDesign = typeof sddDesign === "string" ? sddDesign.trim() : "";
-        const normalizedValidation = typeof sddValidation === "string" ? sddValidation.trim() : "";
-        if (!normalizedSpec || !normalizedDesign) {
-          set.status = 422;
-          return { error: "SDD spec and design are required for project creation" };
-        }
-
-        const project = await svc.create(params.companyId, {
-          ...projectData,
-          description: composeStructuredSddDescription({
-            subjectLabel: `Project: ${typeof projectData.name === "string" ? projectData.name : "Untitled project"}`,
-            summary: typeof description === "string" ? description : description == null ? null : String(description),
-            spec: normalizedSpec,
-            design: normalizedDesign,
-            validation: normalizedValidation || null,
-          }),
-        });
-        let createdWorkspaceId: string | null = null;
-        if (workspace) {
-          const createdWorkspace = await svc.createWorkspace(project.id, workspace);
-          if (!createdWorkspace) {
-            await svc.remove(project.id);
-            set.status = 422;
-            return { error: "Invalid project workspace payload" };
+          const {
+            workspace,
+            sddSpec,
+            sddDesign,
+            sddRisk,
+            sddRollout,
+            sddRollback,
+            sddValidation,
+            description,
+            ...projectData
+          } = body;
+          const normalizedSpec = typeof sddSpec === "string" ? sddSpec.trim() : "";
+          const normalizedDesign = typeof sddDesign === "string" ? sddDesign.trim() : "";
+          const normalizedRisk = typeof sddRisk === "string" ? sddRisk.trim() : "";
+          const normalizedRollout = typeof sddRollout === "string" ? sddRollout.trim() : "";
+          const normalizedRollback = typeof sddRollback === "string" ? sddRollback.trim() : "";
+          const normalizedValidation = typeof sddValidation === "string" ? sddValidation.trim() : "";
+          // Only validate SDD when at least one section is provided
+          const hasSddContent = [normalizedSpec, normalizedDesign, normalizedRisk, normalizedRollout, normalizedRollback, normalizedValidation].some(Boolean);
+          if (hasSddContent) {
+            const sddIssues = validateStructuredSddInput({
+              spec: normalizedSpec,
+              design: normalizedDesign,
+              risk: normalizedRisk,
+              rollout: normalizedRollout,
+              rollback: normalizedRollback,
+              validation: normalizedValidation,
+            });
+            if (sddIssues.length > 0) {
+              log.warn({ category: "http", sddIssues }, "SDD validation warning for project creation");
+            }
           }
-          createdWorkspaceId = createdWorkspace.id;
+
+          const project = await svc.create(params.companyId, {
+            ...projectData,
+            description: composeStructuredSddDescription({
+              subjectLabel: `Project: ${typeof projectData.name === "string" ? projectData.name : "Untitled project"}`,
+              summary: typeof description === "string" ? description : description == null ? null : String(description),
+              spec: normalizedSpec,
+              design: normalizedDesign,
+              risk: normalizedRisk,
+              rollout: normalizedRollout,
+              rollback: normalizedRollback,
+              validation: normalizedValidation,
+            }),
+          });
+          let createdWorkspaceId: string | null = null;
+          if (workspace) {
+            const createdWorkspace = await svc.createWorkspace(project.id, workspace);
+            if (!createdWorkspace) {
+              await svc.remove(project.id);
+              set.status = 422;
+              return { error: "Invalid project workspace payload" };
+            }
+            createdWorkspaceId = createdWorkspace.id;
+          }
+          const hydratedProject = workspace ? await svc.getById(project.id) : project;
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: params.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "project.created",
+            entityType: "project",
+            entityId: project.id,
+            details: {
+              name: project.name,
+              workspaceId: createdWorkspaceId,
+            },
+          });
+
+          set.status = 201;
+          return hydratedProject ?? project;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create project");
+          throw err;
         }
-        const hydratedProject = workspace ? await svc.getById(project.id) : project;
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: params.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "project.created",
-          entityType: "project",
-          entityId: project.id,
-          details: {
-            name: project.name,
-            workspaceId: createdWorkspaceId,
-          },
-        });
-
-        set.status = 201;
-        return hydratedProject ?? project;
       },
       { params: companyIdParam },
     )
@@ -178,39 +219,89 @@ export function projectRoutes(db: Db) {
     .patch(
       "/projects/:id",
       async (ctx: any) => {
-        const { params, body, query, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+        try {
+          const { params, body, query, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
 
-        const existing = await svc.getById(resolvedId);
-        if (!existing) {
-          set.status = 404;
-          return { error: "Project not found" };
-        }
-        assertCompanyAccess(actor, existing.companyId);
-        const patchData = { ...body };
-        if (typeof patchData.archivedAt === "string") {
-          patchData.archivedAt = new Date(patchData.archivedAt);
-        }
-        const project = await svc.update(resolvedId, patchData);
-        if (!project) {
-          set.status = 404;
-          return { error: "Project not found" };
-        }
+          const existing = await svc.getById(resolvedId);
+          if (!existing) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+          assertCompanyAccess(actor, existing.companyId);
+          const structuredSddPatchKeys = ["sddSpec", "sddDesign", "sddRisk", "sddRollout", "sddRollback", "sddValidation"] as const;
+          const hasStructuredSddPatch = structuredSddPatchKeys.some((key) => body?.[key] !== undefined);
+          const patchData = { ...body };
+          if (hasStructuredSddPatch) {
+            const normalizedSpec = typeof patchData.sddSpec === "string" ? patchData.sddSpec.trim() : "";
+            const normalizedDesign = typeof patchData.sddDesign === "string" ? patchData.sddDesign.trim() : "";
+            const normalizedRisk = typeof patchData.sddRisk === "string" ? patchData.sddRisk.trim() : "";
+            const normalizedRollout = typeof patchData.sddRollout === "string" ? patchData.sddRollout.trim() : "";
+            const normalizedRollback = typeof patchData.sddRollback === "string" ? patchData.sddRollback.trim() : "";
+            const normalizedValidation = typeof patchData.sddValidation === "string" ? patchData.sddValidation.trim() : "";
+            const sddIssues = validateStructuredSddInput({
+              spec: normalizedSpec,
+              design: normalizedDesign,
+              risk: normalizedRisk,
+              rollout: normalizedRollout,
+              rollback: normalizedRollback,
+              validation: normalizedValidation,
+            });
+            if (sddIssues.length > 0) {
+              set.status = 422;
+              return {
+                error: "SDD payload is too weak for project update",
+                details: sddIssues,
+              };
+            }
+            const summary = typeof patchData.description === "string"
+              ? patchData.description
+              : parseStructuredSddDescription(existing.description).summary || null;
+            patchData.description = composeStructuredSddDescription({
+              subjectLabel: `Project: ${existing.name}`,
+              summary,
+              spec: normalizedSpec,
+              design: normalizedDesign,
+              risk: normalizedRisk,
+              rollout: normalizedRollout,
+              rollback: normalizedRollback,
+              validation: normalizedValidation,
+            });
+            delete patchData.sddSpec;
+            delete patchData.sddDesign;
+            delete patchData.sddRisk;
+            delete patchData.sddRollout;
+            delete patchData.sddRollback;
+            delete patchData.sddValidation;
+          }
+          if (typeof patchData.archivedAt === "string") {
+            patchData.archivedAt = new Date(patchData.archivedAt);
+          }
+          const project = await svc.update(resolvedId, patchData);
+          if (!project) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
 
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: project.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "project.updated",
-          entityType: "project",
-          entityId: project.id,
-          details: body,
-        });
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: project.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "project.updated",
+            entityType: "project",
+            entityId: project.id,
+            details: body,
+          });
 
-        return project;
+          return project;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update project");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -219,34 +310,40 @@ export function projectRoutes(db: Db) {
     .delete(
       "/projects/:id",
       async (ctx: any) => {
-        const { params, query, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+        try {
+          const { params, query, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
 
-        const existing = await svc.getById(resolvedId);
-        if (!existing) {
-          set.status = 404;
-          return { error: "Project not found" };
+          const existing = await svc.getById(resolvedId);
+          if (!existing) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+          assertCompanyAccess(actor, existing.companyId);
+          const project = await svc.remove(resolvedId);
+          if (!project) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: project.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "project.deleted",
+            entityType: "project",
+            entityId: project.id,
+          });
+
+          return project;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete project");
+          throw err;
         }
-        assertCompanyAccess(actor, existing.companyId);
-        const project = await svc.remove(resolvedId);
-        if (!project) {
-          set.status = 404;
-          return { error: "Project not found" };
-        }
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: project.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "project.deleted",
-          entityType: "project",
-          entityId: project.id,
-        });
-
-        return project;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -257,17 +354,23 @@ export function projectRoutes(db: Db) {
     .get(
       "/projects/:id/workspaces",
       async (ctx: any) => {
-        const { params, query, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+        try {
+          const { params, query, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
 
-        const existing = await svc.getById(resolvedId);
-        if (!existing) {
-          set.status = 404;
-          return { error: "Project not found" };
+          const existing = await svc.getById(resolvedId);
+          if (!existing) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+          assertCompanyAccess(actor, existing.companyId);
+          return svc.listWorkspaces(resolvedId);
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to list workspaces");
+          throw err;
         }
-        assertCompanyAccess(actor, existing.companyId);
-        return svc.listWorkspaces(resolvedId);
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -276,41 +379,47 @@ export function projectRoutes(db: Db) {
     .post(
       "/projects/:id/workspaces",
       async (ctx: any) => {
-        const { params, body, query, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+        try {
+          const { params, body, query, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
 
-        const existing = await svc.getById(resolvedId);
-        if (!existing) {
-          set.status = 404;
-          return { error: "Project not found" };
+          const existing = await svc.getById(resolvedId);
+          if (!existing) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+          assertCompanyAccess(actor, existing.companyId);
+          const workspace = await svc.createWorkspace(resolvedId, body);
+          if (!workspace) {
+            set.status = 422;
+            return { error: "Invalid project workspace payload" };
+          }
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: existing.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "project.workspace_created",
+            entityType: "project",
+            entityId: resolvedId,
+            details: {
+              workspaceId: workspace.id,
+              name: workspace.name,
+              cwd: workspace.cwd,
+              isPrimary: workspace.isPrimary,
+            },
+          });
+
+          set.status = 201;
+          return workspace;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to create workspace");
+          throw err;
         }
-        assertCompanyAccess(actor, existing.companyId);
-        const workspace = await svc.createWorkspace(resolvedId, body);
-        if (!workspace) {
-          set.status = 422;
-          return { error: "Invalid project workspace payload" };
-        }
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: existing.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "project.workspace_created",
-          entityType: "project",
-          entityId: resolvedId,
-          details: {
-            workspaceId: workspace.id,
-            name: workspace.name,
-            cwd: workspace.cwd,
-            isPrimary: workspace.isPrimary,
-          },
-        });
-
-        set.status = 201;
-        return workspace;
       },
       { params: t.Object({ id: t.String() }) },
     )
@@ -319,45 +428,51 @@ export function projectRoutes(db: Db) {
     .patch(
       "/projects/:id/workspaces/:workspaceId",
       async (ctx: any) => {
-        const { params, body, query, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+        try {
+          const { params, body, query, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
 
-        const existing = await svc.getById(resolvedId);
-        if (!existing) {
-          set.status = 404;
-          return { error: "Project not found" };
-        }
-        assertCompanyAccess(actor, existing.companyId);
-        const workspaceExists = (await svc.listWorkspaces(resolvedId)).some(
-          (ws) => ws.id === params.workspaceId,
-        );
-        if (!workspaceExists) {
-          set.status = 404;
-          return { error: "Project workspace not found" };
-        }
-        const workspace = await svc.updateWorkspace(resolvedId, params.workspaceId, body);
-        if (!workspace) {
-          set.status = 422;
-          return { error: "Invalid project workspace payload" };
-        }
+          const existing = await svc.getById(resolvedId);
+          if (!existing) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+          assertCompanyAccess(actor, existing.companyId);
+          const workspaceExists = (await svc.listWorkspaces(resolvedId)).some(
+            (ws) => ws.id === params.workspaceId,
+          );
+          if (!workspaceExists) {
+            set.status = 404;
+            return { error: "Project workspace not found" };
+          }
+          const workspace = await svc.updateWorkspace(resolvedId, params.workspaceId, body);
+          if (!workspace) {
+            set.status = 422;
+            return { error: "Invalid project workspace payload" };
+          }
 
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: existing.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "project.workspace_updated",
-          entityType: "project",
-          entityId: resolvedId,
-          details: {
-            workspaceId: workspace.id,
-            changedKeys: Object.keys(body).sort(),
-          },
-        });
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: existing.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "project.workspace_updated",
+            entityType: "project",
+            entityId: resolvedId,
+            details: {
+              workspaceId: workspace.id,
+              changedKeys: Object.keys(body).sort(),
+            },
+          });
 
-        return workspace;
+          return workspace;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to update workspace");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String(), workspaceId: t.String() }) },
     )
@@ -365,116 +480,122 @@ export function projectRoutes(db: Db) {
     .post(
       "/projects/:id/workspaces/:workspaceId/runtime-services/:action",
       async (ctx: any) => {
-        const { params, query, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
-        const action = String(params.action ?? "").trim().toLowerCase();
-        if (action !== "start" && action !== "stop" && action !== "restart") {
-          set.status = 404;
-          return { error: "Runtime service action not found" };
-        }
+        try {
+          const { params, query, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+          const action = String(params.action ?? "").trim().toLowerCase();
+          if (action !== "start" && action !== "stop" && action !== "restart") {
+            set.status = 404;
+            return { error: "Runtime service action not found" };
+          }
 
-        const project = await svc.getById(resolvedId);
-        if (!project) {
-          set.status = 404;
-          return { error: "Project not found" };
-        }
-        assertCompanyAccess(actor, project.companyId);
+          const project = await svc.getById(resolvedId);
+          if (!project) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+          assertCompanyAccess(actor, project.companyId);
 
-        const workspace = project.workspaces.find((entry) => entry.id === params.workspaceId) ?? null;
-        if (!workspace) {
-          set.status = 404;
-          return { error: "Project workspace not found" };
-        }
+          const workspace = project.workspaces.find((entry) => entry.id === params.workspaceId) ?? null;
+          if (!workspace) {
+            set.status = 404;
+            return { error: "Project workspace not found" };
+          }
 
-        const workspaceCwd = workspace.cwd;
-        if (!workspaceCwd) {
-          set.status = 422;
-          return { error: "Project workspace needs a local path before ClawDev can manage local runtime services" };
-        }
+          const workspaceCwd = workspace.cwd;
+          if (!workspaceCwd) {
+            set.status = 422;
+            return { error: "Project workspace needs a local path before ClawDev can manage local runtime services" };
+          }
 
-        const effectiveRuntimeConfig = workspace.runtimeConfig ?? readProjectWorkspaceRuntimeConfig(workspace.metadata);
-        if ((action === "start" || action === "restart") && !effectiveRuntimeConfig) {
-          set.status = 422;
-          return { error: "Project workspace has no runtime service configuration" };
-        }
+          const effectiveRuntimeConfig = workspace.runtimeConfig ?? readProjectWorkspaceRuntimeConfig(workspace.metadata);
+          if ((action === "start" || action === "restart") && !effectiveRuntimeConfig) {
+            set.status = 422;
+            return { error: "Project workspace has no runtime service configuration" };
+          }
 
-        const workspaceOperations = workspaceOperationService(db);
-        const recorder = workspaceOperations.createRecorder({ companyId: project.companyId });
-        let runtimeServiceCount = 0;
-        const stdout: string[] = [];
-        const stderr: string[] = [];
+          const workspaceOperations = workspaceOperationService(db);
+          const recorder = workspaceOperations.createRecorder({ companyId: project.companyId });
+          let runtimeServiceCount = 0;
+          const stdout: string[] = [];
+          const stderr: string[] = [];
 
-        const operation = await recorder.recordOperation({
-          phase: action === "stop" ? "workspace_teardown" : "workspace_provision",
-          command: `workspace runtime ${action}`,
-          cwd: workspace.cwd,
-          metadata: {
-            action,
-            projectId: project.id,
-            projectWorkspaceId: workspace.id,
-          },
-          run: async () => {
-            const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
-              if (stream === "stdout") stdout.push(chunk);
-              else stderr.push(chunk);
-            };
+          const operation = await recorder.recordOperation({
+            phase: action === "stop" ? "workspace_teardown" : "workspace_provision",
+            command: `workspace runtime ${action}`,
+            cwd: workspace.cwd,
+            metadata: {
+              action,
+              projectId: project.id,
+              projectWorkspaceId: workspace.id,
+            },
+            run: async () => {
+              const onLog = async (stream: "stdout" | "stderr", chunk: string) => {
+                if (stream === "stdout") stdout.push(chunk);
+                else stderr.push(chunk);
+              };
 
-            if (action === "stop" || action === "restart") {
-              await stopRuntimeServicesForProjectWorkspace({
-                db,
-                projectWorkspaceId: workspace.id,
-              });
-            }
+              if (action === "stop" || action === "restart") {
+                await stopRuntimeServicesForProjectWorkspace({
+                  db,
+                  projectWorkspaceId: workspace.id,
+                });
+              }
 
-            if (action === "start" || action === "restart") {
-              const startedServices = await startRuntimeServicesForWorkspaceControl({
-                db,
-                actor: {
-                  id: actor.agentId ?? actor.userId ?? "board",
-                  name: actor.type === "board" ? "Board" : "Agent",
-                  companyId: project.companyId,
+              if (action === "start" || action === "restart") {
+                const startedServices = await startRuntimeServicesForWorkspaceControl({
+                  db,
+                  actor: {
+                    id: actor.agentId ?? actor.userId ?? "board",
+                    name: actor.type === "board" ? "Board" : "Agent",
+                    companyId: project.companyId,
+                  },
+                  issue: null,
+                  workspace: {
+                    baseCwd: workspaceCwd,
+                    source: workspace.isPrimary ? "project_primary" : "task_session",
+                    projectId: project.id,
+                    workspaceId: workspace.id,
+                    repoUrl: workspace.repoUrl,
+                    repoRef: workspace.repoRef,
+                    strategy: workspace.sourceType === "git_repo" ? "git_worktree" : "project_primary",
+                    cwd: workspaceCwd,
+                    branchName: null,
+                    worktreePath: workspace.sourceType === "git_repo" ? workspaceCwd : null,
+                    warnings: [],
+                    created: false,
+                  },
+                  config: { workspaceRuntime: effectiveRuntimeConfig },
+                  adapterEnv: {},
+                  onLog,
+                });
+                runtimeServiceCount = startedServices.length;
+              }
+
+              return {
+                status: "succeeded",
+                stdout: stdout.join(""),
+                stderr: stderr.join(""),
+                system:
+                  action === "stop"
+                    ? "Stopped project workspace runtime services.\n"
+                    : action === "restart"
+                      ? "Restarted project workspace runtime services.\n"
+                      : "Started project workspace runtime services.\n",
+                metadata: {
+                  runtimeServiceCount,
                 },
-                issue: null,
-                workspace: {
-                  baseCwd: workspaceCwd,
-                  source: workspace.isPrimary ? "project_primary" : "task_session",
-                  projectId: project.id,
-                  workspaceId: workspace.id,
-                  repoUrl: workspace.repoUrl,
-                  repoRef: workspace.repoRef,
-                  strategy: workspace.sourceType === "git_repo" ? "git_worktree" : "project_primary",
-                  cwd: workspaceCwd,
-                  branchName: null,
-                  worktreePath: workspace.sourceType === "git_repo" ? workspaceCwd : null,
-                  warnings: [],
-                  created: false,
-                },
-                config: { workspaceRuntime: effectiveRuntimeConfig },
-                adapterEnv: {},
-                onLog,
-              });
-              runtimeServiceCount = startedServices.length;
-            }
+              };
+            },
+          });
 
-            return {
-              status: "succeeded",
-              stdout: stdout.join(""),
-              stderr: stderr.join(""),
-              system:
-                action === "stop"
-                  ? "Stopped project workspace runtime services.\n"
-                  : action === "restart"
-                    ? "Restarted project workspace runtime services.\n"
-                    : "Started project workspace runtime services.\n",
-              metadata: {
-                runtimeServiceCount,
-              },
-            };
-          },
-        });
-
-        return operation;
+          return operation;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to manage runtime services");
+          throw err;
+        }
       },
       { params: t.Object({ id: t.String(), workspaceId: t.String(), action: t.String() }) },
     )
@@ -483,38 +604,44 @@ export function projectRoutes(db: Db) {
     .delete(
       "/projects/:id/workspaces/:workspaceId",
       async (ctx: any) => {
-        const { params, query, set } = ctx;
-        const actor = ctx.actor as Actor;
-        const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
+        try {
+          const { params, query, set } = ctx;
+          const actor = ctx.actor as Actor;
+          const resolvedId = await normalizeProjectReference(actor, query ?? {}, params.id);
 
-        const existing = await svc.getById(resolvedId);
-        if (!existing) {
-          set.status = 404;
-          return { error: "Project not found" };
+          const existing = await svc.getById(resolvedId);
+          if (!existing) {
+            set.status = 404;
+            return { error: "Project not found" };
+          }
+          assertCompanyAccess(actor, existing.companyId);
+          const workspace = await svc.removeWorkspace(resolvedId, params.workspaceId);
+          if (!workspace) {
+            set.status = 404;
+            return { error: "Project workspace not found" };
+          }
+
+          const actorInfo = getActorInfo(actor);
+          await logActivity(db, {
+            companyId: existing.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            action: "project.workspace_deleted",
+            entityType: "project",
+            entityId: resolvedId,
+            details: {
+              workspaceId: workspace.id,
+              name: workspace.name,
+            },
+          });
+
+          return workspace;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to delete workspace");
+          throw err;
         }
-        assertCompanyAccess(actor, existing.companyId);
-        const workspace = await svc.removeWorkspace(resolvedId, params.workspaceId);
-        if (!workspace) {
-          set.status = 404;
-          return { error: "Project workspace not found" };
-        }
-
-        const actorInfo = getActorInfo(actor);
-        await logActivity(db, {
-          companyId: existing.companyId,
-          actorType: actorInfo.actorType,
-          actorId: actorInfo.actorId,
-          agentId: actorInfo.agentId,
-          action: "project.workspace_deleted",
-          entityType: "project",
-          entityId: resolvedId,
-          details: {
-            workspaceId: workspace.id,
-            name: workspace.name,
-          },
-        });
-
-        return workspace;
       },
       { params: t.Object({ id: t.String(), workspaceId: t.String() }) },
     );

@@ -8,6 +8,7 @@ import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { instanceSettingsService, logActivity } from "../services/index.js";
 import { assertInstanceAdmin, type Actor } from "../middleware/authz.js";
+import { logger } from "../middleware/logger.js";
 
 /** Throws 403 if the actor is not a board user with instance admin access. */
 function assertCanManageInstanceSettings(actor: Actor) {
@@ -20,35 +21,45 @@ export function instanceSettingsRoutes(db: Db) {
   return new Elysia({ prefix: "/instance/settings" })
     // General settings
     .get("/general", async (ctx: any) => {
-      assertCanManageInstanceSettings(ctx.actor);
-      return await svc.getGeneral();
+      try {
+        assertCanManageInstanceSettings(ctx.actor);
+        return await svc.getGeneral();
+      } catch (err) {
+        logger.error("GET /instance/settings/general error", err);
+        throw err;
+      }
     })
 
     .patch(
       "/general",
       async (ctx: any) => {
-        assertCanManageInstanceSettings(ctx.actor);
-        const updated = await svc.updateGeneral(ctx.body);
-        const companyIds = await svc.listCompanyIds();
-        await Promise.all(
-          companyIds.map((companyId: string) =>
-            logActivity(db, {
-              companyId,
-              actorType: ctx.actor.type === "board" ? "user" : "agent",
-              actorId: ctx.actor.userId ?? ctx.actor.agentId ?? "unknown",
-              agentId: ctx.actor.agentId ?? null,
-              runId: ctx.actor.runId ?? null,
-              action: "instance.settings.general_updated",
-              entityType: "instance_settings",
-              entityId: updated.id,
-              details: {
-                general: updated.general,
-                changedKeys: Object.keys(ctx.body).sort(),
-              },
-            }),
-          ),
-        );
-        return updated.general;
+        try {
+          assertCanManageInstanceSettings(ctx.actor);
+          const updated = await svc.updateGeneral(ctx.body);
+          const companyIds = await svc.listCompanyIds();
+          await Promise.all(
+            companyIds.map((companyId: string) =>
+              logActivity(db, {
+                companyId,
+                actorType: ctx.actor.type === "board" ? "user" : "agent",
+                actorId: ctx.actor.userId ?? ctx.actor.agentId ?? "unknown",
+                agentId: ctx.actor.agentId ?? null,
+                runId: ctx.actor.runId ?? null,
+                action: "instance.settings.general_updated",
+                entityType: "instance_settings",
+                entityId: updated.id,
+                details: {
+                  general: updated.general,
+                  changedKeys: Object.keys(ctx.body).sort(),
+                },
+              }),
+            ),
+          );
+          return updated.general;
+        } catch (err) {
+          logger.error("PATCH /instance/settings/general error", err);
+          throw err;
+        }
       },
       {
         body: t.Object({
@@ -59,35 +70,45 @@ export function instanceSettingsRoutes(db: Db) {
 
     // Experimental settings
     .get("/experimental", async (ctx: any) => {
-      assertCanManageInstanceSettings(ctx.actor);
-      return await svc.getExperimental();
+      try {
+        assertCanManageInstanceSettings(ctx.actor);
+        return await svc.getExperimental();
+      } catch (err) {
+        logger.error("GET /instance/settings/experimental error", err);
+        throw err;
+      }
     })
 
     .patch(
       "/experimental",
       async (ctx: any) => {
-        assertCanManageInstanceSettings(ctx.actor);
-        const updated = await svc.updateExperimental(ctx.body);
-        const companyIds = await svc.listCompanyIds();
-        await Promise.all(
-          companyIds.map((companyId: string) =>
-            logActivity(db, {
-              companyId,
-              actorType: ctx.actor.type === "board" ? "user" : "agent",
-              actorId: ctx.actor.userId ?? ctx.actor.agentId ?? "unknown",
-              agentId: ctx.actor.agentId ?? null,
-              runId: ctx.actor.runId ?? null,
-              action: "instance.settings.experimental_updated",
-              entityType: "instance_settings",
-              entityId: updated.id,
-              details: {
-                experimental: updated.experimental,
-                changedKeys: Object.keys(ctx.body).sort(),
-              },
-            }),
-          ),
-        );
-        return updated.experimental;
+        try {
+          assertCanManageInstanceSettings(ctx.actor);
+          const updated = await svc.updateExperimental(ctx.body);
+          const companyIds = await svc.listCompanyIds();
+          await Promise.all(
+            companyIds.map((companyId: string) =>
+              logActivity(db, {
+                companyId,
+                actorType: ctx.actor.type === "board" ? "user" : "agent",
+                actorId: ctx.actor.userId ?? ctx.actor.agentId ?? "unknown",
+                agentId: ctx.actor.agentId ?? null,
+                runId: ctx.actor.runId ?? null,
+                action: "instance.settings.experimental_updated",
+                entityType: "instance_settings",
+                entityId: updated.id,
+                details: {
+                  experimental: updated.experimental,
+                  changedKeys: Object.keys(ctx.body).sort(),
+                },
+              }),
+            ),
+          );
+          return updated.experimental;
+        } catch (err) {
+          logger.error("PATCH /instance/settings/experimental error", err);
+          throw err;
+        }
       },
       {
         body: t.Object({
