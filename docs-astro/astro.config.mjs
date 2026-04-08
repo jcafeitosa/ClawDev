@@ -7,6 +7,7 @@ export default defineConfig({
     starlight({
       title: "ClawDev",
       description: "Open-source orchestration for AI agent companies.",
+      disable404Route: true,
       social: [
         {
           icon: "github",
