@@ -9,12 +9,10 @@
 import type { AdapterModel, AdapterModelStatus } from "./types.js";
 import { runChildProcess, defaultPathForPlatform } from "@clawdev/adapter-utils/server-utils";
 import { normalizeClaudeModelArg } from "@clawdev/adapter-claude-local/server";
+import { PROBE_PROMPT, classifyProbeOutput } from "@clawdev/adapter-utils";
 
 const PROBE_TIMEOUT_SEC = 30;
 const PROBE_CONCURRENCY = 3;
-
-/** Probe prompt that expects "PONG" in the response to confirm real availability. */
-const PROBE_PROMPT = "Quando eu falar PING, voce fala?";
 
 /**
  * Build a PATH that combines the default system paths with the current
@@ -49,39 +47,8 @@ interface CliProbeConfig {
 // ── Shared output parser helpers ─────────────────────────────────────────
 
 function defaultParseOutput(combined: string, exitCode: number | null): ProbeResult {
-  if (combined.includes("no quota") || combined.includes("\"status\":402")) {
-    return { status: "quota_exceeded", statusDetail: "Quota exceeded" };
-  }
-  if (combined.includes("\"status\":401") || combined.includes("Unauthorized")) {
-    return { status: "auth_required", statusDetail: "Auth required" };
-  }
-  if (combined.includes("not supported") || combined.includes("not available") || combined.includes("\"status\":404")) {
-    return { status: "unavailable", statusDetail: "Model not supported" };
-  }
-  if (combined.includes("command not found") || combined.includes("ENOENT")) {
-    return { status: "unavailable", statusDetail: "CLI not installed" };
-  }
-
-  // Check for a real answer to the ping/pong test.
-  const hasPong = /pong/i.test(combined);
-
-  // Check for success indicators
-  const hasResponse =
-    combined.includes("item.completed") ||
-    combined.includes("turn.completed") ||
-    combined.includes("assistant.") ||
-    combined.includes('"result"') ||
-    combined.includes('"content"') ||
-    combined.includes('"text"');
-
-  if (hasPong) {
-    return { status: "available", statusDetail: "PONG received — model operational" };
-  }
-  if (hasResponse) {
-    return { status: "available", statusDetail: "Probe succeeded" };
-  }
-
-  return { status: "unknown", statusDetail: combined.trim().slice(0, 200) || `exit code ${exitCode}` };
+  const classified = classifyProbeOutput(combined, exitCode);
+  return { status: classified.status, statusDetail: classified.statusDetail };
 }
 
 // ── Adapter-specific probe configs ───────────────────────────────────────
@@ -110,11 +77,8 @@ export const PROBE_CONFIGS: Record<string, CliProbeConfig> = {
       if (hasPong) {
         return { status: "available", statusDetail: "PONG received — model operational" };
       }
-      // Claude outputs JSON with result field on success
-      if (combined.includes('"result"') || combined.includes('"content"') || (exitCode ?? 1) === 0) {
-        return { status: "available", statusDetail: "Probe succeeded" };
-      }
-      return { status: "unknown", statusDetail: combined.trim().slice(0, 200) || `exit code ${exitCode}` };
+      const classified = classifyProbeOutput(combined, exitCode);
+      return { status: classified.status, statusDetail: classified.statusDetail };
     },
   },
 

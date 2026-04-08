@@ -105,6 +105,11 @@ async function detectFreePort(port: number, hostname: string): Promise<number> {
   return port;
 }
 
+function getDefaultLocalPostgresUrl(): string {
+  const dbUser = process.env.USER?.trim() || process.env.LOGNAME?.trim() || "postgres";
+  return `postgres://${encodeURIComponent(dbUser)}@127.0.0.1:5432/clawdev`;
+}
+
 
 export interface StartedServer {
   host: string;
@@ -168,6 +173,41 @@ export async function startServer(): Promise<StartedServer> {
   type EnsureMigrationsOptions = {
     autoApply?: boolean;
   };
+
+  function isTransientConnectionError(err: unknown): boolean {
+    const text = err instanceof Error ? `${err.name} ${err.message}` : String(err);
+    if (text.includes("ECONNREFUSED") || text.includes("ETIMEDOUT")) return true;
+    const hasTransientCode = (value: unknown) => {
+      if (!(value instanceof Error)) return false;
+      const anyValue = value as Error & { code?: string; errno?: number };
+      return anyValue.code === "ECONNREFUSED" || anyValue.code === "ETIMEDOUT" || anyValue.errno === -61;
+    };
+    if (hasTransientCode(err)) return true;
+    if (err instanceof AggregateError) {
+      return Array.from(err.errors).some((nested) => hasTransientCode(nested));
+    }
+    return false;
+  }
+
+  async function retryMigrations<T>(action: () => Promise<T>, label: string): Promise<T> {
+    const maxAttempts = 12;
+    let delayMs = 1000;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await action();
+      } catch (err) {
+        if (attempt >= maxAttempts || !isTransientConnectionError(err)) {
+          throw err;
+        }
+        logger.warn(
+          { attempt, delayMs, err },
+          `${label} not reachable yet, retrying migration bootstrap`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        delayMs *= 2;
+      }
+    }
+  }
   
   async function ensureMigrations(
     connectionString: string,
@@ -175,15 +215,18 @@ export async function startServer(): Promise<StartedServer> {
     opts?: EnsureMigrationsOptions,
   ): Promise<MigrationSummary> {
     const autoApply = opts?.autoApply === true;
-    let state = await inspectMigrations(connectionString);
+    let state = await retryMigrations(() => inspectMigrations(connectionString), label);
     if (state.status === "needsMigrations" && state.reason === "pending-migrations") {
-      const repair = await reconcilePendingMigrationHistory(connectionString);
+      const repair = await retryMigrations(
+        () => reconcilePendingMigrationHistory(connectionString),
+        label,
+      );
       if (repair.repairedMigrations.length > 0) {
         logger.warn(
           { repairedMigrations: repair.repairedMigrations },
           `${label} had drifted migration history; repaired migration journal entries from existing schema state.`,
         );
-        state = await inspectMigrations(connectionString);
+        state = await retryMigrations(() => inspectMigrations(connectionString), label);
         if (state.status === "upToDate") return "already applied";
       }
     }
@@ -202,7 +245,7 @@ export async function startServer(): Promise<StartedServer> {
       }
   
       logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
-      await applyPendingMigrations(connectionString);
+      await retryMigrations(() => applyPendingMigrations(connectionString), label);
       return "applied (pending migrations)";
     }
   
@@ -215,7 +258,7 @@ export async function startServer(): Promise<StartedServer> {
     }
   
     logger.info({ pendingMigrations: state.pendingMigrations }, `Applying ${state.pendingMigrations.length} pending migrations for ${label}`);
-    await applyPendingMigrations(connectionString);
+    await retryMigrations(() => applyPendingMigrations(connectionString), label);
     return "applied (pending migrations)";
   }
   
@@ -311,6 +354,7 @@ export async function startServer(): Promise<StartedServer> {
   let migrationSummary: MigrationSummary = "skipped";
   let activeDatabaseConnectionString: string;
   let resolvedEmbeddedPostgresPort: number | null = null;
+  const skipMigrationChecks = process.env.CLAWDEV_MIGRATION_SKIP_CHECK === "true";
   let startupDbInfo:
     | { mode: "external-postgres"; connectionString: string }
     | { mode: "embedded-postgres"; dataDir: string; port: number }
@@ -326,12 +370,38 @@ export async function startServer(): Promise<StartedServer> {
       config.databaseBackupEnabled = false;
     } else {
       logger.info("Startup: using external PostgreSQL");
-      migrationSummary = await ensureMigrations(config.databaseUrl, "PostgreSQL");
+      try {
+        if (skipMigrationChecks) {
+          logger.info("Skipping PostgreSQL migration inspection in local dev");
+          migrationSummary = "skipped";
+        } else {
+          migrationSummary = await ensureMigrations(config.databaseUrl, "PostgreSQL");
+        }
 
-      db = createDb(config.databaseUrl);
-      logger.info("Using external PostgreSQL via DATABASE_URL/config");
-      activeDatabaseConnectionString = config.databaseUrl;
-      startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
+        db = createDb(config.databaseUrl);
+        logger.info("Using external PostgreSQL via DATABASE_URL/config");
+        activeDatabaseConnectionString = config.databaseUrl;
+        startupDbInfo = { mode: "external-postgres", connectionString: config.databaseUrl };
+      } catch (err) {
+        const defaultLocalPostgresUrl = getDefaultLocalPostgresUrl();
+        const isDefaultLocalPostgres = config.databaseUrl === defaultLocalPostgresUrl;
+        if (!isDefaultLocalPostgres) throw err;
+        const errorText = err instanceof Error ? `${err.name} ${err.message}` : String(err);
+        const transient =
+          /ECONNREFUSED|ETIMEDOUT|no postgres reachable|could not connect|connection refused/i.test(errorText);
+        if (!transient) throw err;
+        logger.warn(
+          { err, connectionString: config.databaseUrl },
+          "Local PostgreSQL unavailable; falling back to PGlite",
+        );
+        const pgliteDataDir = resolve(repoRoot, "data", "pglite");
+        pgliteDatabase = await openPGliteDatabase(pgliteDataDir);
+        db = pgliteDatabase.db;
+        activeDatabaseConnectionString = encodePGliteUrl(pgliteDataDir);
+        migrationSummary = "applied (pglite)";
+        startupDbInfo = { mode: "pglite", dataDir: pgliteDataDir };
+        config.databaseBackupEnabled = false;
+      }
     }
   } else if (usePGliteRuntime) {
     logger.info("Startup: using PGlite");
@@ -806,7 +876,7 @@ export async function startServer(): Promise<StartedServer> {
   const embeddingDimensions = parseInt(process.env.EMBEDDING_DIMENSIONS ?? "1536", 10) || 1536;
   const embeddingProviderEnv = process.env.EMBEDDING_PROVIDER?.trim().toLowerCase();
   const openaiApiKey = process.env.OPENAI_API_KEY?.trim() || undefined;
-  const embeddingBaseUrl = process.env.EMBEDDING_BASE_URL?.trim() || undefined;
+  const embeddingBaseUrl = process.env.EMBEDDING_BASE_URL?.trim() || "http://127.0.0.1:8080";
   const embeddingModel = process.env.EMBEDDING_MODEL?.trim() || undefined;
 
   let embeddingConfig: EmbeddingProviderConfig = null;

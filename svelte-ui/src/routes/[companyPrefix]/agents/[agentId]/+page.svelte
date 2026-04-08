@@ -198,6 +198,12 @@
   let costsSummary = $state<{ inputTokens?: number; outputTokens?: number; cachedTokens?: number; totalCostCents?: number } | null>(null);
   let costsSummaryLoading = $state(false);
   let moreMenuOpen = $state(false);
+  let initialTab = $derived($page.url.searchParams.get("tab") ?? $page.url.searchParams.get("focus") ?? "overview");
+  let routeAdapterType = $derived($page.url.searchParams.get("adapterType") ?? "");
+  let routeModel = $derived($page.url.searchParams.get("model") ?? "");
+  let routeProvider = $derived($page.url.searchParams.get("provider") ?? "");
+  let routeBaseUrl = $derived($page.url.searchParams.get("baseUrl") ?? "");
+  let routeApiKey = $derived($page.url.searchParams.get("apiKey") ?? "");
 
   const ROLES = ["general", "ceo", "cto", "engineer", "designer", "marketer", "custom"];
   const STATUSES = ["idle", "waiting", "running", "paused", "error"];
@@ -355,6 +361,12 @@
     (agent.spentMonthlyCents ?? 0) >= agent.budgetMonthlyCents ? 'over_budget' :
     budgetTabPct > 80 ? 'warning' : 'ok'
   );
+
+  $effect(() => {
+    if (activeTab === "overview" && initialTab === "config") {
+      activeTab = "config";
+    }
+  });
 
   // ---------------------------------------------------------------------------
   // Data fetching
@@ -994,8 +1006,16 @@
   // Sync model value + load models when agent loads
   $effect(() => {
     if (agent && !configSaving) {
-      configModelValue = agent.adapterConfig?.model ?? agent.model ?? "";
-      configAdapterType = agent.adapterType ?? "";
+      configModelValue = routeModel || (agent.adapterConfig?.model ?? agent.model ?? "");
+      configAdapterType = routeAdapterType || (agent.adapterType ?? "");
+      if (routeProvider || routeBaseUrl) {
+        configDraft = {
+          ...configDraft,
+          ...(routeProvider && !configDraft.provider ? { provider: routeProvider } : {}),
+          ...(routeBaseUrl && !configDraft.baseUrl ? { baseUrl: routeBaseUrl } : {}),
+          ...(routeApiKey && !configDraft.apiKey ? { apiKey: routeApiKey } : {}),
+        };
+      }
       configModelTestResult = null;
       void loadConfigModels();
     }

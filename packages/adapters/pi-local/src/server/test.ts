@@ -11,6 +11,7 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
+import { PROBE_PROMPT } from "@clawdev/adapter-utils";
 import {
   asStringArray,
 } from "@clawdev/adapter-utils/server-utils";
@@ -253,7 +254,7 @@ export async function testEnvironment(
       return asStringArray(config.args);
     })();
 
-    const args = ["-p", "Respond with hello.", "--mode", "json"];
+    const args = ["-p", PROBE_PROMPT, "--mode", "json"];
     if (provider) args.push("--provider", provider);
     if (modelId) args.push("--model", modelId);
     if (thinking) args.push("--thinking", thinking);
@@ -282,7 +283,7 @@ export async function testEnvironment(
         checks.push({
           code: "pi_hello_probe_timed_out",
           level: "warn",
-          message: "Pi hello probe timed out.",
+          message: "Pi PING/PONG probe timed out.",
           hint: "Retry the probe. If this persists, run Pi manually in this working directory.",
         });
       } else if ((probe.exitCode ?? 1) === 0 && parsed.errors.length === 0) {
@@ -292,13 +293,13 @@ export async function testEnvironment(
           code: hasHello ? "pi_hello_probe_passed" : "pi_hello_probe_unexpected_output",
           level: hasHello ? "info" : "warn",
           message: hasHello
-            ? "Pi hello probe succeeded."
-            : "Pi probe ran but did not return `hello` as expected.",
+            ? "Pi PING/PONG probe succeeded."
+            : "Pi probe ran but did not return `PONG` as expected.",
           ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
           ...(hasHello
             ? {}
             : {
-                hint: "Run `pi --mode json` manually and prompt `Respond with hello` to inspect output.",
+                hint: "Run `pi --mode json` manually and prompt the PING/PONG question to inspect output.",
               }),
         });
       } else if (PI_AUTH_REQUIRED_RE.test(authEvidence)) {
@@ -313,18 +314,18 @@ export async function testEnvironment(
         checks.push({
           code: "pi_hello_probe_failed",
           level: "error",
-          message: "Pi hello probe failed.",
+          message: "Pi PING/PONG probe failed.",
           ...(detail ? { detail } : {}),
-          hint: "Run `pi --mode json` manually in this working directory to debug.",
+          hint: "Run `pi --mode json` manually in this working directory with the PING/PONG question to debug.",
         });
       }
     } catch (err) {
       checks.push({
         code: "pi_hello_probe_failed",
         level: "error",
-        message: "Pi hello probe failed.",
+        message: "Pi PING/PONG probe failed.",
         detail: err instanceof Error ? err.message : String(err),
-        hint: "Run `pi --mode json` manually in this working directory to debug.",
+        hint: "Run `pi --mode json` manually in this working directory with the PING/PONG question to debug.",
       });
     }
   }

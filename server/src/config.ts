@@ -87,6 +87,10 @@ export function loadConfig(): Config {
   const fileDatabaseBackup = fileConfig?.database.backup;
   const fileSecrets = fileConfig?.secrets;
   const fileStorage = fileConfig?.storage;
+  const defaultLocalPostgresUrl = (() => {
+    const dbUser = process.env.USER?.trim() || process.env.LOGNAME?.trim() || "postgres";
+    return `postgres://${encodeURIComponent(dbUser)}@127.0.0.1:5432/clawdev`;
+  })();
   const strictModeFromEnv = process.env.CLAWDEV_SECRETS_STRICT_MODE;
   const secretsStrictMode =
     strictModeFromEnv !== undefined
@@ -213,6 +217,9 @@ export function loadConfig(): Config {
       resolveDefaultBackupDir(),
   );
 
+  const databaseUrl = process.env.DATABASE_URL ?? fileDbUrl ?? defaultLocalPostgresUrl;
+  const databaseMode: DatabaseMode = databaseUrl ? "postgres" : fileDatabaseMode;
+
   return {
     deploymentMode,
     deploymentExposure,
@@ -222,8 +229,8 @@ export function loadConfig(): Config {
     authBaseUrlMode,
     authPublicBaseUrl,
     authDisableSignUp,
-    databaseMode: fileDatabaseMode,
-    databaseUrl: process.env.DATABASE_URL ?? fileDbUrl,
+    databaseMode,
+    databaseUrl,
     embeddedPostgresDataDir: resolveHomeAwarePath(
       fileConfig?.database.embeddedPostgresDataDir ?? resolveDefaultEmbeddedPostgresDir(),
     ),

@@ -47,9 +47,9 @@ import { checkBoardMutation } from "./middleware/board-mutation-guard.js";
 
 // Route modules
 import {
+  companyIssueRoutes,
   issueRoutes,
   commentRoutes,
-  companyIssueRoutes,
   companyRoutes,
   projectRoutes,
   goalRoutes,
@@ -347,12 +347,12 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     })
 
     // -- Route modules --
+    .use(companyIssueRoutes(db))
     .use(companyRoutes(db, storage))
     .use(runRoutes(db))
     .use(agentRoutes(db))
     .use(issueRoutes(db))
     .use(commentRoutes(db))
-    .use(companyIssueRoutes(db))
     .use(projectRoutes(db))
     .use(goalRoutes(db))
     .use(secretRoutes(db))

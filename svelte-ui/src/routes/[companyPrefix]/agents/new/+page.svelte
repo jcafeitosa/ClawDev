@@ -83,6 +83,11 @@
   let hierarchyPresetSeedAgents = $derived(
     selectedHierarchyPreset ? getHierarchyPresetSeedAgents(selectedHierarchyPreset) : []
   );
+  let routeAdapterType = $derived($page.url.searchParams.get('adapterType') ?? '');
+  let routeModel = $derived($page.url.searchParams.get('model') ?? '');
+  let routeProvider = $derived($page.url.searchParams.get('provider') ?? '');
+  let routeBaseUrl = $derived($page.url.searchParams.get('baseUrl') ?? '');
+  let routeApiKey = $derived($page.url.searchParams.get('apiKey') ?? '');
 
   // ---------------------------------------------------------------------------
   // CSS helpers
@@ -143,6 +148,49 @@
     ]);
     loadExistingAgents();
     loadSkills();
+  });
+
+  $effect(() => {
+    if (!routeAdapterType) return;
+    if (AGENT_ADAPTER_OPTIONS.some((option) => option.value === routeAdapterType)) {
+      adapterType = routeAdapterType;
+      if (routeModel && !adapterConfig.model) {
+        adapterConfig = {
+          ...adapterConfig,
+          model: routeModel,
+        };
+      }
+      if (routeProvider && !adapterConfig.provider) {
+        adapterConfig = {
+          ...adapterConfig,
+          provider: routeProvider,
+        };
+      }
+      if (routeBaseUrl && !adapterConfig.baseUrl) {
+        adapterConfig = {
+          ...adapterConfig,
+          baseUrl: routeBaseUrl,
+        };
+      }
+      if (routeApiKey && !adapterConfig.apiKey) {
+        adapterConfig = {
+          ...adapterConfig,
+          apiKey: routeApiKey,
+        };
+      }
+      if (routeAdapterType === 'openai_compatible_local' && !adapterConfig.baseUrl) {
+        adapterConfig = {
+          ...adapterConfig,
+          baseUrl: 'http://localhost:11434/v1',
+        };
+      }
+      if (routeAdapterType === 'pi_local' && !adapterConfig.provider) {
+        adapterConfig = {
+          ...adapterConfig,
+          provider: 'groq',
+        };
+      }
+    }
   });
 
   // ---------------------------------------------------------------------------

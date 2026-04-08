@@ -50,6 +50,8 @@
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
+  let routeSecretName = $derived(($page.url.searchParams.get('name') ?? '').trim());
+  let routeSecretDescription = $derived(($page.url.searchParams.get('description') ?? '').trim());
 
   // ---------------------------------------------------------------------------
   // Filtered list
@@ -86,6 +88,13 @@
       .finally(() => {
         loading = false;
       });
+  });
+
+  $effect(() => {
+    if (!routeSecretName || showCreateForm) return;
+    newName = routeSecretName;
+    if (routeSecretDescription) newDescription = routeSecretDescription;
+    showCreateForm = true;
   });
 
   // ---------------------------------------------------------------------------

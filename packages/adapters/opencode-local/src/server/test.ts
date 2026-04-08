@@ -13,6 +13,7 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
+import { PROBE_PROMPT } from "@clawdev/adapter-utils";
 import { discoverOpenCodeModels, ensureOpenCodeModelConfiguredAndAvailable } from "./models.js";
 import { parseOpenCodeJsonl } from "./parse.js";
 import { prepareOpenCodeRuntimeConfig } from "./runtime-config.js";
@@ -304,7 +305,7 @@ export async function testEnvironment(
             env: runtimeEnv,
             timeoutSec: 60,
             graceSec: 5,
-            stdin: "Respond with hello.",
+            stdin: PROBE_PROMPT,
             onLog: async () => {},
           },
         );
@@ -317,7 +318,7 @@ export async function testEnvironment(
           checks.push({
             code: "opencode_hello_probe_timed_out",
             level: "warn",
-            message: "OpenCode hello probe timed out.",
+            message: "OpenCode PING/PONG probe timed out.",
             hint: "Retry the probe. If this persists, run OpenCode manually in this working directory.",
           });
         } else if ((probe.exitCode ?? 1) === 0 && !parsed.errorMessage) {
@@ -327,13 +328,13 @@ export async function testEnvironment(
             code: hasHello ? "opencode_hello_probe_passed" : "opencode_hello_probe_unexpected_output",
             level: hasHello ? "info" : "warn",
             message: hasHello
-              ? "OpenCode hello probe succeeded."
-              : "OpenCode probe ran but did not return `hello` as expected.",
+              ? "OpenCode PING/PONG probe succeeded."
+              : "OpenCode probe ran but did not return `PONG` as expected.",
             ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
             ...(hasHello
               ? {}
               : {
-                  hint: "Run `opencode run --format json` manually and prompt `Respond with hello` to inspect output.",
+                  hint: "Run `opencode run --format json` manually and prompt the PING/PONG question to inspect output.",
                 }),
           });
         } else if (/ProviderModelNotFoundError/i.test(authEvidence)) {
@@ -356,18 +357,18 @@ export async function testEnvironment(
           checks.push({
             code: "opencode_hello_probe_failed",
             level: "error",
-            message: "OpenCode hello probe failed.",
+            message: "OpenCode PING/PONG probe failed.",
             ...(detail ? { detail } : {}),
-            hint: "Run `opencode run --format json` manually in this working directory to debug.",
+            hint: "Run `opencode run --format json` manually in this working directory with the PING/PONG question to debug.",
           });
         }
       } catch (err) {
         checks.push({
           code: "opencode_hello_probe_failed",
           level: "error",
-          message: "OpenCode hello probe failed.",
+          message: "OpenCode PING/PONG probe failed.",
           detail: err instanceof Error ? err.message : String(err),
-          hint: "Run `opencode run --format json` manually in this working directory to debug.",
+          hint: "Run `opencode run --format json` manually in this working directory with the PING/PONG question to debug.",
         });
       }
     }

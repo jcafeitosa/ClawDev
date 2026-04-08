@@ -18,12 +18,20 @@ const DRIZZLE_MIGRATIONS_TABLE = "__drizzle_migrations";
 const MIGRATIONS_JOURNAL_JSON = fileURLToPath(new URL("./migrations/meta/_journal.json", import.meta.url));
 
 function createUtilitySql(url: string) {
-  return postgres(url, {
+  const connectionOptions: Parameters<typeof postgres>[1] = {
     max: 1,
     onnotice: () => {},
-    host: process.env.PGHOST,
-    port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
-  });
+  };
+  if (process.env.PGHOST) {
+    const parsed = new URL(url);
+    connectionOptions.host = process.env.PGHOST;
+    if (process.env.PGPORT) connectionOptions.port = Number(process.env.PGPORT);
+    connectionOptions.database = parsed.pathname.replace(/^\//, "") || undefined;
+    connectionOptions.username = parsed.username || undefined;
+    connectionOptions.password = parsed.password || undefined;
+    return postgres(connectionOptions);
+  }
+  return postgres(url, connectionOptions);
 }
 
 function isSafeIdentifier(value: string): boolean {
@@ -73,10 +81,16 @@ export function createDb(url: string): Db {
     return drizzlePglite(client, { schema }) as unknown as Db;
   }
 
-  const sql = postgres(url, {
-    host: process.env.PGHOST,
-    port: process.env.PGPORT ? Number(process.env.PGPORT) : undefined,
-  });
+  const connectionOptions: Parameters<typeof postgres>[1] = {};
+  if (process.env.PGHOST) {
+    const parsed = new URL(url);
+    connectionOptions.host = process.env.PGHOST;
+    if (process.env.PGPORT) connectionOptions.port = Number(process.env.PGPORT);
+    connectionOptions.database = parsed.pathname.replace(/^\//, "") || undefined;
+    connectionOptions.username = parsed.username || undefined;
+    connectionOptions.password = parsed.password || undefined;
+  }
+  const sql = process.env.PGHOST ? postgres(connectionOptions) : postgres(url, connectionOptions);
   return drizzlePg(sql, { schema });
 }
 

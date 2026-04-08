@@ -85,11 +85,6 @@ export function companyRoutes(db: Db, storage?: StorageService) {
       }
     })
 
-    .get("/issues", ({ set }: any) => {
-      set.status = 400;
-      return { error: "Missing companyId in path. Use /api/companies/{companyId}/issues." };
-    })
-
     .get("/:companyId", async (ctx: any) => {
       try {
         const actor: Actor = ctx.actor;
@@ -104,6 +99,10 @@ export function companyRoutes(db: Db, storage?: StorageService) {
         throw err;
       }
     }, { params: t.Object({ companyId: t.String() }) })
+
+    .get("/issues", async () => {
+      throw notFound("Missing companyId in path. Use /api/companies/{companyId}/issues.");
+    })
 
     .post("/", async (ctx: any) => {
       try {

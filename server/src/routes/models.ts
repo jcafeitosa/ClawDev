@@ -15,6 +15,7 @@ import { createModelCatalogService } from "../services/model-catalog.js";
 import { createProviderStatusService, getCooldownDuration } from "../services/provider-status.js";
 import { createModelDiscoveryService } from "../services/model-discovery.js";
 import { createModelRouterService } from "../services/model-router.js";
+import { inferProviderBillingType } from "../services/provider-billing.js";
 import { checkAdapterReadiness, remediateAdapterReadiness } from "../services/adapter-readiness.js";
 import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
 import { assertCompanyAccess, assertInstanceAdmin, getActorInfo, type Actor } from "../middleware/authz.js";
@@ -386,18 +387,26 @@ export function modelRoutes(db: Db) {
             });
 
             // When provider_model_status has no rows for this adapter,
-            // fall back to catalog counts so the dashboard shows meaningful totals
+            // keep availability at zero so untested models are not shown as ready.
             const hasStatusRows = status && status.total > 0;
+            const billingType = inferProviderBillingType(adapter.authMethods ?? []);
 
             return {
               adapterType: adapter.type,
-              label: adapter.agentConfigurationDoc
-                ? adapter.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
-                : adapter.type,
+              label:
+                adapter.type === "openai_compatible_local"
+                  ? "Local Models"
+                  : adapter.agentConfigurationDoc
+                    ? adapter.type.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase())
+                    : adapter.type,
               provider: adapter.type,
+              authMethods: adapter.authMethods ?? [],
+              billingType,
+              authConfigurable: (adapter.authMethods ?? []).length > 1,
               totalCatalog: catalogTotal,
               total: hasStatusRows ? status.total : catalogTotal,
-              available: hasStatusRows ? status.available : catalogTotal,
+              free: adapterCatalog.filter((model) => model.isFree).length,
+              available: hasStatusRows ? status.available : 0,
               cooldown: status?.cooldown ?? 0,
               unavailable: status?.unavailable ?? 0,
               models,

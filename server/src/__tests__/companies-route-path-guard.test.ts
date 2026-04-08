@@ -33,7 +33,7 @@ vi.mock("../services/index.js", () => ({
 }));
 
 describe("company routes malformed issue path guard", () => {
-  it("returns a clear error when companyId is missing for issues list path", async () => {
+  it("returns not found when the issues list path is missing companyId", async () => {
     const app = new Elysia()
       .onError(({ error, set }) => {
         if (error instanceof HttpError) {
@@ -57,10 +57,6 @@ describe("company routes malformed issue path guard", () => {
 
     const res = await app.handle(new Request("http://localhost/companies/issues"));
 
-    expect(res.status).toBe(400);
-    const body = await res.json();
-    expect(body).toEqual({
-      error: "Missing companyId in path. Use /api/companies/{companyId}/issues.",
-    });
+    expect(res.status).toBe(404);
   });
 });

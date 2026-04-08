@@ -51,4 +51,8 @@ export {
   redactHomePathUserSegmentsInValue,
   redactTranscriptEntryPaths,
 } from "./log-redaction.js";
+export {
+  PROBE_PROMPT,
+  classifyProbeOutput,
+} from "./probe.js";
 export { inferOpenAiCompatibleBiller } from "./billing.js";

@@ -7,8 +7,10 @@
  */
 
 import { Elysia, t } from "elysia";
+import { eq } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import { checkoutIssueSchema, composeStructuredSddDescription, isLevelCAgentRole, parseStructuredSddDescription, validateStructuredSddInput } from "@clawdev/shared";
+import { companies } from "@clawdev/db";
 import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, assertBoard, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logger } from "../middleware/logger.js";
@@ -1687,16 +1689,25 @@ export function companyIssueRoutes(db: Db) {
   const projectsSvc = projectService(db);
   const heartbeat = heartbeatService(db);
 
-  return new Elysia()
+  return new Elysia({ prefix: "/companies/:companyId" })
     /* ------------------------------------------------------------------ */
     /* GET /companies/:companyId/issues                                   */
     /* ------------------------------------------------------------------ */
     .get(
-      "/companies/:companyId/issues",
+      "/issues",
       async (ctx: any) => {
         try {
           const companyId = ctx.params.companyId;
           const actor: Actor = ctx.actor;
+          const companyExists = await db
+            .select({ id: companies.id })
+            .from(companies)
+            .where(eq(companies.id, companyId))
+            .then((rows) => rows[0] ?? null);
+          if (!companyExists) {
+            ctx.set.status = 404;
+            return { error: "Company not found" };
+          }
           assertCompanyAccess(actor, companyId);
 
           const assigneeUserFilterRaw = ctx.query?.assigneeUserId as string | undefined;
@@ -1758,7 +1769,15 @@ export function companyIssueRoutes(db: Db) {
           return result;
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
-          log.error({ category: "http.error", err: errMsg }, "Failed to list company issues");
+          log.error(
+            {
+              category: "http.error",
+              err: errMsg,
+              cause: err instanceof Error ? (err as Error & { cause?: unknown }).cause ?? null : null,
+              stack: err instanceof Error ? err.stack ?? null : null,
+            },
+            "Failed to list company issues",
+          );
           throw err;
         }
       },
@@ -1769,7 +1788,7 @@ export function companyIssueRoutes(db: Db) {
     /* POST /companies/:companyId/issues                                  */
     /* ------------------------------------------------------------------ */
     .post(
-      "/companies/:companyId/issues",
+      "/issues",
       async (ctx: any) => {
         try {
           const companyId = ctx.params.companyId;
@@ -1899,14 +1918,14 @@ export function companyIssueRoutes(db: Db) {
           parentId: t.Optional(t.Nullable(t.String())),
           labelIds: t.Optional(t.Array(t.String())),
         }),
-      },
+      }
     )
 
     /* ------------------------------------------------------------------ */
     /* GET /companies/:companyId/labels                                   */
     /* ------------------------------------------------------------------ */
     .get(
-      "/companies/:companyId/labels",
+      "/labels",
       async (ctx: any) => {
         try {
           const companyId = ctx.params.companyId;
@@ -1925,7 +1944,7 @@ export function companyIssueRoutes(db: Db) {
     /* POST /companies/:companyId/labels                                  */
     /* ------------------------------------------------------------------ */
     .post(
-      "/companies/:companyId/labels",
+      "/labels",
       async (ctx: any) => {
         try {
           const companyId = ctx.params.companyId;
@@ -2088,7 +2107,7 @@ export function companyIssueRoutes(db: Db) {
     /* POST /companies/:companyId/issues/:issueId/attachments             */
     /* ------------------------------------------------------------------ */
     .post(
-      "/companies/:companyId/issues/:issueId/attachments",
+      "/issues/:issueId/attachments",
       async (ctx: any) => {
         try {
           const companyId = ctx.params.companyId;

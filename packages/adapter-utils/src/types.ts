@@ -276,6 +276,12 @@ export interface ServerAdapterModule {
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
   testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<AdapterEnvironmentTestResult>;
   /**
+   * Declares the authentication methods the adapter/provider can use.
+   * `api` covers API keys or bearer tokens, `oauth` covers login-based flows,
+   * and `custom` is used for provider-specific auth that does not fit either.
+   */
+  authMethods?: Array<"api" | "oauth" | "custom">;
+  /**
    * Optional readiness metadata for automated install/update flows.
    * When omitted, the adapter is considered inspect-only.
    */

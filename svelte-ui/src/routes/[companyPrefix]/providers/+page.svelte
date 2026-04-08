@@ -14,8 +14,6 @@
     Search,
     Brain,
     Activity,
-    Route,
-    ScrollText,
     CircleDot,
     AlertTriangle,
     CheckCircle,
@@ -23,22 +21,9 @@
     Clock,
     Loader2,
     Server,
-    Zap,
-    DollarSign,
     Eye,
-    Code,
-    MessageSquare,
-    Sparkles,
-    Save,
-    GripVertical,
-    ArrowDown,
-    ArrowUp,
-    ToggleLeft,
-    ToggleRight,
-    Filter,
     Timer,
     ShieldOff,
-    ShieldCheck,
   } from 'lucide-svelte';
 
   onMount(() => breadcrumbStore.set([{ label: 'Providers & Models' }]));
@@ -50,7 +35,11 @@
     available: number;
     cooldown: number;
     unavailable: number;
+    free: number;
+    billingType: 'subscription' | 'paid' | 'unknown';
+    authConfigurable: boolean;
     totalModels: number;
+    authMethods: Array<'api' | 'oauth' | 'custom'>;
   }
 
   interface Model {
@@ -91,45 +80,13 @@
     models: ModelStatus[];
   }
 
-  interface ModelPreferences {
-    defaultAdapterType: string;
-    defaultModelId: string;
-    fallbackChain: string[];
-    routingStrategy: string;
-    allowCrossProviderFallback: boolean;
-    preferFreeModels: boolean;
-    preferLocalModels: boolean;
-  }
-
-  interface RoutingPolicy {
-    id?: string;
-    name: string;
-    description?: string | null;
-    agentId?: string;
-    role?: string;
-    complexity: string;
-    priority: number;
-    routingStrategy: string;
-    defaultAdapterType?: string | null;
-    defaultModelId?: string | null;
-    fallbackChain: { adapterType: string; modelId: string }[];
-    allowCrossProviderFallback: boolean;
-    preferFreeModels: boolean;
-    preferLocalModels: boolean;
-    maxCostPerRequestMicro?: number | null;
-    requiredCapabilities: string[];
-    minContextWindow?: number | null;
-    maxLatencyMs?: number | null;
-  }
-
-  interface RoutingLogEntry {
-    timestamp: string;
-    agentName: string;
-    requestedModel: string;
-    resolvedModel: string;
-    resolutionType: string;
-    fallbackDepth: number;
-    reason: string;
+  interface CredentialProviderCard {
+    provider: string;
+    displayName: string;
+    authMethod: 'api' | 'oauth' | 'custom';
+    envVars: string[];
+    description: string;
+    sampleModel: string;
   }
 
   interface AdapterReadiness {
@@ -151,7 +108,6 @@
 
   // ── State ───────────────────────────────────────────────────────────
   let loading = $state(true);
-  let syncing = $state(false);
   let activeTab = $state('models');
 
   // Provider summary
@@ -164,7 +120,7 @@
   let filterProvider = $state('all');
   let filterTier = $state('all');
   let filterCapability = $state('all');
-  let hideUnavailable = $state(true);
+  let hideUnavailable = $state(false);
 
   // Filtered provider cards — hide providers with zero available models when filter is on
   let visibleProviders = $derived.by(() => {
@@ -175,47 +131,6 @@
   // Status tab
   let providerStatuses = $state<ProviderStatus[]>([]);
   let statusLoading = $state(true);
-
-  // Routing tab
-  let preferences = $state<ModelPreferences>({
-    defaultAdapterType: '',
-    defaultModelId: '',
-    fallbackChain: [],
-    routingStrategy: 'pinned',
-    allowCrossProviderFallback: true,
-    preferFreeModels: false,
-    preferLocalModels: false,
-  });
-  let preferencesLoading = $state(true);
-  let savingPreferences = $state(false);
-  let preferencesSaved = $state(false);
-
-  // Routing log tab
-  let routingLog = $state<RoutingLogEntry[]>([]);
-  let routingLogLoading = $state(true);
-
-  // Routing policies
-  let routingPolicies = $state<RoutingPolicy[]>([]);
-  let routingPoliciesLoading = $state(true);
-  let routingPolicyDraft = $state<RoutingPolicy>({
-    name: '',
-    description: '',
-    agentId: '',
-    role: '',
-    complexity: 'any',
-    priority: 0,
-    routingStrategy: 'pinned',
-    defaultAdapterType: '',
-    defaultModelId: '',
-    fallbackChain: [],
-    allowCrossProviderFallback: true,
-    preferFreeModels: false,
-    preferLocalModels: false,
-    maxCostPerRequestMicro: null,
-    requiredCapabilities: [],
-    minContextWindow: null,
-    maxLatencyMs: null,
-  });
 
   // Adapter readiness
   let adapterReadiness = $state<AdapterReadiness[]>([]);
@@ -233,14 +148,133 @@
     return () => clearInterval(tickInterval);
   });
 
-  // Cooldown control state
-  let cooldownFormOpen = $state<string | null>(null); // modelId of open form
-  let cooldownDuration = $state(5);
-  let cooldownApplying = $state(false);
-
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
+  const HIDDEN_ADAPTERS = ['process', 'http', 'openclaw_gateway', 'pi_local', 'openai_compatible_local'];
+  const CREDENTIAL_PROVIDER_CARDS: CredentialProviderCard[] = [
+    {
+      provider: 'groq',
+      displayName: 'Groq',
+      authMethod: 'api',
+      envVars: ['GROQ_API_KEY'],
+      description: 'Fast hosted inference with OpenAI-compatible responses.',
+      sampleModel: 'groq/qwen-qwq-32b',
+    },
+    {
+      provider: 'xai',
+      displayName: 'xAI',
+      authMethod: 'api',
+      envVars: ['XAI_API_KEY'],
+      description: 'Grok models routed through Pi.',
+      sampleModel: 'xai/grok-4',
+    },
+    {
+      provider: 'mistral',
+      displayName: 'Mistral',
+      authMethod: 'api',
+      envVars: ['MISTRAL_API_KEY'],
+      description: 'Mistral code and chat models bridged by Pi.',
+      sampleModel: 'mistral/devstral-medium-latest',
+    },
+    {
+      provider: 'cerebras',
+      displayName: 'Cerebras',
+      authMethod: 'api',
+      envVars: ['CEREBRAS_API_KEY'],
+      description: 'High-throughput hosted models for fast loops.',
+      sampleModel: 'cerebras/llama-3.1-70b',
+    },
+    {
+      provider: 'openrouter',
+      displayName: 'OpenRouter',
+      authMethod: 'api',
+      envVars: ['OPENROUTER_API_KEY'],
+      description: 'Model router with broad provider coverage.',
+      sampleModel: 'openrouter/anthropic/claude-3.7-sonnet',
+    },
+    {
+      provider: 'minimax',
+      displayName: 'MiniMax',
+      authMethod: 'api',
+      envVars: ['MINIMAX_API_KEY'],
+      description: 'Chinese-language and multimodal model access.',
+      sampleModel: 'minimax/abab6.5s',
+    },
+    {
+      provider: 'kimi-coding',
+      displayName: 'Kimi Coding',
+      authMethod: 'api',
+      envVars: ['KIMI_CODING_API_KEY'],
+      description: 'Coding-oriented Kimi models via Pi.',
+      sampleModel: 'kimi-coding/kimi-k2',
+    },
+    {
+      provider: 'azure',
+      displayName: 'Azure OpenAI',
+      authMethod: 'api',
+      envVars: ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT'],
+      description: 'Azure-hosted OpenAI-compatible deployments.',
+      sampleModel: 'azure/gpt-4.1',
+    },
+  ];
+
+  let providerCards = $derived.by(() => {
+    if (providerSummaries.length > 0) {
+      return providerSummaries.filter((p) => !HIDDEN_ADAPTERS.includes(p.adapterType));
+    }
+
+    const byAdapter = new Map<string, ProviderSummary>();
+    for (const model of models) {
+      if (HIDDEN_ADAPTERS.includes(model.adapterType)) continue;
+      const current = byAdapter.get(model.adapterType);
+      const normalizedStatus = normalizeModelStatus(model.status);
+      const isAvailable = normalizedStatus === 'available';
+      const isCooldown = normalizedStatus === 'cooldown';
+      const isUnavailable = normalizedStatus === 'unavailable' || normalizedStatus === 'auth_required' || normalizedStatus === 'quota_exceeded' || normalizedStatus === 'degraded' || normalizedStatus === 'unknown';
+      if (!current) {
+        byAdapter.set(model.adapterType, {
+          adapterType: model.adapterType,
+          displayName: model.providerName || model.adapterType,
+          available: isAvailable ? 1 : 0,
+          cooldown: isCooldown ? 1 : 0,
+          unavailable: isUnavailable ? 1 : 0,
+          free: model.isFree ? 1 : 0,
+          billingType: 'unknown',
+          authConfigurable: false,
+          totalModels: 1,
+          authMethods: [],
+        });
+        continue;
+      }
+      current.available += isAvailable ? 1 : 0;
+      current.cooldown += isCooldown ? 1 : 0;
+      current.unavailable += isUnavailable ? 1 : 0;
+      current.free += model.isFree ? 1 : 0;
+      current.totalModels += 1;
+    }
+
+    return [...byAdapter.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
+  });
+
+  let runtimeOverview = $derived.by(() => {
+    const providerCount = providerCards.length;
+    const modelCount = models.length;
+    const availableCount = models.filter((m) => m.status === 'available').length;
+    const cooldownCount = models.filter((m) => m.status === 'cooldown').length;
+    const unavailableCount = models.filter((m) => m.status === 'unavailable' || m.status === 'unknown').length;
+    const freeCount = models.filter((m) => m.isFree).length;
+    const authMethods = new Set(providerSummaries.flatMap((p) => p.authMethods ?? []));
+    return {
+      providerCount,
+      modelCount,
+      availableCount,
+      cooldownCount,
+      unavailableCount,
+      freeCount,
+      authMethods: [...authMethods].sort(),
+    };
+  });
 
   // ── Derived: filtered models ─────────────────────────────────────
   let filteredModels = $derived.by(() => {
@@ -274,36 +308,12 @@
     });
   });
 
-  const HIDDEN_ADAPTERS = ['process', 'http'];
   let uniqueProviders = $derived(
     [...new Set(models.map((m) => m.adapterType))].filter((a) => !HIDDEN_ADAPTERS.includes(a)).sort(),
   );
   let uniqueCapabilities = $derived(
     [...new Set(models.flatMap((m) => m.capabilities ?? []))].sort(),
   );
-
-  // All available model IDs for dropdown
-  let allModelIds = $derived(models.map((m) => m.modelId).filter(Boolean));
-  let routingProviders = $derived([
-    ...new Map(providerSummaries.map((provider) => [provider.adapterType, provider])).values(),
-  ]);
-  let routingModels = $derived.by(() => {
-    const filtered = preferences.defaultAdapterType
-      ? models.filter((model) => model.adapterType === preferences.defaultAdapterType)
-      : models;
-    return [...filtered].sort((a, b) => a.modelId.localeCompare(b.modelId));
-  });
-  $effect(() => {
-    if (!preferences.defaultAdapterType || !preferences.defaultModelId) return;
-    const valid = models.some(
-      (model) =>
-        model.adapterType === preferences.defaultAdapterType &&
-        model.modelId === preferences.defaultModelId,
-    );
-    if (!valid) {
-      preferences.defaultModelId = '';
-    }
-  });
 
   // ── Safe fetch ────────────────────────────────────────────────────
   async function safeFetch<T>(url: string, fallback: T): Promise<T> {
@@ -331,7 +341,11 @@
         available: p.available ?? 0,
         cooldown: p.cooldown ?? 0,
         unavailable: p.unavailable ?? 0,
+        free: p.free ?? 0,
+        billingType: p.billingType ?? 'unknown',
+        authConfigurable: p.authConfigurable ?? false,
         totalModels: p.totalCatalog ?? p.total ?? 0,
+        authMethods: p.authMethods ?? [],
       }));
       lastRefreshed = new Date();
     } catch {
@@ -356,7 +370,7 @@
         tier: m.tier ?? 'paid',
         capabilities: m.capabilities ?? [],
         contextWindow: m.contextWindow ?? m.maxTokens ?? 0,
-        status: (m.circuitState && m.circuitState !== 'unknown') ? m.circuitState : (m.status && m.status !== 'unknown') ? m.status : 'available',
+        status: normalizeModelStatus((m.circuitState && m.circuitState !== 'unknown') ? m.circuitState : (m.status && m.status !== 'unknown') ? m.status : 'unknown'),
         inputPriceMicro: m.inputPriceMicro ?? m.inputCostMicro ?? 0,
         outputPriceMicro: m.outputPriceMicro ?? m.outputCostMicro ?? 0,
         isFree: m.isFree === true,
@@ -385,7 +399,7 @@
         models: (p.models ?? []).map((m: any) => ({
           modelId: m.modelId ?? m.id ?? '',
           modelName: m.name ?? m.modelId ?? m.id ?? '',
-          status: (m.status && m.status !== 'unknown') ? m.status : (m.circuitState && m.circuitState !== 'unknown') ? m.circuitState : 'available',
+          status: normalizeModelStatus((m.status && m.status !== 'unknown') ? m.status : (m.circuitState && m.circuitState !== 'unknown') ? m.circuitState : 'unknown'),
           statusDetail: m.statusDetail ?? null,
           cooldownEndsAt: m.cooldownEndsAt ?? null,
           cooldownReason: m.cooldownReason ?? m.reason ?? null,
@@ -401,84 +415,6 @@
       providerStatuses = [];
     } finally {
       statusLoading = false;
-    }
-  }
-
-  async function loadPreferences() {
-    if (!companyId) return;
-    preferencesLoading = true;
-    try {
-      const data = await safeFetch<any>(`/api/companies/${companyId}/model-preferences`, null);
-      if (data) {
-        preferences = {
-          defaultAdapterType: data.defaultAdapterType ?? '',
-          defaultModelId: data.defaultModelId ?? data.defaultModel ?? '',
-          fallbackChain: data.fallbackChain ?? [],
-          routingStrategy: data.routingStrategy ?? 'pinned',
-          allowCrossProviderFallback: data.allowCrossProviderFallback ?? true,
-          preferFreeModels: data.preferFreeModels ?? false,
-          preferLocalModels: data.preferLocalModels ?? false,
-        };
-      }
-    } catch {
-      // keep defaults
-    } finally {
-      preferencesLoading = false;
-    }
-  }
-
-  async function loadRoutingLog() {
-    if (!companyId) return;
-    routingLogLoading = true;
-    try {
-      const data = await safeFetch<any>(`/api/companies/${companyId}/model-routing-log`, []);
-      const raw = Array.isArray(data) ? data : data?.data ?? data?.entries ?? data?.items ?? [];
-      routingLog = raw.map((e: any) => ({
-        timestamp: e.timestamp ?? e.createdAt ?? '',
-        agentName: e.agentName ?? e.agent ?? '',
-        requestedModel: e.requestedModel ?? e.requested ?? '',
-        resolvedModel: e.resolvedModel ?? e.resolved ?? '',
-        resolutionType: e.resolutionType ?? e.type ?? '',
-        fallbackDepth: e.fallbackDepth ?? e.depth ?? 0,
-        reason: e.reason ?? '',
-      }));
-    } catch {
-      routingLog = [];
-    } finally {
-      routingLogLoading = false;
-    }
-  }
-
-  async function loadRoutingPolicies() {
-    if (!companyId) return;
-    routingPoliciesLoading = true;
-    try {
-      const data = await safeFetch<any>(`/api/companies/${companyId}/model-routing-policies`, []);
-      const raw = Array.isArray(data) ? data : data?.policies ?? data?.items ?? [];
-      routingPolicies = raw.map((policy: any) => ({
-        id: policy.id,
-        name: policy.name ?? '',
-        description: policy.description ?? null,
-        agentId: policy.agentId ?? null,
-        role: policy.role ?? null,
-        complexity: policy.complexity ?? 'any',
-        priority: policy.priority ?? 0,
-        routingStrategy: policy.routingStrategy ?? 'pinned',
-        defaultAdapterType: policy.defaultAdapterType ?? null,
-        defaultModelId: policy.defaultModelId ?? null,
-        fallbackChain: Array.isArray(policy.fallbackChain) ? policy.fallbackChain : [],
-        allowCrossProviderFallback: policy.allowCrossProviderFallback ?? true,
-        preferFreeModels: policy.preferFreeModels ?? false,
-        preferLocalModels: policy.preferLocalModels ?? false,
-        maxCostPerRequestMicro: policy.maxCostPerRequestMicro ?? null,
-        requiredCapabilities: Array.isArray(policy.requiredCapabilities) ? policy.requiredCapabilities : [],
-        minContextWindow: policy.minContextWindow ?? null,
-        maxLatencyMs: policy.maxLatencyMs ?? null,
-      }));
-    } catch {
-      routingPolicies = [];
-    } finally {
-      routingPoliciesLoading = false;
     }
   }
 
@@ -514,15 +450,6 @@
     loadAdapterReadiness();
   });
 
-  // ── Tab-driven lazy loading ───────────────────────────────────────
-  $effect(() => {
-    if (!companyId) return;
-    if (activeTab === 'status' && providerStatuses.length === 0) loadProviderStatuses();
-    if (activeTab === 'routing') loadPreferences();
-    if (activeTab === 'routing') loadRoutingPolicies();
-    if (activeTab === 'routing-log' && routingLog.length === 0) loadRoutingLog();
-  });
-
   onMount(() => {
     refreshInterval = setInterval(() => {
       if (companyId) {
@@ -539,141 +466,6 @@
   });
 
   // ── Actions ───────────────────────────────────────────────────────
-  async function syncModels() {
-    if (!companyId) return;
-    syncing = true;
-    try {
-      await api(`/api/models/sync`, { method: 'POST' });
-      await loadModels();
-      await loadProviderSummaries();
-      await loadAdapterReadiness();
-    } catch {
-      // silently fail
-    } finally {
-      syncing = false;
-    }
-  }
-
-  async function remediateAdapter(adapterType: string, mode: 'install' | 'update' | 'version') {
-    if (!companyId) return;
-    try {
-      await api(`/api/adapters/${adapterType}/readiness/remediate`, {
-        method: 'POST',
-        body: JSON.stringify({ mode }),
-      });
-      await loadAdapterReadiness();
-      await loadProviderSummaries();
-      await loadModels();
-    } catch {
-      // silently fail
-    }
-  }
-
-  async function savePreferences() {
-    if (!companyId) return;
-    savingPreferences = true;
-    preferencesSaved = false;
-    try {
-      await api(`/api/companies/${companyId}/model-preferences`, {
-        method: 'PUT',
-        body: JSON.stringify(preferences),
-      });
-      preferencesSaved = true;
-      setTimeout(() => (preferencesSaved = false), 3000);
-    } catch {
-      // silently fail
-    } finally {
-      savingPreferences = false;
-    }
-  }
-
-  async function saveRoutingPolicy() {
-    if (!companyId || !routingPolicyDraft.name.trim()) return;
-    try {
-      const payload = {
-        ...routingPolicyDraft,
-        companyId,
-      };
-      const res = await api(`/api/companies/${companyId}/model-routing-policies`, {
-        method: 'PUT',
-        body: JSON.stringify(payload),
-      });
-      if (!res.ok) throw new Error(`Failed to save policy (${res.status})`);
-      await loadRoutingPolicies();
-      routingPolicyDraft = {
-        name: '',
-        description: '',
-        agentId: '',
-        role: '',
-        complexity: 'any',
-        priority: 0,
-        routingStrategy: 'pinned',
-        defaultAdapterType: '',
-        defaultModelId: '',
-        fallbackChain: [],
-        allowCrossProviderFallback: true,
-        preferFreeModels: false,
-        preferLocalModels: false,
-        maxCostPerRequestMicro: null,
-        requiredCapabilities: [],
-        minContextWindow: null,
-        maxLatencyMs: null,
-      };
-    } catch {
-      // silent for now
-    }
-  }
-
-  function moveFallback(index: number, direction: 'up' | 'down') {
-    const chain = [...preferences.fallbackChain];
-    const target = direction === 'up' ? index - 1 : index + 1;
-    if (target < 0 || target >= chain.length) return;
-    [chain[index], chain[target]] = [chain[target], chain[index]];
-    preferences.fallbackChain = chain;
-  }
-
-  function removeFallback(index: number) {
-    preferences.fallbackChain = preferences.fallbackChain.filter((_, i) => i !== index);
-  }
-
-  function addFallback(modelId: string) {
-    if (modelId && !preferences.fallbackChain.includes(modelId)) {
-      preferences.fallbackChain = [...preferences.fallbackChain, modelId];
-    }
-  }
-
-  // ── Cooldown controls ──────────────────────────────────────────────
-  async function applyCooldown(adapterType: string, modelId: string, durationMinutes: number) {
-    cooldownApplying = true;
-    try {
-      await api(`/api/providers/${adapterType}/models/${encodeURIComponent(modelId)}/cooldown`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ durationMinutes }),
-      });
-      cooldownFormOpen = null;
-      cooldownDuration = 5;
-      await loadProviderStatuses();
-      await loadProviderSummaries();
-    } catch {
-      // silently fail
-    } finally {
-      cooldownApplying = false;
-    }
-  }
-
-  async function clearCooldown(adapterType: string, modelId: string) {
-    try {
-      await api(`/api/providers/${adapterType}/models/${encodeURIComponent(modelId)}/cooldown`, {
-        method: 'DELETE',
-      });
-      await loadProviderStatuses();
-      await loadProviderSummaries();
-    } catch {
-      // silently fail
-    }
-  }
-
   function formatCooldownRemaining(cooldownEndsAt: string, currentTime: number): string {
     const remaining = Math.max(0, new Date(cooldownEndsAt).getTime() - currentTime);
     const mins = Math.floor(remaining / 60000);
@@ -708,11 +500,23 @@
     HALF_OPEN: { dot: 'bg-yellow-500', bg: 'bg-yellow-500/10', text: 'text-yellow-600 dark:text-yellow-400', label: 'Cooldown' },
     unavailable: { dot: 'bg-red-500', bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Unavailable' },
     OPEN: { dot: 'bg-red-500', bg: 'bg-red-500/10', text: 'text-red-600 dark:text-red-400', label: 'Unavailable' },
+    auth_required: { dot: 'bg-amber-500', bg: 'bg-amber-500/10', text: 'text-amber-600 dark:text-amber-400', label: 'Auth required' },
+    quota_exceeded: { dot: 'bg-orange-500', bg: 'bg-orange-500/10', text: 'text-orange-600 dark:text-orange-400', label: 'Quota exceeded' },
+    degraded: { dot: 'bg-violet-500', bg: 'bg-violet-500/10', text: 'text-violet-600 dark:text-violet-400', label: 'Degraded' },
     unknown: { dot: 'bg-sky-400', bg: 'bg-sky-500/10', text: 'text-sky-600 dark:text-sky-400', label: 'Discovered' },
   };
 
   function getStatusStyle(status: string) {
     return STATUS_COLORS[status] ?? STATUS_COLORS.unknown;
+  }
+
+  function normalizeModelStatus(status: string | null | undefined) {
+    if (!status) return 'unknown';
+    if (status === 'cooldown' || status === 'available' || status === 'unavailable' || status === 'degraded' || status === 'auth_required' || status === 'quota_exceeded' || status === 'unknown') {
+      return status;
+    }
+    if (status === 'HALF_OPEN' || status === 'OPEN' || status === 'CLOSED') return status;
+    return 'unknown';
   }
 
   const TIER_STYLES: Record<string, { bg: string; text: string }> = {
@@ -746,39 +550,25 @@
     availability_optimized: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
   };
 
-  const ROUTING_STRATEGIES = [
-    { value: 'pinned', label: 'Pinned', description: 'Always use the default model' },
-    { value: 'cost_optimized', label: 'Cost Optimized', description: 'Prefer the cheapest available model' },
-    { value: 'performance_optimized', label: 'Performance', description: 'Prefer the fastest available model' },
-    { value: 'availability_optimized', label: 'Availability', description: 'Prefer the most reliable model' },
-    { value: 'local_preferred', label: 'Local Preferred', description: 'Prefer locally-run models when available' },
-  ];
-
   // ── Billing type inference ─────────────────────────────────────
-  type BillingType = 'subscription' | 'api' | 'unknown';
+  type BillingType = 'subscription' | 'paid' | 'unknown';
 
   const BILLING_STYLES: Record<BillingType, { bg: string; text: string; label: string }> = {
     subscription: { bg: 'bg-blue-500/10', text: 'text-blue-600 dark:text-blue-400', label: 'Subscription' },
-    api: { bg: 'bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400', label: 'API' },
+    paid: { bg: 'bg-emerald-500/10', text: 'text-emerald-600 dark:text-emerald-400', label: 'Paid' },
     unknown: { bg: '', text: '', label: '\u2014' },
   };
 
-  function inferBillingType(adapterType: string, tier: string): BillingType {
-    switch (adapterType) {
-      case 'copilot_local':
-        return 'subscription';
-      case 'opencode_local':
-        return tier === 'free' ? 'api' : 'subscription';
-      case 'pi_local':
-        return 'api';
-      case 'claude_local':
-      case 'codex_local':
-      case 'gemini_local':
-        return tier === 'free' || tier === 'premium' ? 'subscription' : 'api';
-      default:
-        if (adapterType.endsWith('_local')) return 'subscription';
-        return 'api';
-    }
+  function inferBillingType(
+    adapterType: string,
+    authMethods: Array<'api' | 'oauth' | 'custom'>,
+    billingType?: BillingType,
+  ): BillingType {
+    if (billingType && billingType !== 'unknown') return billingType;
+    if (authMethods.includes('oauth')) return 'subscription';
+    if (authMethods.includes('api')) return 'paid';
+    if (adapterType.endsWith('_local')) return 'subscription';
+    return 'paid';
   }
 
   // ── Tier sort priority (higher = first) ──────────────────────────
@@ -802,6 +592,21 @@
     return 'border-emerald-500/40 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400';
   }
 
+  function openCredentialSecretConfig(card: CredentialProviderCard) {
+    if (!prefix) return;
+    const params = new URLSearchParams({
+      name: card.envVars[0] ?? `${card.provider.toUpperCase()}_API_KEY`,
+      description: `${card.displayName} credential for provider access`,
+    });
+    window.location.href = `/${prefix}/secrets?${params.toString()}`;
+  }
+
+  const AUTH_STYLES: Record<'api' | 'oauth' | 'custom', string> = {
+    api: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+    oauth: 'bg-blue-500/10 text-blue-600 dark:text-blue-400',
+    custom: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
+  };
+
   // New fallback model to add
   let newFallbackModel = $state('');
 </script>
@@ -814,26 +619,65 @@
     <Button
       variant="outline"
       size="sm"
-      onclick={() => { if (companyId) { loadProviderSummaries(); loadModels(); } }}
+      onclick={() => { if (companyId) { loadProviderSummaries(); loadModels(); loadProviderStatuses(); loadAdapterReadiness(); } }}
     >
       <RefreshCw class="h-3.5 w-3.5" />
       Refresh
     </Button>
-    <Button
-      size="sm"
-      onclick={syncModels}
-      disabled={syncing}
-    >
-      {#if syncing}
-        <Loader2 class="h-3.5 w-3.5 animate-spin" />
-        Syncing...
-      {:else}
-        <RefreshCw class="h-3.5 w-3.5" />
-        Sync Models
-      {/if}
-    </Button>
   {/snippet}
 <div class="providers-root space-y-6">
+  <div class="grid grid-cols-2 gap-3 lg:grid-cols-4">
+    <div class="rounded-xl border border-border bg-card p-4">
+      <p class="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Providers</p>
+      <p class="mt-2 text-2xl font-semibold text-foreground">{runtimeOverview.providerCount}</p>
+      <p class="text-xs text-muted-foreground">Detected in the live runtime</p>
+    </div>
+    <div class="rounded-xl border border-border bg-card p-4">
+      <p class="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Models</p>
+      <p class="mt-2 text-2xl font-semibold text-foreground">{runtimeOverview.modelCount}</p>
+      <p class="text-xs text-muted-foreground">Total visible model records</p>
+    </div>
+    <div class="rounded-xl border border-border bg-card p-4">
+      <p class="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Available</p>
+      <p class="mt-2 text-2xl font-semibold text-emerald-500">{runtimeOverview.availableCount}</p>
+      <p class="text-xs text-muted-foreground">Ready for agents now</p>
+    </div>
+    <div class="rounded-xl border border-border bg-card p-4">
+      <p class="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Free</p>
+      <p class="mt-2 text-2xl font-semibold text-sky-500">{runtimeOverview.freeCount}</p>
+      <p class="text-xs text-muted-foreground">Catalog models flagged as free</p>
+    </div>
+    <div class="rounded-xl border border-border bg-card p-4">
+      <p class="text-[10px] uppercase tracking-[0.2em] text-muted-foreground">Cooldown / Unavailable</p>
+      <p class="mt-2 text-2xl font-semibold text-foreground">
+        {runtimeOverview.cooldownCount}
+        <span class="text-muted-foreground">/</span>
+        {runtimeOverview.unavailableCount}
+      </p>
+      <p class="text-xs text-muted-foreground">Temporarily blocked or offline</p>
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-border bg-card p-4">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-sm font-semibold text-foreground">Integrated adapters</h2>
+        <p class="text-xs text-muted-foreground">These adapters stay active as runtime integrations: Claude, Codex, Gemini, Copilot, and OpenCode.</p>
+      </div>
+      <Badge variant="outline" class="text-[10px] uppercase tracking-[0.18em]">
+        CLI adapters
+      </Badge>
+    </div>
+    <div class="mt-3 flex flex-wrap gap-2">
+      {#each ['claude_local', 'codex_local', 'copilot_local', 'cursor', 'gemini_local', 'opencode_local'] as adapterType}
+        <span class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium border-emerald-500/40 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+          <ProviderIcon adapterType={adapterType} size={16} />
+          <span class="capitalize">{adapterType.replaceAll('_', ' ')}</span>
+        </span>
+      {/each}
+    </div>
+  </div>
 
   <div class="rounded-xl border border-border bg-card p-4">
     <div class="flex items-center justify-between gap-3">
@@ -845,11 +689,11 @@
         <span class="text-xs text-muted-foreground">Refreshing...</span>
       {/if}
     </div>
-    <div class="mt-3 flex flex-wrap gap-2">
-      {#each adapterReadiness as entry (entry.adapterType)}
-        <div class="flex flex-wrap items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium {getAdapterReadinessStyle(entry)}">
-          <span class="h-1.5 w-1.5 rounded-full {entry.needsInstall ? 'bg-red-500' : entry.needsUpdate ? 'bg-yellow-500' : 'bg-emerald-500'}"></span>
-          <span>{entry.adapterType}</span>
+      <div class="mt-3 flex flex-wrap gap-2">
+        {#each adapterReadiness.filter((entry) => !HIDDEN_ADAPTERS.includes(entry.adapterType)) as entry (entry.adapterType)}
+          <div class="flex flex-wrap items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium {getAdapterReadinessStyle(entry)}">
+            <span class="h-1.5 w-1.5 rounded-full {entry.needsInstall ? 'bg-red-500' : entry.needsUpdate ? 'bg-yellow-500' : 'bg-emerald-500'}"></span>
+            <span>{entry.adapterType}</span>
           {#if entry.needsInstall}
             <span>install required</span>
           {:else if entry.needsUpdate}
@@ -857,12 +701,74 @@
           {:else}
             <span>ready</span>
           {/if}
-          {#if entry.remediation?.installCommand}
-            <Button size="sm" variant="outline" onclick={() => remediateAdapter(entry.adapterType, 'install')}>Install</Button>
-          {/if}
-          {#if entry.remediation?.updateCommand}
-            <Button size="sm" variant="outline" onclick={() => remediateAdapter(entry.adapterType, 'update')}>Update</Button>
-          {/if}
+        </div>
+      {/each}
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-border bg-card p-4">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-sm font-semibold text-foreground">Provider directory</h2>
+        <p class="text-xs text-muted-foreground">Authenticate the provider, then use the `provider/model` format in the runtime.</p>
+      </div>
+      <Badge variant="outline" class="text-[10px] uppercase tracking-[0.18em]">
+        {CREDENTIAL_PROVIDER_CARDS.length} providers
+      </Badge>
+    </div>
+    <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
+      <div class="rounded-xl border border-border bg-muted/30 p-4">
+        <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">1. Authenticate</p>
+        <p class="mt-2 text-sm text-foreground">Add the API key or sign in with OAuth for the provider.</p>
+      </div>
+      <div class="rounded-xl border border-border bg-muted/30 p-4">
+        <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">2. Select model</p>
+        <p class="mt-2 text-sm text-foreground">Pick the model using the provider/model format.</p>
+      </div>
+      <div class="rounded-xl border border-border bg-muted/30 p-4">
+        <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">3. Runtime monitors</p>
+        <p class="mt-2 text-sm text-foreground">Only tested models enter the available set.</p>
+      </div>
+    </div>
+    <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {#each CREDENTIAL_PROVIDER_CARDS as provider (provider.provider)}
+        <div class="rounded-xl border border-border bg-card p-5 transition-all hover:shadow-md">
+          <div class="flex items-start gap-3">
+            <div class="shrink-0 rounded-lg bg-muted p-2.5">
+              <ProviderIcon adapterType={provider.provider} size={22} />
+            </div>
+            <div class="min-w-0 flex-1">
+              <h3 class="text-sm font-semibold text-foreground truncate">{provider.displayName}</h3>
+              <p class="text-xs text-muted-foreground">{provider.provider}</p>
+            </div>
+            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide {AUTH_STYLES[provider.authMethod]}">
+              {provider.authMethod}
+            </span>
+          </div>
+
+          <p class="mt-3 text-xs leading-5 text-muted-foreground">{provider.description}</p>
+
+          <div class="mt-3 flex flex-wrap gap-1.5">
+            {#each provider.envVars as envVar}
+              <span class="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                {envVar}
+              </span>
+            {/each}
+          </div>
+
+          <div class="mt-3 rounded-lg border border-border/70 bg-card/80 p-3">
+            <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Model</p>
+            <p class="mt-1 font-mono text-xs text-foreground">{provider.sampleModel}</p>
+            <p class="mt-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Credential</p>
+            <p class="mt-1 font-mono text-xs text-foreground">{provider.envVars[0]}</p>
+          </div>
+
+          <div class="mt-4 flex items-center justify-between gap-2">
+            <span class="text-[10px] text-muted-foreground">Add the API key to enable this provider.</span>
+            <Button size="sm" variant="outline" onclick={() => openCredentialSecretConfig(provider)}>
+              Add API key
+            </Button>
+          </div>
         </div>
       {/each}
     </div>
@@ -925,26 +831,52 @@
       </div>
     </div>
 
-    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {#each visibleProviders as provider (provider.adapterType)}
+    {#if providerCards.length === 0}
+      <div class="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/50 py-16 px-6 text-center">
+        <div class="rounded-2xl bg-blue-500/10 p-4 mb-4">
+          <Server class="h-8 w-8 text-blue-500" />
+        </div>
+        <h2 class="text-lg font-semibold text-foreground mb-1">No provider cards available</h2>
+        <p class="max-w-md text-sm text-muted-foreground">
+          The current runtime has no visible provider summaries for this company.
+        </p>
+      </div>
+    {:else}
+      <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {#each providerCards as provider (provider.adapterType)}
         {@const total = provider.available + provider.cooldown + provider.unavailable}
         {@const barTotal = total || 1}
         <div class="rounded-xl border border-border bg-card p-5 transition-all hover:shadow-md">
-          <div class="flex items-center gap-3">
-            <div class="shrink-0 rounded-lg bg-muted p-2.5">
-              <ProviderIcon adapterType={provider.adapterType} size={22} />
-            </div>
-            <div class="min-w-0 flex-1">
-              <h3 class="text-sm font-semibold text-foreground truncate">{provider.displayName}</h3>
-              <p class="text-xs text-muted-foreground">{provider.adapterType}</p>
-            </div>
+            <div class="flex items-center gap-3">
+              <div class="shrink-0 rounded-lg bg-muted p-2.5">
+                <ProviderIcon adapterType={provider.adapterType} size={22} />
+              </div>
+              <div class="min-w-0 flex-1">
+                <h3 class="text-sm font-semibold text-foreground truncate">{provider.displayName}</h3>
+                <p class="text-xs text-muted-foreground">{provider.adapterType}</p>
+              </div>
             {#if provider.cooldown > 0}
               <span class="inline-flex items-center gap-1 rounded-full bg-yellow-500/15 px-2 py-0.5 text-xs font-semibold text-yellow-600 dark:text-yellow-400">
                 <Timer class="h-3 w-3" />
                 {provider.cooldown} cooldown
               </span>
             {/if}
-          </div>
+            </div>
+
+          {#if provider.authMethods?.length}
+            <div class="mt-3 flex flex-wrap gap-1.5">
+              {#each provider.authMethods as authMethod}
+                <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide {AUTH_STYLES[authMethod]}">
+                  {authMethod}
+                </span>
+              {/each}
+            </div>
+          {/if}
+          {#if provider.authConfigurable}
+            <p class="mt-2 text-[10px] text-muted-foreground">
+              Supports multiple auth modes for this provider.
+            </p>
+          {/if}
 
           <!-- Status counts -->
           <div class="mt-4 flex items-center gap-3 text-xs">
@@ -986,7 +918,8 @@
           </div>
         </div>
       {/each}
-    </div>
+      </div>
+    {/if}
   {/if}
 
   <!-- ── Tabs Section ────────────────────────────────────────────────── -->
@@ -999,14 +932,6 @@
       <TabsTrigger value="status">
         <Activity class="h-4 w-4" />
         Status
-      </TabsTrigger>
-      <TabsTrigger value="routing">
-        <Route class="h-4 w-4" />
-        Routing
-      </TabsTrigger>
-      <TabsTrigger value="routing-log">
-        <ScrollText class="h-4 w-4" />
-        Routing Log
       </TabsTrigger>
     </TabsList>
 
@@ -1118,7 +1043,8 @@
               {#each filteredModels as model (model.id)}
                 {@const statusStyle = getStatusStyle(model.status)}
                 {@const tierStyle = getTierStyle(model.tier)}
-                {@const billing = inferBillingType(model.adapterType, model.tier)}
+                {@const providerSummary = providerSummaries.find((p) => p.adapterType === model.adapterType)}
+                {@const billing = inferBillingType(model.adapterType, providerSummary?.authMethods ?? [], providerSummary?.billingType)}
                 {@const billingStyle = BILLING_STYLES[billing]}
                 <tr class="border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
                   <td class="px-4 py-3">
@@ -1221,7 +1147,7 @@
           <p class="text-sm text-muted-foreground">No provider status data available.</p>
         </div>
       {:else}
-        {#each providerStatuses.filter((p) => !hideUnavailable || p.models.some((m) => m.status !== 'unavailable')) as provider (provider.adapterType)}
+        {#each providerStatuses.filter((p) => !HIDDEN_ADAPTERS.includes(p.adapterType) && (!hideUnavailable || p.models.some((m) => m.status !== 'unavailable'))) as provider (provider.adapterType)}
           <div class="rounded-xl border border-border bg-card overflow-hidden">
             <div class="flex items-center gap-3 px-5 pt-5 pb-3">
               <ProviderIcon adapterType={provider.adapterType} size={20} />
@@ -1244,7 +1170,6 @@
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Error Rate</th>
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Failures</th>
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last Probed</th>
-                      <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1301,61 +1226,6 @@
                         <td class="px-5 py-3 text-right">
                           <TimeAgo date={model.lastProbed} class="text-xs" />
                         </td>
-                        <td class="px-5 py-3 text-right">
-                          <div class="flex items-center justify-end gap-1.5">
-                            {#if model.status === 'cooldown'}
-                              <button
-                                onclick={() => clearCooldown(model.adapterType, model.modelId)}
-                                class="inline-flex items-center gap-1 rounded-md bg-emerald-500/10 px-2 py-1 text-[11px] font-medium text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/20 transition-colors"
-                                title="Clear cooldown"
-                              >
-                                <ShieldCheck class="h-3 w-3" />
-                                Clear
-                              </button>
-                            {:else}
-                              {#if cooldownFormOpen === model.modelId}
-                                <div class="flex items-center gap-1.5">
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    max="1440"
-                                    bind:value={cooldownDuration}
-                                    class="h-7 w-16 rounded-md border border-input bg-background px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring/50"
-                                    placeholder="min"
-                                  />
-                                  <span class="text-[10px] text-muted-foreground">min</span>
-                                  <button
-                                    onclick={() => applyCooldown(model.adapterType, model.modelId, cooldownDuration)}
-                                    disabled={cooldownApplying}
-                                    class="inline-flex items-center gap-1 rounded-md bg-yellow-500/10 px-2 py-1 text-[11px] font-medium text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/20 transition-colors disabled:opacity-50"
-                                  >
-                                    {#if cooldownApplying}
-                                      <Loader2 class="h-3 w-3 animate-spin" />
-                                    {:else}
-                                      <Timer class="h-3 w-3" />
-                                    {/if}
-                                    Apply
-                                  </button>
-                                  <button
-                                    onclick={() => { cooldownFormOpen = null; cooldownDuration = 5; }}
-                                    class="inline-flex items-center rounded-md px-1.5 py-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
-                                  >
-                                    <XCircle class="h-3 w-3" />
-                                  </button>
-                                </div>
-                              {:else}
-                                <button
-                                  onclick={() => { cooldownFormOpen = model.modelId; cooldownDuration = 5; }}
-                                  class="inline-flex items-center gap-1 rounded-md bg-yellow-500/10 px-2 py-1 text-[11px] font-medium text-yellow-600 dark:text-yellow-400 hover:bg-yellow-500/20 transition-colors"
-                                  title="Set cooldown"
-                                >
-                                  <ShieldOff class="h-3 w-3" />
-                                  Cooldown
-                                </button>
-                              {/if}
-                            {/if}
-                          </div>
-                        </td>
                       </tr>
                     {/each}
                   </tbody>
@@ -1367,356 +1237,7 @@
       {/if}
     </TabsContent>
 
-    <!-- ── Tab 3: Routing ──────────────────────────────────────────── -->
-    <TabsContent value="routing" class="mt-4 space-y-6">
-      {#if preferencesLoading}
-        <div class="space-y-4">
-          <Skeleton class="h-12 w-full rounded-lg" />
-          <Skeleton class="h-40 w-full rounded-lg" />
-          <Skeleton class="h-24 w-full rounded-lg" />
-        </div>
-      {:else}
-        <!-- Default Model -->
-        <div class="rounded-xl border border-border bg-card p-5">
-          <h3 class="text-sm font-semibold text-foreground mb-3">Default Provider & Model</h3>
-          <div class="grid gap-3 sm:grid-cols-2">
-            <div>
-              <label for="default-provider" class="mb-1.5 block text-xs font-medium text-muted-foreground">Provider</label>
-              <select
-                id="default-provider"
-                bind:value={preferences.defaultAdapterType}
-                class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
-              >
-                <option value="">-- Use requested provider --</option>
-                {#each routingProviders as provider}
-                  <option value={provider.adapterType}>{provider.displayName}</option>
-                {/each}
-              </select>
-            </div>
-            <div>
-              <label for="default-model" class="mb-1.5 block text-xs font-medium text-muted-foreground">Model</label>
-              <select
-                id="default-model"
-                bind:value={preferences.defaultModelId}
-                class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
-              >
-                <option value="">-- Select default model --</option>
-                {#each routingModels as model}
-                  <option value={model.modelId}>{model.label} ({model.modelId})</option>
-                {/each}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <!-- Fallback Chain -->
-        <div class="rounded-xl border border-border bg-card p-5">
-          <h3 class="text-sm font-semibold text-foreground mb-3">Fallback Chain</h3>
-          <p class="text-xs text-muted-foreground mb-4">
-            When the default model is unavailable, these models are tried in order.
-          </p>
-
-          {#if preferences.fallbackChain.length === 0}
-            <p class="text-xs text-muted-foreground italic mb-4">No fallback models configured.</p>
-          {:else}
-            <div class="space-y-2 mb-4">
-              {#each preferences.fallbackChain as modelId, i (modelId + '-' + i)}
-                <div class="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
-                  <GripVertical class="h-4 w-4 text-muted-foreground shrink-0" />
-                  <span class="text-xs font-medium text-muted-foreground w-6">{i + 1}.</span>
-                  <span class="text-sm font-mono text-foreground flex-1 truncate">{modelId}</span>
-                  <button
-                    onclick={() => moveFallback(i, 'up')}
-                    disabled={i === 0}
-                    class="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-                  >
-                    <ArrowUp class="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onclick={() => moveFallback(i, 'down')}
-                    disabled={i === preferences.fallbackChain.length - 1}
-                    class="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30 transition-colors"
-                  >
-                    <ArrowDown class="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    onclick={() => removeFallback(i)}
-                    class="p-1 text-red-500 hover:text-red-600 transition-colors"
-                  >
-                    <XCircle class="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              {/each}
-            </div>
-          {/if}
-
-          <div class="flex items-center gap-2">
-            <select
-              bind:value={newFallbackModel}
-              class="h-9 flex-1 max-w-sm rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
-            >
-              <option value="">-- Add model to fallback chain --</option>
-              {#each allModelIds.filter((id) => !preferences.fallbackChain.includes(id)) as modelId}
-                <option value={modelId}>{modelId}</option>
-              {/each}
-            </select>
-            <Button
-              variant="outline"
-              size="sm"
-              onclick={() => { addFallback(newFallbackModel); newFallbackModel = ''; }}
-              disabled={!newFallbackModel}
-            >
-              Add
-            </Button>
-          </div>
-        </div>
-
-        <!-- Routing Strategy -->
-        <div class="rounded-xl border border-border bg-card p-5">
-          <h3 class="text-sm font-semibold text-foreground mb-3">Routing Strategy</h3>
-          <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {#each ROUTING_STRATEGIES as strategy}
-              <label
-                class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors {preferences.routingStrategy === strategy.value ? 'border-primary bg-primary/5' : 'border-border hover:bg-muted/50'}"
-              >
-                <input
-                  type="radio"
-                  name="routing-strategy"
-                  value={strategy.value}
-                  bind:group={preferences.routingStrategy}
-                  class="mt-0.5 accent-primary"
-                />
-                <div>
-                  <span class="text-sm font-medium text-foreground">{strategy.label}</span>
-                  <p class="text-xs text-muted-foreground mt-0.5">{strategy.description}</p>
-                </div>
-              </label>
-            {/each}
-          </div>
-        </div>
-
-        <!-- Policy Administration -->
-        <div class="rounded-xl border border-border bg-card p-5 space-y-4">
-          <div class="flex items-center justify-between gap-3">
-            <div>
-              <h3 class="text-sm font-semibold text-foreground">Routing policies</h3>
-              <p class="text-xs text-muted-foreground">Company-scoped overrides by role, agent, or task complexity.</p>
-            </div>
-            {#if routingPoliciesLoading}
-              <span class="text-xs text-muted-foreground">Loading...</span>
-            {/if}
-          </div>
-
-          <div class="grid gap-3 md:grid-cols-2">
-            <div>
-              <label for="routing-policy-name" class="mb-1.5 block text-xs font-medium text-muted-foreground">Policy name</label>
-              <Input id="routing-policy-name" bind:value={routingPolicyDraft.name} placeholder="CEO critical routing" />
-            </div>
-            <div>
-              <label for="routing-policy-role" class="mb-1.5 block text-xs font-medium text-muted-foreground">Role</label>
-              <Input id="routing-policy-role" bind:value={routingPolicyDraft.role} placeholder="ceo" />
-            </div>
-            <div>
-              <label for="routing-policy-complexity" class="mb-1.5 block text-xs font-medium text-muted-foreground">Complexity</label>
-              <select id="routing-policy-complexity" bind:value={routingPolicyDraft.complexity} class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
-                <option value="any">Any</option>
-                <option value="trivial">Trivial</option>
-                <option value="low">Low</option>
-                <option value="standard">Standard</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
-              </select>
-            </div>
-            <div>
-              <label for="routing-policy-priority" class="mb-1.5 block text-xs font-medium text-muted-foreground">Priority</label>
-              <Input id="routing-policy-priority" type="number" bind:value={routingPolicyDraft.priority} />
-            </div>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <Button size="sm" onclick={saveRoutingPolicy} disabled={!routingPolicyDraft.name.trim()}>
-              <Save class="h-4 w-4" />
-              Save policy
-            </Button>
-            <span class="text-xs text-muted-foreground">This persists to the company routing policy table.</span>
-          </div>
-
-          {#if routingPolicies.length > 0}
-            <div class="space-y-2">
-              {#each routingPolicies as policy (policy.id ?? policy.name)}
-                <div class="rounded-lg border border-border px-3 py-2 text-xs">
-                  <div class="flex flex-wrap items-center gap-2">
-                    <span class="font-medium text-foreground">{policy.name}</span>
-                    <span class="text-muted-foreground">{policy.role ?? 'any role'}</span>
-                    <span class="text-muted-foreground">{policy.complexity}</span>
-                    <span class="text-muted-foreground">prio {policy.priority}</span>
-                    <span class="text-muted-foreground">{policy.routingStrategy}</span>
-                  </div>
-                  {#if policy.description}
-                    <p class="mt-1 text-muted-foreground">{policy.description}</p>
-                  {/if}
-                </div>
-              {/each}
-            </div>
-          {/if}
-        </div>
-
-        <!-- Toggle Switches -->
-        <div class="rounded-xl border border-border bg-card p-5 space-y-4">
-          <h3 class="text-sm font-semibold text-foreground mb-1">Options</h3>
-
-          <label class="flex items-center justify-between cursor-pointer">
-            <div>
-              <span class="text-sm text-foreground">Allow cross-provider fallback</span>
-              <p class="text-xs text-muted-foreground">When a model is unavailable, try models from other providers</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={preferences.allowCrossProviderFallback}
-              aria-label="Allow cross-provider fallback"
-              title="Allow cross-provider fallback"
-              onclick={() => preferences.allowCrossProviderFallback = !preferences.allowCrossProviderFallback}
-              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {preferences.allowCrossProviderFallback ? 'bg-primary' : 'bg-muted'}"
-            >
-              <span
-                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 {preferences.allowCrossProviderFallback ? 'translate-x-5' : 'translate-x-0'}"
-              ></span>
-            </button>
-          </label>
-
-          <label class="flex items-center justify-between cursor-pointer">
-            <div>
-              <span class="text-sm text-foreground">Prefer free models</span>
-              <p class="text-xs text-muted-foreground">Prioritize models with no usage cost</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={preferences.preferFreeModels}
-              aria-label="Prefer free models"
-              title="Prefer free models"
-              onclick={() => preferences.preferFreeModels = !preferences.preferFreeModels}
-              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {preferences.preferFreeModels ? 'bg-primary' : 'bg-muted'}"
-            >
-              <span
-                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 {preferences.preferFreeModels ? 'translate-x-5' : 'translate-x-0'}"
-              ></span>
-            </button>
-          </label>
-
-          <label class="flex items-center justify-between cursor-pointer">
-            <div>
-              <span class="text-sm text-foreground">Prefer local models</span>
-              <p class="text-xs text-muted-foreground">Prioritize locally-hosted models when available</p>
-            </div>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={preferences.preferLocalModels}
-              aria-label="Prefer local models"
-              title="Prefer local models"
-              onclick={() => preferences.preferLocalModels = !preferences.preferLocalModels}
-              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {preferences.preferLocalModels ? 'bg-primary' : 'bg-muted'}"
-            >
-              <span
-                class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 {preferences.preferLocalModels ? 'translate-x-5' : 'translate-x-0'}"
-              ></span>
-            </button>
-          </label>
-        </div>
-
-        <!-- Save Button -->
-        <div class="flex items-center gap-3">
-          <Button onclick={savePreferences} disabled={savingPreferences}>
-            {#if savingPreferences}
-              <Loader2 class="h-4 w-4 animate-spin" />
-              Saving...
-            {:else}
-              <Save class="h-4 w-4" />
-              Save Preferences
-            {/if}
-          </Button>
-          {#if preferencesSaved}
-            <span class="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600 dark:text-emerald-400">
-              <CheckCircle class="h-3.5 w-3.5" />
-              Preferences saved
-            </span>
-          {/if}
-        </div>
-      {/if}
-    </TabsContent>
-
-    <!-- ── Tab 4: Routing Log ──────────────────────────────────────── -->
-      <TabsContent value="routing-log" class="mt-4 space-y-4">
-      {#if routingLogLoading}
-        <div class="space-y-3">
-          {#each Array(5) as _}
-            <Skeleton class="h-12 w-full rounded-lg" />
-          {/each}
-        </div>
-      {:else if routingLog.length === 0}
-        <div class="flex flex-col items-center justify-center rounded-xl border border-dashed border-border bg-card/50 py-16 text-center">
-          <ScrollText class="h-8 w-8 text-muted-foreground mb-3" />
-          <p class="text-sm text-muted-foreground">No routing decisions recorded yet.</p>
-          <p class="text-xs text-muted-foreground mt-1">Routing log entries appear when agents make model requests.</p>
-        </div>
-      {:else}
-        <div class="overflow-x-auto rounded-xl border border-border bg-card">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-border bg-muted/50">
-                <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Time</th>
-                <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Agent</th>
-                <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Requested</th>
-                <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Resolved</th>
-                <th class="px-4 py-2.5 text-center text-xs font-semibold uppercase tracking-wider text-muted-foreground">Type</th>
-                <th class="px-4 py-2.5 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Depth</th>
-                <th class="px-4 py-2.5 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">Reason</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each routingLog as entry, i (entry.timestamp + '-' + i)}
-                <tr class="border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
-                  <td class="px-4 py-3">
-                    <TimeAgo date={entry.timestamp} class="text-xs" />
-                  </td>
-                  <td class="px-4 py-3">
-                    <span class="text-sm font-medium text-foreground">{entry.agentName || '--'}</span>
-                  </td>
-                  <td class="px-4 py-3">
-                    <span class="text-xs font-mono text-muted-foreground">{entry.requestedModel || '--'}</span>
-                  </td>
-                  <td class="px-4 py-3">
-                    <span class="text-xs font-mono text-foreground">{entry.resolvedModel || '--'}</span>
-                  </td>
-                  <td class="px-4 py-3 text-center">
-                    {#if entry.resolutionType}
-                      <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium {RESOLUTION_STYLES[entry.resolutionType] ?? 'bg-gray-500/10 text-gray-500'}">
-                        {entry.resolutionType}
-                      </span>
-                    {:else}
-                      <span class="text-xs text-muted-foreground">--</span>
-                    {/if}
-                  </td>
-                  <td class="px-4 py-3 text-right font-mono text-xs text-foreground">
-                    {entry.fallbackDepth}
-                  </td>
-                  <td class="px-4 py-3">
-                    <span class="text-xs text-muted-foreground truncate max-w-[200px] inline-block" title={entry.reason}>
-                      {entry.reason || '--'}
-                    </span>
-                  </td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </div>
-        <p class="text-xs text-muted-foreground">
-          Showing {routingLog.length} recent routing decisions
-        </p>
-      {/if}
-    </TabsContent>
+    <!-- routing and routing-log sections removed to keep this page runtime-only -->
   </Tabs>
 </div>
 </PageLayout>

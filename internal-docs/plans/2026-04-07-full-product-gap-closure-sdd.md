@@ -17,6 +17,7 @@ This plan coordinates the remaining work as a single SDD effort.
 - Finish the adapter ecosystem so each supported adapter advertises the right discovery/readiness contract.
 - Ensure agents receive model selection automatically from role + complexity-aware routing.
 - Keep adapter-reported availability and cooldown as the source of truth for usable models.
+- Standardize probes so adapters test models with the shared PING/PONG contract and classify auth, quota, credits, unsupported, timeout, and CLI-install errors explicitly.
 - Align UI surfaces with the effective model/provider view.
 - Close validation gaps with focused tests and full-suite verification.
 - Update docs so they describe the shipped behavior, not the pre-migration state.
@@ -42,12 +43,14 @@ This plan coordinates the remaining work as a single SDD effort.
 
 - Audit remaining routing paths to ensure role + complexity policy is applied everywhere.
 - Verify fallback behavior and model availability composition.
+- Keep model availability counts strict: only real probe successes count as available; unknown must never be promoted to available.
 - Normalize model discovery and cooldown handling across adapters.
 - Keep company-scoped contracts synchronized across db/shared/server.
 
 ### 2. Adapters
 
 - Verify each supported adapter package exposes the correct metadata, readiness, and discovery contract.
+- Use the shared PING/PONG probe prompt across CLI adapters and keep their failure classification consistent.
 - Confirm the new `openai_compatible_local` adapter is wired through server + UI.
 - Audit special-case adapters (`openclaw_gateway`, `embedding_local`) and keep them in their correct contract class.
 
@@ -60,6 +63,7 @@ This plan coordinates the remaining work as a single SDD effort.
 ### 4. QA / Docs
 
 - Add or fix tests that prove routing, readiness, discovery, and fallback behavior.
+- Add tests that prove provider/model status distinguishes auth required, quota exhausted, credits exhausted, model unavailable, CLI missing, timeout, and degraded/unexpected probe output.
 - Keep docs in sync with the current shipped behavior.
 - Re-run repo-wide typecheck, tests, and build before handoff.
 
@@ -70,6 +74,24 @@ This plan coordinates the remaining work as a single SDD effort.
 3. Final UI audit for provider/model selection and admin surfaces.
 4. Test hardening for the remaining end-to-end and integration gaps.
 5. Documentation cleanup and verification pass.
+6. Probe/status contract hardening so runtime and UI no longer over-report available models.
+
+## Current TODO
+
+1. Rodada 1: mapear estado atual do backend de providers/modelos, descobertas e roteamento
+   - completed
+2. Rodada 2: mapear UI/providers, secrets e contratos de configuração
+   - completed
+3. Rodada 3: definir o contrato canônico de disponibilidade/cooldown/free/fallback
+   - in progress
+4. Rodada 4: implementar ajustes backend de discovery, classificação e roteamento
+   - in progress
+5. Rodada 5: implementar ajustes UI/UX e configuração de providers
+   - in progress
+6. Rodada 6: validar testes, build e runtime com cenários de fallback
+   - completed
+7. Rodada 7: consolidar docs e entregar resumo final
+   - completed
 
 ## Verification
 

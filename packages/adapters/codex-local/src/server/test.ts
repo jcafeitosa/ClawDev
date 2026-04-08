@@ -13,6 +13,7 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
+import { PROBE_PROMPT } from "@clawdev/adapter-utils";
 import fs from "fs/promises";
 import path from "path";
 import { parseCodexJsonl } from "./parse.js";
@@ -157,7 +158,7 @@ export async function testEnvironment(
       checks.push({
         code: "codex_hello_probe_skipped_custom_command",
         level: "info",
-        message: "Skipped hello probe because command is not `codex`.",
+        message: "Skipped PING/PONG probe because command is not `codex`.",
         detail: command,
         hint: "Use the `codex` CLI command to run the automatic login and installation probe.",
       });
@@ -223,7 +224,7 @@ export async function testEnvironment(
           env,
           timeoutSec: 45,
           graceSec: 5,
-          stdin: "Respond with hello.",
+          stdin: PROBE_PROMPT,
           onLog: async () => {},
         },
       );
@@ -235,8 +236,8 @@ export async function testEnvironment(
         checks.push({
           code: "codex_hello_probe_timed_out",
           level: "warn",
-          message: "Codex hello probe timed out.",
-          hint: "Retry the probe. If this persists, verify Codex can run `Respond with hello` from this directory manually.",
+          message: "Codex PING/PONG probe timed out.",
+          hint: "Retry the probe. If this persists, verify Codex can run the PING/PONG probe from this directory manually.",
         });
       } else if ((probe.exitCode ?? 1) === 0) {
         const summary = parsed.summary.trim();
@@ -245,13 +246,13 @@ export async function testEnvironment(
           code: hasHello ? "codex_hello_probe_passed" : "codex_hello_probe_unexpected_output",
           level: hasHello ? "info" : "warn",
           message: hasHello
-            ? "Codex hello probe succeeded."
-            : "Codex probe ran but did not return `hello` as expected.",
+            ? "Codex PING/PONG probe succeeded."
+            : "Codex probe ran but did not return `PONG` as expected.",
           ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
           ...(hasHello
             ? {}
             : {
-                hint: "Try the probe manually (`codex exec --json -` then prompt: Respond with hello) to inspect full output.",
+                hint: "Try the probe manually (`codex exec --json -` then prompt the PING/PONG question) to inspect full output.",
               }),
         });
       } else if (CODEX_AUTH_REQUIRED_RE.test(authEvidence)) {
@@ -266,9 +267,9 @@ export async function testEnvironment(
         checks.push({
           code: "codex_hello_probe_failed",
           level: "error",
-          message: "Codex hello probe failed.",
+          message: "Codex PING/PONG probe failed.",
           ...(detail ? { detail } : {}),
-          hint: "Run `codex exec --json -` manually in this working directory and prompt `Respond with hello` to debug.",
+          hint: "Run `codex exec --json -` manually in this working directory and prompt the PING/PONG question to debug.",
         });
       }
     }

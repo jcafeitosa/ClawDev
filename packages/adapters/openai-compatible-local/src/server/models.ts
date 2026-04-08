@@ -1,11 +1,12 @@
 import type { AdapterModel } from "@clawdev/adapter-utils";
 import { asString } from "@clawdev/adapter-utils/server-utils";
+import { resolveOpenAICompatibleBaseUrlCandidates } from "./shared.js";
 
 const CACHE_TTL_MS = 30_000;
 const discoveryCache = new Map<string, { expiresAt: number; models: AdapterModel[] }>();
 
 function normalizeBaseUrl(input: unknown): string {
-  const raw = asString(input, "http://localhost:11434/v1").trim();
+  const raw = asString(input, "").trim();
   return raw.replace(/\/$/, "");
 }
 
@@ -50,14 +51,30 @@ export async function listOpenAICompatibleModels(input: {
   baseUrl?: unknown;
   apiKey?: unknown;
 } = {}): Promise<AdapterModel[]> {
-  const baseUrl = normalizeBaseUrl(input.baseUrl);
   const apiKey = normalizeApiKey(input.apiKey);
-  const key = cacheKey(baseUrl, apiKey);
-  const cached = discoveryCache.get(key);
   const now = Date.now();
-  if (cached && cached.expiresAt > now) return cached.models;
+  const candidates = resolveOpenAICompatibleBaseUrlCandidates(input.baseUrl);
+  if (candidates.length === 0) return [];
 
-  const models = await fetchModelList(baseUrl, apiKey);
-  discoveryCache.set(key, { expiresAt: now + CACHE_TTL_MS, models });
-  return models;
+  const aggregated = new Map<string, AdapterModel>();
+  for (const candidate of candidates) {
+    const baseUrl = normalizeBaseUrl(candidate);
+    if (!baseUrl) continue;
+    const key = cacheKey(baseUrl, apiKey);
+    const cached = discoveryCache.get(key);
+    if (cached && cached.expiresAt > now) {
+      for (const model of cached.models) aggregated.set(model.id, model);
+      continue;
+    }
+
+    try {
+      const models = await fetchModelList(baseUrl, apiKey);
+      discoveryCache.set(key, { expiresAt: now + CACHE_TTL_MS, models });
+      for (const model of models) aggregated.set(model.id, model);
+    } catch {
+      // Ignore unreachable candidates and continue probing the remaining ones.
+    }
+  }
+
+  return [...aggregated.values()];
 }

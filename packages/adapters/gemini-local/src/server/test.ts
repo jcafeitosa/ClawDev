@@ -18,6 +18,7 @@ import {
   parseObject,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
+import { PROBE_PROMPT } from "@clawdev/adapter-utils";
 import { DEFAULT_GEMINI_LOCAL_MODEL } from "../index.js";
 import { detectGeminiAuthRequired, detectGeminiQuotaExhausted, parseGeminiJsonl } from "./parse.js";
 import { firstNonEmptyLine } from "./utils.js";
@@ -140,7 +141,7 @@ export async function testEnvironment(
       code: "gemini_api_key_missing",
       level: "info",
       message: "No explicit API key detected. Gemini CLI may still authenticate via `gemini auth login` (OAuth).",
-      hint: "If the hello probe fails with an auth error, set GEMINI_API_KEY or GOOGLE_API_KEY in adapter env, or run `gemini auth login`.",
+      hint: "If the PING/PONG probe fails with an auth error, set GEMINI_API_KEY or GOOGLE_API_KEY in adapter env, or run `gemini auth login`.",
     });
   }
 
@@ -151,7 +152,7 @@ export async function testEnvironment(
       checks.push({
         code: "gemini_hello_probe_skipped_custom_command",
         level: "info",
-        message: "Skipped hello probe because command is not `gemini`.",
+        message: "Skipped PING/PONG probe because command is not `gemini`.",
         detail: command,
         hint: "Use the `gemini` CLI command to run the automatic installation and auth probe.",
       });
@@ -192,7 +193,7 @@ export async function testEnvironment(
         return asStringArray(config.args);
       })();
 
-      const args = ["--output-format", "stream-json", "--prompt", "Respond with hello."];
+      const args = ["--output-format", "stream-json", "--prompt", PROBE_PROMPT];
       if (model && model !== DEFAULT_GEMINI_LOCAL_MODEL) args.push("--model", model);
       if (approvalMode !== "default") args.push("--approval-mode", approvalMode);
       if (sandbox) {
@@ -241,8 +242,8 @@ export async function testEnvironment(
         checks.push({
           code: "gemini_hello_probe_timed_out",
           level: "warn",
-          message: "Gemini hello probe timed out.",
-          hint: "Retry the probe. If this persists, verify Gemini can run `Respond with hello.` from this directory manually.",
+          message: "Gemini PING/PONG probe timed out.",
+          hint: "Retry the probe. If this persists, verify Gemini can run the PING/PONG probe from this directory manually.",
         });
       } else if ((probe.exitCode ?? 1) === 0) {
         const summary = parsed.summary.trim();
@@ -251,13 +252,13 @@ export async function testEnvironment(
           code: hasHello ? "gemini_hello_probe_passed" : "gemini_hello_probe_unexpected_output",
           level: hasHello ? "info" : "warn",
           message: hasHello
-            ? "Gemini hello probe succeeded."
-            : "Gemini probe ran but did not return `hello` as expected.",
+            ? "Gemini PING/PONG probe succeeded."
+            : "Gemini probe ran but did not return `PONG` as expected.",
           ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
           ...(hasHello
             ? {}
             : {
-              hint: "Try `gemini --output-format json \"Respond with hello.\"` manually to inspect full output.",
+              hint: "Try `gemini --output-format json` manually with the PING/PONG question to inspect full output.",
             }),
         });
       } else if (authMeta.requiresAuth) {
@@ -272,9 +273,9 @@ export async function testEnvironment(
         checks.push({
           code: "gemini_hello_probe_failed",
           level: "error",
-          message: "Gemini hello probe failed.",
+          message: "Gemini PING/PONG probe failed.",
           ...(detail ? { detail } : {}),
-          hint: "Run `gemini --output-format json \"Respond with hello.\"` manually in this working directory to debug.",
+          hint: "Run `gemini --output-format json` manually in this working directory with the PING/PONG question to debug.",
         });
       }
     }

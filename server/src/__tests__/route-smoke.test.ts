@@ -10,6 +10,8 @@ const mockActivityList = vi.hoisted(() => vi.fn());
 const mockCostSummary = vi.hoisted(() => vi.fn());
 const mockInstanceGeneralGet = vi.hoisted(() => vi.fn());
 const mockInstanceExperimentalGet = vi.hoisted(() => vi.fn());
+const mockGoalList = vi.hoisted(() => vi.fn());
+const mockProjectList = vi.hoisted(() => vi.fn());
 const mockBudgetOverview = vi.hoisted(() => vi.fn());
 const mockBudgetListPolicies = vi.hoisted(() => vi.fn());
 const mockSearchSemantic = vi.hoisted(() => vi.fn());
@@ -72,6 +74,14 @@ vi.mock("../services/index.js", () => ({
     getByIdentifier: vi.fn(),
     getAncestors: vi.fn().mockResolvedValue([]),
     findMentionedProjectIds: vi.fn().mockResolvedValue([]),
+  }),
+  goalService: () => ({
+    list: mockGoalList,
+    getById: vi.fn(),
+  }),
+  projectService: () => ({
+    list: mockProjectList,
+    getById: vi.fn(),
   }),
   companySkillService: () => ({
     list: vi.fn(),
@@ -180,9 +190,10 @@ function createDbStub(joinRequestCount = 0) {
 }
 
 async function createApp() {
-  const [{ companyRoutes }, { agentRoutes }, { dashboardRoutes }, { sidebarBadgeRoutes }, { budgetRoutes }, { searchRoutes }, { llmRoutes }, { secretRoutes }, { activityRoutes }, { instanceSettingsRoutes }, { costRoutes }] =
+  const [{ companyRoutes }, { companyIssueRoutes }, { agentRoutes }, { dashboardRoutes }, { sidebarBadgeRoutes }, { budgetRoutes }, { searchRoutes }, { llmRoutes }, { secretRoutes }, { activityRoutes }, { instanceSettingsRoutes }, { costRoutes }] =
     await Promise.all([
       import("../routes/companies.js"),
+      import("../routes/issues.js"),
       import("../routes/agents.js"),
       import("../routes/dashboard.js"),
       import("../routes/sidebar-badges.js"),
@@ -206,6 +217,7 @@ async function createApp() {
     }))
     .use(dashboardRoutes({} as any))
     .use(companyRoutes({} as any, {} as any))
+    .use(companyIssueRoutes({} as any))
     .use(agentRoutes({} as any))
     .use(activityRoutes({} as any))
     .use(instanceSettingsRoutes({} as any))
@@ -228,6 +240,8 @@ describe("route smoke coverage", () => {
     mockCostSummary.mockReset();
     mockInstanceGeneralGet.mockReset();
     mockInstanceExperimentalGet.mockReset();
+    mockGoalList.mockReset();
+    mockProjectList.mockReset();
     mockBudgetOverview.mockReset();
     mockBudgetListPolicies.mockReset();
     mockSearchSemantic.mockReset();
@@ -242,6 +256,12 @@ describe("route smoke coverage", () => {
     mockSecretUpdate.mockReset();
     mockSecretRemove.mockReset();
     mockLogActivity.mockReset();
+  });
+
+  it("mounts company-scoped issue routes", async () => {
+    const app = await createApp();
+    const res = await app.handle(new Request(`http://localhost/companies/${COMPANY_ID}/issues?limit=1`));
+    expect(res.status).not.toBe(404);
   });
 
   it(

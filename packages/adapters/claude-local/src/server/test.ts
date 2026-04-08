@@ -15,6 +15,7 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
+import { PROBE_PROMPT } from "@clawdev/adapter-utils";
 import path from "path";
 import { detectClaudeLoginRequired, parseClaudeStreamJson } from "./parse.js";
 import { normalizeClaudeModelArg, sanitizeClaudeExtraArgs } from "./execute.js";
@@ -151,7 +152,7 @@ export async function testEnvironment(
       checks.push({
         code: "claude_hello_probe_skipped_custom_command",
         level: "info",
-        message: "Skipped hello probe because command is not `claude`.",
+        message: "Skipped PING/PONG probe because command is not `claude`.",
         detail: command,
         hint: "Use the `claude` CLI command to run the automatic login and installation probe.",
       });
@@ -211,7 +212,7 @@ export async function testEnvironment(
           env,
           timeoutSec: 45,
           graceSec: 5,
-          stdin: "Respond with hello.",
+          stdin: PROBE_PROMPT,
           onLog: async () => {},
         },
       );
@@ -229,8 +230,8 @@ export async function testEnvironment(
         checks.push({
           code: "claude_hello_probe_timed_out",
           level: "warn",
-          message: "Claude hello probe timed out.",
-          hint: "Retry the probe. If this persists, verify Claude can run `Respond with hello` from this directory manually.",
+          message: "Claude PING/PONG probe timed out.",
+          hint: "Retry the probe. If this persists, verify Claude can run the PING/PONG probe from this directory manually.",
         });
       } else if (loginMeta.requiresLogin) {
         checks.push({
@@ -249,22 +250,22 @@ export async function testEnvironment(
           code: hasHello ? "claude_hello_probe_passed" : "claude_hello_probe_unexpected_output",
           level: hasHello ? "info" : "warn",
           message: hasHello
-            ? "Claude hello probe succeeded."
-            : "Claude probe ran but did not return `hello` as expected.",
+            ? "Claude PING/PONG probe succeeded."
+            : "Claude probe ran but did not return `PONG` as expected.",
           ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
           ...(hasHello
             ? {}
             : {
-                hint: "Try the probe manually (`claude --print - --output-format stream-json --verbose`) and prompt `Respond with hello`.",
+                hint: "Try the probe manually (`claude --print - --output-format stream-json --verbose`) and prompt the PING/PONG question.",
               }),
         });
       } else {
         checks.push({
           code: "claude_hello_probe_failed",
           level: "error",
-          message: "Claude hello probe failed.",
+          message: "Claude PING/PONG probe failed.",
           ...(detail ? { detail } : {}),
-          hint: "Run `claude --print - --output-format stream-json --verbose` manually in this directory and prompt `Respond with hello` to debug.",
+          hint: "Run `claude --print - --output-format stream-json --verbose` manually in this directory and prompt the PING/PONG question to debug.",
         });
       }
     }

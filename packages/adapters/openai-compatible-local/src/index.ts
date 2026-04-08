@@ -1,5 +1,5 @@
 export const type = "openai_compatible_local";
-export const label = "OpenAI-Compatible Local";
+export const label = "Local Models";
 
 export const models: Array<{ id: string; label: string }> = [];
 

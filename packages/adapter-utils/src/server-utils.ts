@@ -805,15 +805,33 @@ export async function runChildProcess(
     });
     const pid = child.pid ?? null;
     const stdin = child.stdin ?? null;
+    const writeStdinSafely = (chunk: string | Uint8Array) => {
+      if (!stdin) return;
+      try {
+        stdin.write(chunk);
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException | undefined)?.code;
+        if (code !== "EPIPE") throw err;
+      }
+    };
+    const endStdinSafely = () => {
+      if (!stdin) return;
+      try {
+        stdin.end();
+      } catch (err) {
+        const code = (err as NodeJS.ErrnoException | undefined)?.code;
+        if (code !== "EPIPE") throw err;
+      }
+    };
     const wrapper = {
       pid,
       stdin: stdin
         ? {
             write(chunk: string | Uint8Array) {
-              stdin.write(chunk);
+              writeStdinSafely(chunk);
             },
             end() {
-              stdin.end();
+              endStdinSafely();
             },
           }
         : null,
@@ -826,8 +844,8 @@ export async function runChildProcess(
     runningProcesses.set(runId, { child: wrapper, graceSec: opts.graceSec });
 
     if (opts.stdin != null && stdin) {
-      stdin.write(opts.stdin);
-      stdin.end();
+      writeStdinSafely(opts.stdin);
+      endStdinSafely();
     }
 
     if (pid && opts.onSpawn) {

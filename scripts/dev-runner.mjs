@@ -77,8 +77,34 @@ if (process.env.npm_config_authenticated_private === "true") {
 const env = {
   ...process.env,
   CLAWDEV_UI_DEV_MIDDLEWARE: "true",
-  CLAWDEV_DB_RUNTIME: "pglite",
 };
+
+if (!env.CLAWDEV_DB_RUNTIME) {
+  env.CLAWDEV_DB_RUNTIME = "postgres";
+}
+
+if (!env.DATABASE_URL) {
+  const dbUser = env.USER?.trim() || env.LOGNAME?.trim() || "postgres";
+  env.DATABASE_URL = `postgres://${encodeURIComponent(dbUser)}@127.0.0.1:5432/clawdev`;
+}
+
+if (env.CLAWDEV_DB_RUNTIME !== "pglite") {
+  delete env.PGHOST;
+  delete env.PGPORT;
+}
+
+if (!env.REDIS_URL) {
+  env.REDIS_URL = "redis://127.0.0.1:6379";
+}
+
+if (env.TIMESCALEDB_ENABLED === undefined) {
+  env.TIMESCALEDB_ENABLED = "false";
+}
+
+if (env.CLAWDEV_MIGRATION_SKIP_CHECK === undefined && env.CLAWDEV_DB_RUNTIME !== "pglite") {
+  env.CLAWDEV_MIGRATION_SKIP_CHECK = "true";
+}
+
 const usingPGliteRuntime = env.CLAWDEV_DB_RUNTIME === "pglite";
 if (!env.CLAWDEV_UI_PORT) {
   env.CLAWDEV_UI_PORT = String(await findFreePort(5175));
@@ -311,6 +337,15 @@ async function getMigrationStatusPayload() {
   if (usingPGliteRuntime) {
     return {
       source: "pglite",
+      status: "upToDate",
+      tableCount: 0,
+      pendingMigrations: [],
+    };
+  }
+
+  if (env.CLAWDEV_MIGRATION_SKIP_CHECK === "true") {
+    return {
+      source: "dev-runner-skip-check",
       status: "upToDate",
       tableCount: 0,
       pendingMigrations: [],

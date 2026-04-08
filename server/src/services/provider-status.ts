@@ -1,6 +1,6 @@
 import { and, eq, lt, sql, isNull, or, inArray } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
-import { providerModelStatus } from "@clawdev/db";
+import { modelCatalog, providerModelStatus } from "@clawdev/db";
 
 /**
  * Exponential moving average smoothing factor.
@@ -136,7 +136,7 @@ export function createProviderStatusService(db: Db) {
 
     /**
      * Check whether a model is available for routing.
-     * A model is available if its status is "available" or "unknown"
+     * A model is available only if its status is "available"
      * AND it is not currently in an active cooldown window.
      *
      * If the row has status "cooldown" but cooldownUntil has passed,
@@ -150,7 +150,7 @@ export function createProviderStatusService(db: Db) {
           and(
             eq(providerModelStatus.adapterType, adapterType),
             eq(providerModelStatus.modelId, modelId),
-            inArray(providerModelStatus.status, ["available", "unknown"]),
+            eq(providerModelStatus.status, "available"),
             or(
               isNull(providerModelStatus.cooldownUntil),
               lt(providerModelStatus.cooldownUntil, new Date()),
@@ -205,7 +205,7 @@ export function createProviderStatusService(db: Db) {
     },
 
     /**
-     * Return all models with status "available" or "unknown" that are not in cooldown.
+     * Return all models with status "available" that are not in cooldown.
      * Optionally filter by adapter type.
      */
     async getAvailableModels(
@@ -219,7 +219,7 @@ export function createProviderStatusService(db: Db) {
       }>
     > {
       const conditions = [
-        inArray(providerModelStatus.status, ["available", "unknown"]),
+        eq(providerModelStatus.status, "available"),
         or(
           isNull(providerModelStatus.cooldownUntil),
           lt(providerModelStatus.cooldownUntil, new Date()),
@@ -346,6 +346,7 @@ export function createProviderStatusService(db: Db) {
       Array<{
         provider: string;
         total: number;
+        free: number;
         available: number;
         cooldown: number;
         unavailable: number;
@@ -355,9 +356,20 @@ export function createProviderStatusService(db: Db) {
         .select({
           provider: providerModelStatus.adapterType,
           total: sql<number>`count(*)::int`,
-          available: sql<number>`count(*) FILTER (WHERE ${providerModelStatus.status} IN ('available', 'unknown'))::int`,
+          free: sql<number>`
+            count(*) FILTER (
+              WHERE EXISTS (
+                SELECT 1
+                FROM ${modelCatalog} mc
+                WHERE mc.adapter_type = ${providerModelStatus.adapterType}
+                  AND mc.model_id = ${providerModelStatus.modelId}
+                  AND mc.is_free = true
+              )
+            )::int
+          `,
+          available: sql<number>`count(*) FILTER (WHERE ${providerModelStatus.status} = 'available')::int`,
           cooldown: sql<number>`count(*) FILTER (WHERE ${providerModelStatus.status} = 'cooldown')::int`,
-          unavailable: sql<number>`count(*) FILTER (WHERE ${providerModelStatus.status} IN ('unavailable', 'degraded', 'quota_exceeded', 'auth_required'))::int`,
+          unavailable: sql<number>`count(*) FILTER (WHERE ${providerModelStatus.status} IN ('unknown', 'unavailable', 'degraded', 'quota_exceeded', 'auth_required'))::int`,
         })
         .from(providerModelStatus)
         .groupBy(providerModelStatus.adapterType);

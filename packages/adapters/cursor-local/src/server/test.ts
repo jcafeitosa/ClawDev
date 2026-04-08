@@ -12,6 +12,7 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
+import { PROBE_PROMPT } from "@clawdev/adapter-utils";
 import fs from "fs/promises";
 import os from "os";
 import path from "path";
@@ -199,7 +200,7 @@ export async function testEnvironment(
       checks.push({
         code: "cursor_hello_probe_skipped_custom_command",
         level: "info",
-        message: "Skipped hello probe because command is not `cursor-agent`.",
+        message: "Skipped PING/PONG probe because command is not `cursor-agent`.",
         detail: command,
         hint: "Use the `cursor-agent` CLI command to run the automatic installation and auth probe.",
       });
@@ -241,7 +242,7 @@ export async function testEnvironment(
       if (model) args.push("--model", model);
       if (autoTrustEnabled) args.push("--yolo");
       if (extraArgs.length > 0) args.push(...extraArgs);
-      args.push("Respond with hello.");
+      args.push(PROBE_PROMPT);
 
       const probe = await runChildProcess(
         `cursor-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -263,8 +264,8 @@ export async function testEnvironment(
         checks.push({
           code: "cursor_hello_probe_timed_out",
           level: "warn",
-          message: "Cursor hello probe timed out.",
-          hint: "Retry the probe. If this persists, verify `cursor-agent -p --mode ask --output-format json \"Respond with hello.\"` manually.",
+          message: "Cursor PING/PONG probe timed out.",
+          hint: "Retry the probe. If this persists, verify `cursor-agent -p --mode ask --output-format json` with the PING/PONG question manually.",
         });
       } else if ((probe.exitCode ?? 1) === 0) {
         const summary = parsed.summary.trim();
@@ -273,13 +274,13 @@ export async function testEnvironment(
           code: hasHello ? "cursor_hello_probe_passed" : "cursor_hello_probe_unexpected_output",
           level: hasHello ? "info" : "warn",
           message: hasHello
-            ? "Cursor hello probe succeeded."
-            : "Cursor probe ran but did not return `hello` as expected.",
+            ? "Cursor PING/PONG probe succeeded."
+            : "Cursor probe ran but did not return `PONG` as expected.",
           ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
           ...(hasHello
             ? {}
             : {
-                hint: "Try `cursor-agent -p --mode ask --output-format json \"Respond with hello.\"` manually to inspect full output.",
+                hint: "Try `cursor-agent -p --mode ask --output-format json` manually with the PING/PONG question to inspect full output.",
               }),
         });
       } else if (CURSOR_AUTH_REQUIRED_RE.test(authEvidence)) {
@@ -294,9 +295,9 @@ export async function testEnvironment(
         checks.push({
           code: "cursor_hello_probe_failed",
           level: "error",
-          message: "Cursor hello probe failed.",
+          message: "Cursor PING/PONG probe failed.",
           ...(detail ? { detail } : {}),
-          hint: "Run `cursor-agent -p --mode ask --output-format json \"Respond with hello.\"` manually in this working directory to debug.",
+          hint: "Run `cursor-agent -p --mode ask --output-format json` manually in this working directory with the PING/PONG question to debug.",
         });
       }
     }

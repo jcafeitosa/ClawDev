@@ -134,10 +134,20 @@ function bunSpawn(options: BunSpawnOptions) {
   const stdin = child.stdin
     ? {
         write(chunk: string | Uint8Array) {
-          child.stdin!.write(chunk);
+          try {
+            child.stdin!.write(chunk);
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException | undefined)?.code;
+            if (code !== "EPIPE") throw err;
+          }
         },
         end() {
-          child.stdin!.end();
+          try {
+            child.stdin!.end();
+          } catch (err) {
+            const code = (err as NodeJS.ErrnoException | undefined)?.code;
+            if (code !== "EPIPE") throw err;
+          }
         },
       }
     : {

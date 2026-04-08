@@ -112,7 +112,8 @@ export function createModelDiscoveryService(
         let { models } = result.value;
 
         // For adapters that only list models without probing,
-        // run CLI probes to get real availability status
+        // run CLI probes to get real availability status.
+        // Any model that remains unknown must not be promoted to available.
         const hasBuiltInProbing = models.some((m) => m.status && m.status !== "available");
         if (!hasBuiltInProbing && PROBE_CONFIGS[adapterType]) {
           try {
@@ -124,6 +125,14 @@ export function createModelDiscoveryService(
               `CLI probe for ${adapterType} failed`,
             );
           }
+        }
+
+        if (!hasBuiltInProbing && !PROBE_CONFIGS[adapterType]) {
+          models = models.map((model) => ({
+            ...model,
+            status: model.status && model.status !== "available" ? model.status : "unknown",
+            statusDetail: model.statusDetail ?? "Discovery only; no real probe available",
+          }));
         }
 
         const modelIds: string[] = [];
