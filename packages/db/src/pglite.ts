@@ -1,6 +1,6 @@
-import { mkdirSync, rmSync } from "node:fs";
-import { readFile, readdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { mkdirSync, rmSync } from "fs";
+import { readFile, readdir } from "fs/promises";
+import { fileURLToPath } from "url";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
 import * as schema from "./schema/index.js";

@@ -11,6 +11,7 @@ const ADAPTER_LABELS: Record<string, string> = {
   copilot_local: "GitHub Copilot (Local)",
   opencode_local: "OpenCode (Local)",
   pi_local: "Pi (Local)",
+  openai_compatible_local: "OpenAI-Compatible (Local)",
   cursor: "Cursor",
   openclaw_gateway: "OpenClaw Gateway",
   gemini_local: "Gemini (Local)",
@@ -24,6 +25,7 @@ const SUPPORTED_SELECTION_ADAPTERS: string[] = [
   "gemini_local",
   "opencode_local",
   "pi_local",
+  "openai_compatible_local",
   "openclaw_gateway",
 ];
 

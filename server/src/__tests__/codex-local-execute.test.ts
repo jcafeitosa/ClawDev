@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 import { execute } from "@clawdev/adapter-codex-local/server";
 
 async function writeFakeCodexCommand(commandPath: string): Promise<void> {
   const script = `#!/usr/bin/env node
-const fs = require("node:fs");
+const fs = require("fs");
 
 const capturePath = process.env.CLAWDEV_TEST_CAPTURE_PATH;
 const payload = {

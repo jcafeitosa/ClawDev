@@ -1,8 +1,8 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { readFile } from "node:fs/promises";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
+import { readFile } from "fs/promises";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@clawdev/adapter-utils";
 import {
   asString,
@@ -20,7 +20,7 @@ import {
   joinPromptSections,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
-import { parseCopilotOutput } from "./parse.js";
+import { classifyCopilotError, parseCopilotOutput } from "./parse.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -56,6 +56,13 @@ function firstNonEmptyLine(text: string): string {
   );
 }
 
+function mapErrorCodeForResult(
+  parsedErrorCode: ReturnType<typeof classifyCopilotError>,
+): "quota_exceeded" | "auth_required" | "session_not_found" | "model_unavailable" | "runtime_extract_failed" | "rate_limited" | undefined {
+  if (!parsedErrorCode) return undefined;
+  return parsedErrorCode;
+}
+
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
   const { runId, agent, runtime, config, context, onLog, onMeta, onSpawn, authToken } = ctx;
 
@@ -80,6 +87,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const noAskUser = config.noAskUser === true;
   const noCustomInstructions = config.noCustomInstructions === true;
   const experimental = config.experimental === true;
+  const continueSession = config.continueSession === true;
+  const disableParallelToolsExecution = config.disableParallelToolsExecution === true;
+  const disallowTempDir = config.disallowTempDir === true;
+  const enableReasoningSummaries = config.enableReasoningSummaries === true;
+  const stream = asString(config.stream, "");
+  const sharePath = asString(config.sharePath, "");
+  const shareGist = config.shareGist === true;
+  const logLevel = asString(config.logLevel, "");
+  const logDir = asString(config.logDir, "");
+  const pluginDirs = asStringArray(config.pluginDirs);
   const yolo = config.yolo !== false; // default true
   const allowAllTools = config.allowAllTools === true;
   const allowAllPaths = config.allowAllPaths === true;
@@ -294,6 +311,15 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (noAskUser) args.push("--no-ask-user");
     if (noCustomInstructions) args.push("--no-custom-instructions");
     if (experimental) args.push("--experimental");
+    if (continueSession) args.push("--continue");
+    if (disableParallelToolsExecution) args.push("--disable-parallel-tools-execution");
+    if (disallowTempDir) args.push("--disallow-temp-dir");
+    if (enableReasoningSummaries) args.push("--enable-reasoning-summaries");
+    if (stream === "on" || stream === "off") args.push("--stream", stream);
+    if (sharePath) args.push("--share", sharePath);
+    if (shareGist) args.push("--share-gist");
+    if (logLevel) args.push("--log-level", logLevel);
+    if (logDir) args.push("--log-dir", logDir);
 
     // Config
     if (configDir) args.push("--config-dir", configDir);
@@ -301,6 +327,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     // Directories (internal skills dir always included first)
     args.push("--add-dir", skillsDir);
     for (const d of addDirs) args.push("--add-dir", d);
+    for (const pluginDir of pluginDirs) args.push("--plugin-dir", pluginDir);
 
     // MCP
     if (disableBuiltinMcps) args.push("--disable-builtin-mcps");
@@ -379,6 +406,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       : null;
     const parsedError = typeof attempt.parsed.errorMessage === "string" ? attempt.parsed.errorMessage.trim() : "";
     const stderrLine = firstNonEmptyLine(attempt.proc.stderr);
+    const classifiedError = classifyCopilotError(`${parsedError}\n${attempt.proc.stderr}`);
     const fallbackErrorMessage =
       parsedError ||
       stderrLine ||
@@ -391,10 +419,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       errorMessage:
         (attempt.proc.exitCode ?? 0) === 0
           ? null
-          : attempt.parsed.quotaError
+          : classifiedError === "quota_exceeded" && attempt.parsed.quotaError
             ? `Copilot quota exceeded: ${attempt.parsed.quotaError.message}`
             : fallbackErrorMessage,
-      errorCode: attempt.parsed.quotaError ? "quota_exceeded" : undefined,
+      errorCode: mapErrorCodeForResult(classifiedError),
       usage: attempt.parsed.usage,
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,
@@ -419,7 +447,16 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   try {
     const initial = await runAttempt(sessionId);
-    return toResult(initial);
+    const initialResult = toResult(initial);
+    if (sessionId && initialResult.errorCode === "session_not_found") {
+      await onLog(
+        "stderr",
+        `[clawdev] Copilot session "${sessionId}" is no longer valid; retrying without resume.\n`,
+      );
+      const retry = await runAttempt(null);
+      return toResult(retry);
+    }
+    return initialResult;
   } finally {
     // Cleanup temp skills directory
     fs.rm(skillsDir, { recursive: true, force: true }).catch(() => {});

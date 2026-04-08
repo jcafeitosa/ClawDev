@@ -12,8 +12,10 @@
     getHierarchyPresetDefinition,
     getHierarchyPresetDepartments,
     getHierarchyPresetOperatingRules,
+    getHierarchyPresetSeedAgents,
     listHierarchyPresetDefinitions,
     type HierarchyPreset,
+    type HierarchySeedBlueprint,
   } from "@clawdev/shared";
 
   const TOTAL_STEPS = 4;
@@ -58,18 +60,21 @@
     "gemini_local",
     "opencode_local",
     "pi_local",
+    "openai_compatible_local",
   ]);
   const MODEL_FILTERS: Partial<Record<string, { providers?: string[]; idPrefix?: string }>> = {
     claude_local: { providers: ["anthropic"] },
     codex_local: { providers: ["openai"] },
     gemini_local: { providers: ["google"] },
     opencode_local: { idPrefix: "opencode/" },
+    openai_compatible_local: { providers: ["openai"] },
   };
   const MODEL_PROVIDER_LABELS: Record<string, string> = {
     claude_local: "Anthropic",
     codex_local: "OpenAI",
     gemini_local: "Google",
     opencode_local: "OpenCode",
+    openai_compatible_local: "OpenAI-Compatible Local",
     copilot_local: "Copilot",
     cursor: "Cursor",
     pi_local: "Pi",
@@ -91,6 +96,9 @@
   let taskDescription = $state("Use SDD to turn the company plan into action.\n\n- confirm the spec and acceptance criteria\n- break the roadmap into concrete workstreams\n- delegate execution to the right department and validate the result");
   let taskSpec = $state("Define the first actionable work item for the company launch plan and make it clear enough to execute.");
   let taskDesign = $state("Map the work into a single-owner execution slice that can be completed without cross-team ambiguity.");
+  let taskRisk = $state("The main risk is startup scope drift, so keep the task narrow and verify ownership before execution.");
+  let taskRollout = $state("Roll out the task as one controlled execution slice and confirm the first checkpoint before expanding.");
+  let taskRollback = $state("If the task becomes unsafe, pause execution, revert the change, and reopen the work for review.");
   let taskValidation = $state("Confirm the work is scoped, assigned, and ready for the first execution pass.");
   let adminNameId = "setup-admin-name";
   let adminEmailId = "setup-admin-email";
@@ -100,6 +108,12 @@
   let agentNameId = "setup-agent-name";
   let taskTitleId = "setup-task-title";
   let taskDescriptionId = "setup-task-description";
+  let taskSpecId = "setup-task-spec";
+  let taskDesignId = "setup-task-design";
+  let taskRiskId = "setup-task-risk";
+  let taskRolloutId = "setup-task-rollout";
+  let taskRollbackId = "setup-task-rollback";
+  let taskValidationId = "setup-task-validation";
 
   const stepMeta: Array<{ label: string }> = [
     { label: "Company" },
@@ -301,13 +315,14 @@
     selectedProviderModelsError = null;
 
     try {
-      const res = await api(`/api/companies/${createdCompanyId}/adapters/${adapterType}/models`);
+      const res = await api(`/api/models?adapterType=${encodeURIComponent(adapterType)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.message ?? `Failed to load ${adapterType} models (${res.status})`);
       }
       const data = await res.json();
-      const models = filterAdapterModels(normalizeAdapterModels(data));
+      const raw = Array.isArray(data?.models) ? data.models : [];
+      const models = filterAdapterModels(normalizeAdapterModels(raw).filter((model) => model.status === "available" || model.status === "cooldown"));
       if (requestId !== selectedProviderModelsRequestId) return;
       selectedProviderModels = models;
       const currentModel = typeof adapterConfig.model === "string" ? adapterConfig.model.trim() : "";
@@ -399,6 +414,8 @@
     }
   }
 
+  let createdSeedAgents = $state<Array<{ key: string; id: string; name: string; role: string }>>([]);
+
   async function handleAgentStep() {
     if (!createdCompany || loading) return;
     // If agent already created, just advance to step 3
@@ -410,7 +427,10 @@
     error = null;
     loading = true;
     try {
-      const res = await api(`/api/companies/${createdCompany.id}/agents`, {
+      const companyId = createdCompany.id;
+
+      // 1. Create the CEO agent
+      const res = await api(`/api/companies/${companyId}/agents`, {
         method: "POST",
         body: JSON.stringify({
           name: agentName,
@@ -425,9 +445,49 @@
         error = body?.message ?? `Failed to create agent (${res.status})`;
         return;
       }
-      const agent = await res.json();
-      createdAgent = agent;
+      const ceoAgent = await res.json();
+      createdAgent = ceoAgent;
       createdAgentTitle = selectedHierarchyPresetDefinition()?.rootTitle ?? "Chief Executive Officer";
+
+      // 2. Create seed agents from the hierarchy preset
+      const seedBlueprints = getHierarchyPresetSeedAgents(hierarchyPreset);
+      if (seedBlueprints.length > 0) {
+        // Map blueprint keys to real agent IDs: CEO key → ceoAgent.id
+        const keyToId: Record<string, string> = { ceo: ceoAgent.id };
+
+        // Sort by dependency — create managers before their reports
+        const sorted = topologicalSortSeeds(seedBlueprints, "ceo");
+
+        for (const seed of sorted) {
+          const reportsToId = keyToId[seed.reportsToKey] ?? ceoAgent.id;
+          try {
+            const seedRes = await api(`/api/companies/${companyId}/agents`, {
+              method: "POST",
+              body: JSON.stringify({
+                name: seed.name,
+                role: seed.role,
+                adapterType,
+                title: seed.title,
+                reportsTo: reportsToId,
+                status: "idle",
+              }),
+            });
+            if (seedRes.ok) {
+              const seedAgent = await seedRes.json();
+              keyToId[seed.key] = seedAgent.id;
+              createdSeedAgents = [...createdSeedAgents, {
+                key: seed.key,
+                id: seedAgent.id,
+                name: seed.name,
+                role: seed.role,
+              }];
+            }
+          } catch {
+            // Non-blocking — seed agent creation failure shouldn't stop onboarding
+          }
+        }
+      }
+
       markCompleted(2);
       currentStep = 3;
     } catch (err) {
@@ -435,6 +495,31 @@
     } finally {
       loading = false;
     }
+  }
+
+  /** Topological sort: parents before children, skip the CEO key (already created). */
+  function topologicalSortSeeds(seeds: HierarchySeedBlueprint[], ceoKey: string): HierarchySeedBlueprint[] {
+    const byKey = new Map(seeds.map((s) => [s.key, s]));
+    const sorted: HierarchySeedBlueprint[] = [];
+    const visited = new Set<string>();
+    visited.add(ceoKey); // CEO already exists
+
+    function visit(key: string) {
+      if (visited.has(key)) return;
+      const seed = byKey.get(key);
+      if (!seed) return;
+      // Visit parent first
+      if (seed.reportsToKey !== ceoKey && !visited.has(seed.reportsToKey)) {
+        visit(seed.reportsToKey);
+      }
+      visited.add(key);
+      sorted.push(seed);
+    }
+
+    for (const seed of seeds) {
+      visit(seed.key);
+    }
+    return sorted;
   }
 
   // Store created entities for launch summary
@@ -474,6 +559,9 @@
           description: companyMission || undefined,
           sddSpec: `Establish the first operational project for ${companyName || "the company"}.`,
           sddDesign: `Use the ${selectedHierarchyPresetDefinition()?.label ?? "selected"} hierarchy to organize the onboarding work into a safe delivery path.`,
+          sddRisk: "The main risk is onboarding drift, so keep the first project narrow and verify the setup path before execution.",
+          sddRollout: "Roll out onboarding in one controlled project slice, then add agents and tasks only after the launch path is stable.",
+          sddRollback: "If onboarding fails validation, pause the launch, revert the incomplete setup, and retry from the beginning.",
           sddValidation: "Confirm the onboarding project can support agent setup, task intake, and launch readiness.",
         };
         if (createdGoalId) {
@@ -495,7 +583,10 @@
         description: taskDescription || undefined,
         sddSpec: taskSpec,
         sddDesign: taskDesign,
-        sddValidation: taskValidation || undefined,
+        sddRisk: taskRisk,
+        sddRollout: taskRollout,
+        sddRollback: taskRollback,
+        sddValidation: taskValidation,
         status: "todo",
       };
       if (createdAgent) issueBody.assigneeAgentId = createdAgent.id;
@@ -862,25 +953,57 @@
           </div>
           <div class="grid gap-4 lg:grid-cols-2">
             <div>
-              <label class="text-xs text-gray-400 mb-1 block">Spec *</label>
+              <label for={taskSpecId} class="text-xs text-gray-400 mb-1 block">Spec *</label>
               <textarea
+                id={taskSpecId}
                 class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[110px] text-gray-900"
                 placeholder="State the problem and acceptance criteria..."
                 bind:value={taskSpec}
               ></textarea>
             </div>
             <div>
-              <label class="text-xs text-gray-400 mb-1 block">Design *</label>
+              <label for={taskDesignId} class="text-xs text-gray-400 mb-1 block">Design *</label>
               <textarea
+                id={taskDesignId}
                 class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[110px] text-gray-900"
                 placeholder="Map the delivery path and ownership..."
                 bind:value={taskDesign}
               ></textarea>
             </div>
           </div>
+          <div class="grid gap-4 lg:grid-cols-3">
+            <div>
+              <label for={taskRiskId} class="text-xs text-gray-400 mb-1 block">Risk *</label>
+              <textarea
+                id={taskRiskId}
+                class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[110px] text-gray-900"
+                placeholder="Describe the main delivery risks and mitigations."
+                bind:value={taskRisk}
+              ></textarea>
+            </div>
+            <div>
+              <label for={taskRolloutId} class="text-xs text-gray-400 mb-1 block">Rollout *</label>
+              <textarea
+                id={taskRolloutId}
+                class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[110px] text-gray-900"
+                placeholder="Describe the safe rollout path."
+                bind:value={taskRollout}
+              ></textarea>
+            </div>
+            <div>
+              <label for={taskRollbackId} class="text-xs text-gray-400 mb-1 block">Rollback *</label>
+              <textarea
+                id={taskRollbackId}
+                class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[110px] text-gray-900"
+                placeholder="Describe how to reverse the change safely."
+                bind:value={taskRollback}
+              ></textarea>
+            </div>
+          </div>
           <div>
-            <label class="text-xs text-gray-400 mb-1 block">Validation</label>
+            <label for={taskValidationId} class="text-xs text-gray-400 mb-1 block">Validation *</label>
             <textarea
+              id={taskValidationId}
               class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 placeholder:text-gray-300 resize-none min-h-[80px] text-gray-900"
               placeholder="How will we confirm the result is safe and correct?"
               bind:value={taskValidation}
@@ -901,7 +1024,7 @@
           <p class="text-sm text-gray-500">
             {createdCompany?.name ?? "Your company"} is set up and ready to go.
             {#if createdAgent}
-              {createdAgent.name} is standing by as your CEO.
+              {createdAgent.name} is standing by as your CEO{createdSeedAgents.length > 0 ? ` with ${createdSeedAgents.length} team members` : ""}.
             {/if}
             {#if createdIssue?.identifier}
               Your first task <strong>{createdIssue.identifier}</strong> is assigned and the agent is being woken up.
@@ -926,6 +1049,16 @@
                   {#if createdAgentTitle}
                     <span class="text-xs text-gray-500"> · {createdAgentTitle}</span>
                   {/if}
+                </span>
+                <Check class="h-4 w-4 text-green-500" />
+              </div>
+            {/if}
+            {#if createdSeedAgents.length > 0}
+              <div class="flex items-center gap-3 px-4 py-3">
+                <Bot class="h-4 w-4 text-gray-400" />
+                <span class="text-xs text-gray-500">Team</span>
+                <span class="text-sm font-medium text-gray-900 ml-auto">
+                  {createdSeedAgents.length} agent{createdSeedAgents.length !== 1 ? "s" : ""} created
                 </span>
                 <Check class="h-4 w-4 text-green-500" />
               </div>

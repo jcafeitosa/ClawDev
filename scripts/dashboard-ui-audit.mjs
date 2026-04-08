@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { readdir, readFile } from "node:fs/promises";
-import path from "node:path";
-import process from "node:process";
+import { readdir, readFile } from "fs/promises";
+import path from "path";
+import process from "process";
 
 const ROUTES_ROOT = path.join(process.cwd(), "svelte-ui", "src", "routes");
 const SHADCN_PRIMITIVES = [

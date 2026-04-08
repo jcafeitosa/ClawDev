@@ -1,9 +1,9 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import fs from "node:fs/promises";
-import net from "node:net";
-import { createHash, randomUUID } from "node:crypto";
-import path from "node:path";
-import { setTimeout as delay } from "node:timers/promises";
+import { spawn, type ChildProcess } from "child_process";
+import fs from "fs/promises";
+import net from "net";
+import { createHash, randomUUID } from "crypto";
+import path from "path";
+import { setTimeout as delay } from "timers/promises";
 import type { AdapterRuntimeServiceReport } from "@clawdev/adapter-utils";
 import type { Db } from "@clawdev/db";
 import { executionWorkspaces, projectWorkspaces, workspaceRuntimeServices } from "@clawdev/db";
@@ -1254,7 +1254,7 @@ async function startLocalRuntimeService(input: {
     env[portEnvKey] = String(port);
   }
   const envFingerprint = createHash("sha256").update(stableStringify(envConfig)).digest("hex");
-  const serviceKey = createLocalServiceKey({
+  const serviceKey = await createLocalServiceKey({
     profileKind: "workspace-runtime",
     serviceName,
     cwd: serviceCwd,

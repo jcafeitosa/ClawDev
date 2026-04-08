@@ -1,10 +1,10 @@
-import fs from "node:fs";
+import fs from "fs";
 import type { ClawDevConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
 import { resolveRuntimeLikePath } from "./path-resolver.js";
 
-export function logCheck(config: ClawDevConfig, configPath?: string): CheckResult {
-  const logDir = resolveRuntimeLikePath(config.logging.logDir, configPath);
+export async function logCheck(config: ClawDevConfig, configPath?: string): Promise<CheckResult> {
+  const logDir = await resolveRuntimeLikePath(config.logging.logDir, configPath);
   const reportedDir = logDir;
 
   if (!fs.existsSync(logDir)) {

@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
+import { randomBytes } from "crypto";
+import fs from "fs";
+import path from "path";
 import type { ClawDevConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
 import { resolveRuntimeLikePath } from "./path-resolver.js";
@@ -45,7 +45,7 @@ function withStrictModeNote(
   };
 }
 
-export function secretsCheck(config: ClawDevConfig, configPath?: string): CheckResult {
+export async function secretsCheck(config: ClawDevConfig, configPath?: string): Promise<CheckResult> {
   const provider = config.secrets.provider;
   if (provider !== "local_encrypted") {
     return {
@@ -85,7 +85,7 @@ export function secretsCheck(config: ClawDevConfig, configPath?: string): CheckR
     keyFileOverride && keyFileOverride.trim().length > 0
       ? keyFileOverride.trim()
       : config.secrets.localEncrypted.keyFilePath;
-  const keyFilePath = resolveRuntimeLikePath(configuredPath, configPath);
+  const keyFilePath = await resolveRuntimeLikePath(configuredPath, configPath);
 
   if (!fs.existsSync(keyFilePath)) {
     return withStrictModeNote(

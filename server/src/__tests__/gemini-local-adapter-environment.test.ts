@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 import { testEnvironment } from "@clawdev/adapter-gemini-local/server";
 
 async function writeFakeGeminiCommand(binDir: string, argsCapturePath: string): Promise<string> {
   const commandPath = path.join(binDir, "gemini");
   const script = `#!/usr/bin/env node
-const fs = require("node:fs");
+const fs = require("fs");
 const outPath = process.env.CLAWDEV_TEST_ARGS_PATH;
 if (outPath) {
   fs.writeFileSync(outPath, JSON.stringify(process.argv.slice(2)), "utf8");

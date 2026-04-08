@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 import { testEnvironment } from "@clawdev/adapter-opencode-local/server";
 
 describe("opencode_local environment diagnostics", () => {

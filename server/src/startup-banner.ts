@@ -1,4 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
 import { resolveClawDevConfigPath, resolveClawDevEnvPath } from "./paths.js";
 import type { DeploymentExposure, DeploymentMode } from "@clawdev/shared";
 
@@ -71,12 +70,12 @@ function redactConnectionString(raw: string): string {
   }
 }
 
-function resolveAgentJwtSecretStatus(
+async function resolveAgentJwtSecretStatus(
   envFilePath: string,
-): {
+): Promise<{
   status: "pass" | "warn";
   message: string;
-} {
+}> {
   const envValue = process.env.CLAWDEV_AGENT_JWT_SECRET?.trim();
   if (envValue) {
     return {
@@ -85,8 +84,8 @@ function resolveAgentJwtSecretStatus(
     };
   }
 
-  if (existsSync(envFilePath)) {
-    const parsed = parseEnvFileContents(readFileSync(envFilePath, "utf-8"));
+  if (await Bun.file(envFilePath).exists()) {
+    const parsed = parseEnvFileContents(await Bun.file(envFilePath).text());
     const fileValue = typeof parsed.CLAWDEV_AGENT_JWT_SECRET === "string" ? parsed.CLAWDEV_AGENT_JWT_SECRET.trim() : "";
     if (fileValue) {
       return {
@@ -102,14 +101,14 @@ function resolveAgentJwtSecretStatus(
   };
 }
 
-export function printStartupBanner(opts: StartupBannerOptions): void {
+export async function printStartupBanner(opts: StartupBannerOptions): Promise<void> {
   const baseHost = opts.host === "0.0.0.0" ? "localhost" : opts.host;
   const baseUrl = `http://${baseHost}:${opts.listenPort}`;
   const apiUrl = `${baseUrl}/api`;
   const uiUrl = opts.uiMode === "none" ? "disabled" : baseUrl;
   const configPath = resolveClawDevConfigPath();
   const envFilePath = resolveClawDevEnvPath();
-  const agentJwtSecret = resolveAgentJwtSecretStatus(envFilePath);
+  const agentJwtSecret = await resolveAgentJwtSecretStatus(envFilePath);
 
   const dbMode =
     opts.db.mode === "embedded-postgres"

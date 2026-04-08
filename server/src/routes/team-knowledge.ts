@@ -36,7 +36,7 @@ export function teamKnowledgeRoutes(db: Db) {
             limit: query?.limit ? parseInt(query.limit) : undefined,
           });
         } catch (error) {
-          logger.error("GET /agent-teams/:id/knowledge error:", error);
+          logger.error({ err: error }, "GET /agent-teams/:id/knowledge error");
           throw error;
         }
       },
@@ -63,7 +63,7 @@ export function teamKnowledgeRoutes(db: Db) {
             tags: query?.tags ? query.tags.split(",") : undefined,
           });
         } catch (error) {
-          logger.error("GET /agent-teams/:id/knowledge/search error:", error);
+          logger.error({ err: error }, "GET /agent-teams/:id/knowledge/search error");
           throw error;
         }
       },
@@ -102,7 +102,7 @@ export function teamKnowledgeRoutes(db: Db) {
           set.status = 201;
           return entry;
         } catch (error) {
-          logger.error("POST /agent-teams/:id/knowledge error:", error);
+          logger.error({ err: error }, "POST /agent-teams/:id/knowledge error");
           throw error;
         }
       },
@@ -122,7 +122,7 @@ export function teamKnowledgeRoutes(db: Db) {
           }
           return entry;
         } catch (error) {
-          logger.error("GET /team-knowledge/:id error:", error);
+          logger.error({ err: error }, "GET /team-knowledge/:id error");
           throw error;
         }
       },
@@ -142,7 +142,7 @@ export function teamKnowledgeRoutes(db: Db) {
           }
           return updated;
         } catch (error) {
-          logger.error("PATCH /team-knowledge/:id error:", error);
+          logger.error({ err: error }, "PATCH /team-knowledge/:id error");
           throw error;
         }
       },
@@ -162,7 +162,7 @@ export function teamKnowledgeRoutes(db: Db) {
           }
           return deleted;
         } catch (error) {
-          logger.error("DELETE /team-knowledge/:id error:", error);
+          logger.error({ err: error }, "DELETE /team-knowledge/:id error");
           throw error;
         }
       },

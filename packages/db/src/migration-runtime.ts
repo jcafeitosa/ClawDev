@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, rmSync } from "node:fs";
-import { createServer } from "node:net";
-import path from "node:path";
+import { existsSync, readFileSync, rmSync } from "fs";
+import { createServer } from "net";
+import path from "path";
 import { ensurePostgresDatabase, getPostgresDataDirectory } from "./client.js";
 import { createEmbeddedPostgresLogBuffer, formatEmbeddedPostgresError } from "./embedded-postgres-error.js";
 import { resolveDatabaseTarget } from "./runtime-config.js";

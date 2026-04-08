@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import { isLevelCAgentRole } from "@clawdev/shared";
 
 const DEFAULT_AGENT_BUNDLE_FILES = {
@@ -17,7 +16,7 @@ export async function loadDefaultAgentInstructionsBundle(role: DefaultAgentBundl
   const fileNames = DEFAULT_AGENT_BUNDLE_FILES[role];
   const entries = await Promise.all(
     fileNames.map(async (fileName) => {
-      const content = await fs.readFile(resolveDefaultAgentBundleUrl(role, fileName), "utf8");
+      const content = await Bun.file(resolveDefaultAgentBundleUrl(role, fileName)).text();
       return [fileName, content] as const;
     }),
   );

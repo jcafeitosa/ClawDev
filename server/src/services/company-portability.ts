@@ -1,8 +1,5 @@
-import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
-import { execFile } from "node:child_process";
-import path from "node:path";
-import { promisify } from "node:util";
+import * as fs from "fs/promises";
+import path from "path";
 import type { Db } from "@clawdev/db";
 import type {
   CompanyPortabilityAgentManifestEntry,
@@ -38,6 +35,7 @@ import {
   ROUTINE_STATUSES,
   ROUTINE_TRIGGER_KINDS,
   ROUTINE_TRIGGER_SIGNING_MODES,
+  composeStructuredSddDescription,
   deriveProjectUrlKey,
   normalizeAgentUrlKey,
 } from "@clawdev/shared";
@@ -115,7 +113,6 @@ const DEFAULT_INCLUDE: CompanyPortabilityInclude = {
 };
 
 const DEFAULT_COLLISION_STRATEGY: CompanyPortabilityCollisionStrategy = "rename";
-const execFileAsync = promisify(execFile);
 let bundledSkillsCommitPromise: Promise<string | null> | null = null;
 
 function resolveImportMode(options?: ImportBehaviorOptions): ImportMode {
@@ -197,7 +194,11 @@ function deriveManifestSkillKey(
 }
 
 function hashSkillValue(value: string) {
-  return createHash("sha256").update(value).digest("hex").slice(0, 8);
+  let hash = 0;
+  for (let i = 0; i < value.length; i++) {
+    hash = Math.imul(31, hash) + value.charCodeAt(i) | 0;
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
 }
 
 function normalizeExportPathSegment(value: string | null | undefined, preserveCase = false) {
@@ -717,7 +718,15 @@ function stripPortableProjectExecutionWorkspaceRefs(policy: Record<string, unkno
 }
 
 async function readGitOutput(cwd: string, args: string[]) {
-  const { stdout } = await execFileAsync("git", ["-C", cwd, ...args], { cwd });
+  const proc = Bun.spawn({
+    cmd: ["git", "-C", cwd, ...args],
+    cwd,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const stdout = await new Response(proc.stdout).text();
+  await proc.exited;
   const trimmed = stdout.trim();
   return trimmed.length > 0 ? trimmed : null;
 }
@@ -1271,9 +1280,23 @@ function bufferToPortableBinaryFile(buffer: Buffer, contentType: string | null):
   };
 }
 
-async function streamToBuffer(stream: NodeJS.ReadableStream) {
+async function streamToBuffer(stream: ReadableStream<Uint8Array> | NodeJS.ReadableStream) {
   const chunks: Buffer[] = [];
-  for await (const chunk of stream) {
+  if (stream && typeof (stream as ReadableStream<Uint8Array>).getReader === "function") {
+    const reader = (stream as ReadableStream<Uint8Array>).getReader();
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) chunks.push(Buffer.from(value));
+      }
+    } finally {
+      reader.releaseLock();
+    }
+    return Buffer.concat(chunks);
+  }
+
+  for await (const chunk of stream as NodeJS.ReadableStream) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   }
   return Buffer.concat(chunks);
@@ -1851,12 +1874,18 @@ function applySelectedFilesToSource(source: ResolvedSource, selectedFiles?: stri
 
 async function resolveBundledSkillsCommit() {
   if (!bundledSkillsCommitPromise) {
-    bundledSkillsCommitPromise = execFileAsync("git", ["rev-parse", "HEAD"], {
-      cwd: process.cwd(),
-      encoding: "utf8",
-    })
-      .then(({ stdout }) => stdout.trim() || null)
-      .catch(() => null);
+    bundledSkillsCommitPromise = (async () => {
+      const proc = Bun.spawn({
+        cmd: ["git", "rev-parse", "HEAD"],
+        cwd: process.cwd(),
+        stdin: "ignore",
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const stdout = await new Response(proc.stdout).text();
+      await proc.exited;
+      return stdout.trim() || null;
+    })().catch(() => null);
   }
   return bundledSkillsCommitPromise;
 }
@@ -3185,7 +3214,7 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
 
     for (const routine of selectedRoutineRows) {
       const taskSlug = taskSlugByRoutineId.get(routine.id)!;
-      const projectSlug = projectSlugById.get(routine.projectId) ?? null;
+      const projectSlug = routine.projectId ? projectSlugById.get(routine.projectId) ?? null : null;
       const taskPath = `tasks/${taskSlug}/TASK.md`;
       const assigneeSlug = idToSlug.get(routine.assigneeAgentId) ?? null;
       files[taskPath] = buildMarkdown(
@@ -4037,7 +4066,16 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
         const projectWorkspaceIdByKey = new Map<string, string>();
         const projectPatch = {
           name: planProject.plannedName,
-          description: manifestProject.description,
+          description: composeStructuredSddDescription({
+            subjectLabel: `Project: ${manifestProject.name}`,
+            summary: manifestProject.description,
+            spec: `Import and restore the portable project ${manifestProject.name} into the target company with the same ownership, status, and workspace topology from the package.`,
+            design: `Recreate the project using the exported portable manifest, then attach any imported workspaces and execution policy metadata before handing it back to the target company.`,
+            risk: `Main risk is losing workspace or ownership references during import, so verify every linked entity before marking the project ready.`,
+            rollout: `Import into a target company clone first, validate the hydrated project, then promote the result after confirming ownership and status.`,
+            rollback: `If any workspace or ownership link fails validation, discard the imported project and re-run the import from the original export package.`,
+            validation: `Confirm the imported project exists in the target company, retains the expected name and status, and has its workspaces reattached where available.`,
+          }),
           leadAgentId: projectLeadAgentId,
           targetDate: manifestProject.targetDate,
           color: manifestProject.color,
@@ -4228,7 +4266,16 @@ export function companyPortabilityService(db: Db, storage?: StorageService) {
           projectId,
           projectWorkspaceId,
           title: manifestIssue.title,
-          description,
+          description: composeStructuredSddDescription({
+            subjectLabel: `Task: ${manifestIssue.title}`,
+            summary: description,
+            spec: `Import the portable task ${manifestIssue.title} into the target company while preserving assignment, project linkage, status, and priority from the package.`,
+            design: `Create the task directly from the portable manifest, then reattach any imported project workspace references and keep the execution metadata aligned with the source package.`,
+            risk: `Importing the task can drop the assignment or workspace context, so verify those links before the task becomes actionable.`,
+            rollout: `Create the task in a target company staging pass, then confirm the final assignment and project mapping before release.`,
+            rollback: `If assignment or workspace metadata is missing, remove the imported task and retry the portability run from the source package.`,
+            validation: `Confirm the imported task appears in the target company with the expected title, status, priority, and relationships.`,
+          }),
           assigneeAgentId,
           status: manifestIssue.status && ISSUE_STATUSES.includes(manifestIssue.status as any)
             ? manifestIssue.status as typeof ISSUE_STATUSES[number]

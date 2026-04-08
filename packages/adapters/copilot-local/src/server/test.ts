@@ -12,9 +12,10 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
-import { readFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { readFile } from "fs/promises";
+import os from "os";
+import path from "path";
+import { classifyCopilotError } from "./parse.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -221,19 +222,34 @@ export async function testEnvironment(
     );
     const combined = quotaProbe.stdout + quotaProbe.stderr;
     const lowerCombined = combined.toLowerCase();
-    if (lowerCombined.includes('"errortype":"quota"') || lowerCombined.includes("no quota") || lowerCombined.includes("402")) {
+    const classifiedError = classifyCopilotError(combined);
+    if (classifiedError === "runtime_extract_failed") {
+      checks.push({
+        code: "copilot_runtime_extract_failed",
+        level: "error",
+        message: "Copilot runtime failed to extract bundled package (cache/permission error).",
+        hint: "Clear Copilot cache and verify write permissions under ~/Library/Caches/copilot/pkg.",
+      });
+    } else if (classifiedError === "quota_exceeded" || lowerCombined.includes('"errortype":"quota"') || lowerCombined.includes("no quota") || lowerCombined.includes("402")) {
       checks.push({
         code: "copilot_model_no_quota",
         level: "error",
         message: `Model "${probeModel}" has no quota — requests will fail.`,
         hint: "Select a different model or check your GitHub Copilot subscription at https://github.com/settings/copilot",
       });
-    } else if (lowerCombined.includes("not available")) {
+    } else if (classifiedError === "model_unavailable" || lowerCombined.includes("not available")) {
       checks.push({
         code: "copilot_model_unavailable",
         level: "error",
         message: `Model "${probeModel}" is not available on your Copilot plan.`,
         hint: "Select a model marked with ✅ in the model selector.",
+      });
+    } else if (classifiedError === "auth_required") {
+      checks.push({
+        code: "copilot_auth_required",
+        level: "error",
+        message: "Copilot authentication is required.",
+        hint: "Run `copilot login` and retry the environment test.",
       });
     } else if (quotaProbe.timedOut) {
       checks.push({

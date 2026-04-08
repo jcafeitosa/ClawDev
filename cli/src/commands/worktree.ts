@@ -11,12 +11,9 @@ import {
   statSync,
   symlinkSync,
   writeFileSync,
-} from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execFileSync } from "node:child_process";
-import { createServer } from "node:net";
-import { Readable } from "node:stream";
+} from "fs";
+import os from "os";
+import path from "path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { and, eq, inArray, sql } from "drizzle-orm";
@@ -146,6 +143,12 @@ type GitWorkspaceInfo = {
   hooksPath: string;
 };
 
+type CommandResult = {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
+};
+
 type CopiedGitHooksResult = {
   sourceHooksPath: string;
   targetHooksPath: string;
@@ -235,8 +238,8 @@ async function s3BodyToBuffer(body: unknown): Promise<Buffer> {
   if (Buffer.isBuffer(body)) {
     return body;
   }
-  if (body instanceof Readable) {
-    return await streamToBuffer(body);
+  if (typeof (body as { [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] === "function") {
+    return await streamToBuffer(body as AsyncIterable<Uint8Array | string>);
   }
 
   const candidate = body as {
@@ -344,7 +347,7 @@ function openConfiguredStorage(configPath: string): ConfiguredStorage {
   return createConfiguredStorageFromClawDevConfig(config);
 }
 
-async function streamToBuffer(stream: NodeJS.ReadableStream): Promise<Buffer> {
+async function streamToBuffer(stream: AsyncIterable<Uint8Array | string>): Promise<Buffer> {
   const chunks: Buffer[] = [];
   for await (const chunk of stream) {
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
@@ -384,6 +387,25 @@ export function resolveWorktreeMakeTargetPath(name: string): string {
   return path.resolve(os.homedir(), resolveWorktreeMakeName(name));
 }
 
+async function runCommand(cmd: string[], input: { cwd?: string }): Promise<CommandResult> {
+  const subprocess = Bun.spawn({
+    cmd,
+    cwd: input.cwd,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(subprocess.stdout).text(),
+    new Response(subprocess.stderr).text(),
+    subprocess.exited,
+  ]);
+  return { stdout, stderr, exitCode };
+}
+
+async function runGitCommand(args: string[], input: { cwd?: string }): Promise<CommandResult> {
+  return await runCommand(["git", ...args], input);
+}
+
 function extractExecSyncErrorMessage(error: unknown): string | null {
   if (!error || typeof error !== "object") {
     return error instanceof Error ? error.message : null;
@@ -400,16 +422,9 @@ function extractExecSyncErrorMessage(error: unknown): string | null {
   return error instanceof Error ? nonEmpty(error.message) : null;
 }
 
-function localBranchExists(cwd: string, branchName: string): boolean {
-  try {
-    execFileSync("git", ["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], {
-      cwd,
-      stdio: "ignore",
-    });
-    return true;
-  } catch {
-    return false;
-  }
+async function localBranchExists(cwd: string, branchName: string): Promise<boolean> {
+  const result = await runGitCommand(["show-ref", "--verify", "--quiet", `refs/heads/${branchName}`], { cwd });
+  return result.exitCode === 0;
 }
 
 export function resolveGitWorktreeAddArgs(input: {
@@ -425,10 +440,10 @@ export function resolveGitWorktreeAddArgs(input: {
   return ["worktree", "add", "-b", input.branchName, input.targetPath, commitish];
 }
 
-function readPidFilePort(postmasterPidFile: string): number | null {
-  if (!existsSync(postmasterPidFile)) return null;
+async function readPidFilePort(postmasterPidFile: string): Promise<number | null> {
+  if (!(await Bun.file(postmasterPidFile).exists())) return null;
   try {
-    const lines = readFileSync(postmasterPidFile, "utf8").split("\n");
+    const lines = (await Bun.file(postmasterPidFile).text()).split("\n");
     const port = Number(lines[3]?.trim());
     return Number.isInteger(port) && port > 0 ? port : null;
   } catch {
@@ -436,10 +451,10 @@ function readPidFilePort(postmasterPidFile: string): number | null {
   }
 }
 
-function readRunningPostmasterPid(postmasterPidFile: string): number | null {
-  if (!existsSync(postmasterPidFile)) return null;
+async function readRunningPostmasterPid(postmasterPidFile: string): Promise<number | null> {
+  if (!(await Bun.file(postmasterPidFile).exists())) return null;
   try {
-    const pid = Number(readFileSync(postmasterPidFile, "utf8").split("\n")[0]?.trim());
+    const pid = Number((await Bun.file(postmasterPidFile).text()).split("\n")[0]?.trim());
     if (!Number.isInteger(pid) || pid <= 0) return null;
     process.kill(pid, 0);
     return pid;
@@ -449,20 +464,20 @@ function readRunningPostmasterPid(postmasterPidFile: string): number | null {
 }
 
 async function isPortAvailable(port: number): Promise<boolean> {
-  return await new Promise<boolean>((resolve) => {
-    const server = createServer();
-    server.unref();
-    server.once("error", (err: NodeJS.ErrnoException) => {
-      if (err.code === "EPERM" || err.code === "EACCES") {
-        resolve(true);
-        return;
-      }
-      resolve(false);
+  try {
+    const server = Bun.serve({
+      hostname: "127.0.0.1",
+      port,
+      fetch() {
+        return new Response("ok");
+      },
     });
-    server.listen(port, "127.0.0.1", () => {
-      server.close(() => resolve(true));
-    });
-  });
+    server.stop(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 async function findAvailablePort(preferredPort: number, reserved = new Set<number>()): Promise<number> {
@@ -485,31 +500,31 @@ function resolveRepoManagedWorktreesRoot(cwd: string): string | null {
   return path.resolve(repoRoot, ".clawdev", "worktrees");
 }
 
-function collectClaimedWorktreePorts(homeDir: string, currentInstanceId: string, cwd: string): {
+async function collectClaimedWorktreePorts(homeDir: string, currentInstanceId: string, cwd: string): Promise<{
   serverPorts: Set<number>;
   databasePorts: Set<number>;
-} {
+}> {
   const serverPorts = new Set<number>();
   const databasePorts = new Set<number>();
   const configPaths = new Set<string>();
   const instancesDir = path.resolve(homeDir, "instances");
-  if (existsSync(instancesDir)) {
-    for (const entry of readdirSync(instancesDir, { withFileTypes: true })) {
+  if (await Bun.file(instancesDir).exists()) {
+    for (const entry of await fsPromises.readdir(instancesDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name === currentInstanceId) continue;
 
       const configPath = path.resolve(instancesDir, entry.name, "config.json");
-      if (existsSync(configPath)) {
+      if (await Bun.file(configPath).exists()) {
         configPaths.add(configPath);
       }
     }
   }
 
   const repoManagedWorktreesRoot = resolveRepoManagedWorktreesRoot(cwd);
-  if (repoManagedWorktreesRoot && existsSync(repoManagedWorktreesRoot)) {
-    for (const entry of readdirSync(repoManagedWorktreesRoot, { withFileTypes: true })) {
+  if (repoManagedWorktreesRoot && await Bun.file(repoManagedWorktreesRoot).exists()) {
+    for (const entry of await fsPromises.readdir(repoManagedWorktreesRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
       const configPath = path.resolve(repoManagedWorktreesRoot, entry.name, ".clawdev", "config.json");
-      if (existsSync(configPath)) {
+      if (await Bun.file(configPath).exists()) {
         configPaths.add(configPath);
       }
     }
@@ -532,59 +547,38 @@ function collectClaimedWorktreePorts(homeDir: string, currentInstanceId: string,
   return { serverPorts, databasePorts };
 }
 
-function detectGitBranchName(cwd: string): string | null {
-  try {
-    const value = execFileSync("git", ["branch", "--show-current"], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return nonEmpty(value);
-  } catch {
-    return null;
-  }
+async function detectGitBranchName(cwd: string): Promise<string | null> {
+  const result = await runGitCommand(["branch", "--show-current"], { cwd });
+  return result.exitCode === 0 ? nonEmpty(result.stdout.trim()) : null;
 }
 
-function detectGitWorkspaceInfo(cwd: string): GitWorkspaceInfo | null {
-  try {
-    const root = execFileSync("git", ["rev-parse", "--show-toplevel"], {
-      cwd,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    const commonDirRaw = execFileSync("git", ["rev-parse", "--git-common-dir"], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    const gitDirRaw = execFileSync("git", ["rev-parse", "--git-dir"], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    const hooksPathRaw = execFileSync("git", ["rev-parse", "--git-path", "hooks"], {
-      cwd: root,
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    return {
-      root: path.resolve(root),
-      commonDir: path.resolve(root, commonDirRaw),
-      gitDir: path.resolve(root, gitDirRaw),
-      hooksPath: path.resolve(root, hooksPathRaw),
-    };
-  } catch {
+async function detectGitWorkspaceInfo(cwd: string): Promise<GitWorkspaceInfo | null> {
+  const rootResult = await runGitCommand(["rev-parse", "--show-toplevel"], { cwd });
+  if (rootResult.exitCode !== 0) return null;
+  const root = rootResult.stdout.trim();
+  const [commonDirResult, gitDirResult, hooksPathResult] = await Promise.all([
+    runGitCommand(["rev-parse", "--git-common-dir"], { cwd: root }),
+    runGitCommand(["rev-parse", "--git-dir"], { cwd: root }),
+    runGitCommand(["rev-parse", "--git-path", "hooks"], { cwd: root }),
+  ]);
+  if (commonDirResult.exitCode !== 0 || gitDirResult.exitCode !== 0 || hooksPathResult.exitCode !== 0) {
     return null;
   }
+  return {
+    root: path.resolve(root),
+    commonDir: path.resolve(root, commonDirResult.stdout.trim()),
+    gitDir: path.resolve(root, gitDirResult.stdout.trim()),
+    hooksPath: path.resolve(root, hooksPathResult.stdout.trim()),
+  };
 }
 
-function copyDirectoryContents(sourceDir: string, targetDir: string): boolean {
-  if (!existsSync(sourceDir)) return false;
+async function copyDirectoryContents(sourceDir: string, targetDir: string): Promise<boolean> {
+  if (!(await Bun.file(sourceDir).exists())) return false;
 
-  const entries = readdirSync(sourceDir, { withFileTypes: true });
+  const entries = await fsPromises.readdir(sourceDir, { withFileTypes: true });
   if (entries.length === 0) return false;
 
-  mkdirSync(targetDir, { recursive: true });
+  await fsPromises.mkdir(targetDir, { recursive: true });
 
   let copied = false;
   for (const entry of entries) {
@@ -592,22 +586,22 @@ function copyDirectoryContents(sourceDir: string, targetDir: string): boolean {
     const targetPath = path.resolve(targetDir, entry.name);
 
     if (entry.isDirectory()) {
-      mkdirSync(targetPath, { recursive: true });
-      copyDirectoryContents(sourcePath, targetPath);
+      await fsPromises.mkdir(targetPath, { recursive: true });
+      await copyDirectoryContents(sourcePath, targetPath);
       copied = true;
       continue;
     }
 
     if (entry.isSymbolicLink()) {
-      rmSync(targetPath, { recursive: true, force: true });
-      symlinkSync(readlinkSync(sourcePath), targetPath);
+      await fsPromises.rm(targetPath, { recursive: true, force: true });
+      await fsPromises.symlink(await fsPromises.readlink(sourcePath), targetPath);
       copied = true;
       continue;
     }
 
-    copyFileSync(sourcePath, targetPath);
+    await fsPromises.copyFile(sourcePath, targetPath);
     try {
-      chmodSync(targetPath, statSync(sourcePath).mode & 0o777);
+      await fsPromises.chmod(targetPath, (await fsPromises.stat(sourcePath)).mode & 0o777);
     } catch {
       // best effort
     }
@@ -617,8 +611,8 @@ function copyDirectoryContents(sourceDir: string, targetDir: string): boolean {
   return copied;
 }
 
-export function copyGitHooksToWorktreeGitDir(cwd: string): CopiedGitHooksResult | null {
-  const workspace = detectGitWorkspaceInfo(cwd);
+export async function copyGitHooksToWorktreeGitDir(cwd: string): Promise<CopiedGitHooksResult | null> {
+  const workspace = await detectGitWorkspaceInfo(cwd);
   if (!workspace) return null;
 
   const sourceHooksPath = workspace.hooksPath;
@@ -635,7 +629,7 @@ export function copyGitHooksToWorktreeGitDir(cwd: string): CopiedGitHooksResult 
   return {
     sourceHooksPath,
     targetHooksPath,
-    copied: copyDirectoryContents(sourceHooksPath, targetHooksPath),
+    copied: await copyDirectoryContents(sourceHooksPath, targetHooksPath),
   };
 }
 
@@ -661,7 +655,7 @@ async function rebindSeededProjectWorkspaces(input: {
   targetConnectionString: string;
   currentCwd: string;
 }): Promise<SeedWorktreeDatabaseResult["reboundWorkspaces"]> {
-  const targetRepo = detectGitWorkspaceInfo(input.currentCwd);
+  const targetRepo = await detectGitWorkspaceInfo(input.currentCwd);
   if (!targetRepo) return [];
 
   const db = createDb(input.targetConnectionString);
@@ -683,7 +677,7 @@ async function rebindSeededProjectWorkspaces(input: {
       const workspaceCwd = nonEmpty(row.cwd);
       if (!workspaceCwd) continue;
 
-      const sourceRepo = detectGitWorkspaceInfo(workspaceCwd);
+      const sourceRepo = await detectGitWorkspaceInfo(workspaceCwd);
       if (!sourceRepo) continue;
       if (sourceRepo.commonDir !== targetRepo.commonDir) continue;
 
@@ -696,7 +690,7 @@ async function rebindSeededProjectWorkspaces(input: {
 
       const normalizedCurrent = path.resolve(workspaceCwd);
       if (reboundCwd === normalizedCurrent) continue;
-      if (!existsSync(reboundCwd)) continue;
+      if (!(await Bun.file(reboundCwd).exists())) continue;
 
       await db
         .update(projectWorkspaces)
@@ -745,29 +739,26 @@ function resolveSourceConnectionString(config: ClawDevConfig, envEntries: Record
   return `postgres://clawdev:clawdev@127.0.0.1:${port}/clawdev`;
 }
 
-export function copySeededSecretsKey(input: {
+export async function copySeededSecretsKey(input: {
   sourceConfigPath: string;
   sourceConfig: ClawDevConfig;
   sourceEnvEntries: Record<string, string>;
   targetKeyFilePath: string;
-}): void {
+}): Promise<void> {
   if (input.sourceConfig.secrets.provider !== "local_encrypted") {
     return;
   }
 
-  mkdirSync(path.dirname(input.targetKeyFilePath), { recursive: true });
+  await fsPromises.mkdir(path.dirname(input.targetKeyFilePath), { recursive: true });
 
   const allowProcessEnvFallback = isCurrentSourceConfigPath(input.sourceConfigPath);
   const sourceInlineMasterKey =
     nonEmpty(input.sourceEnvEntries.CLAWDEV_SECRETS_MASTER_KEY) ??
     (allowProcessEnvFallback ? nonEmpty(process.env.CLAWDEV_SECRETS_MASTER_KEY) : null);
   if (sourceInlineMasterKey) {
-    writeFileSync(input.targetKeyFilePath, sourceInlineMasterKey, {
-      encoding: "utf8",
-      mode: 0o600,
-    });
+    await Bun.write(input.targetKeyFilePath, sourceInlineMasterKey);
     try {
-      chmodSync(input.targetKeyFilePath, 0o600);
+      await fsPromises.chmod(input.targetKeyFilePath, 0o600);
     } catch {
       // best effort
     }
@@ -778,17 +769,17 @@ export function copySeededSecretsKey(input: {
     nonEmpty(input.sourceEnvEntries.CLAWDEV_SECRETS_MASTER_KEY_FILE) ??
     (allowProcessEnvFallback ? nonEmpty(process.env.CLAWDEV_SECRETS_MASTER_KEY_FILE) : null);
   const sourceConfiguredKeyPath = sourceKeyFileOverride ?? input.sourceConfig.secrets.localEncrypted.keyFilePath;
-  const sourceKeyFilePath = resolveRuntimeLikePath(sourceConfiguredKeyPath, input.sourceConfigPath);
+  const sourceKeyFilePath = await resolveRuntimeLikePath(sourceConfiguredKeyPath, input.sourceConfigPath);
 
-  if (!existsSync(sourceKeyFilePath)) {
+  if (!(await Bun.file(sourceKeyFilePath).exists())) {
     throw new Error(
       `Cannot seed worktree database because source local_encrypted secrets key was not found at ${sourceKeyFilePath}.`,
     );
   }
 
-  copyFileSync(sourceKeyFilePath, input.targetKeyFilePath);
+  await Bun.write(input.targetKeyFilePath, await Bun.file(sourceKeyFilePath).text());
   try {
-    chmodSync(input.targetKeyFilePath, 0o600);
+    await fsPromises.chmod(input.targetKeyFilePath, 0o600);
   } catch {
     // best effort
   }
@@ -807,10 +798,10 @@ async function ensureEmbeddedPostgres(dataDir: string, preferredPort: number): P
   }
 
   const postmasterPidFile = path.resolve(dataDir, "postmaster.pid");
-  const runningPid = readRunningPostmasterPid(postmasterPidFile);
+  const runningPid = await readRunningPostmasterPid(postmasterPidFile);
   if (runningPid) {
     return {
-      port: readPidFilePort(postmasterPidFile) ?? preferredPort,
+      port: (await readPidFilePort(postmasterPidFile)) ?? preferredPort,
       startedByThisProcess: false,
       stop: async () => {},
     };
@@ -829,7 +820,7 @@ async function ensureEmbeddedPostgres(dataDir: string, preferredPort: number): P
     onError: logBuffer.append,
   });
 
-  if (!existsSync(path.resolve(dataDir, "PG_VERSION"))) {
+  if (!(await Bun.file(path.resolve(dataDir, "PG_VERSION")).exists())) {
     try {
       await instance.initialise();
     } catch (error) {
@@ -839,8 +830,8 @@ async function ensureEmbeddedPostgres(dataDir: string, preferredPort: number): P
       });
     }
   }
-  if (existsSync(postmasterPidFile)) {
-    rmSync(postmasterPidFile, { force: true });
+  if (await Bun.file(postmasterPidFile).exists()) {
+    await fsPromises.rm(postmasterPidFile, { force: true });
   }
   try {
     await instance.start();
@@ -871,7 +862,7 @@ async function seedWorktreeDatabase(input: {
   const seedPlan = resolveWorktreeSeedPlan(input.seedMode);
   const sourceEnvFile = resolveClawDevEnvFile(input.sourceConfigPath);
   const sourceEnvEntries = readClawDevEnvEntries(sourceEnvFile);
-  copySeededSecretsKey({
+  await copySeededSecretsKey({
     sourceConfigPath: input.sourceConfigPath,
     sourceConfig: input.sourceConfig,
     sourceEnvEntries,
@@ -938,7 +929,7 @@ async function runWorktreeInit(opts: WorktreeInitOptions): Promise<void> {
   const cwd = process.cwd();
   const worktreeName = resolveSuggestedWorktreeName(
     cwd,
-    opts.name ?? detectGitBranchName(cwd) ?? undefined,
+    opts.name ?? (await detectGitBranchName(cwd)) ?? undefined,
   );
   const seedMode = opts.seedMode ?? "minimal";
   if (!isWorktreeSeedMode(seedMode)) {
@@ -955,20 +946,20 @@ async function runWorktreeInit(opts: WorktreeInitOptions): Promise<void> {
     color: generateWorktreeColor(),
   };
   const sourceConfigPath = resolveSourceConfigPath(opts);
-  const sourceConfig = existsSync(sourceConfigPath) ? readConfig(sourceConfigPath) : null;
+  const sourceConfig = (await Bun.file(sourceConfigPath).exists()) ? readConfig(sourceConfigPath) : null;
 
-  if ((existsSync(paths.configPath) || existsSync(paths.instanceRoot)) && !opts.force) {
+  if (((await Bun.file(paths.configPath).exists()) || (await Bun.file(paths.instanceRoot).exists())) && !opts.force) {
     throw new Error(
       `Worktree config already exists at ${paths.configPath} or instance data exists at ${paths.instanceRoot}. Re-run with --force to replace it.`,
     );
   }
 
   if (opts.force) {
-    rmSync(paths.repoConfigDir, { recursive: true, force: true });
-    rmSync(paths.instanceRoot, { recursive: true, force: true });
+    await fsPromises.rm(paths.repoConfigDir, { recursive: true, force: true });
+    await fsPromises.rm(paths.instanceRoot, { recursive: true, force: true });
   }
 
-  const claimedPorts = collectClaimedWorktreePorts(paths.homeDir, paths.instanceId, paths.cwd);
+  const claimedPorts = await collectClaimedWorktreePorts(paths.homeDir, paths.instanceId, paths.cwd);
   const preferredServerPort = opts.serverPort ?? ((sourceConfig?.server.port ?? 3100) + 1);
   const serverPort = await findAvailablePort(preferredServerPort, claimedPorts.serverPorts);
   const preferredDbPort = opts.dbPort ?? ((sourceConfig?.database.embeddedPostgresPort ?? 54329) + 1);
@@ -997,7 +988,7 @@ async function runWorktreeInit(opts: WorktreeInitOptions): Promise<void> {
   );
   ensureAgentJwtSecret(paths.configPath);
   loadClawDevEnvFile(paths.configPath);
-  const copiedGitHooks = copyGitHooksToWorktreeGitDir(cwd);
+  const copiedGitHooks = await copyGitHooksToWorktreeGitDir(cwd);
 
   let seedSummary: string | null = null;
   let reboundWorkspaceSummary: SeedWorktreeDatabaseResult["reboundWorkspaces"] = [];
@@ -1069,18 +1060,18 @@ export async function worktreeMakeCommand(nameArg: string, opts: WorktreeMakeOpt
   const sourceCwd = process.cwd();
   const sourceConfigPath = resolveSourceConfigPath(opts);
   const targetPath = resolveWorktreeMakeTargetPath(name);
-  if (existsSync(targetPath)) {
+  if (await Bun.file(targetPath).exists()) {
     throw new Error(`Target path already exists: ${targetPath}`);
   }
 
-  mkdirSync(path.dirname(targetPath), { recursive: true });
+  await fsPromises.mkdir(path.dirname(targetPath), { recursive: true });
   if (startPoint) {
     const [remote] = startPoint.split("/", 1);
     try {
-      execFileSync("git", ["fetch", remote], {
-        cwd: sourceCwd,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      const fetchResult = await runGitCommand(["fetch", remote], { cwd: sourceCwd });
+      if (fetchResult.exitCode !== 0) {
+        throw new Error(fetchResult.stderr.trim() || `git fetch ${remote} failed`);
+      }
     } catch (error) {
       throw new Error(
         `Failed to fetch from remote "${remote}": ${extractExecSyncErrorMessage(error) ?? String(error)}`,
@@ -1088,20 +1079,21 @@ export async function worktreeMakeCommand(nameArg: string, opts: WorktreeMakeOpt
     }
   }
 
+  const branchExists = !startPoint && (await localBranchExists(sourceCwd, name));
   const worktreeArgs = resolveGitWorktreeAddArgs({
     branchName: name,
     targetPath,
-    branchExists: !startPoint && localBranchExists(sourceCwd, name),
+    branchExists,
     startPoint,
   });
 
   const spinner = p.spinner();
   spinner.start(`Creating git worktree at ${targetPath}...`);
   try {
-    execFileSync("git", worktreeArgs, {
-      cwd: sourceCwd,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const worktreeResult = await runGitCommand(worktreeArgs, { cwd: sourceCwd });
+    if (worktreeResult.exitCode !== 0) {
+      throw new Error(worktreeResult.stderr.trim() || "git worktree add failed");
+    }
     spinner.stop(`Created git worktree at ${targetPath}.`);
   } catch (error) {
     spinner.stop(pc.red("Failed to create git worktree."));
@@ -1111,10 +1103,10 @@ export async function worktreeMakeCommand(nameArg: string, opts: WorktreeMakeOpt
   const installSpinner = p.spinner();
   installSpinner.start("Installing dependencies...");
   try {
-    execFileSync("pnpm", ["install"], {
-      cwd: targetPath,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    const installResult = await runCommand(["pnpm", "install"], { cwd: targetPath });
+    if (installResult.exitCode !== 0) {
+      throw new Error(installResult.stderr.trim() || "pnpm install failed");
+    }
     installSpinner.stop("Installed dependencies.");
   } catch (error) {
     installSpinner.stop(pc.yellow("Failed to install dependencies (continuing anyway)."));
@@ -1164,12 +1156,8 @@ type ResolvedWorktreeEndpoint = {
   isCurrent: boolean;
 };
 
-function parseGitWorktreeList(cwd: string): GitWorktreeListEntry[] {
-  const raw = execFileSync("git", ["worktree", "list", "--porcelain"], {
-    cwd,
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+async function parseGitWorktreeList(cwd: string): Promise<GitWorktreeListEntry[]> {
+  const raw = (await runGitCommand(["worktree", "list", "--porcelain"], { cwd })).stdout;
   const entries: GitWorktreeListEntry[] = [];
   let current: Partial<GitWorktreeListEntry> = {};
   for (const line of raw.split("\n")) {
@@ -1202,58 +1190,38 @@ function parseGitWorktreeList(cwd: string): GitWorktreeListEntry[] {
   return entries;
 }
 
-function toMergeSourceChoices(cwd: string): MergeSourceChoice[] {
+async function toMergeSourceChoices(cwd: string): Promise<MergeSourceChoice[]> {
   const currentCwd = path.resolve(cwd);
-  return parseGitWorktreeList(cwd).map((entry) => {
+  const worktrees = await parseGitWorktreeList(cwd);
+  return await Promise.all(worktrees.map(async (entry) => {
     const branchLabel = entry.branch?.replace(/^refs\/heads\//, "") ?? "(detached)";
     const worktreePath = path.resolve(entry.worktree);
     return {
       worktree: worktreePath,
       branch: entry.branch,
       branchLabel,
-      hasClawDevConfig: existsSync(path.resolve(worktreePath, ".clawdev", "config.json")),
+      hasClawDevConfig: await Bun.file(path.resolve(worktreePath, ".clawdev", "config.json")).exists(),
       isCurrent: worktreePath === currentCwd,
     };
-  });
+  }));
 }
 
-function branchHasUniqueCommits(cwd: string, branchName: string): boolean {
-  try {
-    const output = execFileSync(
-      "git",
-      ["log", "--oneline", branchName, "--not", "--remotes", "--exclude", `refs/heads/${branchName}`, "--branches"],
-      { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
-    return output.length > 0;
-  } catch {
-    return false;
-  }
+async function branchHasUniqueCommits(cwd: string, branchName: string): Promise<boolean> {
+  const result = await runGitCommand(
+    ["log", "--oneline", branchName, "--not", "--remotes", "--exclude", `refs/heads/${branchName}`, "--branches"],
+    { cwd },
+  );
+  return result.exitCode === 0 && result.stdout.trim().length > 0;
 }
 
-function branchExistsOnAnyRemote(cwd: string, branchName: string): boolean {
-  try {
-    const output = execFileSync(
-      "git",
-      ["branch", "-r", "--list", `*/${branchName}`],
-      { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
-    return output.length > 0;
-  } catch {
-    return false;
-  }
+async function branchExistsOnAnyRemote(cwd: string, branchName: string): Promise<boolean> {
+  const result = await runGitCommand(["branch", "-r", "--list", `*/${branchName}`], { cwd });
+  return result.exitCode === 0 && result.stdout.trim().length > 0;
 }
 
-function worktreePathHasUncommittedChanges(worktreePath: string): boolean {
-  try {
-    const output = execFileSync(
-      "git",
-      ["status", "--porcelain"],
-      { cwd: worktreePath, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] },
-    ).trim();
-    return output.length > 0;
-  } catch {
-    return false;
-  }
+async function worktreePathHasUncommittedChanges(worktreePath: string): Promise<boolean> {
+  const result = await runGitCommand(["status", "--porcelain"], { cwd: worktreePath });
+  return result.exitCode === 0 && result.stdout.trim().length > 0;
 }
 
 export async function worktreeCleanupCommand(nameArg: string, opts: WorktreeCleanupOptions): Promise<void> {
@@ -1269,11 +1237,11 @@ export async function worktreeCleanupCommand(nameArg: string, opts: WorktreeClea
 
   // ── 1. Assess current state ──────────────────────────────────────────
 
-  const hasBranch = localBranchExists(sourceCwd, name);
-  const hasTargetDir = existsSync(targetPath);
-  const hasInstanceData = existsSync(instanceRoot);
+  const hasBranch = await localBranchExists(sourceCwd, name);
+  const hasTargetDir = await Bun.file(targetPath).exists();
+  const hasInstanceData = await Bun.file(instanceRoot).exists();
 
-  const worktrees = parseGitWorktreeList(sourceCwd);
+  const worktrees = await parseGitWorktreeList(sourceCwd);
   const linkedWorktree = worktrees.find(
     (wt) => wt.branch === `refs/heads/${name}` || path.resolve(wt.worktree) === path.resolve(targetPath),
   );
@@ -1288,8 +1256,8 @@ export async function worktreeCleanupCommand(nameArg: string, opts: WorktreeClea
 
   const problems: string[] = [];
 
-  if (hasBranch && branchHasUniqueCommits(sourceCwd, name)) {
-    const onRemote = branchExistsOnAnyRemote(sourceCwd, name);
+  if (hasBranch && await branchHasUniqueCommits(sourceCwd, name)) {
+    const onRemote = await branchExistsOnAnyRemote(sourceCwd, name);
     if (onRemote) {
       p.log.info(
         `Branch "${name}" has unique local commits, but the branch also exists on a remote — safe to delete locally.`,
@@ -1302,7 +1270,7 @@ export async function worktreeCleanupCommand(nameArg: string, opts: WorktreeClea
     }
   }
 
-  if (hasTargetDir && worktreePathHasUncommittedChanges(targetPath)) {
+  if (hasTargetDir && await worktreePathHasUncommittedChanges(targetPath)) {
     problems.push(
       `Worktree directory ${targetPath} has uncommitted changes. Commit or stash first, or use --force.`,
     );
@@ -1324,17 +1292,17 @@ export async function worktreeCleanupCommand(nameArg: string, opts: WorktreeClea
 
   // 3a. Remove the git worktree registration
   if (linkedWorktree) {
-    const worktreeDirExists = existsSync(linkedWorktree.worktree);
+    const worktreeDirExists = await Bun.file(linkedWorktree.worktree).exists();
     const spinner = p.spinner();
     if (worktreeDirExists) {
       spinner.start(`Removing git worktree at ${linkedWorktree.worktree}...`);
       try {
         const removeArgs = ["worktree", "remove", linkedWorktree.worktree];
         if (opts.force) removeArgs.push("--force");
-        execFileSync("git", removeArgs, {
-          cwd: sourceCwd,
-          stdio: ["ignore", "pipe", "pipe"],
-        });
+        const removeResult = await runGitCommand(removeArgs, { cwd: sourceCwd });
+        if (removeResult.exitCode !== 0) {
+          throw new Error(removeResult.stderr.trim() || "git worktree remove failed");
+        }
         spinner.stop(`Removed git worktree at ${linkedWorktree.worktree}.`);
       } catch (error) {
         spinner.stop(pc.yellow(`Could not remove worktree cleanly, will prune instead.`));
@@ -1342,38 +1310,32 @@ export async function worktreeCleanupCommand(nameArg: string, opts: WorktreeClea
       }
     } else {
       spinner.start("Pruning stale worktree entry...");
-      execFileSync("git", ["worktree", "prune"], {
-        cwd: sourceCwd,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      await runGitCommand(["worktree", "prune"], { cwd: sourceCwd });
       spinner.stop("Pruned stale worktree entry.");
     }
   } else {
     // Even without a linked worktree, prune to clean up any orphaned entries
-    execFileSync("git", ["worktree", "prune"], {
-      cwd: sourceCwd,
-      stdio: ["ignore", "pipe", "pipe"],
-    });
+    await runGitCommand(["worktree", "prune"], { cwd: sourceCwd });
   }
 
   // 3b. Remove the worktree directory if it still exists (e.g. partial creation)
-  if (existsSync(targetPath)) {
+  if (await Bun.file(targetPath).exists()) {
     const spinner = p.spinner();
     spinner.start(`Removing worktree directory ${targetPath}...`);
-    rmSync(targetPath, { recursive: true, force: true });
+    await fsPromises.rm(targetPath, { recursive: true, force: true });
     spinner.stop(`Removed worktree directory ${targetPath}.`);
   }
 
   // 3c. Delete the local branch (now safe — worktree is gone)
-  if (localBranchExists(sourceCwd, name)) {
+  if (await localBranchExists(sourceCwd, name)) {
     const spinner = p.spinner();
     spinner.start(`Deleting local branch "${name}"...`);
     try {
       const deleteFlag = opts.force ? "-D" : "-d";
-      execFileSync("git", ["branch", deleteFlag, name], {
-        cwd: sourceCwd,
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      const deleteResult = await runGitCommand(["branch", deleteFlag, name], { cwd: sourceCwd });
+      if (deleteResult.exitCode !== 0) {
+        throw new Error(deleteResult.stderr.trim() || "git branch delete failed");
+      }
       spinner.stop(`Deleted local branch "${name}".`);
     } catch (error) {
       spinner.stop(pc.yellow(`Could not delete branch "${name}".`));
@@ -1382,10 +1344,10 @@ export async function worktreeCleanupCommand(nameArg: string, opts: WorktreeClea
   }
 
   // 3d. Remove instance data
-  if (existsSync(instanceRoot)) {
+  if (await Bun.file(instanceRoot).exists()) {
     const spinner = p.spinner();
     spinner.start(`Removing instance data at ${instanceRoot}...`);
-    rmSync(instanceRoot, { recursive: true, force: true });
+    await fsPromises.rm(instanceRoot, { recursive: true, force: true });
     spinner.stop(`Removed instance data at ${instanceRoot}.`);
   }
 
@@ -1440,15 +1402,15 @@ function resolveCurrentEndpoint(): ResolvedWorktreeEndpoint {
   };
 }
 
-function resolveAttachmentLookupStorages(input: {
+async function resolveAttachmentLookupStorages(input: {
   sourceEndpoint: ResolvedWorktreeEndpoint;
   targetEndpoint: ResolvedWorktreeEndpoint;
-}): ConfiguredStorage[] {
+}): Promise<ConfiguredStorage[]> {
   const orderedConfigPaths = [
     input.sourceEndpoint.configPath,
     resolveCurrentEndpoint().configPath,
     input.targetEndpoint.configPath,
-    ...toMergeSourceChoices(process.cwd())
+    ...(await toMergeSourceChoices(process.cwd()))
       .filter((choice) => choice.hasClawDevConfig)
       .map((choice) => path.resolve(choice.worktree, ".clawdev", "config.json")),
   ];
@@ -1456,7 +1418,7 @@ function resolveAttachmentLookupStorages(input: {
   const storages: ConfiguredStorage[] = [];
   for (const configPath of orderedConfigPaths) {
     const resolved = path.resolve(configPath);
-    if (seen.has(resolved) || !existsSync(resolved)) continue;
+    if (seen.has(resolved) || !(await Bun.file(resolved).exists())) continue;
     seen.add(resolved);
     storages.push(openConfiguredStorage(resolved));
   }
@@ -1993,7 +1955,7 @@ async function promptForProjectMappings(input: {
 }
 
 export async function worktreeListCommand(opts: WorktreeListOptions): Promise<void> {
-  const choices = toMergeSourceChoices(process.cwd());
+  const choices = await toMergeSourceChoices(process.cwd());
   if (opts.json) {
     console.log(JSON.stringify(choices, null, 2));
     return;
@@ -2020,10 +1982,10 @@ function resolveEndpointFromChoice(choice: MergeSourceChoice): ResolvedWorktreeE
   };
 }
 
-function resolveWorktreeEndpointFromSelector(
+async function resolveWorktreeEndpointFromSelector(
   selector: string,
   opts?: { allowCurrent?: boolean },
-): ResolvedWorktreeEndpoint {
+): Promise<ResolvedWorktreeEndpoint> {
   const trimmed = selector.trim();
   const allowCurrent = opts?.allowCurrent !== false;
   if (trimmed.length === 0) {
@@ -2035,14 +1997,14 @@ function resolveWorktreeEndpointFromSelector(
     return currentEndpoint;
   }
 
-  const choices = toMergeSourceChoices(process.cwd());
+  const choices = await toMergeSourceChoices(process.cwd());
   const directPath = path.resolve(trimmed);
-  if (existsSync(directPath)) {
+  if (await Bun.file(directPath).exists()) {
     if (allowCurrent && directPath === currentEndpoint.rootPath) {
       return currentEndpoint;
     }
     const configPath = path.resolve(directPath, ".clawdev", "config.json");
-    if (!existsSync(configPath)) {
+    if (!(await Bun.file(configPath).exists())) {
       throw new Error(`Resolved worktree path ${directPath} does not contain .clawdev/config.json.`);
     }
     return {
@@ -2073,7 +2035,7 @@ function resolveWorktreeEndpointFromSelector(
 async function promptForSourceEndpoint(excludeWorktreePath?: string): Promise<ResolvedWorktreeEndpoint> {
   const excluded = excludeWorktreePath ? path.resolve(excludeWorktreePath) : null;
   const currentEndpoint = resolveCurrentEndpoint();
-  const choices = toMergeSourceChoices(process.cwd())
+  const choices = (await toMergeSourceChoices(process.cwd()))
     .filter((choice) => choice.hasClawDevConfig || choice.isCurrent)
     .filter((choice) => path.resolve(choice.worktree) !== excluded)
     .map((choice) => ({
@@ -2094,7 +2056,7 @@ async function promptForSourceEndpoint(excludeWorktreePath?: string): Promise<Re
   if (selection === "__current__") {
     return currentEndpoint;
   }
-  return resolveWorktreeEndpointFromSelector(selection, { allowCurrent: true });
+  return await resolveWorktreeEndpointFromSelector(selection, { allowCurrent: true });
 }
 
 async function applyMergePlan(input: {
@@ -2500,12 +2462,12 @@ export async function worktreeMergeHistoryCommand(sourceArg: string | undefined,
   }
 
   const targetEndpoint = opts.to
-    ? resolveWorktreeEndpointFromSelector(opts.to, { allowCurrent: true })
+    ? await resolveWorktreeEndpointFromSelector(opts.to, { allowCurrent: true })
     : resolveCurrentEndpoint();
   const sourceEndpoint = opts.from
-    ? resolveWorktreeEndpointFromSelector(opts.from, { allowCurrent: true })
+    ? await resolveWorktreeEndpointFromSelector(opts.from, { allowCurrent: true })
     : sourceArg
-      ? resolveWorktreeEndpointFromSelector(sourceArg, { allowCurrent: true })
+      ? await resolveWorktreeEndpointFromSelector(sourceArg, { allowCurrent: true })
       : await promptForSourceEndpoint(targetEndpoint.rootPath);
 
   if (path.resolve(sourceEndpoint.configPath) === path.resolve(targetEndpoint.configPath)) {
@@ -2515,7 +2477,7 @@ export async function worktreeMergeHistoryCommand(sourceArg: string | undefined,
   const scopes = parseWorktreeMergeScopes(opts.scope);
   const sourceHandle = await openConfiguredDb(sourceEndpoint.configPath);
   const targetHandle = await openConfiguredDb(targetEndpoint.configPath);
-  const sourceStorages = resolveAttachmentLookupStorages({
+  const sourceStorages = await resolveAttachmentLookupStorages({
     sourceEndpoint,
     targetEndpoint,
   });

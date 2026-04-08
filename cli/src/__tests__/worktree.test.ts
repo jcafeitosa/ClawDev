@@ -1,7 +1,7 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { execFileSync } from "node:child_process";
+import fs from "fs";
+import os from "os";
+import path from "path";
+import { execFileSync } from "child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   copyGitHooksToWorktreeGitDir,
@@ -251,7 +251,7 @@ describe("worktree helpers", () => {
     expect(full.nullifyColumns).toEqual({});
   });
 
-  it("copies the source local_encrypted secrets key into the seeded worktree instance", () => {
+  it("copies the source local_encrypted secrets key into the seeded worktree instance", async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clawdev-worktree-secrets-"));
     const originalInlineMasterKey = process.env.CLAWDEV_SECRETS_MASTER_KEY;
     const originalKeyFile = process.env.CLAWDEV_SECRETS_MASTER_KEY_FILE;
@@ -267,7 +267,7 @@ describe("worktree helpers", () => {
       const sourceConfig = buildSourceConfig();
       sourceConfig.secrets.localEncrypted.keyFilePath = sourceKeyPath;
 
-      copySeededSecretsKey({
+      await copySeededSecretsKey({
         sourceConfigPath,
         sourceConfig,
         sourceEnvEntries: {},
@@ -290,13 +290,13 @@ describe("worktree helpers", () => {
     }
   });
 
-  it("writes the source inline secrets master key into the seeded worktree instance", () => {
+  it("writes the source inline secrets master key into the seeded worktree instance", async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clawdev-worktree-secrets-"));
     try {
       const sourceConfigPath = path.join(tempRoot, "source", "config.json");
       const targetKeyPath = path.join(tempRoot, "target", "secrets", "master.key");
 
-      copySeededSecretsKey({
+      await copySeededSecretsKey({
         sourceConfigPath,
         sourceConfig: buildSourceConfig(),
         sourceEnvEntries: {
@@ -506,7 +506,7 @@ describe("worktree helpers", () => {
     ).toBeNull();
   });
 
-  it("copies shared git hooks into a linked worktree git dir", () => {
+  it("copies shared git hooks into a linked worktree git dir", async () => {
     const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "clawdev-worktree-hooks-"));
     const repoRoot = path.join(tempRoot, "repo");
     const worktreePath = path.join(tempRoot, "repo-feature");
@@ -529,7 +529,7 @@ describe("worktree helpers", () => {
 
       execFileSync("git", ["worktree", "add", "--detach", worktreePath], { cwd: repoRoot, stdio: "ignore" });
 
-      const copied = copyGitHooksToWorktreeGitDir(worktreePath);
+      const copied = await copyGitHooksToWorktreeGitDir(worktreePath);
       const worktreeGitDir = execFileSync("git", ["rev-parse", "--git-dir"], {
         cwd: worktreePath,
         encoding: "utf8",

@@ -1,4 +1,4 @@
-import crypto from "node:crypto";
+import crypto from "crypto";
 import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, ne, or, sql } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import {
@@ -418,53 +418,76 @@ export function routineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeup
   }
 
   async function findLiveExecutionIssue(routine: typeof routines.$inferSelect, executor: Db = db) {
-    const executionBoundIssue = await executor
-      .select()
-      .from(issues)
-      .innerJoin(
-        heartbeatRuns,
-        and(
-          eq(heartbeatRuns.id, issues.executionRunId),
-          inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
-        ),
-      )
-      .where(
-        and(
-          eq(issues.companyId, routine.companyId),
-          eq(issues.originKind, "routine_execution"),
-          eq(issues.originId, routine.id),
-          inArray(issues.status, OPEN_ISSUE_STATUSES),
-          isNull(issues.hiddenAt),
-        ),
-      )
-      .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
-      .limit(1)
-      .then((rows) => rows[0]?.issues ?? null);
-    if (executionBoundIssue) return executionBoundIssue;
+    try {
+      const executionBoundIssue = await executor
+        .select()
+        .from(issues)
+        .innerJoin(
+          heartbeatRuns,
+          and(
+            eq(heartbeatRuns.id, issues.executionRunId),
+            inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
+          ),
+        )
+        .where(
+          and(
+            eq(issues.companyId, routine.companyId),
+            eq(issues.originKind, "routine_execution"),
+            eq(issues.originId, routine.id),
+            inArray(issues.status, OPEN_ISSUE_STATUSES),
+            isNull(issues.hiddenAt),
+          ),
+        )
+        .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
+        .limit(1)
+        .then((rows) => rows[0]?.issues ?? null);
+      if (executionBoundIssue) return executionBoundIssue;
+    } catch (error) {
+      logger.warn(
+        {
+          routineId: routine.id,
+          companyId: routine.companyId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Failed to resolve execution-bound live issue for routine",
+      );
+    }
 
-    return executor
-      .select()
-      .from(issues)
-      .innerJoin(
-        heartbeatRuns,
-        and(
-          eq(heartbeatRuns.companyId, issues.companyId),
-          inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
-          sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = cast(${issues.id} as text)`,
-        ),
-      )
-      .where(
-        and(
-          eq(issues.companyId, routine.companyId),
-          eq(issues.originKind, "routine_execution"),
-          eq(issues.originId, routine.id),
-          inArray(issues.status, OPEN_ISSUE_STATUSES),
-          isNull(issues.hiddenAt),
-        ),
-      )
-      .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
-      .limit(1)
-      .then((rows) => rows[0]?.issues ?? null);
+    try {
+      return await executor
+        .select()
+        .from(issues)
+        .innerJoin(
+          heartbeatRuns,
+          and(
+            eq(heartbeatRuns.companyId, issues.companyId),
+            inArray(heartbeatRuns.status, LIVE_HEARTBEAT_RUN_STATUSES),
+            sql`${heartbeatRuns.contextSnapshot} ->> 'issueId' = cast(${issues.id} as text)`,
+          ),
+        )
+        .where(
+          and(
+            eq(issues.companyId, routine.companyId),
+            eq(issues.originKind, "routine_execution"),
+            eq(issues.originId, routine.id),
+            inArray(issues.status, OPEN_ISSUE_STATUSES),
+            isNull(issues.hiddenAt),
+          ),
+        )
+        .orderBy(desc(issues.updatedAt), desc(issues.createdAt))
+        .limit(1)
+        .then((rows) => rows[0]?.issues ?? null);
+    } catch (error) {
+      logger.warn(
+        {
+          routineId: routine.id,
+          companyId: routine.companyId,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        "Failed to resolve legacy live execution issue fallback for routine",
+      );
+      return null;
+    }
   }
 
   async function finalizeRun(runId: string, patch: Partial<typeof routineRuns.$inferInsert>, executor: Db = db) {
@@ -734,7 +757,9 @@ export function routineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeup
       const row = await getRoutineById(id);
       if (!row) return null;
       const [project, assignee, parentIssue, triggers, recentRuns, activeIssue] = await Promise.all([
-        db.select().from(projects).where(eq(projects.id, row.projectId)).then((rows) => rows[0] ?? null),
+        row.projectId
+          ? db.select().from(projects).where(eq(projects.id, row.projectId)).then((rows) => rows[0] ?? null)
+          : null,
         db.select().from(agents).where(eq(agents.id, row.assigneeAgentId)).then((rows) => rows[0] ?? null),
         row.parentIssueId ? issueSvc.getById(row.parentIssueId) : null,
         db.select().from(routineTriggers).where(eq(routineTriggers.routineId, row.id)).orderBy(asc(routineTriggers.createdAt)),
@@ -820,7 +845,7 @@ export function routineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeup
     },
 
     create: async (companyId: string, input: CreateRoutine, actor: Actor): Promise<Routine> => {
-      await assertProject(companyId, input.projectId);
+      if (input.projectId) await assertProject(companyId, input.projectId);
       await assertAssignableAgent(companyId, input.assigneeAgentId);
       if (input.goalId) await assertGoal(companyId, input.goalId);
       if (input.parentIssueId) await assertParentIssue(companyId, input.parentIssueId);
@@ -828,16 +853,16 @@ export function routineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeup
         .insert(routines)
         .values({
           companyId,
-          projectId: input.projectId,
+          projectId: input.projectId ?? null,
           goalId: input.goalId ?? null,
           parentIssueId: input.parentIssueId ?? null,
           title: input.title,
           description: input.description ?? null,
           assigneeAgentId: input.assigneeAgentId,
-          priority: input.priority,
-          status: input.status,
-          concurrencyPolicy: input.concurrencyPolicy,
-          catchUpPolicy: input.catchUpPolicy,
+          priority: input.priority ?? "medium",
+          status: input.status ?? "active",
+          concurrencyPolicy: input.concurrencyPolicy ?? "skip",
+          catchUpPolicy: input.catchUpPolicy ?? "skip",
           createdByAgentId: actor.agentId ?? null,
           createdByUserId: actor.userId ?? null,
           updatedByAgentId: actor.agentId ?? null,
@@ -852,7 +877,7 @@ export function routineService(db: Db, deps: { heartbeat?: IssueAssignmentWakeup
       if (!existing) return null;
       const nextProjectId = patch.projectId ?? existing.projectId;
       const nextAssigneeAgentId = patch.assigneeAgentId ?? existing.assigneeAgentId;
-      if (patch.projectId) await assertProject(existing.companyId, nextProjectId);
+      if (nextProjectId) await assertProject(existing.companyId, nextProjectId);
       if (patch.assigneeAgentId) await assertAssignableAgent(existing.companyId, nextAssigneeAgentId);
       if (patch.goalId) await assertGoal(existing.companyId, patch.goalId);
       if (patch.parentIssueId) await assertParentIssue(existing.companyId, patch.parentIssueId);

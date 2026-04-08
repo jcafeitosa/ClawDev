@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-import { spawn } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
-import net from "node:net";
-import path from "node:path";
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
-import { fileURLToPath } from "node:url";
+import { spawn } from "child_process";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "fs";
+import net from "net";
+import path from "path";
+import { createInterface } from "readline/promises";
+import { stdin, stdout } from "process";
+import { fileURLToPath } from "url";
 import { shouldTrackDevServerPath } from "./dev-runner-paths.mjs";
 
 const mode = process.argv[2] === "watch" ? "watch" : "dev";

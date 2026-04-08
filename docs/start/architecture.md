@@ -87,7 +87,7 @@ Adapters are the bridge between ClawDev and agent runtimes. Each adapter is a pa
 - **UI module** — stdout parser for the run viewer, config form fields for agent creation
 - **CLI module** — terminal formatter for `clawdev run --watch`
 
-Built-in adapters: `claude_local`, `codex_local`, `process`, `http`. You can create custom adapters for any runtime.
+Built-in adapters now include `claude_local`, `codex_local`, `copilot_local`, `cursor`, `gemini_local`, `opencode_local`, `pi_local`, `openai_compatible_local`, `openclaw_gateway`, `process`, and `http`. You can still create custom adapters for any runtime.
 
 ## Key Design Decisions
 

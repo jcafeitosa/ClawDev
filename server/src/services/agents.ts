@@ -1,4 +1,3 @@
-import { createHash, randomBytes } from "node:crypto";
 import { and, desc, eq, gte, inArray, lt, ne, sql } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import {
@@ -21,12 +20,15 @@ import {
   normalizeRuntimeConfigForAdapterType,
 } from "./runtime-config.js";
 
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
+async function hashToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Buffer.from(digest).toString("hex");
 }
 
 function createToken() {
-  return `pcp_${randomBytes(24).toString("hex")}`;
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return `pcp_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 const CONFIG_REVISION_FIELDS = [
@@ -601,7 +603,7 @@ export function agentService(db: Db) {
       }
 
       const token = createToken();
-      const keyHash = hashToken(token);
+      const keyHash = await hashToken(token);
       const created = await db
         .insert(agentApiKeys)
         .values({

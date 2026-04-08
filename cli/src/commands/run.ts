@@ -1,8 +1,7 @@
-import fs from "node:fs";
-import net from "node:net";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn, type ChildProcess } from "node:child_process";
+import fs from "fs";
+import net from "net";
+import path from "path";
+import { fileURLToPath } from "url";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { bootstrapCeoInvite } from "./auth-bootstrap-ceo.js";
@@ -100,7 +99,7 @@ export async function runCommand(opts: RunOptions): Promise<void> {
 }
 
 type ServerProcessHandle = StartedServer & {
-  waitForExit: Promise<{ code: number; signal: NodeJS.Signals | null }>;
+  waitForExit: Promise<{ code: number; signal: string | null }>;
 };
 
 async function findFreePort(preferredPort: number): Promise<number> {
@@ -158,7 +157,7 @@ function buildStartedServerInfo(config: ClawDevConfig, listenPort: number): Star
   };
 }
 
-async function waitForServerHealth(apiUrl: string, child: ChildProcess): Promise<void> {
+async function waitForServerHealth(apiUrl: string, child: { exitCode: number | null }): Promise<void> {
   const startedAt = Date.now();
   while (Date.now() - startedAt < 30_000) {
     if (child.exitCode !== null) {
@@ -270,11 +269,13 @@ async function spawnServerChild(input: {
   if (env.CLAWDEV_DB_RUNTIME === "pglite" && !env.PORT) {
     env.PORT = String(await findFreePort(input.config.server.port));
   }
-  const child = spawn(pnpmBin, input.args, {
+  const child = Bun.spawn({
+    cmd: [pnpmBin, ...input.args],
     cwd: input.cwd,
     env,
-    stdio: ["ignore", "pipe", "pipe"],
-    shell: process.platform === "win32",
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
   });
 
   let stdoutBuffer = "";
@@ -287,20 +288,17 @@ async function spawnServerChild(input: {
     resolveReady = resolve;
     rejectReady = reject;
   });
-  const exitPromise = new Promise<{ code: number; signal: NodeJS.Signals | null }>((resolve, reject) => {
-    child.on("error", reject);
-    child.on("exit", (code, signal) => {
-      if (resolvedPort === null && !resolved) {
-        rejectReady?.(
-          new Error(
-            `ClawDev server exited before reporting a listening port.\n` +
-              `stdout:\n${stdoutBuffer}\n` +
-              `stderr:\n${stderrBuffer}`,
-          ),
-        );
-      }
-      resolve({ code: code ?? 0, signal });
-    });
+  const exitPromise = child.exited.then((code) => {
+    if (resolvedPort === null && !resolved) {
+      rejectReady?.(
+        new Error(
+          `ClawDev server exited before reporting a listening port.\n` +
+            `stdout:\n${stdoutBuffer}\n` +
+            `stderr:\n${stderrBuffer}`,
+        ),
+      );
+    }
+    return { code, signal: child.signalCode };
   });
 
   function resolveStart(port: number) {
@@ -349,22 +347,22 @@ async function spawnServerChild(input: {
     }
   };
 
-  child.stdout?.on("data", (chunk) => handleOutput(chunk, "stdout"));
-  child.stderr?.on("data", (chunk) => handleOutput(chunk, "stderr"));
-
-  child.on("error", (error) => {
-    if (!resolved) {
-      rejectReady?.(
-        new Error(
-          `Failed to start ClawDev server child process: ${formatError(error)}`,
-        ),
-      );
+  void (async () => {
+    if (child.stdout) {
+      const text = await new Response(child.stdout).text();
+      handleOutput(text, "stdout");
     }
-  });
+  })();
+  void (async () => {
+    if (child.stderr) {
+      const text = await new Response(child.stderr).text();
+      handleOutput(text, "stderr");
+    }
+  })();
 
   const signalHandler = (signal: NodeJS.Signals) => {
     if (!child.killed) {
-      child.kill(signal);
+      child.kill(signal as unknown as number);
     }
   };
   process.once("SIGINT", signalHandler);

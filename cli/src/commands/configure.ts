@@ -156,7 +156,7 @@ export async function configure(opts: {
       case "secrets":
         config.secrets = await promptSecrets(config.secrets);
         {
-          const keyResult = ensureLocalSecretsKeyFile(config, configPath);
+          const keyResult = await ensureLocalSecretsKeyFile(config, configPath);
           if (keyResult.status === "created") {
             p.log.success(`Created local secrets key file at ${pc.dim(keyResult.path)}`);
           } else if (keyResult.status === "existing") {

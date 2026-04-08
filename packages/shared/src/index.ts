@@ -12,7 +12,10 @@ export {
   INBOX_MINE_ISSUE_STATUSES,
   INBOX_MINE_ISSUE_STATUS_FILTER,
   ISSUE_PRIORITIES,
+  ISSUE_COMPLEXITIES,
   ISSUE_ORIGIN_KINDS,
+  MODEL_ROUTING_STRATEGIES,
+  MODEL_ROUTING_CONSTRAINTS,
   GOAL_LEVELS,
   GOAL_STATUSES,
   PROJECT_STATUSES,
@@ -79,7 +82,10 @@ export {
   type AgentIconName,
   type IssueStatus,
   type IssuePriority,
+  type IssueComplexity,
   type IssueOriginKind,
+  type ModelRoutingStrategy,
+  type ModelRoutingConstraint,
   type GoalLevel,
   type GoalStatus,
   type ProjectStatus,
@@ -148,6 +154,8 @@ export {
   getHierarchyPresetSeedAgents,
   isLevelCAgentRole,
   listHierarchyPresetDefinitions,
+  getDepartmentsForRole,
+  C_LEVEL_DEPARTMENT_CHANNELS,
   hierarchyPresetSchema,
   hierarchyLevelSchema,
   type HierarchyPreset,
@@ -158,8 +166,18 @@ export {
   type HierarchyPresetDefinition,
   type LevelCAgentRole,
 } from "./company-hierarchy.js";
-export { composeStructuredSddDescription } from "./sdd.js";
-export type { StructuredSddInput } from "./sdd.js";
+export * from "./types/model-routing.js";
+export * from "./types/adapter-readiness.js";
+export {
+  STRUCTURED_SDD_MIN_SECTION_LENGTH,
+  STRUCTURED_SDD_MIN_SECTION_WORDS,
+  composeStructuredSddDescription,
+  hasMeaningfulStructuredSddSection,
+  parseStructuredSddDescription,
+  validateStructuredSddInput,
+} from "./sdd.js";
+export type { ParsedStructuredSddDescription, StructuredSddInput } from "./sdd.js";
+export * from "./validators/model-routing.js";
 
 export type {
   Company,

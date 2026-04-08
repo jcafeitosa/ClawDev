@@ -2,12 +2,14 @@ import { and, desc, eq, gte, lte, sql } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import {
   companyModelPreferences,
+  modelRoutingPolicies,
   modelRoutingLog,
   modelCatalog,
   providerModelStatus,
 } from "@clawdev/db";
 import type { createProviderStatusService } from "./provider-status.js";
 import { listAdapterModels, listServerAdapters } from "../adapters/registry.js";
+import type { ModelRoutingContext } from "@clawdev/shared";
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -37,6 +39,11 @@ interface CachedPreferences {
   fetchedAt: number;
 }
 
+interface CachedPolicy {
+  data: typeof modelRoutingPolicies.$inferSelect | null;
+  fetchedAt: number;
+}
+
 const CACHE_TTL_MS = 60_000;
 
 // ---------------------------------------------------------------------------
@@ -48,6 +55,7 @@ export function createModelRouterService(
   providerStatus: ReturnType<typeof createProviderStatusService>,
 ) {
   const preferencesCache = new Map<string, CachedPreferences>();
+  const policyCache = new Map<string, CachedPolicy>();
 
   // -----------------------------------------------------------------------
   // Helpers
@@ -68,6 +76,43 @@ export function createModelRouterService(
 
     const data = rows[0] ?? null;
     preferencesCache.set(companyId, { data, fetchedAt: now });
+    return data;
+  }
+
+  async function loadRoutingPolicy(
+    companyId: string,
+    routingContext?: ModelRoutingContext,
+  ) {
+    const cacheKey = [
+      companyId,
+      routingContext?.agentId ?? "",
+      routingContext?.role ?? "",
+      routingContext?.complexity ?? "",
+    ].join("::");
+    const now = Date.now();
+    const cached = policyCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    const rows = await db
+      .select()
+      .from(modelRoutingPolicies)
+      .where(eq(modelRoutingPolicies.companyId, companyId));
+
+    const data = rows
+      .map((row) => {
+        let score = row.priority * 10;
+        if (routingContext?.agentId && row.agentId === routingContext.agentId) score += 1000;
+        if (routingContext?.role && row.role === routingContext.role) score += 100;
+        if (routingContext?.complexity && row.complexity === routingContext.complexity) score += 50;
+        if (!row.agentId) score += 5;
+        if (!row.role) score += 3;
+        if (row.complexity === "any") score += 1;
+        return { row, score };
+      })
+      .sort((a, b) => b.score - a.score)[0]?.row ?? null;
+    policyCache.set(cacheKey, { data, fetchedAt: now });
     return data;
   }
 
@@ -334,9 +379,27 @@ export function createModelRouterService(
       agentId: string,
       requestedAdapterType: string,
       requestedModelId?: string,
-      options: { lockAdapterType?: boolean } = {},
+      options: { lockAdapterType?: boolean; routingContext?: ModelRoutingContext } = {},
     ): Promise<ModelResolution> {
       const lockAdapterType = Boolean(options.lockAdapterType);
+      const routingContext = options.routingContext;
+      const taskComplexity = routingContext?.complexity ?? "standard";
+      const taskPriority = routingContext?.taskPriority ?? "medium";
+      const requiredCapabilities = routingContext?.requiredCapabilities ?? [];
+      const role = routingContext?.role ?? undefined;
+
+      function prefersPerformance() {
+        return taskComplexity === "high" || taskComplexity === "critical" || taskPriority === "critical" || role === "ceo" || role === "cto";
+      }
+
+      function prefersCost() {
+        return taskComplexity === "trivial" || taskComplexity === "low" || taskPriority === "low" || role === "general";
+      }
+
+      function contextReason(base: string) {
+        const capabilitySuffix = requiredCapabilities.length > 0 ? `, capabilities: ${requiredCapabilities.join(", ")}` : "";
+        return `${base}${capabilitySuffix}`;
+      }
       // ---- Step 1: explicit model pin ----
       if (requestedModelId && requestedModelId !== "auto") {
         const available = await providerStatus.isAvailable(
@@ -356,7 +419,12 @@ export function createModelRouterService(
       }
 
       // ---- Step 2: load company preferences ----
-      const prefs = await loadPreferences(companyId);
+      const policy = await loadRoutingPolicy(companyId, {
+        agentId,
+        role: routingContext?.role ?? undefined,
+        complexity: taskComplexity,
+      });
+      const prefs = policy ?? (await loadPreferences(companyId));
 
       if (!prefs) {
         if (requestedModelId && requestedModelId !== "auto") {
@@ -375,14 +443,15 @@ export function createModelRouterService(
           }
         }
 
-        const fallback = lockAdapterType
-          ? await cheapestAvailable(requestedAdapterType, false)
-          : await cheapestAvailable(undefined, false);
+        const fallback = prefersPerformance()
+          ? await fastestAvailable(lockAdapterType ? requestedAdapterType : undefined)
+          : prefersCost()
+            ? await cheapestAvailable(lockAdapterType ? requestedAdapterType : undefined, false)
+            : lockAdapterType
+              ? await cheapestAvailable(requestedAdapterType, false)
+              : await cheapestAvailable(undefined, false);
         if (fallback) {
-          return {
-            ...fallback,
-            reason: "no routing configured; selected best available model across providers",
-          };
+          return { ...fallback, reason: contextReason("no routing configured; selected best available model across providers") };
         }
 
         const adapterFallback = await resolveFirstAvailableAdapterModel(

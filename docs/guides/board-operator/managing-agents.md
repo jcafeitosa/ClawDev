@@ -28,12 +28,15 @@ Create agents from the Agents page. Each agent requires:
 - **Capabilities** — short description of what this agent does
 
 Common adapter choices:
-- `claude_local` / `codex_local` / `opencode_local` for local coding agents
+- `claude_local` / `codex_local` / `copilot_local` / `cursor` / `gemini_local` / `opencode_local` for local coding agents
+- `pi_local` / `openai_compatible_local` for local bridge/provider setups
 - `openclaw_gateway` / `http` for webhook-based external agents
 - `process` for generic local command execution
 
 For `opencode_local`, configure an explicit `adapterConfig.model` (`provider/model`).
 ClawDev validates the selected model against live `opencode models` output.
+For `pi_local`, configure the bridge `provider` plus `model` in `provider/model` format.
+For `openai_compatible_local`, configure the base URL for the local OpenAI-compatible endpoint and let ClawDev discover models from `/v1/models`.
 
 ## Agent Hiring via Governance
 

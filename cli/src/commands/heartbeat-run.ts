@@ -1,4 +1,4 @@
-import { setTimeout as delay } from "node:timers/promises";
+import { setTimeout as delay } from "timers/promises";
 import pc from "picocolors";
 import type { Agent, HeartbeatRun, HeartbeatRunEvent, HeartbeatRunStatus } from "@clawdev/shared";
 import { getCLIAdapter } from "../adapters/index.js";

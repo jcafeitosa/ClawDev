@@ -1,7 +1,7 @@
-import fs from "node:fs";
-import net from "node:net";
-import os from "node:os";
-import path from "node:path";
+import fs from "fs";
+import net from "net";
+import os from "os";
+import path from "path";
 import { applyPendingMigrations, ensurePostgresDatabase } from "./client.js";
 
 type EmbeddedPostgresInstance = {
@@ -65,21 +65,29 @@ function formatEmbeddedPostgresError(error: unknown): string {
 }
 
 async function probeEmbeddedPostgresSupport(): Promise<EmbeddedPostgresTestSupport> {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawdev-embedded-postgres-probe-"));
-  const port = await getAvailablePort();
-  const EmbeddedPostgres = await getEmbeddedPostgresCtor();
-  const instance = new EmbeddedPostgres({
-    databaseDir: dataDir,
-    user: "clawdev",
-    password: "clawdev",
-    port,
-    persistent: true,
-    initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
-    onLog: () => {},
-    onError: () => {},
-  });
-
+  if (process.env.CLAWDEV_ENABLE_EMBEDDED_POSTGRES_TESTS !== "true") {
+    return {
+      supported: false,
+      reason: "Embedded Postgres tests are disabled unless CLAWDEV_ENABLE_EMBEDDED_POSTGRES_TESTS=true",
+    };
+  }
+  let instance: EmbeddedPostgresInstance | null = null;
+  let dataDir: string | null = null;
   try {
+    dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "clawdev-embedded-postgres-probe-"));
+    const port = await getAvailablePort();
+    const EmbeddedPostgres = await getEmbeddedPostgresCtor();
+    instance = new EmbeddedPostgres({
+      databaseDir: dataDir,
+      user: "clawdev",
+      password: "clawdev",
+      port,
+      persistent: true,
+      initdbFlags: ["--encoding=UTF8", "--locale=C", "--lc-messages=C"],
+      onLog: () => {},
+      onError: () => {},
+    });
+
     await instance.initialise();
     await instance.start();
     return { supported: true };
@@ -89,8 +97,12 @@ async function probeEmbeddedPostgresSupport(): Promise<EmbeddedPostgresTestSuppo
       reason: formatEmbeddedPostgresError(error),
     };
   } finally {
-    await instance.stop().catch(() => {});
-    fs.rmSync(dataDir, { recursive: true, force: true });
+    if (instance) {
+      await instance.stop().catch(() => {});
+    }
+    if (dataDir) {
+      fs.rmSync(dataDir, { recursive: true, force: true });
+    }
   }
 }
 
@@ -104,6 +116,9 @@ export async function getEmbeddedPostgresTestSupport(): Promise<EmbeddedPostgres
 export async function startEmbeddedPostgresTestDatabase(
   tempDirPrefix: string,
 ): Promise<EmbeddedPostgresTestDatabase> {
+  if (process.env.CLAWDEV_ENABLE_EMBEDDED_POSTGRES_TESTS !== "true") {
+    throw new Error("Embedded Postgres tests are disabled unless CLAWDEV_ENABLE_EMBEDDED_POSTGRES_TESTS=true");
+  }
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), tempDirPrefix));
   const port = await getAvailablePort();
   const EmbeddedPostgres = await getEmbeddedPostgresCtor();

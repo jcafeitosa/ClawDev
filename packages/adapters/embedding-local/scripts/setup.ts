@@ -12,12 +12,12 @@
  *   pnpm setup --binary-only— only downloads the binary
  */
 
-import fs from "node:fs";
-import https from "node:https";
-import http from "node:http";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { execSync } from "node:child_process";
+import fs from "fs";
+import https from "https";
+import http from "http";
+import path from "path";
+import { fileURLToPath } from "url";
+import { execSync } from "child_process";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");

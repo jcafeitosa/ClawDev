@@ -1,8 +1,8 @@
-import fs from "node:fs/promises";
-import type { Dirent } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import fs from "fs/promises";
+import type { Dirent } from "fs";
+import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@clawdev/adapter-utils";
 import {
   asBoolean,

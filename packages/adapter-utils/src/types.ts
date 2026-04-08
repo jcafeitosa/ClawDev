@@ -275,6 +275,16 @@ export interface ServerAdapterModule {
   type: string;
   execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult>;
   testEnvironment(ctx: AdapterEnvironmentTestContext): Promise<AdapterEnvironmentTestResult>;
+  /**
+   * Optional readiness metadata for automated install/update flows.
+   * When omitted, the adapter is considered inspect-only.
+   */
+  readiness?: {
+    minimumVersion?: string;
+    installCommand?: string;
+    upgradeCommand?: string;
+    versionCommand?: string;
+  };
   listSkills?: (ctx: AdapterSkillContext) => Promise<AdapterSkillSnapshot>;
   syncSkills?: (ctx: AdapterSkillContext, desiredSkills: string[]) => Promise<AdapterSkillSnapshot>;
   sessionCodec?: AdapterSessionCodec;

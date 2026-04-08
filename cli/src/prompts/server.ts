@@ -63,7 +63,7 @@ export async function promptServer(opts?: {
     defaultValue: currentServer?.host ?? hostDefault,
     placeholder: hostDefault,
     validate: (val) => {
-      if (!val.trim()) return "Host is required";
+      if (typeof val !== "string" || !val.trim()) return "Host is required";
     },
   });
 
@@ -77,6 +77,9 @@ export async function promptServer(opts?: {
     defaultValue: String(currentServer?.port ?? 3100),
     placeholder: "3100",
     validate: (val) => {
+      if (typeof val !== "string") {
+        return "Must be an integer between 1 and 65535";
+      }
       const n = Number(val);
       if (isNaN(n) || n < 1 || n > 65535 || !Number.isInteger(n)) {
         return "Must be an integer between 1 and 65535";
@@ -96,6 +99,7 @@ export async function promptServer(opts?: {
       defaultValue: (currentServer?.allowedHostnames ?? []).join(", "),
       placeholder: "dotta-macbook-pro, your-host.tailnet.ts.net",
       validate: (val) => {
+        if (typeof val !== "string") return "Invalid hostname list";
         try {
           parseHostnameCsv(val);
           return;
@@ -120,6 +124,7 @@ export async function promptServer(opts?: {
       defaultValue: currentAuth?.publicBaseUrl ?? "",
       placeholder: "https://clawdev.example.com",
       validate: (val) => {
+        if (typeof val !== "string") return "Public base URL is required for public exposure";
         const candidate = val.trim();
         if (!candidate) return "Public base URL is required for public exposure";
         try {

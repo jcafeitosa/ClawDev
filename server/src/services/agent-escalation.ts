@@ -4,10 +4,13 @@ import { agents, agentTeamMembers, agentTeams } from "@clawdev/db";
 import { agentDelegationService } from "./agent-delegations.js";
 import { agentMessageService } from "./agent-messages.js";
 import { publishLiveEvent } from "./live-events.js";
+import { agentHookService } from "./agent-hooks.js";
+import { logger } from "../middleware/logger.js";
 
 export function agentEscalationService(db: Db) {
   const delegations = agentDelegationService(db);
   const messaging = agentMessageService(db);
+  const hookSvc = agentHookService(db);
 
   async function escalateToManager(
     companyId: string,
@@ -46,6 +49,10 @@ export function agentEscalationService(db: Db) {
       type: "escalation.created",
       payload: { agentId, managerId, reason: opts.reason },
     });
+
+    hookSvc.fireEvent(companyId, agentId, "escalation.triggered" as any, {
+      reason: opts.reason, toAgentId: managerId, issueId: opts.issueId,
+    }).catch(err => logger.error({ err }, "hook fireEvent failed"));
 
     return delegation;
   }
@@ -90,6 +97,10 @@ export function agentEscalationService(db: Db) {
       type: "escalation.created",
       payload: { agentId, managerId: leadId, reason: opts.reason },
     });
+
+    hookSvc.fireEvent(companyId, agentId, "escalation.triggered" as any, {
+      reason: opts.reason, toAgentId: leadId, issueId: opts.issueId,
+    }).catch(err => logger.error({ err }, "hook fireEvent failed"));
 
     return delegation;
   }

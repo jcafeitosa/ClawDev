@@ -1,4 +1,4 @@
-FROM node:lts-trixie-slim
+FROM oven/bun:1-trixie
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends \
@@ -17,8 +17,7 @@ RUN apt-get update \
 
 RUN ln -sf /usr/bin/fdfind /usr/local/bin/fd
 
-RUN corepack enable \
-  && npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest
+RUN bun add --global @anthropic-ai/claude-code@latest @openai/codex@latest
 
 RUN useradd --create-home --shell /bin/bash reviewer
 

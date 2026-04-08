@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import fs from "node:fs";
+import { createHash } from "crypto";
+import fs from "fs";
 import { afterEach, describe, expect, it } from "vitest";
 import postgres from "postgres";
 import {

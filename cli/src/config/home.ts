@@ -1,5 +1,5 @@
-import os from "node:os";
-import path from "node:path";
+import os from "os";
+import path from "path";
 
 const DEFAULT_INSTANCE_ID = "default";
 const INSTANCE_ID_RE = /^[a-zA-Z0-9_-]+$/;

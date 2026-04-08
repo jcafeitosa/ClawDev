@@ -1,7 +1,7 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
 import type { AdapterExecutionContext, AdapterExecutionResult } from "@clawdev/adapter-utils";
 import type { RunProcessResult } from "@clawdev/adapter-utils/server-utils";
 import {

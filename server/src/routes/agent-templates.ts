@@ -10,9 +10,9 @@ import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logActivity } from "../services/index.js";
 import { agentTemplateService } from "../services/agent-templates.js";
-import { getLogger } from "../logger.js";
+import { logger } from "../middleware/logger.js";
 
-const logger = getLogger("agent-templates");
+
 
 export function agentTemplateRoutes(db: Db) {
   const templates = agentTemplateService(db);
@@ -28,7 +28,7 @@ export function agentTemplateRoutes(db: Db) {
           assertCompanyAccess(actor, params.companyId);
           return templates.list(params.companyId);
         } catch (err) {
-          logger.error("Error listing templates", err);
+          logger.error({ err: err }, "Error listing templates");
           throw err;
         }
       },
@@ -64,7 +64,7 @@ export function agentTemplateRoutes(db: Db) {
           set.status = 201;
           return tmpl;
         } catch (err) {
-          logger.error("Error creating template", err);
+          logger.error({ err: err }, "Error creating template");
           throw err;
         }
       },
@@ -84,7 +84,7 @@ export function agentTemplateRoutes(db: Db) {
           }
           return tmpl;
         } catch (err) {
-          logger.error("Error getting template", err);
+          logger.error({ err: err }, "Error getting template");
           throw err;
         }
       },
@@ -104,7 +104,7 @@ export function agentTemplateRoutes(db: Db) {
           }
           return updated;
         } catch (err) {
-          logger.error("Error updating template", err);
+          logger.error({ err: err }, "Error updating template");
           throw err;
         }
       },
@@ -124,7 +124,7 @@ export function agentTemplateRoutes(db: Db) {
           }
           return deleted;
         } catch (err) {
-          logger.error("Error deleting template", err);
+          logger.error({ err: err }, "Error deleting template");
           throw err;
         }
       },
@@ -158,7 +158,7 @@ export function agentTemplateRoutes(db: Db) {
           set.status = 201;
           return agent;
         } catch (err) {
-          logger.error("Error instantiating template", err);
+          logger.error({ err: err }, "Error instantiating template");
           throw err;
         }
       },

@@ -1,9 +1,9 @@
-import { execFile } from "node:child_process";
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { execFile } from "child_process";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
+import { promisify } from "util";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   cleanupExecutionWorkspaceArtifacts,
@@ -740,7 +740,7 @@ describe("ensureRuntimeServicesForRun", () => {
     const workspaceRoot = await fs.mkdtemp(path.join(os.tmpdir(), "clawdev-runtime-workspace-"));
     const workspace = buildWorkspace(workspaceRoot);
     const serviceCommand =
-      "node -e \"require('node:http').createServer((req,res)=>res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1')\"";
+      "node -e \"require('http').createServer((req,res)=>res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1')\"";
 
     const config = {
       workspaceRuntime: {
@@ -843,7 +843,7 @@ describe("ensureRuntimeServicesForRun", () => {
       "node -e",
       JSON.stringify(
         [
-          "const fs = require('node:fs');",
+          "const fs = require('fs');",
           `fs.writeFileSync(${JSON.stringify(envCapturePath)}, JSON.stringify({`,
           "clawdevConfig: process.env.CLAWDEV_CONFIG ?? null,",
           "clawdevHome: process.env.CLAWDEV_HOME ?? null,",
@@ -852,7 +852,7 @@ describe("ensureRuntimeServicesForRun", () => {
           "customEnv: process.env.RUNTIME_CUSTOM_ENV ?? null,",
           "port: process.env.PORT ?? null,",
           "}));",
-          "require('node:http').createServer((req, res) => res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1');",
+          "require('http').createServer((req, res) => res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1');",
         ].join(" "),
       ),
     ].join(" ");
@@ -937,7 +937,7 @@ describe("ensureRuntimeServicesForRun", () => {
             {
               name: "web",
               command:
-                "node -e \"require('node:http').createServer((req,res)=>res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1')\"",
+                "node -e \"require('http').createServer((req,res)=>res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1')\"",
               port: { type: "auto" },
               readiness: {
                 type: "http",
@@ -996,7 +996,7 @@ describe("ensureRuntimeServicesForRun", () => {
             {
               name: "web",
               command:
-                "node -e \"require('node:http').createServer((req,res)=>res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1')\"",
+                "node -e \"require('http').createServer((req,res)=>res.end('ok')).listen(Number(process.env.PORT), '127.0.0.1')\"",
               port: { type: "auto" },
               readiness: {
                 type: "http",

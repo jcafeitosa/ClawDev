@@ -1,7 +1,7 @@
-import { randomUUID } from "node:crypto";
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { randomUUID } from "crypto";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { eq } from "drizzle-orm";
 import { Elysia } from "elysia";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -23,7 +23,7 @@ import { accessService } from "../services/access.js";
 
 vi.mock("../services/index.js", async () => {
   const actual = await vi.importActual<typeof import("../services/index.js")>("../services/index.js");
-  const { randomUUID } = await import("node:crypto");
+  const { randomUUID } = await import("crypto");
 
   return {
     ...actual,

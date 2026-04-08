@@ -84,6 +84,7 @@ Each task should state:
 - and what dependencies it has.
 
 Task breakdowns should be specific enough that another contributor or agent can execute them without re-deriving the product decision.
+A strong SDD plan also makes the risk, rollout, rollback, and verification path explicit so the change can be shipped and reversed safely.
 
 ### 3.4 Implementation
 

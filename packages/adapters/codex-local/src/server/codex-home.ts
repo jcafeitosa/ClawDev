@@ -1,6 +1,6 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 import type { AdapterExecutionContext } from "@clawdev/adapter-utils";
 
 const TRUTHY_ENV_RE = /^(1|true|yes|on)$/i;

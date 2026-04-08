@@ -34,12 +34,12 @@ describe("agent local JWT", () => {
     else process.env[audienceEnv] = originalEnv.audience;
   });
 
-  it("creates and verifies a token", () => {
+  it("creates and verifies a token", async () => {
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
-    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
+    const token = await createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
     expect(typeof token).toBe("string");
 
-    const claims = verifyLocalAgentJwt(token!);
+    const claims = await verifyLocalAgentJwt(token!);
     expect(claims).toMatchObject({
       sub: "agent-1",
       company_id: "company-1",
@@ -50,30 +50,30 @@ describe("agent local JWT", () => {
     });
   });
 
-  it("returns null when secret is missing", () => {
+  it("returns null when secret is missing", async () => {
     process.env[secretEnv] = "";
-    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
+    const token = await createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
     expect(token).toBeNull();
-    expect(verifyLocalAgentJwt("abc.def.ghi")).toBeNull();
+    expect(await verifyLocalAgentJwt("abc.def.ghi")).toBeNull();
   });
 
-  it("rejects expired tokens", () => {
+  it("rejects expired tokens", async () => {
     process.env[ttlEnv] = "1";
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
-    const token = createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
+    const token = await createLocalAgentJwt("agent-1", "company-1", "claude_local", "run-1");
 
     vi.setSystemTime(new Date("2026-01-01T00:00:05.000Z"));
-    expect(verifyLocalAgentJwt(token!)).toBeNull();
+    expect(await verifyLocalAgentJwt(token!)).toBeNull();
   });
 
-  it("rejects issuer/audience mismatch", () => {
+  it("rejects issuer/audience mismatch", async () => {
     process.env[issuerEnv] = "custom-issuer";
     process.env[audienceEnv] = "custom-audience";
     vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
-    const token = createLocalAgentJwt("agent-1", "company-1", "codex_local", "run-1");
+    const token = await createLocalAgentJwt("agent-1", "company-1", "codex_local", "run-1");
 
     process.env[issuerEnv] = "clawdev";
     process.env[audienceEnv] = "clawdev-api";
-    expect(verifyLocalAgentJwt(token!)).toBeNull();
+    expect(await verifyLocalAgentJwt(token!)).toBeNull();
   });
 });

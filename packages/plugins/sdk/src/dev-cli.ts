@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import path from "node:path";
 import { startPluginDevServer } from "./dev-server.js";
 
 function parseArg(flag: string): string | undefined {
@@ -25,7 +24,7 @@ async function main() {
   }
 
   const server = await startPluginDevServer({
-    rootDir: path.resolve(rootDir),
+    rootDir,
     uiDir,
     host,
     port,

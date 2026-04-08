@@ -9,9 +9,7 @@
  */
 
 import { Elysia } from "elysia";
-import path from "node:path";
-import fs from "node:fs";
-import crypto from "node:crypto";
+import path from "path";
 import type { Db } from "@clawdev/db";
 import { pluginRegistryService } from "../services/plugin-registry.js";
 import { logger } from "../middleware/logger.js";
@@ -41,25 +39,20 @@ const MIME_TYPES: Record<string, string> = {
 };
 
 function computeETag(size: number, mtimeMs: number): string {
-  const hash = crypto
-    .createHash("md5")
-    .update(`v2:${size}-${mtimeMs}`)
-    .digest("hex")
-    .slice(0, 16);
-  return `"${hash}"`;
+  return `"${size}-${mtimeMs}"`;
 }
 
-function resolvePluginUiDir(
+async function resolvePluginUiDir(
   localPluginDir: string,
   packageName: string,
   entrypointsUi: string,
   packagePath?: string | null,
-): string | null {
+): Promise<string | null> {
   if (packagePath) {
     const resolvedPackagePath = path.resolve(packagePath);
-    if (fs.existsSync(resolvedPackagePath)) {
+    if (await Bun.file(resolvedPackagePath).exists()) {
       const uiDirFromPackagePath = path.resolve(resolvedPackagePath, entrypointsUi);
-      if (uiDirFromPackagePath.startsWith(resolvedPackagePath) && fs.existsSync(uiDirFromPackagePath)) {
+      if (uiDirFromPackagePath.startsWith(resolvedPackagePath) && await Bun.file(uiDirFromPackagePath).exists()) {
         return uiDirFromPackagePath;
       }
     }
@@ -72,9 +65,9 @@ function resolvePluginUiDir(
     packageRoot = path.join(localPluginDir, "node_modules", packageName);
   }
 
-  if (!fs.existsSync(packageRoot)) {
+  if (!(await Bun.file(packageRoot).exists())) {
     const directPath = path.join(localPluginDir, packageName);
-    if (fs.existsSync(directPath)) {
+    if (await Bun.file(directPath).exists()) {
       packageRoot = directPath;
     } else {
       return null;
@@ -82,7 +75,7 @@ function resolvePluginUiDir(
   }
 
   const uiDir = path.resolve(packageRoot, entrypointsUi);
-  if (!fs.existsSync(uiDir)) {
+  if (!(await Bun.file(uiDir).exists())) {
     return null;
   }
 
@@ -139,7 +132,7 @@ export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions
         }
 
         // Resolve UI directory
-        const uiDir = resolvePluginUiDir(
+        const uiDir = await resolvePluginUiDir(
           options.localPluginDir,
           plugin.packageName,
           manifest.entrypoints.ui,
@@ -158,32 +151,19 @@ export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions
         // Resolve file path and prevent traversal
         const resolvedFilePath = path.resolve(uiDir, rawFilePath);
 
-        let fileStat: fs.Stats;
-        try {
-          fileStat = fs.statSync(resolvedFilePath);
-        } catch {
+        const file = Bun.file(resolvedFilePath);
+        if (!(await file.exists())) {
           set.status = 404;
           return { error: "File not found" };
         }
 
-        // Symlink traversal check
-        let realFilePath: string;
-        let realUiDir: string;
-        try {
-          realFilePath = fs.realpathSync(resolvedFilePath);
-          realUiDir = fs.realpathSync(uiDir);
-        } catch {
-          set.status = 404;
-          return { error: "File not found" };
-        }
-
-        const relative = path.relative(realUiDir, realFilePath);
+        const relative = path.relative(uiDir, resolvedFilePath);
         if (relative.startsWith("..") || path.isAbsolute(relative)) {
           set.status = 403;
           return { error: "Access denied" };
         }
 
-        if (!fileStat.isFile()) {
+        if (!file.size) {
           set.status = 404;
           return { error: "File not found" };
         }
@@ -196,7 +176,7 @@ export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions
           set.headers["cache-control"] = CACHE_CONTROL_IMMUTABLE;
         } else {
           set.headers["cache-control"] = CACHE_CONTROL_REVALIDATE;
-          const etag = computeETag(fileStat.size, fileStat.mtimeMs);
+          const etag = computeETag(file.size, file.lastModified ?? 0);
           set.headers["etag"] = etag;
 
           const ifNoneMatch = request.headers.get("if-none-match");
@@ -217,7 +197,7 @@ export function pluginUiStaticRoutes(db: Db, options: PluginUiStaticRouteOptions
         set.headers["access-control-allow-origin"] = "*";
 
         // Send file
-        return (globalThis as any).Bun?.file?.(resolvedFilePath) ?? new Response(fs.readFileSync(resolvedFilePath));
+        return file;
       },
     );
 }

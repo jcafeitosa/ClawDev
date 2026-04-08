@@ -10,7 +10,7 @@
    */
   import { goto } from "$app/navigation";
   import { page } from "$app/stores";
-  import { companyStore } from "$stores/company.svelte.js";
+  import { companyStore, getCompanyPrefix } from "$stores/company.svelte.js";
   import { resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
   import { api } from "$lib/api";
   import {
@@ -67,11 +67,12 @@
         (company) =>
           company.id === routePrefix ||
           company.slug === routePrefix ||
-          String(company.issuePrefix ?? "").trim().toUpperCase() === normalized,
+          String(company.issuePrefix ?? "").trim().toUpperCase() === normalized ||
+          getCompanyPrefix(company) === routePrefix,
       ) ?? null
     );
   });
-  const prefix = $derived(routePrefix || (routeCompany?.slug ?? companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? ""));
+  const prefix = $derived(routePrefix || (routeCompany ? getCompanyPrefix(routeCompany) : (companyStore.selectedCompany ? getCompanyPrefix(companyStore.selectedCompany) : companyStore.selectedCompanyId ?? "")));
   const companyId = $derived(resolveCompanyIdFromPrefix(routePrefix) ?? routeCompany?.id ?? companyStore.selectedCompanyId ?? "");
 
   // ---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
-import { Buffer } from "node:buffer";
-import { spawn } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import { promises as fs } from "node:fs";
-import path from "node:path";
+import { Buffer } from "buffer";
+import { spawn } from "child_process";
+import { randomUUID } from "crypto";
+import { promises as fs } from "fs";
+import path from "path";
 import {
   PLUGIN_STATE_SCOPE_KINDS,
   definePlugin,

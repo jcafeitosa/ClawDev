@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type {
   ClawDevPluginManifestV1,
   PluginCapability,
@@ -116,6 +115,10 @@ function isInCompany<T extends { companyId: string | null | undefined }>(
   companyId: string,
 ): record is T {
   return Boolean(record && record.companyId === companyId);
+}
+
+function randomId(): string {
+  return crypto.randomUUID();
 }
 
 /**
@@ -249,7 +252,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
             updatedAt: now,
           }
           : {
-            id: randomUUID(),
+            id: randomId(),
             entityType: input.entityType,
             scopeKind: input.scopeKind,
             scopeId: input.scopeId ?? null,
@@ -350,7 +353,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         requireCapability(manifest, capabilitySet, "issues.create");
         const now = new Date();
         const record: Issue = {
-          id: randomUUID(),
+          id: randomId(),
           companyId: input.companyId,
           projectId: input.projectId ?? null,
           projectWorkspaceId: null,
@@ -411,7 +414,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         }
         const now = new Date();
         const comment: IssueComment = {
-          id: randomUUID(),
+          id: randomId(),
           companyId: parentIssue.companyId,
           issueId,
           authorAgentId: null,
@@ -502,7 +505,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         ) {
           throw new Error(`Agent is not invokable in its current state: ${agent!.status}`);
         }
-        return { runId: randomUUID() };
+        return { runId: randomId() };
       },
       sessions: {
         async create(agentId, companyId, opts) {
@@ -511,7 +514,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           const agent = agents.get(agentId);
           if (!isInCompany(agent, cid)) throw new Error(`Agent not found: ${agentId}`);
           const session: AgentSession = {
-            sessionId: randomUUID(),
+            sessionId: randomId(),
             agentId,
             companyId: cid,
             status: "active",
@@ -535,7 +538,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
           if (opts.onEvent) {
             sessionEventCallbacks.set(sessionId, opts.onEvent);
           }
-          return { runId: randomUUID() };
+          return { runId: randomId() };
         },
         async close(sessionId, companyId) {
           requireCapability(manifest, capabilitySet, "agent.sessions.close");
@@ -568,7 +571,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
         requireCapability(manifest, capabilitySet, "goals.create");
         const now = new Date();
         const record: Goal = {
-          id: randomUUID(),
+          id: randomId(),
           companyId: input.companyId,
           title: input.title,
           description: input.description ?? null,
@@ -666,7 +669,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
     },
     async emit(eventType, payload, base) {
       const event: PluginEvent = {
-        eventId: base?.eventId ?? randomUUID(),
+        eventId: base?.eventId ?? randomId(),
         eventType,
         companyId: base?.companyId ?? "test-company",
         occurredAt: base?.occurredAt ?? new Date().toISOString(),
@@ -692,7 +695,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       if (!handler) throw new Error(`No job handler registered for '${jobKey}'`);
       await handler({
         jobKey,
-        runId: partial.runId ?? randomUUID(),
+        runId: partial.runId ?? randomId(),
         trigger: partial.trigger ?? "manual",
         scheduledAt: partial.scheduledAt ?? new Date().toISOString(),
       });
@@ -712,7 +715,7 @@ export function createTestHarness(options: TestHarnessOptions): TestHarness {
       if (!handler) throw new Error(`No tool handler registered for '${name}'`);
       const ctxToPass: ToolRunContext = {
         agentId: runCtx.agentId ?? "agent-test",
-        runId: runCtx.runId ?? randomUUID(),
+        runId: runCtx.runId ?? randomId(),
         companyId: runCtx.companyId ?? "company-test",
         projectId: runCtx.projectId ?? "project-test",
       };

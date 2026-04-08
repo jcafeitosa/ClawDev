@@ -1,4 +1,4 @@
-import { URL } from "node:url";
+import { URL } from "url";
 
 export class ApiRequestError extends Error {
   status: number;

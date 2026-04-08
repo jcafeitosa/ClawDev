@@ -9,10 +9,7 @@
  * Delegates to existing service layer (pluginRegistryService, pluginLifecycleManager, etc.)
  */
 
-import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import path from "path";
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { pluginLogs, pluginWebhookDeliveries } from "@clawdev/db";
@@ -47,8 +44,7 @@ interface AvailablePluginExample {
   tag: "example";
 }
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const REPO_ROOT = path.resolve(__dirname, "../../..");
+const REPO_ROOT = path.resolve(new URL(".", import.meta.url).pathname, "../../..");
 
 const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
   {
@@ -77,12 +73,14 @@ const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
   },
 ];
 
-function listBundledPluginExamples(): AvailablePluginExample[] {
-  return BUNDLED_PLUGIN_EXAMPLES.flatMap((plugin) => {
+async function listBundledPluginExamples(): Promise<AvailablePluginExample[]> {
+  const examples: AvailablePluginExample[] = [];
+  for (const plugin of BUNDLED_PLUGIN_EXAMPLES) {
     const absoluteLocalPath = path.resolve(REPO_ROOT, plugin.localPath);
-    if (!existsSync(absoluteLocalPath)) return [];
-    return [{ ...plugin, localPath: absoluteLocalPath }];
-  });
+    if (!(await Bun.file(absoluteLocalPath).exists())) continue;
+    examples.push({ ...plugin, localPath: absoluteLocalPath });
+  }
+  return examples;
 }
 
 export interface PluginRouteDeps {
@@ -162,7 +160,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
     .get("/examples", async ({ ...ctx }: any) => {
       try {
         assertBoard(ctx.actor);
-        return listBundledPluginExamples();
+        return await listBundledPluginExamples();
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         log.error({ category: "http.error", err: errMsg }, "Failed to list plugin examples");
@@ -1187,7 +1185,7 @@ export function pluginRoutes(deps: PluginRouteDeps) {
             return { error: `Webhook endpoint '${params.endpointKey}' is not declared by this plugin` };
           }
 
-          const requestId = randomUUID();
+          const requestId = crypto.randomUUID();
           const rawHeaders: Record<string, string> = {};
           if (request?.headers) {
             for (const [key, value] of request.headers.entries()) {

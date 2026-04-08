@@ -1,12 +1,11 @@
-import fs from "node:fs";
-import path from "node:path";
+import path from "path";
 import { expandHomePrefix } from "../config/home.js";
 
 function unique(items: string[]): string[] {
   return Array.from(new Set(items));
 }
 
-export function resolveRuntimeLikePath(value: string, configPath?: string): string {
+export async function resolveRuntimeLikePath(value: string, configPath?: string): Promise<string> {
   const expanded = expandHomePrefix(value);
   if (path.isAbsolute(expanded)) return path.resolve(expanded);
 
@@ -21,5 +20,8 @@ export function resolveRuntimeLikePath(value: string, configPath?: string): stri
     path.resolve(cwd, expanded),
   ]);
 
-  return candidates.find((candidate) => fs.existsSync(candidate)) ?? candidates[0];
+  for (const candidate of candidates) {
+    if (await Bun.file(candidate).exists()) return candidate;
+  }
+  return candidates[0];
 }

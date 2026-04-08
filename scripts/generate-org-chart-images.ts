@@ -130,7 +130,7 @@ interface StyleDef {
   key: string;
   name: string;
   css: string;
-  renderCard: (node: OrgNode, isOg: boolean) => string;
+  renderCard: ( OrgNode, isOg: boolean) => string;
 }
 
 const COMMON_CSS = `
@@ -189,7 +189,7 @@ body {
   position: relative;
 }
 
-.org-children > .org-node::before {
+.org-children > .org-:before {
   content: '';
   position: absolute;
   top: 0;
@@ -200,7 +200,7 @@ body {
   background: var(--line-color);
 }
 
-.org-children > .org-node::after {
+.org-children > .org-:after {
   content: '';
   position: absolute;
   top: 0;
@@ -210,9 +210,9 @@ body {
   background: var(--line-color);
 }
 
-.org-children > .org-node:first-child::after { left: 50%; }
-.org-children > .org-node:last-child::after { right: 50%; }
-.org-children > .org-node:only-child::after { display: none; }
+.org-children > .org-first-child::after { left: 50%; }
+.org-children > .org-last-child::after { right: 50%; }
+.org-children > .org-only-child::after { display: none; }
 
 .org-card {
   text-align: center;
@@ -516,7 +516,7 @@ body { background: #0d1117; }
 // ── HTML rendering ─────────────────────────────────────────────
 
 function renderNode(
-  node: OrgNode,
+   OrgNode,
   style: StyleDef,
   isOg: boolean,
 ): string {

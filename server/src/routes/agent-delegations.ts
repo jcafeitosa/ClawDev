@@ -11,7 +11,7 @@ import { logActivity } from "../services/index.js";
 import { agentDelegationService } from "../services/agent-delegations.js";
 import { agentEscalationService } from "../services/agent-escalation.js";
 import { agentHookService } from "../services/agent-hooks.js";
-import { logger } from "../logger.js";
+import { logger } from "../middleware/logger.js";
 
 export function agentDelegationRoutes(db: Db) {
   const delegations = agentDelegationService(db);
@@ -62,7 +62,7 @@ export function agentDelegationRoutes(db: Db) {
           set.status = 201;
           return delegation;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "POST /agents/:id/delegations" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "POST /agents/:id/delegations" }, "http.error");
           throw error;
         }
       },
@@ -81,7 +81,7 @@ export function agentDelegationRoutes(db: Db) {
             limit: query?.limit ? parseInt(query.limit) : undefined,
           });
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "GET /agents/:id/delegations" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "GET /agents/:id/delegations" }, "http.error");
           throw error;
         }
       },
@@ -101,7 +101,7 @@ export function agentDelegationRoutes(db: Db) {
           }
           return delegation;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "GET /agent-delegations/:id" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "GET /agent-delegations/:id" }, "http.error");
           throw error;
         }
       },
@@ -133,7 +133,7 @@ export function agentDelegationRoutes(db: Db) {
 
           return updated;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "POST /agent-delegations/:id/accept" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "POST /agent-delegations/:id/accept" }, "http.error");
           throw error;
         }
       },
@@ -165,7 +165,7 @@ export function agentDelegationRoutes(db: Db) {
 
           return updated;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "POST /agent-delegations/:id/reject" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "POST /agent-delegations/:id/reject" }, "http.error");
           throw error;
         }
       },
@@ -201,7 +201,7 @@ export function agentDelegationRoutes(db: Db) {
 
           return updated;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "POST /agent-delegations/:id/complete" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "POST /agent-delegations/:id/complete" }, "http.error");
           throw error;
         }
       },
@@ -234,7 +234,7 @@ export function agentDelegationRoutes(db: Db) {
 
           return newDelegation;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "POST /agent-delegations/:id/escalate" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "POST /agent-delegations/:id/escalate" }, "http.error");
           throw error;
         }
       },
@@ -266,7 +266,7 @@ export function agentDelegationRoutes(db: Db) {
 
           return updated;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "DELETE /agent-delegations/:id" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "DELETE /agent-delegations/:id" }, "http.error");
           throw error;
         }
       },
@@ -291,7 +291,7 @@ export function agentDelegationRoutes(db: Db) {
           }
           return result;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "POST /agents/:id/escalate/manager" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "POST /agents/:id/escalate/manager" }, "http.error");
           throw error;
         }
       },
@@ -314,7 +314,7 @@ export function agentDelegationRoutes(db: Db) {
           }
           return result;
         } catch (error) {
-          logger.error("http.error", { message: (error instanceof Error ? error.message : String(error)), route: "POST /agents/:id/escalate/team-lead" });
+          logger.error({ message: (error instanceof Error ? error.message : String(error)), route: "POST /agents/:id/escalate/team-lead" }, "http.error");
           throw error;
         }
       },

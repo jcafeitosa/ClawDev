@@ -1,16 +1,18 @@
-import { execFile, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
-import net from "node:net";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { execFile, spawn } from "child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "fs";
+import net from "net";
+import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
+import { promisify } from "util";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { encodePGliteUrl, openPGliteDatabase, type PGliteDatabaseHandle } from "@clawdev/db";
 import { createStoredZipArchive } from "./helpers/zip.js";
 
 const execFileAsync = promisify(execFile);
 type ServerProcess = ReturnType<typeof spawn>;
+
+const runEmbeddedDbE2e = process.env.CLAWDEV_ENABLE_EMBEDDED_POSTGRES_TESTS === "true";
 
 async function getAvailablePort(): Promise<number> {
   return await new Promise((resolve, reject) => {
@@ -240,7 +242,9 @@ async function waitForServer(
   );
 }
 
-describe("clawdev company import/export e2e", () => {
+const describeCompanyImportExport = runEmbeddedDbE2e ? describe : describe.skip;
+
+describeCompanyImportExport("clawdev company import/export e2e", () => {
   let tempRoot = "";
   let configPath = "";
   let exportDir = "";
@@ -335,6 +339,12 @@ describe("clawdev company import/export e2e", () => {
         body: JSON.stringify({
           name: "Portability Verification",
           status: "in_progress",
+          sddSpec: "Create the portability verification project for the export/import round-trip.",
+          sddDesign: "Use a single project that owns the import/export validation path and the large issue payload.",
+          sddRisk: "The main risk is losing workspace references during import, so verify every link before release.",
+          sddRollout: "Roll out the project in a staging company first, then promote it after the data round-trip passes.",
+          sddRollback: "If the import fails, discard the project and retry from the original export package.",
+          sddValidation: "Confirm the project can accept tasks, be exported, and be imported into another company.",
         }),
       },
     );
@@ -353,6 +363,12 @@ describe("clawdev company import/export e2e", () => {
           status: "todo",
           projectId: sourceProject.id,
           assigneeAgentId: sourceAgent.id,
+          sddSpec: "Validate that the company export and import pipeline preserves projects and issues.",
+          sddDesign: "Create one large issue attached to the portability verification project and verify it survives the round-trip.",
+          sddRisk: "The main risk is losing the project or assignment reference, so verify those links after import.",
+          sddRollout: "Roll out the issue as one controlled portability check, then confirm the imported record before use.",
+          sddRollback: "If the imported issue is incomplete, remove it and retry the portability validation run.",
+          sddValidation: "Confirm the imported issue keeps the expected title, project link, and assignment.",
         }),
       },
     );

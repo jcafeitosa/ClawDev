@@ -1,6 +1,6 @@
-import { readFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { readFile } from "fs/promises";
+import os from "os";
+import path from "path";
 import type {
   AdapterEnvironmentCheck,
   AdapterEnvironmentTestContext,
@@ -43,6 +43,27 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
   const clean = raw.replace(/\s+/g, " ").trim();
   const max = 240;
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+function parseGeminiHelpCommands(stdout: string, stderr: string): string[] {
+  const text = `${stdout}\n${stderr}`;
+  const commands: string[] = [];
+  let inCommands = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/^Commands:$/i.test(line)) {
+      inCommands = true;
+      continue;
+    }
+    if (inCommands && /^Options:$/i.test(line)) break;
+    if (!inCommands) continue;
+    const match = line.match(/^gemini\s+([a-z][a-z0-9-]+)/i);
+    if (!match) continue;
+    const name = match[1]!.toLowerCase();
+    if (!commands.includes(name)) commands.push(name);
+  }
+  return commands;
 }
 
 export async function testEnvironment(
@@ -135,6 +156,32 @@ export async function testEnvironment(
         hint: "Use the `gemini` CLI command to run the automatic installation and auth probe.",
       });
     } else {
+      try {
+        const helpProbe = await runChildProcess(
+          `gemini-help-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          ["--help"],
+          {
+            cwd,
+            env,
+            timeoutSec: 10,
+            graceSec: 3,
+            onLog: async () => {},
+          },
+        );
+        const helpCommands = parseGeminiHelpCommands(helpProbe.stdout, helpProbe.stderr);
+        if (helpCommands.length > 0) {
+          checks.push({
+            code: "gemini_command_surface",
+            level: "info",
+            message: "Gemini CLI command surface detected",
+            detail: helpCommands.join(", "),
+          });
+        }
+      } catch {
+        // Help probe failed — skip silently
+      }
+
       const model = asString(config.model, DEFAULT_GEMINI_LOCAL_MODEL).trim();
       const approvalMode = asString(config.approvalMode, asBoolean(config.yolo, false) ? "yolo" : "default");
       const sandbox = asBoolean(config.sandbox, false);

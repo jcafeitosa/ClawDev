@@ -88,7 +88,13 @@ describe("adapter model listing", () => {
     }));
 
     const models = await listAdapterModels("cursor");
-    expect(models).toEqual(cursorFallbackModels);
+    expect(models).toHaveLength(cursorFallbackModels.length);
+    expect(models.map((model) => model.id)).toEqual(cursorFallbackModels.map((model) => model.id));
+    for (const model of models) {
+      expect(model.status).toBe("unavailable");
+      expect(model.statusDetail).toBe("CLI not installed");
+      expect(model.probedAt).toBeDefined();
+    }
   });
 
   it("loads cursor models dynamically and caches them", async () => {

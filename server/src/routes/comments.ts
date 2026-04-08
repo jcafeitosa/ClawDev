@@ -62,7 +62,7 @@ export function commentRoutes(db: Db) {
 
           return removed;
         } catch (err) {
-          logger.error("DELETE /comments/:commentId error", err);
+          logger.error({ err: err }, "DELETE /comments/:commentId error");
           throw err;
         }
       },

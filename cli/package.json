@@ -1,7 +1,7 @@
 {
   "name": "clawdev",
   "version": "0.3.1",
-  "description": "ClawDev CLI — orchestrate AI agent teams to run a business",
+  "description": "ClawDev CLI \u2014 orchestrate AI agent teams to run a business",
   "type": "module",
   "bin": {
     "clawdev": "./dist/index.js"
@@ -30,14 +30,13 @@
     "access": "public"
   },
   "scripts": {
-    "dev": "tsx src/index.ts",
-    "build": "node --input-type=module -e \"import esbuild from 'esbuild'; import config from './esbuild.config.mjs'; await esbuild.build(config);\" && chmod +x dist/index.js",
+    "dev": "bun src/index.ts",
+    "build": "bun --eval \"import esbuild from 'esbuild'; import config from './esbuild.config.mjs'; await esbuild.build(config);\" && chmod +x dist/index.js",
     "clean": "rm -rf dist",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@clack/prompts": "^0.10.1",
-    "@elysiajs/eden": "^1.4.8",
+    "@clack/prompts": "^1.2.0",
     "@clawdev/adapter-claude-local": "workspace:*",
     "@clawdev/adapter-codex-local": "workspace:*",
     "@clawdev/adapter-cursor-local": "workspace:*",
@@ -49,15 +48,15 @@
     "@clawdev/db": "workspace:*",
     "@clawdev/server": "workspace:*",
     "@clawdev/shared": "workspace:*",
-    "commander": "^13.1.0",
-    "dotenv": "^17.3.1",
-    "drizzle-orm": "0.38.4",
-    "embedded-postgres": "18.1.0-beta.16",
+    "@elysiajs/eden": "^1.4.9",
+    "commander": "^14.0.3",
+    "dotenv": "^17.4.1",
+    "drizzle-orm": "0.45.2",
+    "embedded-postgres": "18.3.0-beta.16",
     "picocolors": "^1.1.1"
   },
   "devDependencies": {
-    "@types/node": "^22.19.15",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   }
 }

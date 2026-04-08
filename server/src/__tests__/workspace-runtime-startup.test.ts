@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
 import { describe, expect, it } from "vitest";
 import { executionWorkspaces, projectWorkspaces } from "@clawdev/db";
 import { restartDesiredRuntimeServicesOnStartup } from "../services/workspace-runtime.ts";

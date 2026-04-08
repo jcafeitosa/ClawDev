@@ -11,7 +11,7 @@
   import { PageLayout } from "$components/layout/index.js";
   import { ChartCard, RunActivityChart, PriorityChart, IssueStatusChart, SuccessRateChart } from "$lib/components/charts/index.js";
   import { onMount } from "svelte";
-  import { Bot, Play, Pause, Zap, Key, FileText, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Plus, X, Save, RotateCcw, Check, Loader2, MoreHorizontal, AlertCircle, ClipboardList, StopCircle, Brain, Cpu, Terminal, Crown, Code, Rocket, Globe, Server, Database, Cloud } from "lucide-svelte";
+  import { Bot, Play, Pause, Zap, Key, FileText, ChevronRight, ChevronDown, Pencil, Trash2, Copy, Plus, X, Save, RotateCcw, Check, Loader2, MoreHorizontal, AlertCircle, ClipboardList, StopCircle, Brain, Cpu, Terminal, Crown, Code, Rocket, Globe, Server, Database, Cloud, Webhook, TestTube2, Clock } from "lucide-svelte";
   import type { ComponentType } from "svelte";
   import {
     getHierarchyPresetDefinition,
@@ -84,6 +84,40 @@
   let delegateForm = $state({ toAgentId: '', delegationType: 'task', instructions: '', issueId: '' });
   let delegateCreating = $state(false);
   let companyAgents = $state<any[]>([]);
+
+  // Hooks state
+  let hooks = $state<any[]>([]);
+  let hooksLoading = $state(false);
+  let showHookForm = $state(false);
+  let hookCreating = $state(false);
+  let hookForm = $state({
+    name: '',
+    event: 'issue.created' as string,
+    hookType: 'webhook' as string,
+    config: '{}',
+    enabled: true,
+    priority: 0,
+    runAsync: true,
+    retryCount: 0,
+  });
+  let hookExpandedRuns = $state<Record<string, boolean>>({});
+  let hookRuns = $state<Record<string, any[]>>({});
+  let hookRunsLoading = $state<Record<string, boolean>>({});
+  let editingHookId = $state<string | null>(null);
+
+  // Hooks — config sub-fields for structured editing
+  let hookConfigWebhook = $state({ url: '', method: 'POST', headers: '{}' });
+  let hookConfigWakeAgent = $state({ targetAgentId: '' });
+  let hookConfigCreateIssue = $state({ title: '', description: '', projectId: '' });
+  let hookConfigNotifyChannel = $state({ channelId: '', messageTemplate: '' });
+
+  // Cron Jobs (Routines)
+  let routines: any[] = $state([]);
+  let routineRuns: Record<string, any[]> = $state({});
+  let routinesLoading = $state(false);
+  let routinesLoaded = $state(false);
+  let routineRunsLoading: Record<string, boolean> = $state({});
+  let routineExpandedRuns: Record<string, boolean> = $state({});
 
   // API Keys state
   let apiKeys = $state<any[]>([]);
@@ -938,14 +972,17 @@
     configModelsLoading = true;
     configModelsError = null;
     try {
-      const res = await api(`/api/companies/${companyId}/adapters/${at}/models`);
+      const res = await api(`/api/models?adapterType=${encodeURIComponent(at)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.message ?? `Failed (${res.status})`);
       }
       const data = await res.json();
-      const raw = Array.isArray(data) ? data : data.models ?? [];
-      configModels = filterModelsForAdapter(raw, at);
+      const raw = Array.isArray(data?.models) ? data.models : [];
+      configModels = filterModelsForAdapter(
+        raw.filter((model: any) => model.circuitState === "available" || model.circuitState === "cooldown"),
+        at,
+      );
     } catch (err: any) {
       configModels = [];
       configModelsError = err?.message ?? "Failed to load models";
@@ -1130,6 +1167,213 @@
       });
       await loadDelegations();
     } catch (e) { console.error(e); }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Hooks
+  // ---------------------------------------------------------------------------
+  const HOOK_EVENTS = [
+    'issue.created', 'issue.updated', 'issue.status_changed', 'issue.assigned',
+    'run.started', 'run.completed', 'run.failed',
+    'agent.status_changed', 'agent.budget_exceeded',
+    'delegation.created', 'delegation.completed',
+    'channel.message', 'schedule.cron',
+  ] as const;
+
+  const HOOK_TYPES = ['webhook', 'wake_agent', 'create_issue', 'notify_channel'] as const;
+
+  // Load hooks when switching to the hooks tab
+  $effect(() => {
+    if (activeTab === "hooks" && agentUuid) loadHooks();
+  });
+
+  // Load routines when switching to the cron-jobs tab
+  $effect(() => {
+    if (activeTab === "cron-jobs" && agentUuid && companyId && !routinesLoaded && !routinesLoading) {
+      loadRoutines();
+    }
+  });
+
+  async function loadRoutines() {
+    routinesLoading = true;
+    try {
+      const res = await api(`/api/companies/${companyId}/routines`);
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const allRoutines = await res.json();
+      // Filter routines assigned to this agent
+      const agentUuid = agent?.id ?? agentId;
+      routines = allRoutines.filter((r: any) => r.assigneeAgentId === agentUuid);
+
+      // Load triggers for each routine
+      for (const routine of routines) {
+        const trigRes = await api(`/api/routines/${routine.id}`);
+        if (trigRes.ok) {
+          const detail = await trigRes.json();
+          routine.triggers = detail.triggers || [];
+          routine.runsCount = detail.runsCount || 0;
+        }
+      }
+    } catch (e: any) {
+      toastStore.push({ title: "Failed to load routines", body: e.message || "Unknown error", tone: "error" });
+    } finally {
+      routinesLoading = false;
+      routinesLoaded = true;
+    }
+  }
+
+  async function loadRoutineRuns(routineId: string) {
+    routineRunsLoading = { ...routineRunsLoading, [routineId]: true };
+    try {
+      const res = await api(`/api/routines/${routineId}/runs?limit=10`);
+      if (!res.ok) throw new Error(`Failed: ${res.status}`);
+      const runs = await res.json();
+      routineRuns = { ...routineRuns, [routineId]: Array.isArray(runs) ? runs : runs.items || [] };
+    } catch (e: any) {
+      toastStore.push({ title: "Failed to load runs", body: e.message || "Unknown error", tone: "error" });
+    } finally {
+      routineRunsLoading = { ...routineRunsLoading, [routineId]: false };
+    }
+  }
+
+  function toggleRoutineRuns(routineId: string) {
+    const isExpanded = routineExpandedRuns[routineId];
+    routineExpandedRuns = { ...routineExpandedRuns, [routineId]: !isExpanded };
+    if (!isExpanded && !routineRuns[routineId]) {
+      loadRoutineRuns(routineId);
+    }
+  }
+
+  async function loadHooks() {
+    if (!agentUuid) return;
+    hooksLoading = true;
+    try {
+      const res = await api(`/api/agents/${agentUuid}/hooks`);
+      hooks = await res.json();
+    } catch (e) { console.error(e); }
+    finally { hooksLoading = false; }
+  }
+
+  function buildHookConfig(): Record<string, unknown> {
+    switch (hookForm.hookType) {
+      case 'webhook':
+        return { url: hookConfigWebhook.url, method: hookConfigWebhook.method, headers: JSON.parse(hookConfigWebhook.headers || '{}') };
+      case 'wake_agent':
+        return { targetAgentId: hookConfigWakeAgent.targetAgentId };
+      case 'create_issue':
+        return { title: hookConfigCreateIssue.title, description: hookConfigCreateIssue.description, projectId: hookConfigCreateIssue.projectId || undefined };
+      case 'notify_channel':
+        return { channelId: hookConfigNotifyChannel.channelId, messageTemplate: hookConfigNotifyChannel.messageTemplate };
+      default:
+        return JSON.parse(hookForm.config || '{}');
+    }
+  }
+
+  function resetHookForm() {
+    hookForm = { name: '', event: 'issue.created', hookType: 'webhook', config: '{}', enabled: true, priority: 0, runAsync: true, retryCount: 0 };
+    hookConfigWebhook = { url: '', method: 'POST', headers: '{}' };
+    hookConfigWakeAgent = { targetAgentId: '' };
+    hookConfigCreateIssue = { title: '', description: '', projectId: '' };
+    hookConfigNotifyChannel = { channelId: '', messageTemplate: '' };
+    editingHookId = null;
+  }
+
+  async function createOrUpdateHook() {
+    if (!hookForm.name.trim()) return;
+    hookCreating = true;
+    try {
+      const payload = {
+        name: hookForm.name.trim(),
+        event: hookForm.event,
+        hookType: hookForm.hookType,
+        config: buildHookConfig(),
+        enabled: hookForm.enabled,
+        priority: hookForm.priority,
+        runAsync: hookForm.runAsync,
+        retryCount: hookForm.retryCount,
+      };
+      if (editingHookId) {
+        await api(`/api/agent-hooks/${editingHookId}`, {
+          method: 'PATCH',
+          body: JSON.stringify(payload),
+        });
+      } else {
+        await api(`/api/agents/${agentUuid}/hooks`, {
+          method: 'POST',
+          body: JSON.stringify(payload),
+        });
+      }
+      resetHookForm();
+      showHookForm = false;
+      await loadHooks();
+    } catch (e) { console.error(e); }
+    finally { hookCreating = false; }
+  }
+
+  async function toggleHookEnabled(hook: any) {
+    try {
+      await api(`/api/agent-hooks/${hook.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: !hook.enabled }),
+      });
+      await loadHooks();
+    } catch (e) { console.error(e); }
+  }
+
+  async function deleteHook(hook: any) {
+    try {
+      await api(`/api/agent-hooks/${hook.id}`, { method: 'DELETE' });
+      await loadHooks();
+    } catch (e) { console.error(e); }
+  }
+
+  async function testHook(hook: any) {
+    try {
+      const res = await api(`/api/agent-hooks/${hook.id}/test`, {
+        method: 'POST',
+        body: JSON.stringify({ payload: { _test: true } }),
+      });
+      const result = await res.json();
+      toastStore.push({ title: "Hook test completed", body: `Hook test ${result.status ?? 'completed'}`, tone: "success" });
+    } catch (e) {
+      toastStore.push({ title: "Hook test failed", tone: "error" });
+      console.error(e);
+    }
+  }
+
+  async function loadHookRuns(hookId: string) {
+    hookRunsLoading = { ...hookRunsLoading, [hookId]: true };
+    try {
+      const res = await api(`/api/agent-hooks/${hookId}/runs?limit=10`);
+      const data = await res.json();
+      hookRuns = { ...hookRuns, [hookId]: Array.isArray(data) ? data : data.runs ?? [] };
+    } catch (e) { console.error(e); }
+    finally { hookRunsLoading = { ...hookRunsLoading, [hookId]: false }; }
+  }
+
+  function toggleHookRuns(hookId: string) {
+    const expanded = !hookExpandedRuns[hookId];
+    hookExpandedRuns = { ...hookExpandedRuns, [hookId]: expanded };
+    if (expanded && !hookRuns[hookId]) loadHookRuns(hookId);
+  }
+
+  function startEditHook(hook: any) {
+    editingHookId = hook.id;
+    hookForm = {
+      name: hook.name,
+      event: hook.event,
+      hookType: hook.hookType,
+      config: JSON.stringify(hook.config ?? {}, null, 2),
+      enabled: hook.enabled,
+      priority: hook.priority ?? 0,
+      runAsync: hook.runAsync ?? true,
+      retryCount: hook.retryCount ?? 0,
+    };
+    const cfg = hook.config ?? {};
+    if (hook.hookType === 'webhook') hookConfigWebhook = { url: cfg.url ?? '', method: cfg.method ?? 'POST', headers: JSON.stringify(cfg.headers ?? {}, null, 2) };
+    if (hook.hookType === 'wake_agent') hookConfigWakeAgent = { targetAgentId: cfg.targetAgentId ?? '' };
+    if (hook.hookType === 'create_issue') hookConfigCreateIssue = { title: cfg.title ?? '', description: cfg.description ?? '', projectId: cfg.projectId ?? '' };
+    if (hook.hookType === 'notify_channel') hookConfigNotifyChannel = { channelId: cfg.channelId ?? '', messageTemplate: cfg.messageTemplate ?? '' };
+    showHookForm = true;
   }
 
   // ---------------------------------------------------------------------------
@@ -1469,6 +1713,8 @@
             <TabsTrigger value="keys">API Keys</TabsTrigger>
             <TabsTrigger value="permissions">Permissions</TabsTrigger>
             <TabsTrigger value="delegations">Delegations</TabsTrigger>
+            <TabsTrigger value="hooks">Hooks</TabsTrigger>
+            <TabsTrigger value="cron-jobs">Cron Jobs{routines.length > 0 ? ` (${routines.length})` : ''}</TabsTrigger>
           </TabsList>
 
           <!-- OVERVIEW TAB -->
@@ -2910,6 +3156,377 @@
                   {/each}
                 </div>
                 <p class="mt-2 text-right text-xs text-muted-foreground/60">{delegations.length} delegation{delegations.length === 1 ? '' : 's'}</p>
+              {/if}
+            </div>
+          </TabsContent>
+
+          <!-- ── Hooks Tab ─────────────────────────────────────── -->
+          <TabsContent value="hooks">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-medium text-foreground">Hooks</h3>
+                <Button size="sm" onclick={() => { if (showHookForm && !editingHookId) { showHookForm = false; } else { resetHookForm(); showHookForm = true; } if (showHookForm) loadCompanyAgentsForDelegate(); }}>
+                  <Plus class="h-3.5 w-3.5" />
+                  New Hook
+                </Button>
+              </div>
+
+              {#if showHookForm}
+                <Card>
+                  <CardContent class="pt-5">
+                    <form onsubmit={(e) => { e.preventDefault(); createOrUpdateHook(); }} class="space-y-3">
+                      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div>
+                          <label for="hook-name" class="block text-xs font-medium text-foreground mb-1">Name</label>
+                          <input id="hook-name" type="text" bind:value={hookForm.name} placeholder="My hook" class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none" />
+                        </div>
+                        <div>
+                          <label for="hook-event" class="block text-xs font-medium text-foreground mb-1">Event</label>
+                          <select id="hook-event" bind:value={hookForm.event} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none">
+                            {#each HOOK_EVENTS as ev}
+                              <option value={ev}>{ev}</option>
+                            {/each}
+                          </select>
+                        </div>
+                        <div>
+                          <label for="hook-type" class="block text-xs font-medium text-foreground mb-1">Hook Type</label>
+                          <select id="hook-type" bind:value={hookForm.hookType} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none">
+                            {#each HOOK_TYPES as ht}
+                              <option value={ht}>{ht.replace('_', ' ')}</option>
+                            {/each}
+                          </select>
+                        </div>
+                        <div>
+                          <label for="hook-priority" class="block text-xs font-medium text-foreground mb-1">Priority</label>
+                          <input id="hook-priority" type="number" bind:value={hookForm.priority} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none" />
+                        </div>
+                      </div>
+
+                      <!-- Hook type specific config -->
+                      {#if hookForm.hookType === 'webhook'}
+                        <div class="space-y-2 rounded-lg border border-border/50 p-3">
+                          <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Webhook Config</p>
+                          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label for="hook-wh-url" class="block text-xs text-muted-foreground mb-1">URL</label>
+                              <input id="hook-wh-url" type="url" bind:value={hookConfigWebhook.url} placeholder="https://..." class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none" />
+                            </div>
+                            <div>
+                              <label for="hook-wh-method" class="block text-xs text-muted-foreground mb-1">Method</label>
+                              <select id="hook-wh-method" bind:value={hookConfigWebhook.method} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none">
+                                <option value="POST">POST</option>
+                                <option value="GET">GET</option>
+                                <option value="PUT">PUT</option>
+                                <option value="PATCH">PATCH</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div>
+                            <label for="hook-wh-headers" class="block text-xs text-muted-foreground mb-1">Headers (JSON)</label>
+                            <textarea id="hook-wh-headers" bind:value={hookConfigWebhook.headers} rows="2" placeholder={'{"Authorization": "Bearer ..."}'} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground font-mono focus:border-blue-500 focus:outline-none resize-none"></textarea>
+                          </div>
+                        </div>
+                      {:else if hookForm.hookType === 'wake_agent'}
+                        <div class="space-y-2 rounded-lg border border-border/50 p-3">
+                          <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Wake Agent Config</p>
+                          <div>
+                            <label for="hook-wa-agent" class="block text-xs text-muted-foreground mb-1">Target Agent</label>
+                            <select id="hook-wa-agent" bind:value={hookConfigWakeAgent.targetAgentId} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground focus:border-blue-500 focus:outline-none">
+                              <option value="">Select agent...</option>
+                              {#each companyAgents as a}
+                                <option value={a.id}>{a.name} ({a.role})</option>
+                              {/each}
+                            </select>
+                          </div>
+                        </div>
+                      {:else if hookForm.hookType === 'create_issue'}
+                        <div class="space-y-2 rounded-lg border border-border/50 p-3">
+                          <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Create Issue Config</p>
+                          <div>
+                            <label for="hook-ci-title" class="block text-xs text-muted-foreground mb-1">Issue Title</label>
+                            <input id="hook-ci-title" type="text" bind:value={hookConfigCreateIssue.title} placeholder="Issue title template" class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none" />
+                          </div>
+                          <div>
+                            <label for="hook-ci-desc" class="block text-xs text-muted-foreground mb-1">Description</label>
+                            <textarea id="hook-ci-desc" bind:value={hookConfigCreateIssue.description} rows="2" placeholder="Issue description..." class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none resize-none"></textarea>
+                          </div>
+                          <div>
+                            <label for="hook-ci-project" class="block text-xs text-muted-foreground mb-1">Project ID (optional)</label>
+                            <input id="hook-ci-project" type="text" bind:value={hookConfigCreateIssue.projectId} placeholder="project-uuid" class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none" />
+                          </div>
+                        </div>
+                      {:else if hookForm.hookType === 'notify_channel'}
+                        <div class="space-y-2 rounded-lg border border-border/50 p-3">
+                          <p class="text-xs font-medium text-muted-foreground uppercase tracking-wide">Notify Channel Config</p>
+                          <div>
+                            <label for="hook-nc-channel" class="block text-xs text-muted-foreground mb-1">Channel ID</label>
+                            <input id="hook-nc-channel" type="text" bind:value={hookConfigNotifyChannel.channelId} placeholder="channel-uuid" class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none" />
+                          </div>
+                          <div>
+                            <label for="hook-nc-msg" class="block text-xs text-muted-foreground mb-1">Message Template</label>
+                            <textarea id="hook-nc-msg" bind:value={hookConfigNotifyChannel.messageTemplate} rows="2" placeholder={"Hook triggered: {{event}}"} class="w-full rounded-lg border border-border bg-accent/60 px-3 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none resize-none"></textarea>
+                          </div>
+                        </div>
+                      {/if}
+
+                      <div class="flex items-center gap-4">
+                        <label class="flex items-center gap-2 text-xs text-foreground">
+                          <input type="checkbox" bind:checked={hookForm.enabled} class="rounded border-border" />
+                          Enabled
+                        </label>
+                        <label class="flex items-center gap-2 text-xs text-foreground">
+                          <input type="checkbox" bind:checked={hookForm.runAsync} class="rounded border-border" />
+                          Run Async
+                        </label>
+                        <div class="flex items-center gap-1">
+                          <label for="hook-retry" class="text-xs text-muted-foreground">Retry Count</label>
+                          <input id="hook-retry" type="number" min="0" max="10" bind:value={hookForm.retryCount} class="w-16 rounded-lg border border-border bg-accent/60 px-2 py-1 text-xs text-foreground focus:border-blue-500 focus:outline-none" />
+                        </div>
+                      </div>
+
+                      <div class="flex items-center gap-2">
+                        <Button type="submit" size="sm" disabled={hookCreating || !hookForm.name.trim()}>
+                          {hookCreating ? 'Saving...' : editingHookId ? 'Update Hook' : 'Create Hook'}
+                        </Button>
+                        <Button variant="outline" size="sm" type="button" onclick={() => { showHookForm = false; resetHookForm(); }}>Cancel</Button>
+                      </div>
+                    </form>
+                  </CardContent>
+                </Card>
+              {/if}
+
+              {#if hooksLoading}
+                <div class="text-center py-8 text-sm text-muted-foreground">Loading hooks...</div>
+              {:else if hooks.length === 0}
+                <Card>
+                  <CardContent class="p-8 text-center">
+                    <Webhook class="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+                    <p class="text-sm text-muted-foreground">No hooks yet</p>
+                    <p class="text-xs text-muted-foreground/60 mt-1">Create a hook to automate actions when events occur.</p>
+                  </CardContent>
+                </Card>
+              {:else}
+                <div class="glass-card overflow-hidden font-card">
+                  <div class="flex items-center border-b border-border/50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <span class="min-w-0 flex-1">Name</span>
+                    <span class="w-[120px] shrink-0">Event</span>
+                    <span class="w-[100px] shrink-0">Type</span>
+                    <span class="w-[60px] shrink-0 text-center">Active</span>
+                    <span class="w-[50px] shrink-0 text-center">Pri</span>
+                    <span class="w-[160px] shrink-0 text-right">Actions</span>
+                  </div>
+                  {#each hooks as hook}
+                    <div class="border-b border-border/30 last:border-b-0">
+                      <div class="flex items-center px-4 py-3 text-sm">
+                        <div class="min-w-0 flex-1 flex items-center gap-2">
+                          <button type="button" onclick={() => toggleHookRuns(hook.id)} class="text-muted-foreground hover:text-foreground transition-colors">
+                            {#if hookExpandedRuns[hook.id]}
+                              <ChevronDown class="h-3.5 w-3.5" />
+                            {:else}
+                              <ChevronRight class="h-3.5 w-3.5" />
+                            {/if}
+                          </button>
+                          <span class="text-foreground truncate">{hook.name}</span>
+                        </div>
+                        <span class="w-[120px] shrink-0">
+                          <Badge variant="secondary" class="text-[10px]">{hook.event}</Badge>
+                        </span>
+                        <span class="w-[100px] shrink-0">
+                          <Badge variant="outline" class="text-[10px]">{hook.hookType?.replace('_', ' ')}</Badge>
+                        </span>
+                        <span class="w-[60px] shrink-0 text-center">
+                          <button
+                            type="button"
+                            onclick={() => toggleHookEnabled(hook)}
+                            class="inline-flex items-center justify-center h-5 w-9 rounded-full text-xs font-bold uppercase transition-colors {hook.enabled ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700/40 text-muted-foreground'}"
+                          >
+                            {hook.enabled ? 'ON' : 'OFF'}
+                          </button>
+                        </span>
+                        <span class="w-[50px] shrink-0 text-center text-xs text-muted-foreground tabular-nums">{hook.priority ?? 0}</span>
+                        <span class="w-[160px] shrink-0 flex items-center justify-end gap-1">
+                          <Button size="sm" variant="ghost" class="h-6 px-2 text-[10px]" onclick={() => testHook(hook)}>
+                            <TestTube2 class="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" class="h-6 px-2 text-[10px]" onclick={() => startEditHook(hook)}>
+                            <Pencil class="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" class="h-6 px-2 text-[10px] text-red-400" onclick={() => deleteHook(hook)}>
+                            <Trash2 class="h-3 w-3" />
+                          </Button>
+                        </span>
+                      </div>
+
+                      <!-- Expandable runs section -->
+                      {#if hookExpandedRuns[hook.id]}
+                        <div class="bg-accent/30 border-t border-border/30 px-6 py-3">
+                          {#if hookRunsLoading[hook.id]}
+                            <p class="text-xs text-muted-foreground">Loading runs...</p>
+                          {:else if !hookRuns[hook.id] || hookRuns[hook.id].length === 0}
+                            <p class="text-xs text-muted-foreground">No runs recorded yet.</p>
+                          {:else}
+                            <table class="w-full text-xs">
+                              <thead>
+                                <tr class="text-muted-foreground/70">
+                                  <th class="text-left py-1 pr-3">Status</th>
+                                  <th class="text-left py-1 pr-3">Event</th>
+                                  <th class="text-right py-1 pr-3">Attempt</th>
+                                  <th class="text-right py-1 pr-3">Duration</th>
+                                  <th class="text-right py-1">Started</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {#each hookRuns[hook.id] as run}
+                                  {@const statusColors: Record<string, string> = { success: '#10b981', failed: '#ef4444', running: '#3b82f6', pending: '#f59e0b' }}
+                                  <tr class="border-t border-border/20">
+                                    <td class="py-1.5 pr-3">
+                                      <span class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white" style="background-color: {statusColors[run.status] ?? '#6b7280'}">
+                                        {run.status}
+                                      </span>
+                                    </td>
+                                    <td class="py-1.5 pr-3 text-foreground">{run.event ?? '-'}</td>
+                                    <td class="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">{run.attempt ?? 1}</td>
+                                    <td class="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">{run.durationMs != null ? `${run.durationMs}ms` : '-'}</td>
+                                    <td class="py-1.5 text-right text-muted-foreground">{run.startedAt ? new Date(run.startedAt).toLocaleString() : '-'}</td>
+                                  </tr>
+                                {/each}
+                              </tbody>
+                            </table>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+                <p class="mt-2 text-right text-xs text-muted-foreground/60">{hooks.length} hook{hooks.length === 1 ? '' : 's'}</p>
+              {/if}
+            </div>
+          </TabsContent>
+
+          <TabsContent value="cron-jobs">
+            <div class="space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="text-sm font-medium text-foreground">Cron Jobs</h3>
+              </div>
+
+              {#if routinesLoading}
+                <div class="text-center py-8 text-sm text-muted-foreground">Loading cron jobs...</div>
+              {:else if routines.length === 0}
+                <Card>
+                  <CardContent class="p-8 text-center">
+                    <Clock class="mx-auto h-8 w-8 text-muted-foreground/40 mb-2" />
+                    <p class="text-sm text-muted-foreground">No cron jobs assigned to this agent</p>
+                    <p class="text-xs text-muted-foreground/60 mt-1">Routines with cron triggers will appear here</p>
+                  </CardContent>
+                </Card>
+              {:else}
+                <div class="glass-card overflow-hidden font-card">
+                  <div class="flex items-center border-b border-border/50 px-4 py-2 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                    <span class="min-w-0 flex-1">Title</span>
+                    <span class="w-[90px] shrink-0 text-center">Status</span>
+                    <span class="w-[80px] shrink-0 text-center">Priority</span>
+                    <span class="w-[120px] shrink-0">Concurrency</span>
+                    <span class="w-[80px] shrink-0 text-center">Triggers</span>
+                  </div>
+                  {#each routines as routine}
+                    {@const statusColors: Record<string, string> = { active: 'bg-green-500/20 text-green-400', paused: 'bg-yellow-500/20 text-yellow-400', archived: 'bg-zinc-700/40 text-muted-foreground' }}
+                    {@const priorityColors: Record<string, string> = { critical: 'bg-red-500/20 text-red-400', high: 'bg-orange-500/20 text-orange-400', medium: 'bg-blue-500/20 text-blue-400', low: 'bg-zinc-700/40 text-muted-foreground' }}
+                    <div class="border-b border-border/30 last:border-b-0">
+                      <div class="flex items-center px-4 py-3 text-sm">
+                        <div class="min-w-0 flex-1 flex items-center gap-2">
+                          <button type="button" onclick={() => toggleRoutineRuns(routine.id)} class="text-muted-foreground hover:text-foreground transition-colors">
+                            {#if routineExpandedRuns[routine.id]}
+                              <ChevronDown class="h-3.5 w-3.5" />
+                            {:else}
+                              <ChevronRight class="h-3.5 w-3.5" />
+                            {/if}
+                          </button>
+                          <div class="min-w-0">
+                            <span class="text-foreground truncate block">{routine.title || routine.name || 'Untitled'}</span>
+                            {#if routine.description}
+                              <span class="text-xs text-muted-foreground truncate block">{routine.description}</span>
+                            {/if}
+                          </div>
+                        </div>
+                        <span class="w-[90px] shrink-0 text-center">
+                          <Badge variant="secondary" class="text-[10px] {statusColors[routine.status] ?? ''}">{routine.status ?? 'active'}</Badge>
+                        </span>
+                        <span class="w-[80px] shrink-0 text-center">
+                          <Badge variant="outline" class="text-[10px] {priorityColors[routine.priority] ?? ''}">{routine.priority ?? 'medium'}</Badge>
+                        </span>
+                        <span class="w-[120px] shrink-0 text-xs text-muted-foreground">{routine.concurrencyPolicy ?? 'allow'}</span>
+                        <span class="w-[80px] shrink-0 text-center text-xs text-muted-foreground tabular-nums">{routine.triggers?.length ?? 0}</span>
+                      </div>
+
+                      <!-- Triggers detail -->
+                      {#if routine.triggers && routine.triggers.length > 0}
+                        <div class="px-10 pb-3">
+                          {#each routine.triggers as trigger}
+                            <div class="flex items-center gap-3 text-xs py-1 border-t border-border/20 first:border-t-0">
+                              <Clock class="h-3 w-3 text-muted-foreground/60 shrink-0" />
+                              <span class="font-mono text-foreground">{trigger.cronExpression ?? '-'}</span>
+                              {#if trigger.humanReadable}
+                                <span class="text-muted-foreground">({trigger.humanReadable})</span>
+                              {/if}
+                              {#if trigger.timezone}
+                                <span class="text-muted-foreground">{trigger.timezone}</span>
+                              {/if}
+                              <span class="inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-bold uppercase {trigger.enabled !== false ? 'bg-green-500/20 text-green-400' : 'bg-zinc-700/40 text-muted-foreground'}">
+                                {trigger.enabled !== false ? 'ON' : 'OFF'}
+                              </span>
+                              {#if trigger.nextRunAt}
+                                <span class="text-muted-foreground ml-auto">next: {new Date(trigger.nextRunAt).toLocaleString()}</span>
+                              {/if}
+                              {#if trigger.lastFiredAt}
+                                <span class="text-muted-foreground">last: {new Date(trigger.lastFiredAt).toLocaleString()}</span>
+                              {/if}
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+
+                      <!-- Expandable runs section -->
+                      {#if routineExpandedRuns[routine.id]}
+                        <div class="bg-accent/30 border-t border-border/30 px-6 py-3">
+                          {#if routineRunsLoading[routine.id]}
+                            <p class="text-xs text-muted-foreground">Loading runs...</p>
+                          {:else if !routineRuns[routine.id] || routineRuns[routine.id].length === 0}
+                            <p class="text-xs text-muted-foreground">No runs recorded yet.</p>
+                          {:else}
+                            <table class="w-full text-xs">
+                              <thead>
+                                <tr class="text-muted-foreground/70">
+                                  <th class="text-left py-1 pr-3">Status</th>
+                                  <th class="text-left py-1 pr-3">Source</th>
+                                  <th class="text-right py-1 pr-3">Triggered</th>
+                                  <th class="text-right py-1 pr-3">Completed</th>
+                                  <th class="text-left py-1">Failure</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {#each routineRuns[routine.id] as run}
+                                  {@const runStatusColors: Record<string, string> = { received: '#f59e0b', enqueued: '#f59e0b', running: '#3b82f6', succeeded: '#10b981', failed: '#ef4444' }}
+                                  <tr class="border-t border-border/20">
+                                    <td class="py-1.5 pr-3">
+                                      <span class="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-bold uppercase text-white" style="background-color: {runStatusColors[run.status] ?? '#6b7280'}">
+                                        {run.status}
+                                      </span>
+                                    </td>
+                                    <td class="py-1.5 pr-3 text-foreground">{run.source ?? '-'}</td>
+                                    <td class="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">{run.triggeredAt ? new Date(run.triggeredAt).toLocaleString() : '-'}</td>
+                                    <td class="py-1.5 pr-3 text-right tabular-nums text-muted-foreground">{run.completedAt ? new Date(run.completedAt).toLocaleString() : '-'}</td>
+                                    <td class="py-1.5 text-red-400 truncate max-w-[200px]">{run.failureReason ?? ''}</td>
+                                  </tr>
+                                {/each}
+                              </tbody>
+                            </table>
+                          {/if}
+                        </div>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+                <p class="mt-2 text-right text-xs text-muted-foreground/60">{routines.length} routine{routines.length === 1 ? '' : 's'}</p>
               {/if}
             </div>
           </TabsContent>

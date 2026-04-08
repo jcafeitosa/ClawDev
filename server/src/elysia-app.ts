@@ -76,6 +76,8 @@ import {
   agentTemplateRoutes,
   teamKnowledgeRoutes,
   channelRoutes,
+  logsRoutes,
+  agentHookRoutes,
 } from "./routes/index.js";
 import { llmRoutes } from "./routes/llms.js";
 import { executionWorkspaceRoutes } from "./routes/execution-workspaces.js";
@@ -91,9 +93,9 @@ import { assertBoard, type Actor } from "./middleware/authz.js";
 import type { StorageService } from "./storage/types.js";
 
 // Static UI serving & vite-dev proxy
-import path from "node:path";
-import fs from "node:fs";
-import { fileURLToPath } from "node:url";
+import path from "path";
+import fs from "fs";
+import { fileURLToPath } from "url";
 import { applyUiBranding } from "./ui-branding.js";
 
 // Plugin deps
@@ -107,6 +109,7 @@ import { assetRoutes } from "./routes/assets.js";
 import { DEFAULT_LOCAL_PLUGIN_DIR } from "./services/plugin-loader.js";
 import { pluginRegistryService } from "./services/plugin-registry.js";
 import type { EmbeddingProviderConfig } from "./services/embedding-service.js";
+import { logger as sharedLogger } from "./middleware/logger.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -312,7 +315,7 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
       const hasCompanies = companyCount > 0;
       const systemReport = await buildSystemReport(db);
 
-      const persistedDevServerStatus = readPersistedDevServerStatus();
+      const persistedDevServerStatus = await readPersistedDevServerStatus();
       let devServer: ReturnType<typeof toDevServerHealthStatus> | undefined;
       if (persistedDevServerStatus) {
         const settings = instanceSettingsService(db);
@@ -375,7 +378,11 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
     .use(agentDeliberationRoutes(db))
     .use(agentTemplateRoutes(db))
     .use(teamKnowledgeRoutes(db))
-    .use(channelRoutes(db));
+    .use(channelRoutes(db))
+    .use(agentHookRoutes(db));
+
+  // -- Logs (real-time streaming) --
+  app = app.use(logsRoutes());
 
   // -- Plugins (conditional — requires plugin deps) --
   if (pluginDeps) {
@@ -420,16 +427,20 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
       return authHandler(request);
     });
 
+  const rootErrorLog = sharedLogger.child({ service: "root-error-handler" });
+
   let rootApp: any = new Elysia()
     // Global error handler — ensures DB/runtime errors never leak to clients
     .onError(({ code, error, set, request }) => {
+      const url = new URL(request.url);
+
       switch (code) {
         case "NOT_FOUND":
           set.status = 404;
-          if (new URL(request.url).pathname.startsWith("/api/plugins/")) {
+          if (url.pathname.startsWith("/api/plugins/")) {
             return { error: "Plugin not found" };
           }
-          return new URL(request.url).pathname.startsWith("/api/")
+          return url.pathname.startsWith("/api/")
             ? { error: "API route not found" }
             : { error: "Not found" };
         case "VALIDATION":
@@ -445,6 +456,11 @@ export function createElysiaApp(opts: ElysiaAppOptions) {
               ? { error: error.message, details: error.details }
               : { error: error.message };
           }
+          const msg = (error as any)?.message ?? String(error);
+          rootErrorLog.error(
+            { category: "error", code, err: msg, stack: (error as any)?.stack, path: url.pathname },
+            `Unhandled error in ${url.pathname}`
+          );
           set.status = 500;
           return { error: "Internal server error" };
       }

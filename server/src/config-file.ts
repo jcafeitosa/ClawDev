@@ -1,6 +1,7 @@
-import fs from "node:fs";
 import { clawdevConfigSchema, type ClawDevConfig } from "@clawdev/shared";
 import { resolveClawDevConfigPath } from "./paths.js";
+
+import fs from "fs";
 
 export function readConfigFile(): ClawDevConfig | null {
   const configPath = resolveClawDevConfigPath();

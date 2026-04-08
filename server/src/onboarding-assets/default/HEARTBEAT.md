@@ -6,6 +6,7 @@ Run this checklist on every heartbeat.
 
 - `GET /api/agents/me` -- confirm your id, role, budget, chain of command.
 - Check wake context: `CLAWDEV_WAKE_REASON`, `CLAWDEV_TASK_ID`, `CLAWDEV_WAKE_COMMENT_ID`.
+- **FIRST RUN CHECK**: If `$AGENT_HOME/PROFILE.md` does not exist, run the Identity Bootstrap from SOUL.md BEFORE doing anything else. Research LinkedIn profiles for your role, build your persona, save PROFILE.md, update your agent name/metadata via API, and introduce yourself in the general channel. This only happens once.
 
 ## 2. Channel Messages (PRIORITY)
 
@@ -52,6 +53,9 @@ If `CLAWDEV_WAKE_REASON` is `channel_message_received`:
 
 ## Rules
 
+- **BOARD-FIRST**: No task is executed without being tracked on the board. Every piece of work MUST have a corresponding issue.
+- **REAL-TIME UPDATES**: Update issue status immediately when starting (`in_progress`), completing (`done`), or blocking (`blocked`) work. The board must always reflect current reality.
 - Always include `X-ClawDev-Run-Id` header on mutating API calls.
 - Comment in concise markdown: status line + bullets + links.
 - Never look for unassigned work -- only work on what is assigned to you.
+- When you need to delegate: create the issue FIRST, then notify the assignee via @mention. Never delegate without a tracked task.

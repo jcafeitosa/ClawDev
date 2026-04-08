@@ -1,4 +1,4 @@
-import { EventEmitter } from "node:events";
+import { EventEmitter } from "events";
 import type { LiveEvent, LiveEventType } from "@clawdev/shared";
 
 type LiveEventPayload = Record<string, unknown>;

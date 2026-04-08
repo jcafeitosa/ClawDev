@@ -7,11 +7,28 @@
  */
 
 import type { AdapterModel, AdapterModelStatus } from "./types.js";
-import { runChildProcess } from "@clawdev/adapter-utils/server-utils";
+import { runChildProcess, defaultPathForPlatform } from "@clawdev/adapter-utils/server-utils";
 import { normalizeClaudeModelArg } from "@clawdev/adapter-claude-local/server";
 
-const PROBE_TIMEOUT_SEC = 15;
+const PROBE_TIMEOUT_SEC = 30;
 const PROBE_CONCURRENCY = 3;
+
+/** Probe prompt that expects "PONG" in the response to confirm real availability. */
+const PROBE_PROMPT = "Quando eu falar PING, voce fala?";
+
+/**
+ * Build a PATH that combines the default system paths with the current
+ * process PATH. This ensures CLI tools in /opt/homebrew/bin, ~/.local/bin,
+ * etc. are discoverable even when the server runs under a restricted
+ * runtime PATH (e.g. Bun).
+ */
+function probeEnv(): Record<string, string> {
+  const processPath = process.env.PATH ?? "";
+  const defaultPath = defaultPathForPlatform();
+  const homeBin = process.env.HOME ? `${process.env.HOME}/.local/bin:${process.env.HOME}/.bun/bin` : "";
+  const parts = new Set([...processPath.split(":"), ...defaultPath.split(":"), ...homeBin.split(":")].filter(Boolean));
+  return { PATH: [...parts].join(":") };
+}
 
 interface ProbeResult {
   status: AdapterModelStatus;
@@ -19,7 +36,7 @@ interface ProbeResult {
 }
 
 interface CliProbeConfig {
-  /** CLI command name (e.g. "claude", "gemini", "agent") */
+  /** CLI command name (e.g. "claude", "gemini", "cursor-agent") */
   command: string;
   /** Build CLI args for probing a specific model */
   buildArgs: (modelId: string) => string[];
@@ -45,6 +62,9 @@ function defaultParseOutput(combined: string, exitCode: number | null): ProbeRes
     return { status: "unavailable", statusDetail: "CLI not installed" };
   }
 
+  // Check for a real answer to the ping/pong test.
+  const hasPong = /pong/i.test(combined);
+
   // Check for success indicators
   const hasResponse =
     combined.includes("item.completed") ||
@@ -54,7 +74,10 @@ function defaultParseOutput(combined: string, exitCode: number | null): ProbeRes
     combined.includes('"content"') ||
     combined.includes('"text"');
 
-  if (hasResponse || (exitCode ?? 1) === 0) {
+  if (hasPong) {
+    return { status: "available", statusDetail: "PONG received — model operational" };
+  }
+  if (hasResponse) {
     return { status: "available", statusDetail: "Probe succeeded" };
   }
 
@@ -69,8 +92,8 @@ export const PROBE_CONFIGS: Record<string, CliProbeConfig> = {
     buildArgs: (modelId) => {
       const normalizedModel = normalizeClaudeModelArg(modelId);
       return normalizedModel
-        ? ["-p", "hi", "--model", normalizedModel, "--output-format", "json", "--max-turns", "1"]
-        : ["-p", "hi", "--output-format", "json", "--max-turns", "1"];
+        ? ["-p", PROBE_PROMPT, "--model", normalizedModel, "--output-format", "json", "--max-turns", "1"]
+        : ["-p", PROBE_PROMPT, "--output-format", "json", "--max-turns", "1"];
     },
     parseOutput(combined, exitCode) {
       if (combined.includes("\"status\":401") || combined.includes("Unauthorized")) {
@@ -82,6 +105,11 @@ export const PROBE_CONFIGS: Record<string, CliProbeConfig> = {
       if (combined.includes("not supported") || combined.includes("invalid_model") || combined.includes("\"status\":404")) {
         return { status: "unavailable", statusDetail: "Model not supported" };
       }
+      // Check for PONG response first (real ping/pong test)
+      const hasPong = /pong/i.test(combined);
+      if (hasPong) {
+        return { status: "available", statusDetail: "PONG received — model operational" };
+      }
       // Claude outputs JSON with result field on success
       if (combined.includes('"result"') || combined.includes('"content"') || (exitCode ?? 1) === 0) {
         return { status: "available", statusDetail: "Probe succeeded" };
@@ -92,25 +120,25 @@ export const PROBE_CONFIGS: Record<string, CliProbeConfig> = {
 
   gemini_local: {
     command: "gemini",
-    buildArgs: (modelId) => ["-p", "hi", "--model", modelId, "--sandbox", "false"],
+    buildArgs: (modelId) => ["-p", PROBE_PROMPT, "--model", modelId, "--sandbox", "false"],
     parseOutput: defaultParseOutput,
   },
 
   cursor: {
-    command: "agent",
-    buildArgs: (modelId) => ["-p", "hi", "--model", modelId],
+    command: "cursor-agent",
+    buildArgs: (modelId) => ["-p", PROBE_PROMPT, "--model", modelId],
     parseOutput: defaultParseOutput,
   },
 
   opencode_local: {
     command: "opencode",
-    buildArgs: (modelId) => ["-p", "hi", "--model", modelId],
+    buildArgs: (modelId) => ["-p", PROBE_PROMPT, "--model", modelId],
     parseOutput: defaultParseOutput,
   },
 
   pi_local: {
     command: "pi",
-    buildArgs: (modelId) => ["-p", "hi", "--model", modelId],
+    buildArgs: (modelId) => ["-p", PROBE_PROMPT, "--model", modelId],
     parseOutput: defaultParseOutput,
   },
 };
@@ -125,7 +153,7 @@ async function probeModel(config: CliProbeConfig, modelId: string): Promise<Prob
       config.buildArgs(modelId),
       {
         cwd: process.cwd(),
-        env: {},
+        env: probeEnv(),
         stdin: config.stdin ?? "",
         timeoutSec: PROBE_TIMEOUT_SEC,
         graceSec: 2,
@@ -161,19 +189,12 @@ export async function probeAdapterModels(
   const config = PROBE_CONFIGS[adapterType];
   if (!config || models.length === 0) return models;
 
-  // Probe a sample: first model + up to 2 random others
-  const sampleIds = [models[0]!.id];
-  if (models.length > 3) {
-    const mid = Math.floor(models.length / 2);
-    sampleIds.push(models[mid]!.id);
-  }
-  if (models.length > 6) {
-    sampleIds.push(models[models.length - 1]!.id);
-  }
+  // Probe ALL models — each model gets a real PING/PONG test
+  const allIds = models.map((m) => m.id);
 
   const probeResults = new Map<string, ProbeResult>();
-  for (let i = 0; i < sampleIds.length; i += PROBE_CONCURRENCY) {
-    const batch = sampleIds.slice(i, i + PROBE_CONCURRENCY);
+  for (let i = 0; i < allIds.length; i += PROBE_CONCURRENCY) {
+    const batch = allIds.slice(i, i + PROBE_CONCURRENCY);
     const settled = await Promise.allSettled(
       batch.map(async (id) => ({ id, result: await probeModel(config, id) })),
     );
@@ -184,17 +205,20 @@ export async function probeAdapterModels(
     }
   }
 
-  // Determine the "overall" status: if any probe succeeded, assume CLI works
-  const anyAvailable = [...probeResults.values()].some((r) => r.status === "available");
-  const allFailed = [...probeResults.values()].every(
-    (r) => r.status === "unavailable" || r.status === "auth_required",
-  );
+  // If any probe reports CLI not installed, mark all as unavailable
   const cliNotInstalled = [...probeResults.values()].some(
     (r) => r.statusDetail === "CLI not installed",
   );
 
-  // If CLI not installed, don't change any status (leave as default)
-  if (cliNotInstalled) return models;
+  if (cliNotInstalled) {
+    const probedAt = new Date().toISOString();
+    return models.map((m) => ({
+      ...m,
+      status: "unavailable" as AdapterModelStatus,
+      statusDetail: "CLI not installed",
+      probedAt,
+    }));
+  }
 
   const probedAt = new Date().toISOString();
 
@@ -203,19 +227,7 @@ export async function probeAdapterModels(
     if (probe) {
       return { ...m, status: probe.status, statusDetail: probe.statusDetail, probedAt };
     }
-    // Unprobed models: inherit overall CLI status
-    if (anyAvailable) {
-      return { ...m, status: "available" as AdapterModelStatus, statusDetail: "CLI available", probedAt };
-    }
-    if (allFailed) {
-      const firstResult = [...probeResults.values()][0];
-      return {
-        ...m,
-        status: (firstResult?.status ?? "unknown") as AdapterModelStatus,
-        statusDetail: firstResult?.statusDetail ?? "Probe failed",
-        probedAt,
-      };
-    }
-    return { ...m, probedAt };
+    // Should not happen since we probe all models, but safe fallback
+    return { ...m, status: "unknown" as AdapterModelStatus, statusDetail: "Not probed", probedAt };
   });
 }

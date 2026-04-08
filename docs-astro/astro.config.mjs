@@ -7,9 +7,13 @@ export default defineConfig({
     starlight({
       title: "ClawDev",
       description: "Open-source orchestration for AI agent companies.",
-      social: {
-        github: "https://github.com/jcafeitosa/ClawDev",
-      },
+      social: [
+        {
+          icon: "github",
+          label: "GitHub",
+          href: "https://github.com/jcafeitosa/ClawDev",
+        },
+      ],
       sidebar: [
         {
           label: "Getting Started",

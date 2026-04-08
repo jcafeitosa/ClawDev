@@ -1,5 +1,6 @@
-import { spawnSync } from "node:child_process";
+import { spawnSync } from "child_process";
 import { models as cursorFallbackModels } from "@clawdev/adapter-cursor-local";
+import { defaultPathForPlatform } from "@clawdev/adapter-utils/server-utils";
 import type { AdapterModel } from "./types.js";
 
 const CURSOR_MODELS_TIMEOUT_MS = 5_000;
@@ -109,11 +110,20 @@ function mergedWithFallback(models: AdapterModel[]): AdapterModel[] {
   return dedupeModels([...models, ...cursorFallbackModels]);
 }
 
+function buildProbePath(): string {
+  const processPath = process.env.PATH ?? "";
+  const defPath = defaultPathForPlatform();
+  const homeBin = process.env.HOME ? `${process.env.HOME}/.local/bin:${process.env.HOME}/.bun/bin` : "";
+  const parts = new Set([...processPath.split(":"), ...defPath.split(":"), ...homeBin.split(":")].filter(Boolean));
+  return [...parts].join(":");
+}
+
 function defaultCursorModelsRunner(): CursorModelsCommandResult {
-  const result = spawnSync("agent", ["models"], {
+  const result = spawnSync("cursor-agent", ["models"], {
     encoding: "utf8",
     timeout: CURSOR_MODELS_TIMEOUT_MS,
     maxBuffer: MAX_BUFFER_BYTES,
+    env: { ...process.env, PATH: buildProbePath() },
   });
   return {
     status: result.status,
@@ -158,7 +168,14 @@ export async function listCursorModels(): Promise<AdapterModel[]> {
     return cached.models;
   }
 
-  return dedupeModels(cursorFallbackModels);
+  // No CLI available and no cache — mark all fallback models as unavailable
+  // The system should only show models that the CLI actually reports as available
+  return dedupeModels(cursorFallbackModels).map((m) => ({
+    ...m,
+    status: "unavailable" as const,
+    statusDetail: "CLI not installed",
+    probedAt: new Date().toISOString(),
+  }));
 }
 
 export function resetCursorModelsCacheForTests() {

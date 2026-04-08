@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import os from "node:os";
-import path from "node:path";
+import os from "os";
+import path from "path";
 import type { QuotaWindow } from "@clawdev/adapter-utils";
 
 // Pure utility functions — import directly from adapter source
@@ -223,7 +223,7 @@ describe("readClaudeToken", () => {
 
   it("returns null for malformed JSON", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-claude-${Date.now()}`);
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "credentials.json"), "not-json"),
       ),
@@ -231,12 +231,12 @@ describe("readClaudeToken", () => {
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     const token = await readClaudeToken();
     expect(token).toBe(null);
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 
   it("returns null when claudeAiOauth key is missing", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-claude-${Date.now()}`);
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "credentials.json"), JSON.stringify({ other: "data" })),
       ),
@@ -244,13 +244,13 @@ describe("readClaudeToken", () => {
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     const token = await readClaudeToken();
     expect(token).toBe(null);
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 
   it("returns null when accessToken is an empty string", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-claude-${Date.now()}`);
     const creds = { claudeAiOauth: { accessToken: "" } };
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "credentials.json"), JSON.stringify(creds)),
       ),
@@ -258,13 +258,13 @@ describe("readClaudeToken", () => {
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     const token = await readClaudeToken();
     expect(token).toBe(null);
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 
   it("returns the token when credentials file is well-formed", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-claude-${Date.now()}`);
     const creds = { claudeAiOauth: { accessToken: "my-test-token" } };
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "credentials.json"), JSON.stringify(creds)),
       ),
@@ -272,13 +272,13 @@ describe("readClaudeToken", () => {
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     const token = await readClaudeToken();
     expect(token).toBe("my-test-token");
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 
   it("reads the token from .credentials.json when that is the available Claude auth file", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-claude-${Date.now()}`);
     const creds = { claudeAiOauth: { accessToken: "dotfile-token" } };
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, ".credentials.json"), JSON.stringify(creds)),
       ),
@@ -286,7 +286,7 @@ describe("readClaudeToken", () => {
     process.env.CLAUDE_CONFIG_DIR = tmpDir;
     const token = await readClaudeToken();
     expect(token).toBe("dotfile-token");
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 });
 
@@ -372,7 +372,7 @@ describe("readCodexAuthInfo", () => {
 
   it("returns null for malformed JSON", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-codex-${Date.now()}`);
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "auth.json"), "{bad json"),
       ),
@@ -380,12 +380,12 @@ describe("readCodexAuthInfo", () => {
     process.env.CODEX_HOME = tmpDir;
     const result = await readCodexAuthInfo();
     expect(result).toBe(null);
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 
   it("returns null when accessToken is absent", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-codex-${Date.now()}`);
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "auth.json"), JSON.stringify({ accountId: "acc-1" })),
       ),
@@ -393,13 +393,13 @@ describe("readCodexAuthInfo", () => {
     process.env.CODEX_HOME = tmpDir;
     const result = await readCodexAuthInfo();
     expect(result).toBe(null);
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 
   it("reads the legacy flat auth shape", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-codex-${Date.now()}`);
     const auth = { accessToken: "codex-token", accountId: "acc-123" };
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "auth.json"), JSON.stringify(auth)),
       ),
@@ -412,7 +412,7 @@ describe("readCodexAuthInfo", () => {
       email: null,
       planType: null,
     });
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 
   it("reads the modern nested auth shape", async () => {
@@ -435,7 +435,7 @@ describe("readCodexAuthInfo", () => {
       },
       last_refresh: "2026-03-14T12:00:00Z",
     };
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "auth.json"), JSON.stringify(auth)),
       ),
@@ -450,7 +450,7 @@ describe("readCodexAuthInfo", () => {
       planType: "pro",
       lastRefresh: "2026-03-14T12:00:00Z",
     });
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 });
 
@@ -467,7 +467,7 @@ describe("readCodexToken", () => {
 
   it("returns token and accountId from the nested auth shape", async () => {
     const tmpDir = path.join(os.tmpdir(), `clawdev-test-codex-${Date.now()}`);
-    await import("node:fs/promises").then((fs) =>
+    await import("fs/promises").then((fs) =>
       fs.mkdir(tmpDir, { recursive: true }).then(() =>
         fs.writeFile(path.join(tmpDir, "auth.json"), JSON.stringify({
           tokens: {
@@ -480,7 +480,7 @@ describe("readCodexToken", () => {
     process.env.CODEX_HOME = tmpDir;
     const result = await readCodexToken();
     expect(result).toEqual({ token: "nested-token", accountId: "acc-nested" });
-    await import("node:fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
+    await import("fs/promises").then((fs) => fs.rm(tmpDir, { recursive: true }));
   });
 });
 

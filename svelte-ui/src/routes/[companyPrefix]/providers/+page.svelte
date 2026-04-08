@@ -74,6 +74,7 @@
     modelId: string;
     modelName: string;
     status: string;
+    statusDetail: string | null;
     cooldownEndsAt: string | null;
     cooldownReason: string | null;
     statusChangedAt: string | null;
@@ -100,6 +101,27 @@
     preferLocalModels: boolean;
   }
 
+  interface RoutingPolicy {
+    id?: string;
+    name: string;
+    description?: string | null;
+    agentId?: string;
+    role?: string;
+    complexity: string;
+    priority: number;
+    routingStrategy: string;
+    defaultAdapterType?: string | null;
+    defaultModelId?: string | null;
+    fallbackChain: { adapterType: string; modelId: string }[];
+    allowCrossProviderFallback: boolean;
+    preferFreeModels: boolean;
+    preferLocalModels: boolean;
+    maxCostPerRequestMicro?: number | null;
+    requiredCapabilities: string[];
+    minContextWindow?: number | null;
+    maxLatencyMs?: number | null;
+  }
+
   interface RoutingLogEntry {
     timestamp: string;
     agentName: string;
@@ -108,6 +130,23 @@
     resolutionType: string;
     fallbackDepth: number;
     reason: string;
+  }
+
+  interface AdapterReadiness {
+    adapterType: string;
+    installed: boolean;
+    upToDate: boolean;
+    currentVersion: string | null;
+    minimumVersion: string | null;
+    needsInstall: boolean;
+    needsUpdate: boolean;
+    remediation?: {
+      kind: 'install' | 'update' | 'manual';
+      command?: string | null;
+      installCommand?: string | null;
+      updateCommand?: string | null;
+      reason?: string | null;
+    } | null;
   }
 
   // ── State ───────────────────────────────────────────────────────────
@@ -125,6 +164,13 @@
   let filterProvider = $state('all');
   let filterTier = $state('all');
   let filterCapability = $state('all');
+  let hideUnavailable = $state(true);
+
+  // Filtered provider cards — hide providers with zero available models when filter is on
+  let visibleProviders = $derived.by(() => {
+    if (!hideUnavailable) return providerSummaries;
+    return providerSummaries.filter((p) => p.available > 0 || p.cooldown > 0);
+  });
 
   // Status tab
   let providerStatuses = $state<ProviderStatus[]>([]);
@@ -147,6 +193,33 @@
   // Routing log tab
   let routingLog = $state<RoutingLogEntry[]>([]);
   let routingLogLoading = $state(true);
+
+  // Routing policies
+  let routingPolicies = $state<RoutingPolicy[]>([]);
+  let routingPoliciesLoading = $state(true);
+  let routingPolicyDraft = $state<RoutingPolicy>({
+    name: '',
+    description: '',
+    agentId: '',
+    role: '',
+    complexity: 'any',
+    priority: 0,
+    routingStrategy: 'pinned',
+    defaultAdapterType: '',
+    defaultModelId: '',
+    fallbackChain: [],
+    allowCrossProviderFallback: true,
+    preferFreeModels: false,
+    preferLocalModels: false,
+    maxCostPerRequestMicro: null,
+    requiredCapabilities: [],
+    minContextWindow: null,
+    maxLatencyMs: null,
+  });
+
+  // Adapter readiness
+  let adapterReadiness = $state<AdapterReadiness[]>([]);
+  let readinessLoading = $state(true);
 
   // Auto-refresh
   let refreshInterval: ReturnType<typeof setInterval> | null = null;
@@ -172,6 +245,10 @@
   // ── Derived: filtered models ─────────────────────────────────────
   let filteredModels = $derived.by(() => {
     let result = models;
+    // Hide unavailable models by default
+    if (hideUnavailable) {
+      result = result.filter((m) => m.status !== 'unavailable');
+    }
     if (modelSearch) {
       const q = modelSearch.toLowerCase();
       result = result.filter(
@@ -309,6 +386,7 @@
           modelId: m.modelId ?? m.id ?? '',
           modelName: m.name ?? m.modelId ?? m.id ?? '',
           status: (m.status && m.status !== 'unknown') ? m.status : (m.circuitState && m.circuitState !== 'unknown') ? m.circuitState : 'available',
+          statusDetail: m.statusDetail ?? null,
           cooldownEndsAt: m.cooldownEndsAt ?? null,
           cooldownReason: m.cooldownReason ?? m.reason ?? null,
           statusChangedAt: m.statusChangedAt ?? m.stateChangedAt ?? null,
@@ -371,12 +449,69 @@
     }
   }
 
+  async function loadRoutingPolicies() {
+    if (!companyId) return;
+    routingPoliciesLoading = true;
+    try {
+      const data = await safeFetch<any>(`/api/companies/${companyId}/model-routing-policies`, []);
+      const raw = Array.isArray(data) ? data : data?.policies ?? data?.items ?? [];
+      routingPolicies = raw.map((policy: any) => ({
+        id: policy.id,
+        name: policy.name ?? '',
+        description: policy.description ?? null,
+        agentId: policy.agentId ?? null,
+        role: policy.role ?? null,
+        complexity: policy.complexity ?? 'any',
+        priority: policy.priority ?? 0,
+        routingStrategy: policy.routingStrategy ?? 'pinned',
+        defaultAdapterType: policy.defaultAdapterType ?? null,
+        defaultModelId: policy.defaultModelId ?? null,
+        fallbackChain: Array.isArray(policy.fallbackChain) ? policy.fallbackChain : [],
+        allowCrossProviderFallback: policy.allowCrossProviderFallback ?? true,
+        preferFreeModels: policy.preferFreeModels ?? false,
+        preferLocalModels: policy.preferLocalModels ?? false,
+        maxCostPerRequestMicro: policy.maxCostPerRequestMicro ?? null,
+        requiredCapabilities: Array.isArray(policy.requiredCapabilities) ? policy.requiredCapabilities : [],
+        minContextWindow: policy.minContextWindow ?? null,
+        maxLatencyMs: policy.maxLatencyMs ?? null,
+      }));
+    } catch {
+      routingPolicies = [];
+    } finally {
+      routingPoliciesLoading = false;
+    }
+  }
+
+  async function loadAdapterReadiness() {
+    if (!companyId) return;
+    readinessLoading = true;
+    try {
+      const data = await safeFetch<any>(`/api/adapters/readiness`, []);
+      const raw = Array.isArray(data) ? data : data?.adapters ?? data?.items ?? [];
+      adapterReadiness = raw.map((entry: any) => ({
+        adapterType: entry.adapterType ?? '',
+        installed: entry.installed === true,
+        upToDate: entry.upToDate === true,
+        currentVersion: entry.currentVersion ?? null,
+        minimumVersion: entry.minimumVersion ?? null,
+        needsInstall: entry.needsInstall === true,
+        needsUpdate: entry.needsUpdate === true,
+        remediation: entry.remediation ?? null,
+      }));
+    } catch {
+      adapterReadiness = [];
+    } finally {
+      readinessLoading = false;
+    }
+  }
+
   // ── Load on companyId change ──────────────────────────────────────
   $effect(() => {
     if (!companyId) return;
     loading = true;
     loadProviderSummaries();
     loadModels();
+    loadAdapterReadiness();
   });
 
   // ── Tab-driven lazy loading ───────────────────────────────────────
@@ -384,6 +519,7 @@
     if (!companyId) return;
     if (activeTab === 'status' && providerStatuses.length === 0) loadProviderStatuses();
     if (activeTab === 'routing') loadPreferences();
+    if (activeTab === 'routing') loadRoutingPolicies();
     if (activeTab === 'routing-log' && routingLog.length === 0) loadRoutingLog();
   });
 
@@ -393,6 +529,7 @@
         loadProviderSummaries();
         if (activeTab === 'models') loadModels();
         if (activeTab === 'status') loadProviderStatuses();
+        loadAdapterReadiness();
       }
     }, 30_000);
   });
@@ -409,10 +546,26 @@
       await api(`/api/models/sync`, { method: 'POST' });
       await loadModels();
       await loadProviderSummaries();
+      await loadAdapterReadiness();
     } catch {
       // silently fail
     } finally {
       syncing = false;
+    }
+  }
+
+  async function remediateAdapter(adapterType: string, mode: 'install' | 'update' | 'version') {
+    if (!companyId) return;
+    try {
+      await api(`/api/adapters/${adapterType}/readiness/remediate`, {
+        method: 'POST',
+        body: JSON.stringify({ mode }),
+      });
+      await loadAdapterReadiness();
+      await loadProviderSummaries();
+      await loadModels();
+    } catch {
+      // silently fail
     }
   }
 
@@ -431,6 +584,43 @@
       // silently fail
     } finally {
       savingPreferences = false;
+    }
+  }
+
+  async function saveRoutingPolicy() {
+    if (!companyId || !routingPolicyDraft.name.trim()) return;
+    try {
+      const payload = {
+        ...routingPolicyDraft,
+        companyId,
+      };
+      const res = await api(`/api/companies/${companyId}/model-routing-policies`, {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok) throw new Error(`Failed to save policy (${res.status})`);
+      await loadRoutingPolicies();
+      routingPolicyDraft = {
+        name: '',
+        description: '',
+        agentId: '',
+        role: '',
+        complexity: 'any',
+        priority: 0,
+        routingStrategy: 'pinned',
+        defaultAdapterType: '',
+        defaultModelId: '',
+        fallbackChain: [],
+        allowCrossProviderFallback: true,
+        preferFreeModels: false,
+        preferLocalModels: false,
+        maxCostPerRequestMicro: null,
+        requiredCapabilities: [],
+        minContextWindow: null,
+        maxLatencyMs: null,
+      };
+    } catch {
+      // silent for now
     }
   }
 
@@ -606,6 +796,12 @@
     return hasEnrichment + tierScore;
   }
 
+  function getAdapterReadinessStyle(entry: AdapterReadiness) {
+    if (entry.needsInstall) return 'border-red-500/40 bg-red-500/5 text-red-600 dark:text-red-400';
+    if (entry.needsUpdate) return 'border-yellow-500/40 bg-yellow-500/5 text-yellow-600 dark:text-yellow-400';
+    return 'border-emerald-500/40 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400';
+  }
+
   // New fallback model to add
   let newFallbackModel = $state('');
 </script>
@@ -639,6 +835,39 @@
   {/snippet}
 <div class="providers-root space-y-6">
 
+  <div class="rounded-xl border border-border bg-card p-4">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-sm font-semibold text-foreground">Adapter readiness</h2>
+        <p class="text-xs text-muted-foreground">Install or update adapters from the declared commands.</p>
+      </div>
+      {#if readinessLoading}
+        <span class="text-xs text-muted-foreground">Refreshing...</span>
+      {/if}
+    </div>
+    <div class="mt-3 flex flex-wrap gap-2">
+      {#each adapterReadiness as entry (entry.adapterType)}
+        <div class="flex flex-wrap items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium {getAdapterReadinessStyle(entry)}">
+          <span class="h-1.5 w-1.5 rounded-full {entry.needsInstall ? 'bg-red-500' : entry.needsUpdate ? 'bg-yellow-500' : 'bg-emerald-500'}"></span>
+          <span>{entry.adapterType}</span>
+          {#if entry.needsInstall}
+            <span>install required</span>
+          {:else if entry.needsUpdate}
+            <span>update required</span>
+          {:else}
+            <span>ready</span>
+          {/if}
+          {#if entry.remediation?.installCommand}
+            <Button size="sm" variant="outline" onclick={() => remediateAdapter(entry.adapterType, 'install')}>Install</Button>
+          {/if}
+          {#if entry.remediation?.updateCommand}
+            <Button size="sm" variant="outline" onclick={() => remediateAdapter(entry.adapterType, 'update')}>Update</Button>
+          {/if}
+        </div>
+      {/each}
+    </div>
+  </div>
+
   <!-- ── Provider Summary Cards ──────────────────────────────────── -->
   {#if loading}
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
@@ -669,8 +898,35 @@
       </p>
     </div>
   {:else}
+    <div class="rounded-xl border border-border bg-card p-4">
+      <div class="flex items-center justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-foreground">Adapter readiness</h2>
+          <p class="text-xs text-muted-foreground">Install/update status for registered adapters.</p>
+        </div>
+        {#if readinessLoading}
+          <span class="text-xs text-muted-foreground">Refreshing...</span>
+        {/if}
+      </div>
+      <div class="mt-3 flex flex-wrap gap-2">
+        {#each adapterReadiness as entry (entry.adapterType)}
+          <span class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium {getAdapterReadinessStyle(entry)}">
+            <span class="h-1.5 w-1.5 rounded-full {entry.needsInstall ? 'bg-red-500' : entry.needsUpdate ? 'bg-yellow-500' : 'bg-emerald-500'}"></span>
+            {entry.adapterType}
+            {#if entry.needsInstall}
+              install required
+            {:else if entry.needsUpdate}
+              update required
+            {:else}
+              ready
+            {/if}
+          </span>
+        {/each}
+      </div>
+    </div>
+
     <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {#each providerSummaries as provider (provider.adapterType)}
+      {#each visibleProviders as provider (provider.adapterType)}
         {@const total = provider.available + provider.cooldown + provider.unavailable}
         {@const barTotal = total || 1}
         <div class="rounded-xl border border-border bg-card p-5 transition-all hover:shadow-md">
@@ -797,6 +1053,23 @@
               <option value={cap}>{cap}</option>
             {/each}
           </select>
+          <button
+            type="button"
+            onclick={() => { hideUnavailable = !hideUnavailable; }}
+            class="cursor-pointer flex items-center gap-1.5 h-9 rounded-md border px-3 text-xs font-medium transition-colors
+              {hideUnavailable
+                ? 'border-blue-500/40 bg-blue-500/10 text-blue-600 dark:text-blue-400'
+                : 'border-input bg-background text-muted-foreground hover:text-foreground'}"
+            title={hideUnavailable ? 'Showing only available models' : 'Showing all models including unavailable'}
+          >
+            {#if hideUnavailable}
+              <Eye class="w-3.5 h-3.5" />
+              Available only
+            {:else}
+              <ShieldOff class="w-3.5 h-3.5" />
+              Show all
+            {/if}
+          </button>
         </div>
       </div>
 
@@ -948,7 +1221,7 @@
           <p class="text-sm text-muted-foreground">No provider status data available.</p>
         </div>
       {:else}
-        {#each providerStatuses as provider (provider.adapterType)}
+        {#each providerStatuses.filter((p) => !hideUnavailable || p.models.some((m) => m.status !== 'unavailable')) as provider (provider.adapterType)}
           <div class="rounded-xl border border-border bg-card overflow-hidden">
             <div class="flex items-center gap-3 px-5 pt-5 pb-3">
               <ProviderIcon adapterType={provider.adapterType} size={20} />
@@ -983,6 +1256,12 @@
                             <span class="h-2 w-2 rounded-full {statusStyle.dot}"></span>
                             <span class="text-xs font-medium {statusStyle.text}">{statusStyle.label}</span>
                           </span>
+                          {#if model.statusDetail?.includes('PONG')}
+                            <span class="ml-1.5 inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-1.5 py-0.5 text-[10px] font-medium text-emerald-500 border border-emerald-500/20">
+                              <CheckCircle class="w-2.5 h-2.5" />
+                              Passed
+                            </span>
+                          {/if}
                           {#if model.cooldownEndsAt && model.status === 'cooldown'}
                             {@const remaining = Math.max(0, new Date(model.cooldownEndsAt).getTime() - now)}
                             {#if remaining > 0}
@@ -1214,6 +1493,72 @@
               </label>
             {/each}
           </div>
+        </div>
+
+        <!-- Policy Administration -->
+        <div class="rounded-xl border border-border bg-card p-5 space-y-4">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-foreground">Routing policies</h3>
+              <p class="text-xs text-muted-foreground">Company-scoped overrides by role, agent, or task complexity.</p>
+            </div>
+            {#if routingPoliciesLoading}
+              <span class="text-xs text-muted-foreground">Loading...</span>
+            {/if}
+          </div>
+
+          <div class="grid gap-3 md:grid-cols-2">
+            <div>
+              <label for="routing-policy-name" class="mb-1.5 block text-xs font-medium text-muted-foreground">Policy name</label>
+              <Input id="routing-policy-name" bind:value={routingPolicyDraft.name} placeholder="CEO critical routing" />
+            </div>
+            <div>
+              <label for="routing-policy-role" class="mb-1.5 block text-xs font-medium text-muted-foreground">Role</label>
+              <Input id="routing-policy-role" bind:value={routingPolicyDraft.role} placeholder="ceo" />
+            </div>
+            <div>
+              <label for="routing-policy-complexity" class="mb-1.5 block text-xs font-medium text-muted-foreground">Complexity</label>
+              <select id="routing-policy-complexity" bind:value={routingPolicyDraft.complexity} class="h-9 w-full rounded-md border border-input bg-background px-3 text-sm">
+                <option value="any">Any</option>
+                <option value="trivial">Trivial</option>
+                <option value="low">Low</option>
+                <option value="standard">Standard</option>
+                <option value="high">High</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+            <div>
+              <label for="routing-policy-priority" class="mb-1.5 block text-xs font-medium text-muted-foreground">Priority</label>
+              <Input id="routing-policy-priority" type="number" bind:value={routingPolicyDraft.priority} />
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <Button size="sm" onclick={saveRoutingPolicy} disabled={!routingPolicyDraft.name.trim()}>
+              <Save class="h-4 w-4" />
+              Save policy
+            </Button>
+            <span class="text-xs text-muted-foreground">This persists to the company routing policy table.</span>
+          </div>
+
+          {#if routingPolicies.length > 0}
+            <div class="space-y-2">
+              {#each routingPolicies as policy (policy.id ?? policy.name)}
+                <div class="rounded-lg border border-border px-3 py-2 text-xs">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-foreground">{policy.name}</span>
+                    <span class="text-muted-foreground">{policy.role ?? 'any role'}</span>
+                    <span class="text-muted-foreground">{policy.complexity}</span>
+                    <span class="text-muted-foreground">prio {policy.priority}</span>
+                    <span class="text-muted-foreground">{policy.routingStrategy}</span>
+                  </div>
+                  {#if policy.description}
+                    <p class="mt-1 text-muted-foreground">{policy.description}</p>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
         </div>
 
         <!-- Toggle Switches -->

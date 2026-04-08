@@ -19,7 +19,7 @@ import { goalService } from "./goals.js";
 import { documentService } from "./documents.js";
 import { heartbeatService } from "./heartbeat.js";
 import { subscribeCompanyLiveEvents } from "./live-events.js";
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
 import { activityService } from "./activity.js";
 import { costService } from "./costs.js";
 import { assetService } from "./assets.js";
@@ -28,11 +28,11 @@ import { pluginStateStore } from "./plugin-state-store.js";
 import { createPluginSecretsHandler } from "./plugin-secrets-handler.js";
 import { logActivity } from "./activity-log.js";
 import type { PluginEventBus } from "./plugin-event-bus.js";
-import { lookup as dnsLookup } from "node:dns/promises";
-import type { IncomingMessage, RequestOptions as HttpRequestOptions } from "node:http";
-import { request as httpRequest } from "node:http";
-import { request as httpsRequest } from "node:https";
-import { isIP } from "node:net";
+import { lookup as dnsLookup } from "dns/promises";
+import type { IncomingMessage, RequestOptions as HttpRequestOptions } from "http";
+import { request as httpRequest } from "http";
+import { request as httpsRequest } from "https";
+import { isIP } from "net";
 import { logger } from "../middleware/logger.js";
 
 // ---------------------------------------------------------------------------

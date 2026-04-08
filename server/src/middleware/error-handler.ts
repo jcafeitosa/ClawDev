@@ -34,12 +34,29 @@ export const elysiaErrorHandler = new Elysia({ name: "error-handler" }).onError(
       default: {
         if (error instanceof HttpError) {
           set.status = error.status;
+          // Log auth errors for audit trail
+          if (error.status === 401 || error.status === 403) {
+            log.warn(
+              { category: "auth", status: error.status, err: error.message },
+              `Access denied: ${error.message}`
+            );
+          } else if (error.status === 404) {
+            log.warn(
+              { category: "http.error", status: 404, path: new URL(request.url).pathname },
+              "Route not found"
+            );
+          } else {
+            log.warn(
+              { category: "http.error", status: error.status, err: error.message },
+              `HTTP error: ${error.message}`
+            );
+          }
           return error.details
             ? { error: error.message, details: error.details }
             : { error: error.message };
         }
         const msg = (error as any)?.message ?? String(error);
-        log.error({ code, err: msg, stack: (error as any)?.stack }, "Unhandled error");
+        log.error({ code, err: msg, stack: (error as any)?.stack, category: "error" }, "Unhandled error");
         set.status = 500;
         // Never leak internal error details (DB errors, stack traces) to clients
         return { error: "Internal server error" };

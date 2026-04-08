@@ -4,6 +4,9 @@ import { channelMessages, channelMessageReactions, channels, agents } from "@cla
 import { publishLiveEvent } from "./live-events.js";
 import { queueChannelMessageWakeups, type ChannelWakeupDeps } from "./channel-message-wakeup.js";
 import { heartbeatService } from "./heartbeat.js";
+import { logger } from "../middleware/logger.js";
+
+const log = logger.child({ service: "channel-messages" });
 
 export function channelMessageService(db: Db) {
   return {
@@ -138,7 +141,10 @@ export function channelMessageService(db: Db) {
         threadId: threadId ?? null,
       }).catch((err) => {
         // Non-blocking — log but don't fail the message send
-        console.error("channel-message-wakeup error:", err);
+        log.error(
+          { category: "error", err, channelId },
+          "Channel message wakeup failed",
+        );
       });
 
       return { ...message, senderDisplayName };

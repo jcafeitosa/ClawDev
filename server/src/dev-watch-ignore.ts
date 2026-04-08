@@ -1,5 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
+import path from "path";
+import fs from "fs";
 
 function toGlobstarPath(candidate: string): string {
   return `${candidate.replaceAll(path.sep, "/")}/**`;

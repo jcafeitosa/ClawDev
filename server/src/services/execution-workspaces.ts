@@ -1,7 +1,5 @@
-import { execFile } from "node:child_process";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { promisify } from "node:util";
+import fs from "fs/promises";
+import path from "path";
 import { and, desc, eq, inArray } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import { executionWorkspaces, issues, projects, projectWorkspaces, workspaceRuntimeServices } from "@clawdev/db";
@@ -18,7 +16,6 @@ type ExecutionWorkspaceConfigLike = {
   desiredState: ExecutionWorkspaceConfig["desiredState"];
 };
 
-const execFileAsync = promisify(execFile);
 const TERMINAL_ISSUE_STATUSES = new Set(["done", "cancelled"]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -41,8 +38,39 @@ async function pathExists(value: string | null | undefined) {
   }
 }
 
+async function readSubprocessText(stream: ReadableStream<Uint8Array> | null | undefined) {
+  if (!stream) return "";
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
 async function runGit(args: string[], cwd: string) {
-  return await execFileAsync("git", ["-C", cwd, ...args], { cwd });
+  const proc = Bun.spawn({
+    cmd: ["git", "-C", cwd, ...args],
+    cwd,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    readSubprocessText(proc.stdout),
+    readSubprocessText(proc.stderr),
+    proc.exited,
+  ]);
+  if (exitCode !== 0) {
+    throw new Error(stderr.trim() || `git ${args.join(" ")} failed with code ${exitCode}`);
+  }
+  return { stdout, stderr };
 }
 
 function readExecutionWorkspaceConfig(metadata: Record<string, unknown> | null | undefined): ExecutionWorkspaceConfigLike | null {

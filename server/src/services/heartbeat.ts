@@ -1,7 +1,7 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { execFile as execFileCallback } from "node:child_process";
-import { promisify } from "node:util";
+import fs from "fs/promises";
+import path from "path";
+import { execFile as execFileCallback } from "child_process";
+import { promisify } from "util";
 import { and, asc, desc, eq, gt, inArray, sql } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import type { BillingType, ExecutionWorkspaceConfig } from "@clawdev/shared";
@@ -28,6 +28,7 @@ import { parseObject, asBoolean, asNumber, appendWithCap, MAX_EXCERPT_BYTES } fr
 import { costService } from "./costs.js";
 import { companySkillService } from "./company-skills.js";
 import { budgetService, type BudgetEnforcementScope } from "./budgets.js";
+import { agentHookService } from "./agent-hooks.js";
 import { secretService } from "./secrets.js";
 import { resolveDefaultAgentWorkspaceDir, resolveManagedProjectWorkspaceDir } from "../home-paths.js";
 import { summarizeHeartbeatRunResultJson } from "./heartbeat-run-summary.js";
@@ -940,6 +941,7 @@ export function heartbeatService(db: Db) {
   const issuesSvc = issueService(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
+  const hookSvc = agentHookService(db);
   const activeRunExecutions = new Set<string>();
   const budgetHooks = {
     cancelWorkForScope: cancelBudgetScopeWork,
@@ -1554,6 +1556,22 @@ export function heartbeatService(db: Db) {
           finishedAt: updated.finishedAt ? new Date(updated.finishedAt).toISOString() : null,
         },
       });
+
+      // Fire agent hooks
+      if (updated.agentId) {
+        const hookEvent = updated.status === "succeeded" ? "run.completed"
+          : updated.status === "failed" ? "run.failed"
+          : updated.status === "running" ? "run.started"
+          : null;
+        if (hookEvent) {
+          hookSvc.fireEvent(updated.companyId, updated.agentId, hookEvent as any, {
+            runId: updated.id,
+            status: updated.status,
+            invocationSource: updated.invocationSource,
+            error: updated.error,
+          }).catch(err => logger.error({ err }, "hook fireEvent failed"));
+        }
+      }
     }
 
     return updated;
@@ -2139,6 +2157,7 @@ export function heartbeatService(db: Db) {
             id: issues.id,
             identifier: issues.identifier,
             title: issues.title,
+            complexity: issues.complexity,
             projectId: issues.projectId,
             projectWorkspaceId: issues.projectWorkspaceId,
             executionWorkspaceId: issues.executionWorkspaceId,
@@ -2690,7 +2709,7 @@ export function heartbeatService(db: Db) {
 
       const adapter = getServerAdapter(agent.adapterType);
       const authToken = adapter.supportsLocalAgentJwt
-        ? createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
+        ? await createLocalAgentJwt(agent.id, agent.companyId, agent.adapterType, run.id)
         : null;
       if (adapter.supportsLocalAgentJwt && !authToken) {
         logger.warn(
@@ -2740,7 +2759,16 @@ export function heartbeatService(db: Db) {
           agent.id,
           agent.adapterType,
           requestedModel,
-          { lockAdapterType: true },
+          {
+            lockAdapterType: true,
+            routingContext: {
+              companyId: agent.companyId,
+              agentId: agent.id,
+              role: agent.role,
+              complexity: (issueContext?.complexity ?? "standard") as "standard" | "critical" | "high" | "low" | "trivial",
+              requiredCapabilities: [],
+            },
+          },
         );
         modelResolution = resolution;
 
@@ -2801,7 +2829,16 @@ export function heartbeatService(db: Db) {
             agent.id,
             agent.adapterType,
             undefined, // let router pick best available
-            { lockAdapterType: true },
+            {
+              lockAdapterType: true,
+              routingContext: {
+                companyId: agent.companyId,
+                agentId: agent.id,
+                role: agent.role,
+                complexity: (issueContext?.complexity ?? "standard") as "standard" | "critical" | "high" | "low" | "trivial",
+                requiredCapabilities: [],
+              },
+            },
           );
 
           if (fallback.modelId && fallback.modelId !== currentModel) {
@@ -3026,13 +3063,15 @@ export function heartbeatService(db: Db) {
           const channelId = readNonEmptyString(context.channelId);
           const parentMessageId = readNonEmptyString(context.messageId);
           if (channelId) {
-            // Extract response text from adapter result or stdout
-            const resultSummary = summarizeHeartbeatRunResultJson(adapterResult.resultJson ?? null);
+            // Extract response text from adapter result or stdout.
+            // Use raw (untruncated) fields from resultJson for channel messages,
+            // since the summarizer truncates to 500 chars which cuts off chat responses.
+            const rawResult = (adapterResult.resultJson ?? null) as Record<string, unknown> | null;
             const responseBody =
-              readNonEmptyString(resultSummary?.summary as string) ??
-              readNonEmptyString(resultSummary?.result as string) ??
-              readNonEmptyString(resultSummary?.message as string) ??
-              readNonEmptyString((adapterResult.resultJson as Record<string, unknown>)?.stdout as string) ??
+              readNonEmptyString(rawResult?.summary as string) ??
+              readNonEmptyString(rawResult?.result as string) ??
+              readNonEmptyString(rawResult?.message as string) ??
+              readNonEmptyString(rawResult?.stdout as string) ??
               (stdoutExcerpt.trim() || null);
 
             if (responseBody) {

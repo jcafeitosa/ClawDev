@@ -2,7 +2,7 @@
 
 ## Context
 
-Agents are the employees of a ClawDev company. Each agent has an adapter type (`claude_local`, `codex_local`, `process`, `http`) that determines how it runs, a position in the org chart (who it reports to), a heartbeat policy (how/when it wakes up), and a budget. The UI at `/agents` needs to support creating and configuring agents, viewing their org hierarchy, and inspecting what they've been doing -- their run history, live logs, and accumulated costs.
+Agents are the employees of a ClawDev company. Each agent has an adapter type (`claude_local`, `codex_local`, `copilot_local`, `cursor`, `gemini_local`, `opencode_local`, `pi_local`, `openai_compatible_local`, `openclaw_gateway`, `process`, `http`) that determines how it runs, a position in the org chart (who it reports to), a heartbeat policy (how/when it wakes up), and a budget. The UI at `/agents` needs to support creating and configuring agents, viewing their org hierarchy, and inspecting what they've been doing -- their run history, live logs, and accumulated costs.
 
 This spec covers three surfaces:
 
@@ -32,7 +32,7 @@ Follows the existing `NewIssueDialog` / `NewProjectDialog` pattern: a `Dialog` c
 
 | Field | Control | Default | Notes |
 |-------|---------|---------|-------|
-| Adapter Type | Chip popover (select) | `claude_local` | `claude_local`, `codex_local`, `process`, `http` |
+| Adapter Type | Chip popover (select) | `claude_local` | `claude_local`, `codex_local`, `copilot_local`, `cursor`, `gemini_local`, `opencode_local`, `pi_local`, `openai_compatible_local`, `openclaw_gateway`, `process`, `http` |
 | Test environment | Button | -- | Runs adapter-specific diagnostics and returns pass/warn/fail checks for current unsaved config |
 | CWD | Text input | -- | Working directory for local adapters |
 | Prompt Template | Textarea | -- | Supports `{{ agent.id }}`, `{{ agent.name }}` etc. |
@@ -64,6 +64,20 @@ Follows the existing `NewIssueDialog` / `NewProjectDialog` pattern: a `Dialog` c
 | URL | Text input | -- |
 | Method | Select | POST |
 | Headers | Key-value pairs | -- |
+
+*openai_compatible_local:*
+| Field | Control | Default |
+|-------|---------|---------|
+| Base URL | Text input | `http://localhost:11434/v1` |
+| API Key | Password input | -- |
+| Provider Label | Text input | optional display label |
+
+*pi_local:*
+| Field | Control | Default |
+|-------|---------|---------|
+| Provider | Text input | bridge provider name |
+| Model | Text input | provider/model format |
+| API Key | Password input | provider-specific |
 
 **Runtime (collapsible section, default collapsed):**
 

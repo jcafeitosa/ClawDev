@@ -1,6 +1,6 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import os from "os";
+import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import { readPersistedDevServerStatus, toDevServerHealthStatus } from "../dev-server-status.js";
 
@@ -21,7 +21,7 @@ afterEach(() => {
 });
 
 describe("dev server status helpers", () => {
-  it("reads and normalizes persisted supervisor state", () => {
+  it("reads and normalizes persisted supervisor state", async () => {
     const filePath = createTempStatusFile({
       dirty: true,
       lastChangedAt: "2026-03-20T12:00:00.000Z",
@@ -31,7 +31,7 @@ describe("dev server status helpers", () => {
       lastRestartAt: "2026-03-20T11:30:00.000Z",
     });
 
-    expect(readPersistedDevServerStatus({ CLAWDEV_DEV_SERVER_STATUS_FILE: filePath })).toEqual({
+    await expect(readPersistedDevServerStatus({ CLAWDEV_DEV_SERVER_STATUS_FILE: filePath })).resolves.toEqual({
       dirty: true,
       lastChangedAt: "2026-03-20T12:00:00.000Z",
       changedPathCount: 4,

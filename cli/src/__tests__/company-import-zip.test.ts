@@ -1,6 +1,6 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import { mkdtemp, rm, writeFile } from "fs/promises";
+import os from "os";
+import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolveInlineSourceFromPath } from "../commands/client/company.js";
 import { createStoredZipArchive } from "./helpers/zip.js";

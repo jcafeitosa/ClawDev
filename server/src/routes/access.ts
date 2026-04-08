@@ -5,10 +5,6 @@
  * member management, skills access control, and admin operations.
  */
 
-import crypto from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { Elysia, t } from "elysia";
 import { and, desc, eq, isNull } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
@@ -54,8 +50,9 @@ export {
 // Token helpers
 // ---------------------------------------------------------------------------
 
-function hashToken(token: string) {
-  return crypto.createHash("sha256").update(token).digest("hex");
+async function hashToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Buffer.from(digest).toString("hex");
 }
 
 const INVITE_TOKEN_PREFIX = "pcp_invite_";
@@ -64,7 +61,8 @@ const INVITE_TOKEN_SUFFIX_LENGTH = 8;
 const INVITE_TOKEN_MAX_RETRIES = 5;
 
 function createInviteToken() {
-  const bytes = crypto.randomBytes(INVITE_TOKEN_SUFFIX_LENGTH);
+  const bytes = new Uint8Array(INVITE_TOKEN_SUFFIX_LENGTH);
+  crypto.getRandomValues(bytes);
   let suffix = "";
   for (let idx = 0; idx < INVITE_TOKEN_SUFFIX_LENGTH; idx += 1) {
     suffix += INVITE_TOKEN_ALPHABET[bytes[idx]! % INVITE_TOKEN_ALPHABET.length];
@@ -73,16 +71,18 @@ function createInviteToken() {
 }
 
 function createClaimSecret() {
-  return `pcp_claim_${crypto.randomBytes(24).toString("hex")}`;
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return `pcp_claim_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 function tokenHashesMatch(left: string, right: string) {
-  const leftBytes = Buffer.from(left, "utf8");
-  const rightBytes = Buffer.from(right, "utf8");
-  return (
-    leftBytes.length === rightBytes.length &&
-    crypto.timingSafeEqual(leftBytes, rightBytes)
-  );
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left.charCodeAt(i)! ^ right.charCodeAt(i)!;
+  }
+  return diff === 0;
 }
 
 function isInviteTokenHashCollisionError(error: unknown) {
@@ -452,7 +452,7 @@ function assertBoardCompanyAccess(actor: Actor, companyId: string) {
 // Skill helpers
 // ---------------------------------------------------------------------------
 
-function readSkillMarkdown(skillName: string): string | null {
+async function readSkillMarkdown(skillName: string): Promise<string | null> {
   const normalized = skillName.trim().toLowerCase();
   const aliasMap: Record<string, string> = {
     paperclip: "clawdev",
@@ -467,18 +467,14 @@ function readSkillMarkdown(skillName: string): string | null {
     resolved !== "para-memory-files"
   )
     return null;
-  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  const moduleDir = new URL(".", import.meta.url).pathname;
   const candidates = [
-    path.resolve(moduleDir, "../../skills", resolved, "SKILL.md"),
-    path.resolve(process.cwd(), "skills", resolved, "SKILL.md"),
-    path.resolve(moduleDir, "../../../skills", resolved, "SKILL.md"),
+    `${moduleDir}../../skills/${resolved}/SKILL.md`,
+    `${process.cwd()}/skills/${resolved}/SKILL.md`,
+    `${moduleDir}../../../skills/${resolved}/SKILL.md`,
   ];
   for (const skillPath of candidates) {
-    try {
-      return fs.readFileSync(skillPath, "utf8");
-    } catch {
-      // Continue to next candidate
-    }
+    if (await Bun.file(skillPath).exists()) return await Bun.file(skillPath).text();
   }
   return null;
 }
@@ -510,32 +506,29 @@ const PAPERCLIP_MANAGED_SKILL_NAMES = new Set([
   "para-memory-files",
 ]);
 
-function listAvailableSkills(): AvailableSkill[] {
+async function listAvailableSkills(): Promise<AvailableSkill[]> {
   const homeDir = process.env.HOME || process.env.USERPROFILE || "";
-  const claudeSkillsDir = path.join(homeDir, ".claude", "skills");
+  const claudeSkillsDir = `${homeDir}/.claude/skills`;
 
   const skills: AvailableSkill[] = [];
-  try {
-    const entries = fs.readdirSync(claudeSkillsDir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
-      if (entry.name.startsWith(".")) continue;
-      const skillMdPath = path.join(claudeSkillsDir, entry.name, "SKILL.md");
-      let description = "";
-      try {
-        const md = fs.readFileSync(skillMdPath, "utf8");
-        description = parseSkillFrontmatter(md).description;
-      } catch {
-        /* skip */
-      }
-      skills.push({
-        name: entry.name,
-        description,
-        isPaperclipManaged: PAPERCLIP_MANAGED_SKILL_NAMES.has(entry.name),
-      });
+  if (!(await Bun.file(claudeSkillsDir).exists())) return skills;
+
+  const glob = new Bun.Glob(`${claudeSkillsDir}/*/SKILL.md`);
+  for await (const skillMdPath of glob.scan({ cwd: "/" })) {
+    const pathString = String(skillMdPath);
+    const name = pathString.split("/").slice(-2, -1)[0] ?? "";
+    if (!name || name.startsWith(".")) continue;
+    let description = "";
+    try {
+      description = parseSkillFrontmatter(await Bun.file(pathString).text()).description;
+    } catch {
+      /* skip */
     }
-  } catch {
-    /* ~/.claude/skills/ doesn't exist */
+    skills.push({
+      name,
+      description,
+      isPaperclipManaged: PAPERCLIP_MANAGED_SKILL_NAMES.has(name),
+    });
   }
 
   skills.sort((a, b) => a.name.localeCompare(b.name));
@@ -645,7 +638,7 @@ export function accessRoutes(db: Db) {
                   defaultsPayload,
                   expiresAt: companyInviteExpiresAt(Date.now()),
                   invitedByUserId: actor.userId ?? null,
-                  tokenHash: hashToken(candidateToken),
+                  tokenHash: await hashToken(candidateToken),
                 })
                 .returning()
                 .then((rows) => rows[0]);
@@ -724,7 +717,7 @@ export function accessRoutes(db: Db) {
           const invite = await db
             .select()
             .from(invites)
-            .where(eq(invites.tokenHash, hashToken(token)))
+            .where(eq(invites.tokenHash, await hashToken(token)))
             .then((rows) => rows[0] ?? null);
           if (!invite || invite.revokedAt || inviteExpired(invite)) {
             set.status = 404;
@@ -750,7 +743,7 @@ export function accessRoutes(db: Db) {
           const invite = await db
             .select()
             .from(invites)
-            .where(eq(invites.tokenHash, hashToken(token)))
+            .where(eq(invites.tokenHash, await hashToken(token)))
             .then((rows) => rows[0] ?? null);
           if (!invite || invite.revokedAt || inviteExpired(invite)) {
             set.status = 404;
@@ -808,7 +801,7 @@ export function accessRoutes(db: Db) {
           const invite = await db
             .select()
             .from(invites)
-            .where(eq(invites.tokenHash, hashToken(token)))
+            .where(eq(invites.tokenHash, await hashToken(token)))
             .then((rows) => rows[0] ?? null);
           if (!invite || invite.revokedAt || invite.acceptedAt || inviteExpired(invite)) {
             set.status = 404;
@@ -835,7 +828,7 @@ export function accessRoutes(db: Db) {
           const invite = await db
             .select()
             .from(invites)
-            .where(eq(invites.tokenHash, hashToken(token)))
+            .where(eq(invites.tokenHash, await hashToken(token)))
             .then((rows) => rows[0] ?? null);
           if (!invite || invite.revokedAt || inviteExpired(invite)) {
             set.status = 404;
@@ -883,7 +876,7 @@ export function accessRoutes(db: Db) {
           const invite = await db
             .select()
             .from(invites)
-            .where(eq(invites.tokenHash, hashToken(token)))
+            .where(eq(invites.tokenHash, await hashToken(token)))
             .then((rows) => rows[0] ?? null);
           if (!invite || invite.revokedAt || inviteExpired(invite)) {
             set.status = 404;
@@ -975,7 +968,7 @@ export function accessRoutes(db: Db) {
 
           const claimSecret =
             requestType === "agent" && !inviteAlreadyAccepted ? createClaimSecret() : null;
-          const claimSecretHash = claimSecret ? hashToken(claimSecret) : null;
+          const claimSecretHash = claimSecret ? await hashToken(claimSecret) : null;
           const claimSecretExpiresAt = claimSecret
             ? new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
             : null;
@@ -1385,7 +1378,7 @@ export function accessRoutes(db: Db) {
         try {
           const { params, body, set } = ctx;
           const requestId = params.requestId;
-          const presentedClaimSecretHash = hashToken(body.claimSecret);
+          const presentedClaimSecretHash = await hashToken(body.claimSecret);
 
           const joinRequest = await db
             .select()
@@ -1709,7 +1702,7 @@ export function accessRoutes(db: Db) {
           }
 
           const tokenStr = createInviteToken();
-          const tokenHash = hashToken(tokenStr);
+          const tokenHash = await hashToken(tokenStr);
           const now = Date.now();
           const expiresAt = companyInviteExpiresAt(now);
 
@@ -1843,9 +1836,9 @@ export function accessRoutes(db: Db) {
     // Skills
     // ---------------------------------------------------------------
 
-    .get("/skills/available", () => {
+    .get("/skills/available", async () => {
       try {
-        return { skills: listAvailableSkills() };
+        return { skills: await listAvailableSkills() };
       } catch (err) {
         const errMsg = err instanceof Error ? err.message : String(err);
         log.error({ category: "http.error", err: errMsg }, "Failed to list available skills");
@@ -1874,7 +1867,7 @@ export function accessRoutes(db: Db) {
       async ({ params, set }) => {
         try {
           const skillName = params.id.trim().toLowerCase();
-          const markdown = readSkillMarkdown(skillName);
+          const markdown = await readSkillMarkdown(skillName);
           if (!markdown) {
             set.status = 404;
             return { error: "Skill not found" };

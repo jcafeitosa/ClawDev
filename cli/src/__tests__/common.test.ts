@@ -1,6 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { writeContext } from "../client/context.js";
 import { resolveCommandContext } from "../commands/client/common.js";

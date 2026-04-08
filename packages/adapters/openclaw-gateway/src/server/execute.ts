@@ -4,7 +4,7 @@ import type {
   AdapterRuntimeServiceReport,
 } from "@clawdev/adapter-utils";
 import { asNumber, asString, buildClawDevEnv, parseObject } from "@clawdev/adapter-utils/server-utils";
-import crypto, { randomUUID } from "node:crypto";
+import crypto, { randomUUID } from "crypto";
 import { WebSocket } from "ws";
 
 type SessionKeyStrategy = "fixed" | "issue" | "run";

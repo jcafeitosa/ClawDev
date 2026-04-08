@@ -1,6 +1,5 @@
-import { createReadStream, promises as fs } from "node:fs";
-import path from "node:path";
-import { createHash } from "node:crypto";
+import { promises as fs } from "fs";
+import path from "path";
 import { notFound } from "../errors.js";
 import { resolveClawDevInstanceRoot } from "../home-paths.js";
 
@@ -67,29 +66,14 @@ function createLocalFileRunLogStore(basePath: string): RunLogStore {
       return { content: "", nextOffset: start };
     }
 
-    const chunks: Buffer[] = [];
-    await new Promise<void>((resolve, reject) => {
-      const stream = createReadStream(filePath, { start, end });
-      stream.on("data", (chunk) => {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      });
-      stream.on("error", reject);
-      stream.on("end", () => resolve());
-    });
-
-    const content = Buffer.concat(chunks).toString("utf8");
+    const content = (await Bun.file(filePath).text()).slice(start, end + 1);
     const nextOffset = end + 1 < stat.size ? end + 1 : undefined;
     return { content, nextOffset };
   }
 
   async function sha256File(filePath: string): Promise<string> {
-    return new Promise<string>((resolve, reject) => {
-      const hash = createHash("sha256");
-      const stream = createReadStream(filePath);
-      stream.on("data", (chunk) => hash.update(chunk));
-      stream.on("error", reject);
-      stream.on("end", () => resolve(hash.digest("hex")));
-    });
+    const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(await Bun.file(filePath).arrayBuffer()));
+    return Buffer.from(digest).toString("hex");
   }
 
   return {
@@ -153,4 +137,3 @@ export function getRunLogStore() {
   cachedStore = createLocalFileRunLogStore(basePath);
   return cachedStore;
 }
-

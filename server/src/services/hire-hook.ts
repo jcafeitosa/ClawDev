@@ -5,6 +5,7 @@ import type { HireApprovedPayload } from "@clawdev/adapter-utils";
 import { findServerAdapter } from "../adapters/registry.js";
 import { logger } from "../middleware/logger.js";
 import { logActivity } from "./activity-log.js";
+import { agentHookService } from "./agent-hooks.js";
 
 const HIRE_APPROVED_MESSAGE =
   "Tell your user that your hire was approved, now they should assign you a task in ClawDev or ask you to create issues.";
@@ -62,6 +63,8 @@ export async function notifyHireApproved(
       ? (row.adapterConfig as Record<string, unknown>)
       : {};
 
+  const hookSvc = agentHookService(db);
+
   try {
     const result = await onHireApproved(payload, adapterConfig);
     if (result.ok) {
@@ -74,6 +77,11 @@ export async function notifyHireApproved(
         entityId: agentId,
         details: { source, sourceId, adapterType },
       });
+
+      hookSvc.fireEvent(input.companyId, input.agentId, "hire.approved" as any, {
+        source: input.source, sourceId: input.sourceId,
+      }).catch(() => {});
+
       return;
     }
 

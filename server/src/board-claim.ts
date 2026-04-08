@@ -1,4 +1,3 @@
-import { randomBytes } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import { companies, companyMemberships, instanceUserRoles } from "@clawdev/db";
@@ -21,9 +20,14 @@ type ClaimChallenge = {
 let activeChallenge: ClaimChallenge | null = null;
 
 function createChallenge(now = new Date()): ClaimChallenge {
+  const tokenBytes = new Uint8Array(24);
+  const codeBytes = new Uint8Array(12);
+  crypto.getRandomValues(tokenBytes);
+  crypto.getRandomValues(codeBytes);
+  const toHex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("");
   return {
-    token: randomBytes(24).toString("hex"),
-    code: randomBytes(12).toString("hex"),
+    token: toHex(tokenBytes),
+    code: toHex(codeBytes),
     createdAt: now,
     expiresAt: new Date(now.getTime() + CLAIM_TTL_MS),
     claimedAt: null,

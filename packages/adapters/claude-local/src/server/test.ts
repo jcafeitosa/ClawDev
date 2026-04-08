@@ -15,7 +15,7 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
-import path from "node:path";
+import path from "path";
 import { detectClaudeLoginRequired, parseClaudeStreamJson } from "./parse.js";
 import { normalizeClaudeModelArg, sanitizeClaudeExtraArgs } from "./execute.js";
 
@@ -49,6 +49,33 @@ function summarizeProbeDetail(stdout: string, stderr: string): string | null {
   const clean = raw.replace(/\s+/g, " ").trim();
   const max = 240;
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+function parseClaudeHelpCommands(stdout: string, stderr: string): string[] {
+  const text = `${stdout}\n${stderr}`;
+  const lines = text.split(/\r?\n/);
+  const commands: string[] = [];
+  let inCommands = false;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (/^Commands:$/i.test(trimmed)) {
+      inCommands = true;
+      continue;
+    }
+    if (inCommands && /^[A-Z][A-Za-z0-9 -]+:/.test(trimmed)) {
+      break;
+    }
+    if (!inCommands) continue;
+    const match = trimmed.match(/^([a-z][a-z0-9|-]*)(?:\s+\[options\])?/i);
+    if (!match) continue;
+    const raw = match[1]!.toLowerCase();
+    const normalized = raw.replace(/\|/g, "");
+    if (normalized && !commands.includes(normalized)) {
+      commands.push(normalized);
+    }
+  }
+  return commands;
 }
 
 export async function testEnvironment(
@@ -129,6 +156,32 @@ export async function testEnvironment(
         hint: "Use the `claude` CLI command to run the automatic login and installation probe.",
       });
     } else {
+      try {
+        const helpProbe = await runChildProcess(
+          `claude-help-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          ["--help"],
+          {
+            cwd,
+            env,
+            timeoutSec: 10,
+            graceSec: 3,
+            onLog: async () => {},
+          },
+        );
+        const helpCommands = parseClaudeHelpCommands(helpProbe.stdout, helpProbe.stderr);
+        if (helpCommands.length > 0) {
+          checks.push({
+            code: "claude_command_surface",
+            level: "info",
+            message: "Claude CLI command surface detected",
+            detail: helpCommands.join(", "),
+          });
+        }
+      } catch {
+        // Help probe failed — skip silently
+      }
+
       const model = normalizeClaudeModelArg(config.model);
       const effort = asString(config.effort, "").trim();
       const chrome = asBoolean(config.chrome, false);

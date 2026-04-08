@@ -57,6 +57,7 @@
     "gemini_local",
     "pi_local",
     "opencode_local",
+    "openai_compatible_local",
   ];
 
   const isLocal = $derived(LOCAL_ADAPTERS.includes(adapterType));
@@ -68,6 +69,7 @@
     "gemini_local",
     "opencode_local",
     "pi_local",
+    "openai_compatible_local",
   ]);
   const TESTABLE_ADAPTERS = new Set([
     "claude_local",
@@ -86,6 +88,7 @@
     codex_local: { providers: ["openai"] },
     gemini_local: { providers: ["google"] },
     opencode_local: { idPrefix: "opencode/" },
+    openai_compatible_local: { providers: ["openai"] },
     // copilot_local: no filter — supports all providers (anthropic, openai, google)
     // cursor: no filter — supports all providers
     // pi_local: no filter — user specifies provider/model format
@@ -95,10 +98,69 @@
     codex_local: "OpenAI",
     gemini_local: "Google",
     opencode_local: "OpenCode",
+    openai_compatible_local: "OpenAI-Compatible Local",
     copilot_local: "All Providers",
     cursor: "All Providers",
     pi_local: "Pi",
   };
+  const PI_BRIDGE_PROVIDER_PRESETS = [
+    {
+      provider: "groq",
+      label: "Groq",
+      envVars: ["GROQ_API_KEY"],
+      sample: "groq/qwen-qwq-32b",
+      resource: "Fast OpenAI-style inference",
+    },
+    {
+      provider: "xai",
+      label: "xAI",
+      envVars: ["XAI_API_KEY"],
+      sample: "xai/grok-4",
+      resource: "Grok models through Pi",
+    },
+    {
+      provider: "mistral",
+      label: "Mistral",
+      envVars: ["MISTRAL_API_KEY"],
+      sample: "mistral/devstral-medium-latest",
+      resource: "General-purpose and coding models",
+    },
+    {
+      provider: "cerebras",
+      label: "Cerebras",
+      envVars: ["CEREBRAS_API_KEY"],
+      sample: "cerebras/llama-4-scout",
+      resource: "High-throughput local-like inference",
+    },
+    {
+      provider: "openrouter",
+      label: "OpenRouter",
+      envVars: ["OPENROUTER_API_KEY"],
+      sample: "openrouter/openai/gpt-5.4",
+      resource: "Access to many hosted models",
+    },
+    {
+      provider: "minimax",
+      label: "MiniMax",
+      envVars: ["MINIMAX_API_KEY"],
+      sample: "minimax/minimax-m2.5",
+      resource: "MiniMax coding models",
+    },
+    {
+      provider: "kimi-coding",
+      label: "Kimi Coding",
+      envVars: ["KIMI_API_KEY"],
+      sample: "kimi-coding/kimi-k2.5",
+      resource: "Kimi coding models",
+    },
+    {
+      provider: "azure",
+      label: "Azure OpenAI",
+      envVars: ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_API_VERSION"],
+      sample: "azure/gpt-5.4",
+      resource: "Azure-hosted OpenAI deployments",
+    },
+  ] as const;
   const isModelDiscoveryAdapter = $derived(Boolean(companyId) && MODEL_DISCOVERY_ADAPTERS.has(adapterType));
   const isEnvironmentTestableAdapter = $derived(Boolean(companyId) && TESTABLE_ADAPTERS.has(adapterType));
 
@@ -173,6 +235,29 @@
     return MODEL_PROVIDER_LABELS[adapterType] ?? adapterType;
   }
 
+  function applyOpenAICompatiblePreset(kind: "ollama" | "lm-studio" | "llama-cpp") {
+    if (adapterType !== "openai_compatible_local") return;
+    const preset = {
+      ollama: { baseUrl: "http://localhost:11434/v1", apiKey: "", model: "" },
+      "lm-studio": { baseUrl: "http://localhost:1234/v1", apiKey: "", model: "" },
+      "llama-cpp": { baseUrl: "http://localhost:8080/v1", apiKey: "", model: "" },
+    }[kind];
+    config.baseUrl = preset.baseUrl;
+    config.apiKey = preset.apiKey;
+    config.model = preset.model;
+    config = config;
+  }
+
+  function applyPiProviderPreset(provider: string) {
+    if (adapterType !== "pi_local") return;
+    setField("provider", provider);
+    if (typeof config.model !== "string" || !config.model.trim()) {
+      setField("model", `${provider}/`);
+    } else if (!config.model.includes("/")) {
+      setField("model", `${provider}/${config.model}`);
+    }
+  }
+
   // Initialize defaults when adapter changes
   $effect(() => {
     void adapterType;
@@ -222,6 +307,13 @@
       case "opencode_local":
         ensure("cwd");
         break;
+      case "openai_compatible_local":
+        ensure("baseUrl", "http://localhost:11434/v1");
+        ensure("model");
+        ensure("apiKey");
+        ensure("temperature", 0.2);
+        ensure("maxTokens", 1024);
+        break;
       case "openclaw_gateway":
         ensure("url", "wss://");
         ensure("authToken");
@@ -256,14 +348,16 @@
     adapterModelsLoading = true;
     adapterModelsError = null;
     try {
-      const res = await api(`/api/companies/${companyId}/adapters/${adapterType}/models`);
+      const res = await api(`/api/models?adapterType=${encodeURIComponent(adapterType)}`);
       if (!res.ok) {
         const body = await res.json().catch(() => null);
         throw new Error(body?.message ?? `Failed to load ${adapterType} models (${res.status})`);
       }
       const data = await res.json();
-      const rawModels = Array.isArray(data) ? data : data.models ?? [];
-      adapterModels = filterAdapterModels(Array.isArray(rawModels) ? rawModels : []);
+      const rawModels = Array.isArray(data?.models) ? data.models : [];
+      adapterModels = filterAdapterModels(
+        rawModels.filter((model: any) => model.circuitState === "available" || model.circuitState === "cooldown"),
+      );
     } catch (err) {
       adapterModels = [];
       adapterModelsError = err instanceof Error ? err.message : "Failed to load adapter models";
@@ -750,6 +844,35 @@
       <!-- pi_local -->
       {:else if adapterType === "pi_local"}
         {#if showModelControls}
+          <fieldset>
+            <div class="flex items-center justify-between gap-3">
+              <legend class={labelCls}>Bridge Provider</legend>
+              <span class="text-xs text-muted-foreground">Pick the provider backing Pi’s `provider/model` routing</span>
+            </div>
+            <div class="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              {#each PI_BRIDGE_PROVIDER_PRESETS as preset}
+                <button
+                  type="button"
+                  class="rounded-xl border border-border bg-card/70 p-3 text-left transition hover:border-primary/40 hover:bg-card"
+                  onclick={() => applyPiProviderPreset(preset.provider)}
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="text-sm font-medium text-foreground">{preset.label}</span>
+                    <span class="rounded-full border border-border px-2 py-0.5 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">{preset.provider}</span>
+                  </div>
+                  <p class="mt-2 text-xs text-muted-foreground">{preset.resource}</p>
+                  <div class="mt-3 flex flex-wrap gap-1.5">
+                    {#each preset.envVars as envVar}
+                      <span class="rounded-md border border-border px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">{envVar}</span>
+                    {/each}
+                  </div>
+                  <p class="mt-2 text-[11px] text-muted-foreground font-mono">{preset.sample}</p>
+                </button>
+              {/each}
+            </div>
+            <p class={helpCls}>Pi supports all bridge providers here plus dedicated CLI providers handled elsewhere. Set the matching API key in the provider env fields before testing.</p>
+          </fieldset>
+
           <div>
             <div class="flex items-center gap-2">
               <label for="cfg-model" class={labelCls}>
@@ -804,6 +927,83 @@
             <ChevronDown class="pointer-events-none absolute right-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
           </div>
           <p class={helpCls}>Controls the depth of chain-of-thought reasoning.</p>
+        </div>
+
+      <!-- openai_compatible_local -->
+      {:else if adapterType === "openai_compatible_local"}
+        <div class="grid gap-3">
+          <div class="flex flex-wrap gap-2">
+            <button type="button" class="rounded-md border border-border px-3 py-1 text-xs font-medium" onclick={() => applyOpenAICompatiblePreset("ollama")}>Ollama</button>
+            <button type="button" class="rounded-md border border-border px-3 py-1 text-xs font-medium" onclick={() => applyOpenAICompatiblePreset("lm-studio")}>LM Studio</button>
+            <button type="button" class="rounded-md border border-border px-3 py-1 text-xs font-medium" onclick={() => applyOpenAICompatiblePreset("llama-cpp")}>llama.cpp</button>
+          </div>
+        </div>
+
+        <div>
+          <label for="cfg-baseUrl" class={labelCls}>Base URL</label>
+          <input
+            id="cfg-baseUrl"
+            type="text"
+            class="{inputCls} mt-1.5"
+            value={config.baseUrl ?? "http://localhost:11434/v1"}
+            oninput={(e) => setField("baseUrl", e.currentTarget.value)}
+            placeholder="http://localhost:11434/v1"
+          />
+          <p class={helpCls}>OpenAI-compatible endpoint base URL, including /v1.</p>
+        </div>
+
+        <div>
+          <label for="cfg-model" class={labelCls}>Model</label>
+          <input
+            id="cfg-model"
+            type="text"
+            class="{inputCls} mt-1.5"
+            value={config.model ?? ""}
+            oninput={(e) => setField("model", e.currentTarget.value)}
+            placeholder="Model id from /v1/models"
+          />
+          <p class={helpCls}>Select a model id reported by the runtime.</p>
+        </div>
+
+        <div>
+          <label for="cfg-apiKey" class={labelCls}>API Key</label>
+          <input
+            id="cfg-apiKey"
+            type="password"
+            class="{inputCls} mt-1.5"
+            value={config.apiKey ?? ""}
+            oninput={(e) => setField("apiKey", e.currentTarget.value)}
+            placeholder="Optional bearer token"
+            autocomplete="off"
+          />
+          <p class={helpCls}>Leave empty for local runtimes that do not require auth.</p>
+        </div>
+
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label for="cfg-temperature" class={labelCls}>Temperature</label>
+            <input
+              id="cfg-temperature"
+              type="number"
+              step="0.1"
+              min="0"
+              max="2"
+              class="{inputCls} mt-1.5"
+              value={config.temperature ?? 0.2}
+              oninput={(e) => setField("temperature", Number(e.currentTarget.value))}
+            />
+          </div>
+          <div>
+            <label for="cfg-maxTokens" class={labelCls}>Max Tokens</label>
+            <input
+              id="cfg-maxTokens"
+              type="number"
+              min="1"
+              class="{inputCls} mt-1.5"
+              value={config.maxTokens ?? 1024}
+              oninput={(e) => setField("maxTokens", Number(e.currentTarget.value))}
+            />
+          </div>
         </div>
 
       <!-- openclaw_gateway -->

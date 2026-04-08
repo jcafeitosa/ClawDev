@@ -11,26 +11,31 @@ const log = pinoLogger.child({ service: "http" });
 
 export const elysiaLogger = new Elysia({ name: "logger" })
   .derive(({ request }) => {
-    return { requestStartedAt: Date.now(), requestId: crypto.randomUUID() };
+    return { requestStartedAt: Date.now() };
   })
-  .onAfterResponse(({ request, requestStartedAt, requestId, set }) => {
+  .onAfterResponse(({ request, requestStartedAt, set }) => {
     const duration = Date.now() - (requestStartedAt ?? Date.now());
     const url = new URL(request.url);
     log.info(
       {
-        reqId: requestId,
+        category: "http",
         method: request.method,
         path: url.pathname,
         status: (set as { status?: number }).status ?? 200,
         durationMs: duration,
       },
-      `${request.method} ${url.pathname}`,
+      `→ ${request.method} ${url.pathname} ${(set as { status?: number }).status ?? 200}`,
     );
   })
   .onError(({ error, request }) => {
     const url = new URL(request.url);
     log.error(
-      { method: request.method, path: url.pathname, err: (error as any).message },
-      `Error: ${request.method} ${url.pathname}`,
+      {
+        category: "http.error",
+        method: request.method,
+        path: url.pathname,
+        err: (error as any).message
+      },
+      `← ${request.method} ${url.pathname} error`,
     );
   });

@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-import { spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
-import process from 'node:process';
+import { spawn } from 'child_process';
+import { existsSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
+import process from 'process';
 
 const port = Number(process.env.CHROME_DEBUG_PORT ?? 9222);
 const userDataDir = process.env.CHROME_USER_DATA_DIR ?? join(tmpdir(), `clawdev-chrome-devtools-${port}`);

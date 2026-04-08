@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { existsSync, readFileSync } from "fs";
+import os from "os";
+import path from "path";
 
 const DEFAULT_INSTANCE_ID = "default";
 const CONFIG_BASENAME = "config.json";

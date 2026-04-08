@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { createServer } from "node:http";
+import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { execute, testEnvironment } from "@clawdev/adapter-openclaw-gateway/server";
 import {

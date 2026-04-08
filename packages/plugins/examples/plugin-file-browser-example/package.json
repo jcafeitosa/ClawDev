@@ -13,8 +13,8 @@
     "ui": "./dist/ui/"
   },
   "scripts": {
-    "prebuild": "node ../../../../scripts/ensure-plugin-build-deps.mjs",
-    "build": "tsc && node ./scripts/build-ui.mjs",
+    "prebuild": "bun ../../../../scripts/ensure-plugin-build-deps.mjs",
+    "build": "tsc && bun ./scripts/build-ui.mjs",
     "clean": "rm -rf dist",
     "typecheck": "pnpm --filter @clawdev/plugin-sdk build && tsc --noEmit"
   },
@@ -23,18 +23,17 @@
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/language": "^6.12.3",
     "@codemirror/state": "^6.6.0",
-    "@codemirror/view": "^6.40.0",
+    "@codemirror/view": "^6.41.0",
     "@lezer/highlight": "^1.2.3",
     "codemirror": "^6.0.2"
   },
   "devDependencies": {
-    "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "esbuild": "^0.27.4",
+    "esbuild": "^0.28.0",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "peerDependencies": {
     "react": ">=18"

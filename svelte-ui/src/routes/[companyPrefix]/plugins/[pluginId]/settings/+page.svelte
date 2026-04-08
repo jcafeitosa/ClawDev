@@ -181,9 +181,7 @@
   );
   const author = $derived(manifest?.author ?? plugin?.author ?? "Unknown");
   const version = $derived(manifest?.version ?? plugin?.version ?? "0.0.0");
-  const categories = $derived(
-    ((manifest?.categories ?? plugin?.categories ?? []) as string[]) ?? [],
-  );
+  const categories = $derived((manifest?.categories ?? plugin?.categories ?? []) as string[]);
   const capabilities = $derived((manifest?.capabilities ?? []) as string[]);
   const configError = $derived(configRow?.lastError ?? plugin?.lastError ?? null);
   const pluginContribution = $derived(uiContributions.find((entry) => entry.pluginId === pluginId) ?? null);

@@ -1,11 +1,11 @@
-import fs from "node:fs";
+import fs from "fs";
 import type { ClawDevConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
 import { resolveRuntimeLikePath } from "./path-resolver.js";
 
-export function storageCheck(config: ClawDevConfig, configPath?: string): CheckResult {
+export async function storageCheck(config: ClawDevConfig, configPath?: string): Promise<CheckResult> {
   if (config.storage.provider === "local_disk") {
-    const baseDir = resolveRuntimeLikePath(config.storage.localDisk.baseDir, configPath);
+    const baseDir = await resolveRuntimeLikePath(config.storage.localDisk.baseDir, configPath);
     if (!fs.existsSync(baseDir)) {
       fs.mkdirSync(baseDir, { recursive: true });
     }
@@ -48,4 +48,3 @@ export function storageCheck(config: ClawDevConfig, configPath?: string): CheckR
     repairHint: "Verify credentials and endpoint in deployment environment",
   };
 }
-

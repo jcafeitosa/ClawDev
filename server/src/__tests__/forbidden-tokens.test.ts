@@ -32,9 +32,9 @@ describe("forbidden token check", () => {
   });
 
   it("merges dynamic and file-based forbidden tokens", async () => {
-    const fs = await import("node:fs");
-    const os = await import("node:os");
-    const path = await import("node:path");
+    const fs = await import("fs");
+    const os = await import("os");
+    const path = await import("path");
 
     const tokensFile = path.join(os.tmpdir(), `forbidden-tokens-${Date.now()}.txt`);
     fs.writeFileSync(tokensFile, "# comment\nclawdev\ncustom-token\n");

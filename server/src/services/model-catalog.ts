@@ -1,9 +1,9 @@
 import { and, eq, sql, notInArray, isNull } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import { modelCatalog } from "@clawdev/db";
-import { readFileSync } from "node:fs";
-import { createRequire } from "node:module";
-import { dirname, join } from "node:path";
+import { logger } from "../middleware/logger.js";
+
+const log = logger.child({ service: "model-catalog" });
 
 // ---------------------------------------------------------------------------
 // Model metadata from seed data (loaded once, cached in memory)
@@ -28,15 +28,12 @@ let _modelMetadataCache: Record<string, ModelMetadataEntry> | null = null;
 /** Reverse index: bare model id -> metadata entry (for cross-provider lookup) */
 let _bareModelIndex: Record<string, ModelMetadataEntry> | null = null;
 
-function loadModelMetadata(): Record<string, ModelMetadataEntry> {
+async function loadModelMetadata(): Promise<Record<string, ModelMetadataEntry>> {
   if (_modelMetadataCache) return _modelMetadataCache;
 
   try {
-    const require = createRequire(import.meta.url);
-    const sharedPkgPath = require.resolve("@clawdev/shared/package.json");
-    const sharedDir = dirname(sharedPkgPath);
-    const metadataPath = join(sharedDir, "src", "model-metadata.json");
-    const raw = readFileSync(metadataPath, "utf-8");
+    const metadataPath = new URL("../../../packages/shared/src/model-metadata.json", import.meta.url);
+    const raw = await Bun.file(metadataPath).text();
     const parsed = JSON.parse(raw) as {
       models: Record<string, ModelMetadataEntry>;
     };
@@ -50,9 +47,10 @@ function loadModelMetadata(): Record<string, ModelMetadataEntry> {
       }
     }
   } catch (err) {
-    console.warn(
-      "[model-catalog] Failed to load model-metadata.json, metadata enrichment disabled:",
-      err instanceof Error ? err.message : String(err),
+    const errMsg = err instanceof Error ? err.message : String(err);
+    log.warn(
+      { category: "error", err: errMsg },
+      "Failed to load model-metadata.json, metadata enrichment disabled",
     );
     _modelMetadataCache = {};
   }
@@ -112,7 +110,7 @@ export function createModelCatalogService(db: Db) {
     ): Promise<{ added: number; updated: number }> {
       if (models.length === 0) return { added: 0, updated: 0 };
 
-      const metadata = loadModelMetadata();
+      const metadata = await loadModelMetadata();
       let added = 0;
 
       // Process in batches to avoid oversized statements

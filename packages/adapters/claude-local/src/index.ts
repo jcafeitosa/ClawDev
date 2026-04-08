@@ -86,5 +86,15 @@ Notes:
 - Sessions are resumed via --resume
 - Auth via claude.ai subscription, ANTHROPIC_API_KEY, or Bedrock/Vertex
 - Claude auth status available via \`claude auth status --json\`
+- Native CLI resources available via \`claude --help\` include:
+  - agent management: \`claude agents\`
+  - auth management: \`claude auth\`
+  - auto-mode inspection: \`claude auto-mode\`
+  - health and updater checks: \`claude doctor\`
+  - native install/update: \`claude install\`, \`claude update\`, \`claude upgrade\`
+  - MCP management: \`claude mcp\`
+  - plugin management: \`claude plugin\`, \`claude plugins\`
+  - long-lived auth token setup: \`claude setup-token\`
+- Slash command / skill resolution can be disabled with \`--disable-slash-commands\`.
 - When ClawDev realizes a workspace/runtime for a run, it injects CLAWDEV_WORKSPACE_* and CLAWDEV_RUNTIME_* env vars for agent-side tooling.
 `;

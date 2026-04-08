@@ -527,3 +527,33 @@ export function getHierarchyPresetOperatingRules(preset: HierarchyPreset | null 
 export function getHierarchyPresetSeedAgents(preset: HierarchyPreset | null | undefined): HierarchySeedBlueprint[] {
   return getHierarchyPresetDefinition(preset)?.seedAgents ?? [];
 }
+
+/**
+ * Find the department(s) a role belongs to within a given hierarchy preset.
+ * Returns an array because a role can appear in multiple departments (e.g. "ceo" in leadership).
+ */
+export function getDepartmentsForRole(
+  preset: HierarchyPreset | null | undefined,
+  role: string,
+): HierarchyDepartmentDefinition[] {
+  const departments = getHierarchyPresetDepartments(preset);
+  return departments.filter((d) => d.coreRoles.includes(role as AgentRole));
+}
+
+/**
+ * Universal C-level role → department channel name mapping.
+ * Used when the hierarchy preset doesn't explicitly map a role, or as a fallback.
+ */
+export const C_LEVEL_DEPARTMENT_CHANNELS: Record<string, { name: string; description: string }> = {
+  ceo: { name: "Leadership", description: "Executive leadership, strategy, and cross-functional coordination" },
+  coo: { name: "Operations", description: "Business operations, process optimization, and execution oversight" },
+  cto: { name: "Engineering", description: "Technology, engineering, architecture, and platform decisions" },
+  cfo: { name: "Finance", description: "Finance, budgeting, cost analysis, and financial planning" },
+  cmo: { name: "Marketing", description: "Marketing strategy, growth, branding, and market analysis" },
+  hr: { name: "People", description: "People operations, talent management, and organizational development" },
+  chro: { name: "People", description: "People operations, talent management, and organizational development" },
+  clo: { name: "Legal", description: "Legal affairs, compliance, contracts, and regulatory matters" },
+  ciso: { name: "Security", description: "Information security, cybersecurity, and risk management" },
+  cpo: { name: "Product", description: "Product strategy, roadmap, and product management" },
+  cro: { name: "Revenue", description: "Revenue operations, sales strategy, and business development" },
+};

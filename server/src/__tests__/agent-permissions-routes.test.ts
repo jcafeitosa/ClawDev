@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { INBOX_MINE_ISSUE_STATUS_FILTER } from "@clawdev/shared";
 import { HttpError } from "../errors.js";
 import { agentRoutes } from "../routes/agents.js";
+import { modelRoutes } from "../routes/models.js";
 
 const agentId = "11111111-1111-4111-8111-111111111111";
 const companyId = "22222222-2222-4222-8222-222222222222";
@@ -142,6 +143,10 @@ vi.mock("../adapters/index.js", () => ({
   listServerAdapters: vi.fn(() => []),
 }));
 
+vi.mock("../adapters/registry.js", () => ({
+  listAdapterModels: mockListAdapterModels,
+}));
+
 vi.mock("@clawdev/adapter-claude-local/server", () => ({
   execute: vi.fn(),
   runClaudeLogin: vi.fn(async () => ({ success: true })),
@@ -153,15 +158,17 @@ vi.mock("@clawdev/adapter-claude-local/server", () => ({
 }));
 
 function createDbStub() {
+  const rows = [{
+    id: companyId,
+    name: "ClawDev",
+    requireBoardApprovalForNewAgents: false,
+  }];
   return {
     select: vi.fn().mockReturnValue({
       from: vi.fn().mockReturnValue({
         where: vi.fn().mockReturnValue({
-          then: vi.fn().mockResolvedValue([{
-            id: companyId,
-            name: "ClawDev",
-            requireBoardApprovalForNewAgents: false,
-          }]),
+          then: (resolve: (value: typeof rows) => unknown, reject?: (reason: unknown) => unknown) =>
+            Promise.resolve(rows).then(resolve, reject),
         }),
       }),
     }),
@@ -179,7 +186,8 @@ function createApp(actor: Record<string, unknown>) {
       return { error: "Internal server error" };
     })
     .derive(() => ({ actor }))
-    .use(agentRoutes(createDbStub() as any));
+    .use(agentRoutes(createDbStub() as any))
+    .use(modelRoutes(createDbStub() as any));
 }
 
 async function req(app: any, method: string, path: string, body?: any, headers?: Record<string, string>) {
@@ -550,10 +558,10 @@ describe("agent permission routes", () => {
       isInstanceAdmin: true,
     });
 
-    const modelsRes = await req(app, "GET", `/api/companies/${companyId}/adapters/codex_local/models`);
+    const modelsRes = await req(app, "GET", `/api/providers/codex_local/models`);
     expect(modelsRes.status).toBe(200);
     expect(mockListAdapterModels).toHaveBeenCalledWith("codex_local");
-    expect(modelsRes.body).toEqual([{ id: "gpt-5", label: "GPT-5" }]);
+    expect(modelsRes.body).toEqual({ adapterType: "codex_local", models: [{ id: "gpt-5", label: "GPT-5" }] });
 
     const envRes = await req(app, "POST", `/api/companies/${companyId}/adapters/codex_local/test-environment`, {
       adapterConfig: { apiKey: "secret" },

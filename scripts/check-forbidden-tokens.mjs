@@ -11,11 +11,11 @@
  * available. If username detection fails, the check degrades gracefully.
  */
 
-import { execSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import os from "node:os";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { execSync } from "child_process";
+import { existsSync, readFileSync } from "fs";
+import os from "os";
+import { resolve } from "path";
+import { fileURLToPath } from "url";
 
 function uniqueNonEmpty(values) {
   return Array.from(new Set(values.map((value) => value?.trim() ?? "").filter(Boolean)));

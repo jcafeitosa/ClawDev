@@ -10,7 +10,7 @@ import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logActivity } from "../services/index.js";
 import { agentPipelineService } from "../services/agent-pipelines.js";
-import { logger } from "../lib/logger.js";
+import { logger } from "../middleware/logger.js";
 
 export function agentPipelineRoutes(db: Db) {
   const pipelines = agentPipelineService(db);
@@ -31,7 +31,7 @@ export function agentPipelineRoutes(db: Db) {
             teamId: query?.teamId ?? undefined,
           });
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -67,7 +67,7 @@ export function agentPipelineRoutes(db: Db) {
           set.status = 201;
           return pipeline;
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -89,7 +89,7 @@ export function agentPipelineRoutes(db: Db) {
           assertCompanyAccess(actor, pipeline.companyId);
           return pipeline;
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -127,7 +127,7 @@ export function agentPipelineRoutes(db: Db) {
 
           return updated;
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -164,7 +164,7 @@ export function agentPipelineRoutes(db: Db) {
 
           return deleted;
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -215,7 +215,7 @@ export function agentPipelineRoutes(db: Db) {
           set.status = 201;
           return execution;
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -242,7 +242,7 @@ export function agentPipelineRoutes(db: Db) {
             limit: query?.limit ? parseInt(query.limit) : undefined,
           });
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -262,7 +262,7 @@ export function agentPipelineRoutes(db: Db) {
           }
           return execution;
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -286,7 +286,7 @@ export function agentPipelineRoutes(db: Db) {
           }
           return updated;
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },
@@ -306,7 +306,7 @@ export function agentPipelineRoutes(db: Db) {
           }
           return cancelled;
         } catch (error) {
-          logger.error("http.error", error);
+          logger.error({ err: error }, "http.error");
           throw error;
         }
       },

@@ -1,7 +1,7 @@
 <script lang="ts">
   import { api } from '$lib/api';
   import { goto } from '$app/navigation';
-  import { companyStore } from '$stores/company.svelte.js';
+  import { companyStore, getCompanyPrefix } from '$stores/company.svelte.js';
   import { toastStore } from '$stores/toast.svelte.js';
   import { Building2, Plus, ArrowRight, Zap, Sparkles, MoreVertical, Pencil, Trash2, Bot, ListTodo, DollarSign, X, Check } from 'lucide-svelte';
   import { listHierarchyPresetDefinitions, type HierarchyPreset } from '@clawdev/shared';
@@ -58,7 +58,7 @@
   function select(c: any) {
     if (renamingId === c.id) return;
     companyStore.select(c.id, 'manual');
-    goto(`/${c.slug ?? c.id}/dashboard`);
+    goto(`/${getCompanyPrefix(c)}/dashboard`);
   }
 
   async function create() {

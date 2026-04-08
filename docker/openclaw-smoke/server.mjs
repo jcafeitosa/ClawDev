@@ -1,4 +1,4 @@
-import http from "node:http";
+import http from "http";
 
 const port = Number.parseInt(process.env.PORT ?? "8787", 10);
 const webhookPath = process.env.OPENCLAW_SMOKE_PATH?.trim() || "/webhook";

@@ -9,15 +9,19 @@
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import { companyModelPreferences, providerModelStatus } from "@clawdev/db";
+import { modelRoutingPolicies } from "@clawdev/db";
 import { and, eq } from "drizzle-orm";
 import { createModelCatalogService } from "../services/model-catalog.js";
 import { createProviderStatusService, getCooldownDuration } from "../services/provider-status.js";
 import { createModelDiscoveryService } from "../services/model-discovery.js";
 import { createModelRouterService } from "../services/model-router.js";
+import { checkAdapterReadiness, remediateAdapterReadiness } from "../services/adapter-readiness.js";
 import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
-import { assertCompanyAccess, assertInstanceAdmin, type Actor } from "../middleware/authz.js";
+import { assertCompanyAccess, assertInstanceAdmin, getActorInfo, type Actor } from "../middleware/authz.js";
 import { badRequest, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
+import { modelRoutingPolicyInputSchema } from "@clawdev/shared";
+import { logActivity } from "../services/activity-log.js";
 
 const log = logger.child({ service: "models-routes" });
 
@@ -39,6 +43,130 @@ export function modelRoutes(db: Db) {
     // ═══════════════════════════════════════════════════════════════════
     // MODEL CATALOG
     // ═══════════════════════════════════════════════════════════════════
+
+    // ── Adapter readiness snapshot ────────────────────────────────────
+    .get(
+      "/adapters/readiness",
+      async () => {
+        try {
+          const adapters = await checkAdapterReadiness();
+          return { adapters };
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to get adapter readiness");
+          throw err;
+        }
+      },
+    )
+
+    // ── Routing policies ─────────────────────────────────────────────
+    .get(
+      "/companies/:companyId/model-routing-policies",
+      async (ctx: any) => {
+        const { params } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+        return {
+          policies: await db
+            .select()
+            .from(modelRoutingPolicies)
+            .where(eq(modelRoutingPolicies.companyId, params.companyId))
+            .orderBy(modelRoutingPolicies.priority),
+        };
+      },
+      { params: t.Object({ companyId: t.String() }) },
+    )
+
+    .put(
+      "/companies/:companyId/model-routing-policies",
+      async (ctx: any) => {
+        const { params, body } = ctx;
+        const actor = ctx.actor as Actor;
+        assertCompanyAccess(actor, params.companyId);
+        const actorInfo = getActorInfo(actor);
+        const input = modelRoutingPolicyInputSchema.parse({ ...(body ?? {}), companyId: params.companyId });
+        const conditions = [eq(modelRoutingPolicies.companyId, params.companyId)];
+        if (input.agentId) conditions.push(eq(modelRoutingPolicies.agentId, input.agentId));
+        if (input.role) conditions.push(eq(modelRoutingPolicies.role, input.role));
+        if (input.complexity) conditions.push(eq(modelRoutingPolicies.complexity, input.complexity));
+        const existing = await db
+          .select({ id: modelRoutingPolicies.id })
+          .from(modelRoutingPolicies)
+          .where(and(...conditions))
+          .limit(1);
+        const payload = {
+          ...input,
+          updatedAt: new Date(),
+        };
+        if (existing[0]) {
+          const rows = await db
+            .update(modelRoutingPolicies)
+            .set(payload as any)
+            .where(eq(modelRoutingPolicies.id, existing[0].id))
+            .returning();
+          await logActivity(db, {
+            companyId: params.companyId,
+            actorType: actorInfo.actorType,
+            actorId: actorInfo.actorId,
+            agentId: actorInfo.agentId,
+            runId: actorInfo.runId,
+            action: "model_routing_policy.updated",
+            entityType: "model_routing_policy",
+            entityId: rows[0]!.id,
+            details: {
+              name: rows[0]!.name,
+              routingStrategy: rows[0]!.routingStrategy,
+              agentId: rows[0]!.agentId ?? null,
+              role: rows[0]!.role ?? null,
+              complexity: rows[0]!.complexity,
+            },
+          });
+          return rows[0]!;
+        }
+        const rows = await db.insert(modelRoutingPolicies).values(payload as any).returning();
+        await logActivity(db, {
+          companyId: params.companyId,
+          actorType: actorInfo.actorType,
+          actorId: actorInfo.actorId,
+          agentId: actorInfo.agentId,
+          runId: actorInfo.runId,
+          action: "model_routing_policy.created",
+          entityType: "model_routing_policy",
+          entityId: rows[0]!.id,
+          details: {
+            name: rows[0]!.name,
+            routingStrategy: rows[0]!.routingStrategy,
+            agentId: rows[0]!.agentId ?? null,
+            role: rows[0]!.role ?? null,
+            complexity: rows[0]!.complexity,
+          },
+        });
+        return rows[0]!;
+      },
+      { params: t.Object({ companyId: t.String() }), body: t.Any() },
+    )
+
+    .post(
+      "/adapters/:adapterType/readiness/remediate",
+      async (ctx: any) => {
+        try {
+          const { params, body } = ctx;
+          const mode = body?.mode ?? "install";
+          const result = await remediateAdapterReadiness(params.adapterType, mode);
+          return result;
+        } catch (err) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          log.error({ category: "http.error", err: errMsg }, "Failed to remediate adapter readiness");
+          throw err;
+        }
+      },
+      {
+        params: t.Object({ adapterType: t.String() }),
+        body: t.Object({
+          mode: t.Optional(t.Union([t.Literal("install"), t.Literal("update"), t.Literal("version")])),
+        }),
+      },
+    )
 
     // ── List all models with filters ───────────────────────────────────
     .get(
@@ -617,12 +745,28 @@ export function modelRoutes(db: Db) {
           const actor = ctx.actor as Actor;
           assertCompanyAccess(actor, params.companyId);
 
-          const input = body as { agentId: string; adapterType: string; modelId?: string };
+          const input = body as {
+            agentId: string;
+            adapterType: string;
+            modelId?: string;
+            role?: string;
+            taskComplexity?: string;
+            taskPriority?: string;
+            requiredCapabilities?: string[];
+          };
           const resolution = await router.resolveModel(
             params.companyId,
             input.agentId,
             input.adapterType,
             input.modelId,
+            {
+              routingContext: {
+                role: input.role,
+                complexity: input.taskComplexity as any,
+                taskPriority: input.taskPriority as any,
+                requiredCapabilities: input.requiredCapabilities,
+              },
+            },
           );
 
           return resolution;
@@ -638,6 +782,10 @@ export function modelRoutes(db: Db) {
           agentId: t.String(),
           adapterType: t.String(),
           modelId: t.Optional(t.String()),
+          role: t.Optional(t.String()),
+          taskComplexity: t.Optional(t.String()),
+          taskPriority: t.Optional(t.String()),
+          requiredCapabilities: t.Optional(t.Array(t.String())),
         }),
       },
     )

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { chromium } from "@playwright/test";
-import process from "node:process";
+import process from "process";
 
 const base = process.env.CLAWDEV_BASE_URL ?? "http://127.0.0.1:3100";
 const port = Number(process.env.CHROME_DEBUG_PORT ?? 9222);

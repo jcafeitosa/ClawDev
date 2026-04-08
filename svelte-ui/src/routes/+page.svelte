@@ -3,6 +3,7 @@
   import { goto } from "$app/navigation";
   import { authClient } from "$lib/auth-client";
   import { api } from "$lib/api";
+  import { getCompanyPrefix } from "$stores/company.svelte.js";
 
   const session = authClient.useSession();
 
@@ -33,7 +34,7 @@
       const res = await api("/api/companies");
       const companies = await res.json();
       if (Array.isArray(companies) && companies.length > 0) {
-        goto(`/${companies[0].slug ?? companies[0].id}/dashboard`, { replaceState: true });
+        goto(`/${getCompanyPrefix(companies[0])}/dashboard`, { replaceState: true });
       } else {
         goto("/onboarding", { replaceState: true });
       }

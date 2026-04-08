@@ -1,6 +1,6 @@
 import { definePlugin, runWorker } from "@clawdev/plugin-sdk";
-import * as fs from "node:fs";
-import * as path from "node:path";
+import * as fs from "fs";
+import * as path from "path";
 
 const PLUGIN_NAME = "file-browser-example";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;

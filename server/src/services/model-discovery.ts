@@ -4,6 +4,9 @@ import { listServerAdapters, listAdapterModels } from "../adapters/registry.js";
 import { createModelCatalogService, type SyncInput } from "./model-catalog.js";
 import { createProviderStatusService, getCooldownDuration } from "./provider-status.js";
 import { probeAdapterModels, PROBE_CONFIGS } from "../adapters/cli-probe.js";
+import { logger } from "../middleware/logger.js";
+
+const log = logger.child({ service: "model-discovery" });
 
 // ---------------------------------------------------------------------------
 // Types
@@ -44,10 +47,11 @@ function adapterStatusToProviderStatus(
     case "quota_exceeded":
       return "cooldown";
     case "available":
-    case "unknown":
-    default:
       // If discovered at all, treat as available unless explicitly marked otherwise
       return "available";
+    case "unknown":
+    default:
+      return "unavailable";
   }
 }
 
@@ -96,8 +100,9 @@ export function createModelDiscoveryService(
           const errorMsg = result.reason instanceof Error
             ? result.reason.message
             : String(result.reason);
-          console.log(
-            `[model-discovery] adapter ${adapterType} probe failed: ${errorMsg}`,
+          log.warn(
+            { category: "adapter", adapterType, err: errorMsg },
+            `Adapter ${adapterType} probe failed`,
           );
           errors.push({ adapterType, error: errorMsg });
           continue;
@@ -113,8 +118,10 @@ export function createModelDiscoveryService(
           try {
             models = await probeAdapterModels(adapterType, models);
           } catch (err) {
-            console.log(
-              `[model-discovery] CLI probe for ${adapterType} failed: ${err instanceof Error ? err.message : String(err)}`,
+            const errMsg = err instanceof Error ? err.message : String(err);
+            log.warn(
+              { category: "adapter", adapterType, err: errMsg },
+              `CLI probe for ${adapterType} failed`,
             );
           }
         }
@@ -172,8 +179,9 @@ export function createModelDiscoveryService(
               );
             } catch (err) {
               const errorMsg = err instanceof Error ? err.message : String(err);
-              console.log(
-                `[model-discovery] failed to update provider status for ${adapterType}/${model.id}: ${errorMsg}`,
+              log.warn(
+                { category: "adapter", adapterType, modelId: model.id, err: errorMsg },
+                `Failed to update provider status`,
               );
             }
           }
@@ -186,8 +194,9 @@ export function createModelDiscoveryService(
           await catalogService.markStaleModels(adapterType, freshIds);
         } catch (err) {
           const errorMsg = err instanceof Error ? err.message : String(err);
-          console.log(
-            `[model-discovery] failed to mark stale models for ${adapterType}: ${errorMsg}`,
+          log.warn(
+            { category: "adapter", adapterType, err: errorMsg },
+            `Failed to mark stale models`,
           );
         }
       }
@@ -219,8 +228,10 @@ export function createModelDiscoveryService(
           try {
             models = await probeAdapterModels(adapterType, models);
           } catch (err) {
-            console.log(
-              `[model-discovery] CLI probe for ${adapterType} failed: ${err instanceof Error ? err.message : String(err)}`,
+            const errMsg = err instanceof Error ? err.message : String(err);
+            log.warn(
+              { category: "adapter", adapterType, err: errMsg },
+              `CLI probe for ${adapterType} failed`,
             );
           }
         }
@@ -265,8 +276,9 @@ export function createModelDiscoveryService(
               );
             } catch (err) {
               const errorMsg = err instanceof Error ? err.message : String(err);
-              console.log(
-                `[model-discovery] failed to update provider status for ${adapterType}/${model.id}: ${errorMsg}`,
+              log.warn(
+                { category: "adapter", adapterType, modelId: model.id, err: errorMsg },
+                `Failed to update provider status`,
               );
             }
           }
@@ -279,8 +291,9 @@ export function createModelDiscoveryService(
         return { models: models.length, status: "ok" };
       } catch (err) {
         const errorMsg = err instanceof Error ? err.message : String(err);
-        console.log(
-          `[model-discovery] probeAdapter(${adapterType}) failed: ${errorMsg}`,
+        log.error(
+          { category: "adapter", adapterType, err: errorMsg },
+          `probeAdapter failed`,
         );
         return { models: 0, status: "error", error: errorMsg };
       }

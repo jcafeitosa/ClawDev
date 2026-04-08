@@ -13,7 +13,7 @@
     "ui": "./dist/ui/"
   },
   "scripts": {
-    "prebuild": "node ../../../../scripts/ensure-plugin-build-deps.mjs",
+    "prebuild": "bun ../../../../scripts/ensure-plugin-build-deps.mjs",
     "build": "tsc",
     "clean": "rm -rf dist",
     "typecheck": "pnpm --filter @clawdev/plugin-sdk build && tsc --noEmit"
@@ -22,12 +22,11 @@
     "@clawdev/plugin-sdk": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.12.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   },
   "peerDependencies": {
     "react": ">=18"

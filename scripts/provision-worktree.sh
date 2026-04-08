@@ -53,11 +53,11 @@ write_fallback_worktree_config() {
   SOURCE_CONFIG_PATH="$source_config_path" \
   SOURCE_ENV_PATH="$source_env_path" \
   CLAWDEV_WORKTREES_DIR="${CLAWDEV_WORKTREES_DIR:-}" \
-  node <<'EOF'
-const fs = require("node:fs");
-const os = require("node:os");
-const path = require("node:path");
-const net = require("node:net");
+  bun --eval "$(cat <<'EOF'
+const fs = require("fs");
+const os = require("os");
+const path = require("path");
+const net = require("net");
 
 function expandHomePrefix(value) {
   if (!value) return value;
@@ -297,6 +297,7 @@ main().catch((error) => {
   process.exit(1);
 });
 EOF
+)"
 }
 
 if ! run_isolated_worktree_init; then

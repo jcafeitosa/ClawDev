@@ -18,6 +18,11 @@
   import ScrollToBottom from "$lib/components/scroll-to-bottom.svelte";
   import { onMount, onDestroy } from "svelte";
   import { Pencil, GitBranchPlus, GitMerge, Eye, Trash2, Plus, Download, X, Upload, FileText, BookOpen, ExternalLink, Activity, ListTree, Tag, PanelRightOpen, PanelRightClose, ChevronRight, ChevronDown, User, Calendar, Clock, History as HistoryIcon, Copy, Check } from "lucide-svelte";
+  import {
+    composeStructuredSddDescription,
+    parseStructuredSddDescription,
+    validateStructuredSddInput,
+  } from "@clawdev/shared";
 
   // ---------------------------------------------------------------------------
   // Types
@@ -201,6 +206,13 @@
   let editPriority = $state("");
   let editAssigneeAgentId = $state("");
   let editLabelIds = $state<string[]>([]);
+  let editDescription = $state("");
+  let editSddSpec = $state("");
+  let editSddDesign = $state("");
+  let editSddRisk = $state("");
+  let editSddRollout = $state("");
+  let editSddRollback = $state("");
+  let editSddValidation = $state("");
   let savingEdit = $state(false);
 
   // -- Delete confirmation state
@@ -601,11 +613,21 @@
   // ---------------------------------------------------------------------------
   function startEdit() {
     if (!issue) return;
+    const parsed = parseStructuredSddDescription(issue.description ?? issue.descriptionDocument?.content ?? "");
+    const hasParsedStructuredSections =
+      Boolean(parsed.spec || parsed.design || parsed.risk || parsed.rollout || parsed.rollback || parsed.validation);
     editTitle = issue.title;
     editStatus = issue.status;
     editPriority = issue.priority ?? "";
     editAssigneeAgentId = issue.assigneeAgentId ?? "";
     editLabelIds = issue.labels?.map((label) => label.id) ?? [];
+    editDescription = parsed.summary || (!hasParsedStructuredSections ? issue.description || "" : "");
+    editSddSpec = parsed.spec;
+    editSddDesign = parsed.design;
+    editSddRisk = parsed.risk;
+    editSddRollout = parsed.rollout;
+    editSddRollback = parsed.rollback;
+    editSddValidation = parsed.validation;
     editing = true;
   }
 
@@ -617,6 +639,21 @@
     if (!issue || !issueId) return;
     savingEdit = true;
     try {
+      const structuredSddInput = {
+        spec: editSddSpec.trim(),
+        design: editSddDesign.trim(),
+        risk: editSddRisk.trim(),
+        rollout: editSddRollout.trim(),
+        rollback: editSddRollback.trim(),
+        validation: editSddValidation.trim(),
+      };
+      const hasStructuredDraft = Object.values(structuredSddInput).some((value) => value.length > 0);
+      if (hasStructuredDraft) {
+        const sddIssues = validateStructuredSddInput(structuredSddInput);
+        if (sddIssues.length > 0) {
+          throw new Error(sddIssues.join(" "));
+        }
+      }
       const body: Record<string, unknown> = {};
       if (editTitle !== issue.title) body.title = editTitle;
       if (editStatus !== issue.status) body.status = editStatus;
@@ -629,6 +666,15 @@
         nextLabelIds.some((id) => !currentLabelIds.includes(id)) ||
         currentLabelIds.some((id) => !nextLabelIds.includes(id));
       if (labelsChanged) body.labelIds = nextLabelIds;
+      if (hasStructuredDraft) {
+        body.description = composeStructuredSddDescription({
+          subjectLabel: `Issue: ${issue.identifier ?? issue.title}`,
+          summary: editDescription.trim() || null,
+          ...structuredSddInput,
+        });
+      } else if (editDescription.trim() !== (issue.description ?? "").trim()) {
+        body.description = editDescription.trim() || null;
+      }
 
       if (Object.keys(body).length === 0) {
         editing = false;
@@ -733,14 +779,23 @@
     submittingSubIssue = true;
     try {
       const parentTitle = issue?.title ?? "parent issue";
+      const subIssueSpec = `Resolve the sub-task "${newSubIssueTitle.trim()}" under ${parentTitle} with a single execution owner.`;
+      const subIssueDesign = `Keep the work scoped to the parent issue, with minimal coordination and a clean review path for the owner.`;
+      const subIssueRisk = `The main risk is leaking scope outside ${parentTitle}, so keep the work narrow and verify dependencies early.`;
+      const subIssueRollout = `Roll out the sub-task as one controlled slice, confirm the first checkpoint, and stop if the parent context shifts.`;
+      const subIssueRollback = `If the sub-task becomes unsafe, revert the work, preserve the parent state, and reopen the issue for review.`;
+      const subIssueValidation = "Confirm the sub-task satisfies the parent issue's acceptance criteria before closing.";
       const res = await api(`/api/companies/${companyId}/issues`, {
         method: "POST",
         body: JSON.stringify({
           title: newSubIssueTitle.trim(),
           parentId: issueId,
-          sddSpec: `Resolve the sub-task "${newSubIssueTitle.trim()}" under ${parentTitle}.`,
-          sddDesign: `Keep the work scoped to the parent issue, with a single owner and minimal cross-team coordination.`,
-          sddValidation: "Confirm the sub-task satisfies the parent issue's acceptance criteria before closing.",
+          sddSpec: subIssueSpec,
+          sddDesign: subIssueDesign,
+          sddRisk: subIssueRisk,
+          sddRollout: subIssueRollout,
+          sddRollback: subIssueRollback,
+          sddValidation: subIssueValidation,
         }),
       });
       if (!res.ok) throw new Error(await res.text());
@@ -1356,6 +1411,13 @@
               <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Title</Label>
               <Input bind:value={editTitle} placeholder="Issue title" />
             </div>
+            <div class="md:col-span-2">
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Overview</Label>
+              <Textarea bind:value={editDescription} rows={3} class="min-h-[88px]" placeholder="High-level issue summary or fallback description." />
+              <p class="mt-1 text-[11px] text-muted-foreground">
+                When the structured fields below are filled, this overview becomes the `Overview` section in the composed issue description.
+              </p>
+            </div>
             <div>
               <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Status</Label>
               <select
@@ -1417,6 +1479,40 @@
                   {/each}
                 </div>
               {/if}
+            </div>
+            <div class="md:col-span-2 rounded-lg border border-border/70 bg-muted/20 p-4 space-y-4">
+              <div class="space-y-1">
+                <p class="text-sm font-medium text-foreground">Structured delivery</p>
+                <p class="text-xs text-muted-foreground">
+                  Fill all six sections to preserve the delivery contract. Partial drafts are rejected to avoid corrupting the structured description.
+                </p>
+              </div>
+              <div class="grid gap-3">
+                <div>
+                  <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Spec</Label>
+                  <Textarea bind:value={editSddSpec} rows={3} class="min-h-[88px]" placeholder="What is being changed, why, and how success is judged." />
+                </div>
+                <div>
+                  <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Design</Label>
+                  <Textarea bind:value={editSddDesign} rows={3} class="min-h-[88px]" placeholder="Implementation shape, dependencies, and integration path." />
+                </div>
+                <div>
+                  <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Risk</Label>
+                  <Textarea bind:value={editSddRisk} rows={3} class="min-h-[88px]" placeholder="Failure modes, blast radius, and likely blockers." />
+                </div>
+                <div>
+                  <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Rollout</Label>
+                  <Textarea bind:value={editSddRollout} rows={3} class="min-h-[88px]" placeholder="How to ship this safely and in stages." />
+                </div>
+                <div>
+                  <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Rollback</Label>
+                  <Textarea bind:value={editSddRollback} rows={3} class="min-h-[88px]" placeholder="How to revert if a checkpoint fails." />
+                </div>
+                <div>
+                  <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Validation</Label>
+                  <Textarea bind:value={editSddValidation} rows={3} class="min-h-[88px]" placeholder="What must be verified before completion." />
+                </div>
+              </div>
             </div>
           </div>
           <Separator class="mt-4" />

@@ -4,12 +4,10 @@ export const DEFAULT_CURSOR_LOCAL_MODEL = "auto";
 
 const CURSOR_FALLBACK_MODEL_IDS = [
   "auto",
+  "composer-2",
   "composer-1.5",
   "composer-1",
-  "gpt-5.3-codex-low",
-  "gpt-5.3-codex-low-fast",
   "gpt-5.3-codex",
-  "gpt-5.3-codex-fast",
   "gpt-5.3-codex-high",
   "gpt-5.3-codex-high-fast",
   "gpt-5.3-codex-xhigh",
@@ -80,7 +78,7 @@ Core fields:
 - promptTemplate (string, optional): run prompt template
 - model (string, optional): Cursor model id (for example auto or gpt-5.3-codex)
 - mode (string, optional): Cursor execution mode passed as --mode (plan|ask). Leave unset for normal autonomous runs.
-- command (string, optional): defaults to "agent"
+- command (string, optional): defaults to "cursor-agent"
 - extraArgs (string[], optional): additional CLI args
 - env (object, optional): KEY=VALUE environment variables
 
@@ -89,9 +87,11 @@ Operational fields:
 - graceSec (number, optional): SIGTERM grace period in seconds
 
 Notes:
-- Runs are executed with: agent -p --output-format stream-json ...
+- Runs are executed with: cursor-agent -p --output-format stream-json ...
 - Prompts are piped to Cursor via stdin.
 - Sessions are resumed with --resume when stored session cwd matches current cwd.
 - ClawDev auto-injects local skills into "~/.cursor/skills" when missing, so Cursor can discover "$clawdev" and related skills on local runs.
 - ClawDev auto-adds --yolo unless one of --trust/--yolo/-f is already present in extraArgs.
+- Cursor Agent CLI is not present in this environment, so the adapter relies on runtime detection when installed.
+- Expected command surface (when installed) should cover \`--model\`, \`--mode\`, \`--resume\`, \`--yolo\`, \`--trust\`, \`--workspace\`, \`--output-format\`, \`--add-dir\`, and \`--help\`.
 `;

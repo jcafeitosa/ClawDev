@@ -35,7 +35,7 @@
  * @see PLUGIN_SPEC.md §12 — Process Model
  * @see PLUGIN_SPEC.md §12.5 — Graceful Shutdown Policy
  */
-import { EventEmitter } from "node:events";
+import { EventEmitter } from "events";
 import type { Db } from "@clawdev/db";
 import type {
   PluginStatus,

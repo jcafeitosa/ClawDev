@@ -54,9 +54,9 @@ ClawDev is a sophisticated multi-agent orchestration platform with complex sched
 ### 2.1 Child Process Management (CRITICAL)
 **Files:** `server/src/services/heartbeat.ts`, `server/src/services/plugin-worker-manager.ts`
 
-- `execFileCallback` from `node:child_process` (used via `promisify`)
-- `fork()` from `node:child_process` (plugin worker spawning)
-- `ChildProcess` type from `node:child_process`
+- `execFileCallback` from `child_process` (used via `promisify`)
+- `fork()` from `child_process` (plugin worker spawning)
+- `ChildProcess` type from `child_process`
 - Process lifecycle management (stdio, SIGTERM, SIGKILL)
 
 **Migration Impact:** High
@@ -70,7 +70,7 @@ ClawDev is a sophisticated multi-agent orchestration platform with complex sched
 - `fs/promises` for async file operations
 - `fs.readFileSync()`, `fs.writeFileSync()`, `fs.existsSync()`
 - `fs.rmSync()` (used in index.ts for cleanup)
-- Path manipulation with `node:path`
+- Path manipulation with `path`
 
 **Migration Impact:** Low
 - Bun supports Node.js `fs` module compatibility
@@ -79,10 +79,10 @@ ClawDev is a sophisticated multi-agent orchestration platform with complex sched
 ### 2.3 Stream/Readline APIs
 **Files:** `server/src/realtime/live-events-ws.ts`, `server/src/services/plugin-worker-manager.ts`
 
-- `createInterface()` from `node:readline` (stdin/stdout)
+- `createInterface()` from `readline` (stdin/stdout)
 - `readline/promises` (async readline)
-- `Duplex` stream type from `node:stream`
-- `IncomingMessage` from `node:http`
+- `Duplex` stream type from `stream`
+- `IncomingMessage` from `http`
 
 **Migration Impact:** Medium
 - Bun supports readline but plugin worker communication may need adjustment
@@ -116,7 +116,7 @@ process.once('beforeExit') - app.ts
 ### 2.6 Crypto
 **Files:** `packages/db/src/client.ts`, `server/src/realtime/live-events-ws.ts`
 
-- `createHash()` from `node:crypto` (migration history, token hashing)
+- `createHash()` from `crypto` (migration history, token hashing)
 
 **Migration Impact:** Low
 - Bun has crypto support and can use Node.js API
@@ -124,8 +124,8 @@ process.once('beforeExit') - app.ts
 ### 2.7 Module Resolution
 **Files:** `server/src/services/plugin-runtime-sandbox.ts`, `server/src/realtime/live-events-ws.ts`
 
-- `fileURLToPath()` from `node:url` (ESM file resolution)
-- `createRequire()` from `node:module` (for ws package dynamic import)
+- `fileURLToPath()` from `url` (ESM file resolution)
+- `createRequire()` from `module` (for ws package dynamic import)
 - `import.meta.url` (ESM)
 
 **Migration Impact:** Low

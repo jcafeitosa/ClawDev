@@ -1,6 +1,6 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult } from "@clawdev/adapter-utils";
 import {
   asString,

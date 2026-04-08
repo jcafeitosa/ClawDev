@@ -1,5 +1,3 @@
-import { existsSync, readFileSync } from "node:fs";
-
 export type PersistedDevServerStatus = {
   dirty: boolean;
   lastChangedAt: string | null;
@@ -37,14 +35,15 @@ function normalizeTimestamp(value: unknown): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-export function readPersistedDevServerStatus(
-  env: NodeJS.ProcessEnv = process.env,
-): PersistedDevServerStatus | null {
+export async function readPersistedDevServerStatus(
+  env: Record<string, string | undefined> = process.env,
+): Promise<PersistedDevServerStatus | null> {
   const filePath = env.CLAWDEV_DEV_SERVER_STATUS_FILE?.trim();
-  if (!filePath || !existsSync(filePath)) return null;
+  if (!filePath) return null;
+  if (!(await Bun.file(filePath).exists())) return null;
 
   try {
-    const raw = JSON.parse(readFileSync(filePath, "utf8")) as Record<string, unknown>;
+    const raw = JSON.parse(await Bun.file(filePath).text()) as Record<string, unknown>;
     const changedPathsSample = normalizeStringArray(raw.changedPathsSample).slice(0, 5);
     const pendingMigrations = normalizeStringArray(raw.pendingMigrations);
     const changedPathCountRaw = raw.changedPathCount;

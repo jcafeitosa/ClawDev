@@ -1,9 +1,9 @@
-import { createHash } from "node:crypto";
+import { createHash } from "crypto";
 import { drizzle as drizzlePg } from "drizzle-orm/postgres-js";
 import { migrate as migratePg } from "drizzle-orm/postgres-js/migrator";
 import { drizzle as drizzlePglite } from "drizzle-orm/pglite";
-import { readFile, readdir } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
+import { readFile, readdir } from "fs/promises";
+import { fileURLToPath } from "url";
 import postgres from "postgres";
 import { PGlite } from "@electric-sql/pglite";
 import * as schema from "./schema/index.js";

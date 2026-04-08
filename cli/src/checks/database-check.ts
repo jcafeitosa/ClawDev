@@ -1,4 +1,4 @@
-import fs from "node:fs";
+import fs from "fs";
 import type { ClawDevConfig } from "../config/schema.js";
 import type { CheckResult } from "./index.js";
 import { resolveRuntimeLikePath } from "./path-resolver.js";
@@ -36,7 +36,7 @@ export async function databaseCheck(config: ClawDevConfig, configPath?: string):
   }
 
   if (config.database.mode === "embedded-postgres") {
-    const dataDir = resolveRuntimeLikePath(config.database.embeddedPostgresDataDir, configPath);
+    const dataDir = await resolveRuntimeLikePath(config.database.embeddedPostgresDataDir, configPath);
     const reportedPath = dataDir;
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(reportedPath, { recursive: true });

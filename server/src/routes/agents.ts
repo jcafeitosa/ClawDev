@@ -6,9 +6,9 @@
  * instructions-bundle, and permissions.
  */
 
-import { randomUUID } from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { randomUUID } from "crypto";
+import fs from "fs/promises";
+import path from "path";
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
 import {
@@ -41,7 +41,7 @@ import {
   normalizeRuntimeConfigForAdapterType,
 } from "../services/index.js";
 import { detectAdapterModel, findServerAdapter, listAdapterModels } from "../adapters/index.js";
-import { isLevelCAgentRole } from "@clawdev/shared";
+import { isLevelCAgentRole, C_LEVEL_DEPARTMENT_CHANNELS, getDepartmentsForRole, type HierarchyPreset } from "@clawdev/shared";
 // Note: we use inline t.Object({ companyId: t.String() }) instead of companyIdParam
 // because companyIdParam enforces UUID format which some callers don't use.
 import { assertBoard, assertCompanyAccess, assertInstanceAdmin, getActorInfo, type Actor } from "../middleware/authz.js";
@@ -57,6 +57,55 @@ import { channelService } from "../services/channels.js";
 import { resolveDefaultAgentInstructionsBundleRole } from "../services/default-agent-instructions.js";
 
 const LOCAL_ADAPTERS = new Set(["claude_local", "codex_local", "gemini_local", "opencode_local"]);
+
+/**
+ * Auto-create a department channel for the agent's role and join them.
+ * C-level agents become "owner" of their department channel; others join as "member".
+ * Uses C_LEVEL_DEPARTMENT_CHANNELS as canonical mapping, with fallback to hierarchy preset departments.
+ */
+async function autoJoinDepartmentChannel(
+  db: Db,
+  ch: ReturnType<typeof channelService>,
+  companyId: string,
+  agentId: string,
+  role: string,
+) {
+  // 1. Check if role has a canonical department channel mapping
+  const cLevelDept = C_LEVEL_DEPARTMENT_CHANNELS[role];
+  if (cLevelDept) {
+    const deptChannel = await ch.getOrCreateDepartmentChannel(
+      companyId,
+      role,
+      cLevelDept.name,
+      cLevelDept.description,
+    );
+    if (deptChannel) {
+      await ch.join(deptChannel.id, { agentId, role: "owner" });
+    }
+    return;
+  }
+
+  // 2. Fallback: look up the company's hierarchy preset and find departments for this role
+  const [company] = await db
+    .select({ hierarchyPreset: companies.hierarchyPreset })
+    .from(companies)
+    .where(eq(companies.id, companyId));
+
+  if (!company?.hierarchyPreset) return;
+
+  const departments = getDepartmentsForRole(company.hierarchyPreset as HierarchyPreset, role);
+  for (const dept of departments) {
+    const deptChannel = await ch.getOrCreateDepartmentChannel(
+      companyId,
+      dept.key,
+      dept.label,
+      dept.description,
+    );
+    if (deptChannel) {
+      await ch.join(deptChannel.id, { agentId, role: "member" });
+    }
+  }
+}
 const MANAGED_CONFIG_KEYS = [
   "instructionsBundleMode",
   "instructionsRootPath",
@@ -780,16 +829,19 @@ export function agentRoutes(db: Db) {
             );
           }
 
-          // Auto-join agent to #general channel
+          // Auto-join agent to #general channel + department channel
           try {
             const ch = channelService(db);
             const general = await ch.getOrCreateGeneral(params.companyId);
             await ch.join(general.id, { agentId: created.id, role: "member" });
+
+            // Auto-create and join department channel based on agent role
+            await autoJoinDepartmentChannel(db, ch, params.companyId, created.id, String(created.role ?? ""));
           } catch (channelErr) {
             // Non-fatal: log but don't fail agent creation
             log.warn(
               { category: "error", err: channelErr, agentId: created.id, companyId: params.companyId },
-              "Failed to auto-join agent to #general",
+              "Failed to auto-join agent to channels",
             );
           }
 
@@ -1307,23 +1359,6 @@ export function agentRoutes(db: Db) {
         }
       },
       { params: t.Object({ id: t.String() }) },
-    )
-
-    // ── List adapter models ────────────────────────────────────────
-    .get(
-      "/companies/:companyId/adapters/:type/models",
-      async ({ params, ...ctx }: any) => {
-        try {
-          const actor = ctx.actor;
-          assertCompanyAccess(actor, params.companyId);
-          return listAdapterModels(params.type);
-        } catch (err) {
-          const errMsg = err instanceof Error ? err.message : String(err);
-          log.error({ category: "http.error", err: errMsg }, "Failed to list adapter models");
-          throw err;
-        }
-      },
-      { params: t.Object({ companyId: t.String(), type: t.String() }) },
     )
 
     // ── Detect adapter model ──────────────────────────────────────

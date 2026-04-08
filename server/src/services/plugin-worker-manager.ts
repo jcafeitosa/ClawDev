@@ -18,9 +18,7 @@
  * @see PLUGIN_SPEC.md §13 — Host-Worker Protocol
  */
 
-import { fork, type ChildProcess } from "node:child_process";
-import { EventEmitter } from "node:events";
-import { createInterface, type Interface as ReadlineInterface } from "node:readline";
+import { EventEmitter } from "events";
 import type { ClawDevPluginManifestV1 } from "@clawdev/shared";
 import {
   JSONRPC_VERSION,
@@ -124,9 +122,9 @@ export interface WorkerHandleEvents {
   /** Worker process started and is ready (initialize succeeded). */
   "ready": { pluginId: string };
   /** Worker process exited. */
-  "exit": { pluginId: string; code: number | null; signal: NodeJS.Signals | null };
+  "exit": { pluginId: string; code: number | null; signal: string | null };
   /** Worker process crashed unexpectedly. */
-  "crash": { pluginId: string; code: number | null; signal: NodeJS.Signals | null; willRestart: boolean };
+  "crash": { pluginId: string; code: number | null; signal: string | null; willRestart: boolean };
   /** Worker process errored (e.g. spawn failure). */
   "error": { pluginId: string; error: Error };
   /** Worker status changed. */
@@ -172,7 +170,11 @@ export interface WorkerStartOptions {
   rpcTimeoutMs?: number;
   /** Whether to auto-restart on crash. Defaults to true. */
   autoRestart?: boolean;
-  /** Node.js execArgv passed to the child process. */
+  /** Optional command prefix used to launch the worker. Defaults to `bun`. */
+  command?: string;
+  /** Extra arguments passed before the worker entrypoint. */
+  commandArgs?: string[];
+  /** Backward-compatible alias for Bun/Node-style preload args. */
   execArgv?: string[];
   /** Environment variables passed to the child process. */
   env?: Record<string, string>;
@@ -367,9 +369,15 @@ export function createPluginWorkerHandle(
   emitter.setMaxListeners(50);
 
   // Worker process state
-  let childProcess: ChildProcess | null = null;
-  let readline: ReadlineInterface | null = null;
-  let stderrReadline: ReadlineInterface | null = null;
+  type WorkerProcess = {
+    pid: number | null;
+    stdin: { write(chunk: string | Uint8Array): void } | null;
+    stdout: ReadableStream<Uint8Array> | null;
+    stderr: ReadableStream<Uint8Array> | null;
+    kill: (signal?: string) => void;
+    exited: Promise<number>;
+  };
+  let childProcess: WorkerProcess | null = null;
   let status: WorkerStatus = "stopped";
   let startedAt: number | null = null;
   let stderrExcerpt = "";
@@ -415,11 +423,11 @@ export function createPluginWorkerHandle(
   // -----------------------------------------------------------------------
 
   function sendMessage(message: unknown): void {
-    if (!childProcess?.stdin?.writable) {
+    if (!childProcess?.stdin) {
       throw new Error(`Worker process for plugin "${pluginId}" is not writable`);
     }
     const serialized = serializeMessage(message as any);
-    childProcess.stdin.write(serialized);
+    void childProcess.stdin.write(serialized);
   }
 
   // -----------------------------------------------------------------------
@@ -603,7 +611,7 @@ export function createPluginWorkerHandle(
   // Process lifecycle
   // -----------------------------------------------------------------------
 
-  function spawnProcess(): ChildProcess {
+  function spawnProcess(): WorkerProcess {
     // Security: Do NOT spread process.env into the worker. Plugins should only
     // receive a minimal, controlled environment to prevent leaking host
     // secrets (like DATABASE_URL, internal API keys, etc.).
@@ -616,69 +624,72 @@ export function createPluginWorkerHandle(
       TZ: process.env.TZ ?? "UTC",
     };
 
-    const child = fork(options.entrypointPath, [], {
-      stdio: ["pipe", "pipe", "pipe", "ipc"],
-      execArgv: options.execArgv ?? [],
+    const cmd = [
+      options.command ?? "bun",
+      ...(options.commandArgs ?? []),
+      ...(options.execArgv ?? []),
+      options.entrypointPath,
+    ];
+    const child = Bun.spawn({
+      cmd,
       env: workerEnv,
-      // Don't let the child keep the parent alive
-      detached: false,
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
     });
-
-    return child;
+    return {
+      pid: child.pid ?? null,
+      stdin: child.stdin,
+      stdout: child.stdout,
+      stderr: child.stderr,
+      kill: (signal?: string) => child.kill(signal as never),
+      exited: child.exited.then((code: number) => code),
+    };
   }
 
-  function attachStdioHandlers(child: ChildProcess): void {
-    // Read NDJSON from stdout
-    if (child.stdout) {
-      readline = createInterface({ input: child.stdout });
-      readline.on("line", handleLine);
-    }
-
-    // Capture stderr for logging
-    if (child.stderr) {
-      stderrReadline = createInterface({ input: child.stderr });
-      stderrReadline.on("line", (line: string) => {
-        stderrExcerpt = appendStderrExcerpt(stderrExcerpt, line);
-        log.warn({ stream: "stderr" }, `[plugin stderr] ${line}`);
-      });
-    }
-
-    // Handle process exit
-    child.on("exit", (code, signal) => {
-      handleProcessExit(code, signal);
-    });
-
-    // Handle process errors (e.g. spawn failure)
-    child.on("error", (err) => {
-      log.error({ err: err.message }, "worker process error");
-      emitter.emit("error", { pluginId, error: err });
-      if (status === "starting") {
-        setStatus("crashed");
-        rejectAllPending(
-          new Error(formatWorkerFailureMessage(
-            `Worker process failed to start: ${err.message}`,
-            stderrExcerpt,
-          )),
-        );
+  function attachStdioHandlers(child: WorkerProcess): void {
+    const readLines = async (stream: ReadableStream<Uint8Array> | null, onLine: (line: string) => void) => {
+      if (!stream) return;
+      const reader = stream.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          let idx: number;
+          while ((idx = buffer.indexOf("\n")) >= 0) {
+            const line = buffer.slice(0, idx);
+            buffer = buffer.slice(idx + 1);
+            onLine(line);
+          }
+        }
+        buffer += decoder.decode();
+        if (buffer.length > 0) onLine(buffer);
+      } catch (err) {
+        log.error({ err: err instanceof Error ? err.message : String(err) }, "worker stream read failed");
+      } finally {
+        reader.releaseLock();
       }
+    };
+    void readLines(child.stdout, handleLine);
+    void readLines(child.stderr, (line) => {
+      stderrExcerpt = appendStderrExcerpt(stderrExcerpt, line);
+      log.warn({ stream: "stderr" }, `[plugin stderr] ${line}`);
+    });
+    void child.exited.then((code) => {
+      handleProcessExit(code, null);
+    }).catch((err) => {
+      log.error({ err: err instanceof Error ? err.message : String(err) }, "worker process error");
+      emitter.emit("error", { pluginId, error: err instanceof Error ? err : new Error(String(err)) });
     });
   }
 
-  function handleProcessExit(
-    code: number | null,
-    signal: NodeJS.Signals | null,
-  ): void {
+  function handleProcessExit(code: number | null, signal: string | null): void {
     const wasIntentional = intentionalStop;
 
     // Clean up readline interfaces
-    if (readline) {
-      readline.close();
-      readline = null;
-    }
-    if (stderrReadline) {
-      stderrReadline.close();
-      stderrReadline = null;
-    }
     childProcess = null;
     startedAt = null;
 
@@ -925,15 +936,18 @@ export function createPluginWorkerHandle(
         resolve();
         return;
       }
-
       let settled = false;
       const timer = setTimeout(() => {
         if (settled) return;
         settled = true;
         resolve();
       }, timeoutMs);
-
-      childProcess.once("exit", () => {
+      void childProcess.exited.then(() => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve();
+      }).catch(() => {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
@@ -942,10 +956,7 @@ export function createPluginWorkerHandle(
     });
   }
 
-  function killWithSignal(
-    signal: NodeJS.Signals,
-    waitMs: number,
-  ): Promise<void> {
+  function killWithSignal(signal: string, waitMs: number): Promise<void> {
     return new Promise<void>((resolve) => {
       if (!childProcess) {
         resolve();
@@ -956,7 +967,10 @@ export function createPluginWorkerHandle(
         resolve();
       }, waitMs);
 
-      childProcess.once("exit", () => {
+      void childProcess.exited.then(() => {
+        clearTimeout(timer);
+        resolve();
+      }).catch(() => {
         clearTimeout(timer);
         resolve();
       });
@@ -987,7 +1001,10 @@ export function createPluginWorkerHandle(
       const timer = setTimeout(() => {
         resolve();
       }, 1_000);
-      childProcess.once("exit", () => {
+      void childProcess.exited.then(() => {
+        clearTimeout(timer);
+        resolve();
+      }).catch(() => {
         clearTimeout(timer);
         resolve();
       });
@@ -1004,7 +1021,7 @@ export function createPluginWorkerHandle(
     timeoutMs?: number,
   ): Promise<HostToWorkerMethods[M][1]> {
     return new Promise<HostToWorkerMethods[M][1]>((resolve, reject) => {
-      if (!childProcess?.stdin?.writable) {
+      if (!childProcess?.stdin) {
         reject(
           new Error(
             `Cannot call "${method}" — worker for "${pluginId}" is not running`,

@@ -28,7 +28,7 @@ export interface RoutineIssueSummary {
 export interface Routine {
   id: string;
   companyId: string;
-  projectId: string;
+  projectId: string | null;
   goalId: string | null;
   parentIssueId: string | null;
   title: string;

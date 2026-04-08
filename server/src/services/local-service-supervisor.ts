@@ -1,11 +1,6 @@
-import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import fs from "node:fs/promises";
-import path from "node:path";
-import { promisify } from "node:util";
+import fs from "fs/promises";
+import path from "path";
 import { resolveClawDevInstanceRoot } from "../home-paths.js";
-
-const execFileAsync = promisify(execFile);
 
 export interface LocalServiceRegistryRecord {
   version: 1;
@@ -114,21 +109,39 @@ async function safeReadRegistryRecord(filePath: string) {
   }
 }
 
-export function createLocalServiceKey(input: LocalServiceIdentityInput) {
-  const digest = createHash("sha256")
-    .update(
-      stableStringify({
-        profileKind: input.profileKind,
-        serviceName: input.serviceName,
-        cwd: path.resolve(input.cwd),
-        command: input.command,
-        envFingerprint: input.envFingerprint,
-        port: input.port,
-        scope: input.scope ?? null,
-      }),
-    )
-    .digest("hex")
-    .slice(0, 24);
+async function readSubprocessText(stream: ReadableStream<Uint8Array> | null | undefined) {
+  if (!stream) return "";
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
+async function hashKeyMaterial(value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return Buffer.from(digest).toString("hex").slice(0, 24);
+}
+
+export async function createLocalServiceKey(input: LocalServiceIdentityInput) {
+  const digest = await hashKeyMaterial(
+    stableStringify({
+      profileKind: input.profileKind,
+      serviceName: input.serviceName,
+      cwd: path.resolve(input.cwd),
+      command: input.command,
+      envFingerprint: input.envFingerprint,
+      port: input.port,
+      scope: input.scope ?? null,
+    }),
+  );
   return `${sanitizeServiceKeySegment(input.profileKind, "service")}-${sanitizeServiceKeySegment(input.serviceName, "service")}-${digest}`;
 }
 
@@ -196,7 +209,21 @@ export function isPidAlive(pid: number) {
 async function isLikelyMatchingCommand(record: LocalServiceRegistryRecord) {
   if (process.platform === "win32") return true;
   try {
-    const { stdout } = await execFileAsync("ps", ["-o", "command=", "-p", String(record.pid)]);
+    const proc = Bun.spawn({
+      cmd: ["ps", "-o", "command=", "-p", String(record.pid)],
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const [stdout, stderr, exitCode] = await Promise.all([
+      readSubprocessText(proc.stdout),
+      readSubprocessText(proc.stderr),
+      proc.exited,
+    ]);
+    if (exitCode !== 0) {
+      if (stderr.trim()) return true;
+      return true;
+    }
     const commandLine = stdout.trim();
     if (!commandLine) return false;
     return commandLine.includes(record.command) || commandLine.includes(record.serviceName);

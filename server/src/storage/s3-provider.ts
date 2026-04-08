@@ -5,7 +5,6 @@ import {
   HeadObjectCommand,
   PutObjectCommand,
 } from "@aws-sdk/client-s3";
-import { Readable } from "node:stream";
 import type { StorageProvider, GetObjectResult, HeadObjectResult } from "./types.js";
 import { notFound, unprocessable } from "../errors.js";
 
@@ -30,9 +29,9 @@ function buildKey(prefix: string, objectKey: string): string {
   return `${prefix}/${objectKey}`;
 }
 
-async function toReadableStream(body: unknown): Promise<Readable> {
+async function toReadableStream(body: unknown): Promise<ReadableStream<Uint8Array>> {
   if (!body) throw notFound("Object not found");
-  if (body instanceof Readable) return body;
+  if (body instanceof ReadableStream) return body;
 
   const candidate = body as {
     transformToWebStream?: () => ReadableStream<Uint8Array>;
@@ -40,20 +39,11 @@ async function toReadableStream(body: unknown): Promise<Readable> {
   };
 
   if (typeof candidate.transformToWebStream === "function") {
-    const webStream = candidate.transformToWebStream();
-    const reader = webStream.getReader();
-    return Readable.from((async function* () {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) yield value;
-      }
-    })());
+    return candidate.transformToWebStream();
   }
 
   if (typeof candidate.arrayBuffer === "function") {
-    const buffer = Buffer.from(await candidate.arrayBuffer());
-    return Readable.from(buffer);
+    return new Response(await candidate.arrayBuffer()).body ?? new ReadableStream();
   }
 
   throw unprocessable("Unsupported S3 body stream type");

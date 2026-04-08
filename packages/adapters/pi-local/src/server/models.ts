@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash } from "crypto";
 import type { AdapterModel } from "@clawdev/adapter-utils";
 import { asString, runChildProcess } from "@clawdev/adapter-utils/server-utils";
 
@@ -16,6 +16,7 @@ const BRIDGE_PROVIDERS: Record<string, string> = {
   openrouter: "OPENROUTER_API_KEY",
   minimax: "MINIMAX_API_KEY",
   "kimi-coding": "KIMI_API_KEY",
+  azure: "AZURE_OPENAI_API_KEY",
 };
 
 export { BRIDGE_PROVIDERS };

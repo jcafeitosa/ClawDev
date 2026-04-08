@@ -64,4 +64,6 @@ Notes:
 - BYOK: set provider-specific API keys via env field (e.g. { "GROQ_API_KEY": "...", "XAI_API_KEY": "..." }).
 - Available bridge providers: groq, xai, mistral, cerebras, openrouter, minimax, kimi-coding, azure.
 - Model discovery via \`pi --list-models\` when API keys are configured.
+- Command surface exposed by \`pi --help\` includes: \`install\`, \`remove\`, \`uninstall\`, \`update\`, \`list\`, \`config\`, \`export\`, and \`--list-models\`.
+- \`--provider\`, \`--model\`, \`--api-key\`, \`--tools\`, \`--thinking\`, \`--extensions\`, \`--skills\`, \`--prompt-templates\`, \`--themes\`, \`--no-tools\`, \`--no-extensions\`, \`--no-skills\`, \`--no-prompt-templates\`, \`--no-themes\`, \`--resume\`, \`--continue\`, \`--fork\`, and \`--offline\` are the main runtime controls ClawDev maps into agent config.
 `;

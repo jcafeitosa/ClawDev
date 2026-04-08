@@ -1,6 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { promises as fsPromises } from "fs";
+import os from "os";
+import path from "path";
 import type { ClawDevConfig } from "@clawdev/shared";
 import { resolveClawDevConfigPath, resolveClawDevEnvPath } from "./paths.js";
 
@@ -75,9 +75,9 @@ function parseEnvFile(contents: string): Record<string, string> {
   return entries;
 }
 
-function readEnvEntries(envPath: string): Record<string, string> {
-  if (!fs.existsSync(envPath)) return {};
-  return parseEnvFile(fs.readFileSync(envPath, "utf8"));
+async function readEnvEntries(envPath: string): Promise<Record<string, string>> {
+  if (!(await Bun.file(envPath).exists())) return {};
+  return parseEnvFile(await Bun.file(envPath).text());
 }
 
 function formatEnvEntries(entries: Record<string, string>): string {
@@ -144,9 +144,8 @@ function resolveWorktreeRuntimeContext(
   };
 }
 
-function writeConfigFile(configPath: string, config: ClawDevConfig): void {
-  fs.mkdirSync(path.dirname(configPath), { recursive: true });
-  fs.writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n", { mode: 0o600 });
+async function writeConfigFile(configPath: string, config: ClawDevConfig): Promise<void> {
+  await Bun.write(configPath, JSON.stringify(config, null, 2) + "\n");
 }
 
 function resolveRepoManagedWorktreesRoot(worktreeRoot: string): string | null {
@@ -158,33 +157,33 @@ function resolveRepoManagedWorktreesRoot(worktreeRoot: string): string | null {
   return path.resolve(repoRoot, ".clawdev", "worktrees");
 }
 
-function collectSiblingWorktreePorts(context: WorktreeRuntimeContext): {
+async function collectSiblingWorktreePorts(context: WorktreeRuntimeContext): Promise<{
   serverPorts: Set<number>;
   databasePorts: Set<number>;
-} {
+}> {
   const serverPorts = new Set<number>();
   const databasePorts = new Set<number>();
   const siblingConfigPaths = new Set<string>();
   const instancesDir = path.resolve(context.homeDir, "instances");
-  if (fs.existsSync(instancesDir)) {
-    for (const entry of fs.readdirSync(instancesDir, { withFileTypes: true })) {
+  if (await Bun.file(instancesDir).exists()) {
+    for (const entry of await fsPromises.readdir(instancesDir, { withFileTypes: true })) {
       if (!entry.isDirectory() || entry.name === context.instanceId) continue;
 
       const siblingConfigPath = path.resolve(instancesDir, entry.name, "config.json");
-      if (fs.existsSync(siblingConfigPath)) {
+      if (await Bun.file(siblingConfigPath).exists()) {
         siblingConfigPaths.add(siblingConfigPath);
       }
     }
   }
 
   const repoManagedWorktreesRoot = resolveRepoManagedWorktreesRoot(path.dirname(context.configPath));
-  if (repoManagedWorktreesRoot && fs.existsSync(repoManagedWorktreesRoot)) {
-    for (const entry of fs.readdirSync(repoManagedWorktreesRoot, { withFileTypes: true })) {
+  if (repoManagedWorktreesRoot && (await Bun.file(repoManagedWorktreesRoot).exists())) {
+    for (const entry of await fsPromises.readdir(repoManagedWorktreesRoot, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
 
       const siblingConfigPath = path.resolve(repoManagedWorktreesRoot, entry.name, ".clawdev", "config.json");
       if (path.resolve(siblingConfigPath) === path.resolve(context.configPath)) continue;
-      if (fs.existsSync(siblingConfigPath)) {
+      if (await Bun.file(siblingConfigPath).exists()) {
         siblingConfigPaths.add(siblingConfigPath);
       }
     }
@@ -192,7 +191,7 @@ function collectSiblingWorktreePorts(context: WorktreeRuntimeContext): {
 
   for (const siblingConfigPath of siblingConfigPaths) {
     try {
-      const siblingConfig = JSON.parse(fs.readFileSync(siblingConfigPath, "utf8")) as ClawDevConfig;
+      const siblingConfig = JSON.parse(await Bun.file(siblingConfigPath).text()) as ClawDevConfig;
       if (Number.isInteger(siblingConfig.server.port) && siblingConfig.server.port > 0) {
         serverPorts.add(siblingConfig.server.port);
       }
@@ -363,10 +362,10 @@ export function applyRuntimePortSelectionToConfig(
   return { config: nextConfig, changed };
 }
 
-export function maybeRepairLegacyWorktreeConfigAndEnvFiles(): {
+export async function maybeRepairLegacyWorktreeConfigAndEnvFiles(): Promise<{
   repairedConfig: boolean;
   repairedEnv: boolean;
-} {
+}> {
   const context = resolveWorktreeRuntimeContext(process.env);
   if (!context) {
     return { repairedConfig: false, repairedEnv: false };
@@ -379,10 +378,10 @@ export function maybeRepairLegacyWorktreeConfigAndEnvFiles(): {
   process.env.CLAWDEV_WORKTREE_NAME = context.worktreeName;
 
   let repairedConfig = false;
-  if (fs.existsSync(context.configPath)) {
+  if (await Bun.file(context.configPath).exists()) {
     try {
-      const parsed = JSON.parse(fs.readFileSync(context.configPath, "utf8")) as ClawDevConfig;
-      const siblingPorts = collectSiblingWorktreePorts(context);
+      const parsed = JSON.parse(await Bun.file(context.configPath).text()) as ClawDevConfig;
+      const siblingPorts = await collectSiblingWorktreePorts(context);
       const hasSiblingPortCollision =
         siblingPorts.serverPorts.has(parsed.server.port) ||
         (parsed.database.mode === "embedded-postgres" &&
@@ -403,7 +402,7 @@ export function maybeRepairLegacyWorktreeConfigAndEnvFiles(): {
               )
             : undefined;
 
-        writeConfigFile(
+        await writeConfigFile(
           context.configPath,
           buildIsolatedWorktreeConfig(parsed, context, {
             serverPort: selectedServerPort,
@@ -417,7 +416,7 @@ export function maybeRepairLegacyWorktreeConfigAndEnvFiles(): {
     }
   }
 
-  const existingEnvEntries = readEnvEntries(context.envPath);
+  const existingEnvEntries = await readEnvEntries(context.envPath);
   const desiredEnvEntries: Record<string, string> = {
     ...existingEnvEntries,
     CLAWDEV_HOME: context.homeDir,
@@ -433,23 +432,22 @@ export function maybeRepairLegacyWorktreeConfigAndEnvFiles(): {
   );
 
   if (repairedEnv) {
-    fs.mkdirSync(path.dirname(context.envPath), { recursive: true });
-    fs.writeFileSync(context.envPath, formatEnvEntries(desiredEnvEntries), { mode: 0o600 });
+    await Bun.write(context.envPath, formatEnvEntries(desiredEnvEntries));
   }
 
   return { repairedConfig, repairedEnv };
 }
 
-export function maybePersistWorktreeRuntimePorts(input: {
+export async function maybePersistWorktreeRuntimePorts(input: {
   serverPort: number;
   databasePort?: number | null;
-}): void {
+}): Promise<void> {
   const context = resolveWorktreeRuntimeContext(process.env);
-  if (!context || !fs.existsSync(context.configPath)) return;
+  if (!context || !(await Bun.file(context.configPath).exists())) return;
 
   let fileConfig: ClawDevConfig;
   try {
-    fileConfig = JSON.parse(fs.readFileSync(context.configPath, "utf8")) as ClawDevConfig;
+    fileConfig = JSON.parse(await Bun.file(context.configPath).text()) as ClawDevConfig;
   } catch {
     return;
   }
@@ -462,6 +460,6 @@ export function maybePersistWorktreeRuntimePorts(input: {
   });
 
   if (changed) {
-    writeConfigFile(context.configPath, config);
+    await writeConfigFile(context.configPath, config);
   }
 }

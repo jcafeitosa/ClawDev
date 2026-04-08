@@ -22,10 +22,15 @@ const mockDiscovery = vi.hoisted(() => ({
   probeAdapter: vi.fn(),
 }));
 
+const mockReadiness = vi.hoisted(() => vi.fn());
+const mockRemediateReadiness = vi.hoisted(() => vi.fn());
+
 const mockRouter = vi.hoisted(() => ({
   resolveModel: vi.fn(),
   getRoutingLog: vi.fn(),
 }));
+
+let policyRowsState: Array<Record<string, unknown>> = [];
 
 const mockListServerAdapters = vi.hoisted(() =>
   vi.fn(() => [
@@ -76,7 +81,13 @@ function createDbStub() {
             where: () => result,
             limit: () => result,
             then: (resolve: (rows: Array<Record<string, unknown>>) => unknown) =>
-              Promise.resolve(resolve(isPreferences ? (preferenceRow ? [preferenceRow] : []) : providerStatusRows)),
+              Promise.resolve(resolve(
+                isPreferences
+                  ? (preferenceRow ? [preferenceRow] : [])
+                  : baseName === "model_routing_policies"
+                    ? policyRowsState
+                    : providerStatusRows,
+              )),
           };
           return result;
         }
@@ -110,6 +121,16 @@ function createDbStub() {
       },
       values(values: Record<string, unknown>) {
         if (kind === "insert") {
+          if ((values as Record<string, unknown>).companyId === COMPANY_ID && "routingStrategy" in values) {
+            const row = {
+              id: "policy-1",
+              ...values,
+            };
+            policyRowsState = [row];
+            return {
+              returning: async () => [row],
+            };
+          }
           preferenceRow = { ...values };
         }
         return {
@@ -145,6 +166,11 @@ vi.mock("../services/model-discovery.js", () => ({
 
 vi.mock("../services/model-router.js", () => ({
   createModelRouterService: () => mockRouter,
+}));
+
+vi.mock("../services/adapter-readiness.js", () => ({
+  checkAdapterReadiness: mockReadiness,
+  remediateAdapterReadiness: mockRemediateReadiness,
 }));
 
 vi.mock("../adapters/registry.js", () => ({
@@ -190,6 +216,7 @@ async function req(app: Elysia, method: string, path: string, body?: unknown) {
 describe("model routes", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    policyRowsState = [];
     mockCatalog.listModels.mockResolvedValue([
       {
         id: "gpt-5",
@@ -230,10 +257,37 @@ describe("model routes", () => {
     mockProviderStatus.clearExpiredCooldowns.mockResolvedValue(0);
     mockDiscovery.runDiscoveryCycle.mockResolvedValue({ ok: true });
     mockDiscovery.probeAdapter.mockResolvedValue({ ok: true });
+    mockReadiness.mockResolvedValue([
+      {
+        adapterType: "codex_local",
+        installed: true,
+        upToDate: true,
+        currentVersion: "0.3.1",
+        minimumVersion: "0.0.0",
+        needsInstall: false,
+        needsUpdate: false,
+        remediation: {
+          kind: "manual",
+          command: "codex --version",
+          installCommand: "npm install -g @openai/codex",
+          updateCommand: "npm install -g @openai/codex@latest",
+          reason: "Version probe is adapter-defined; install/update automation is adapter-specific.",
+        },
+      },
+    ]);
     mockRouter.resolveModel.mockResolvedValue({
       adapterType: "codex_local",
       modelId: "gpt-5",
       resolutionType: "pinned",
+    });
+    mockRemediateReadiness.mockResolvedValue({
+      adapterType: "codex_local",
+      mode: "install",
+      exitCode: 0,
+      signal: null,
+      timedOut: false,
+      stdout: "installed",
+      stderr: "",
     });
     mockRouter.getRoutingLog.mockResolvedValue([
       {
@@ -250,6 +304,18 @@ describe("model routes", () => {
 
   it("covers the providers and routing endpoints used by the frontend", async () => {
     const app = createApp();
+
+    const readinessRes = await req(app, "GET", "/api/adapters/readiness");
+    expect(readinessRes.status).toBe(200);
+    expect(readinessRes.body).toEqual({
+      adapters: expect.arrayContaining([
+        expect.objectContaining({
+          adapterType: "codex_local",
+          installed: true,
+          needsInstall: false,
+        }),
+      ]),
+    });
 
     const modelsRes = await req(app, "GET", "/api/models");
     expect(modelsRes.status).toBe(200);
@@ -307,6 +373,57 @@ describe("model routes", () => {
       routingStrategy: "performance_optimized",
       allowCrossProviderFallback: false,
     }));
+
+    const policyRes = await req(app, "PUT", `/api/companies/${COMPANY_ID}/model-routing-policies`, {
+      companyId: COMPANY_ID,
+      name: "CEO critical routing",
+      role: "ceo",
+      complexity: "critical",
+      routingStrategy: "performance_optimized",
+      fallbackChain: [{ adapterType: "codex_local", modelId: "gpt-5" }],
+      allowCrossProviderFallback: true,
+      preferFreeModels: false,
+      preferLocalModels: true,
+      priority: 10,
+    });
+    expect(policyRes.status).toBe(200);
+    expect(policyRes.body).toEqual(expect.objectContaining({
+      name: "CEO critical routing",
+      role: "ceo",
+      complexity: "critical",
+      routingStrategy: "performance_optimized",
+    }));
+
+    const resolveRes = await req(app, "POST", `/api/companies/${COMPANY_ID}/model-resolve`, {
+      agentId: "agent-1",
+      adapterType: "codex_local",
+      modelId: "auto",
+      role: "ceo",
+      taskComplexity: "critical",
+      taskPriority: "critical",
+      requiredCapabilities: ["code"],
+    });
+    expect(resolveRes.status).toBe(200);
+    expect(mockRouter.resolveModel).toHaveBeenCalledWith(
+      COMPANY_ID,
+      "agent-1",
+      "codex_local",
+      "auto",
+      expect.objectContaining({
+        routingContext: expect.objectContaining({
+          role: "ceo",
+          complexity: "critical",
+          taskPriority: "critical",
+          requiredCapabilities: ["code"],
+        }),
+      }),
+    );
+
+    const remediateRes = await req(app, "POST", "/api/adapters/codex_local/readiness/remediate", {
+      mode: "install",
+    });
+    expect(remediateRes.status).toBe(200);
+    expect(mockRemediateReadiness).toHaveBeenCalledWith("codex_local", "install");
 
     const routingLogRes = await req(app, "GET", `/api/companies/${COMPANY_ID}/model-routing-log?limit=5`);
     expect(routingLogRes.status).toBe(200);

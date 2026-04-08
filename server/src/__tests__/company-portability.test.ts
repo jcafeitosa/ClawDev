@@ -1,8 +1,8 @@
-import { execFileSync } from "node:child_process";
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { Readable } from "node:stream";
+import { execFileSync } from "child_process";
+import { promises as fs } from "fs";
+import os from "os";
+import path from "path";
+import { Readable } from "stream";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { CompanyPortabilityFileEntry } from "@clawdev/shared";
 

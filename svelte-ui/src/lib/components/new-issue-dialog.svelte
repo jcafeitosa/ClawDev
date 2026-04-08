@@ -329,6 +329,9 @@
     try {
       const derivedSpec = description.trim() || title.trim();
       const derivedDesign = `Use the selected project context and keep the change isolated to a single execution slice.`;
+      const derivedRisk = `The main risk is cross-project spillover, so keep the issue tightly scoped and verify dependencies early.`;
+      const derivedRollout = `Roll out the work as one controlled issue slice, confirm the first checkpoint, and pause if context changes.`;
+      const derivedRollback = `If validation fails, revert the change, preserve the parent context, and reopen the issue for review.`;
       const derivedValidation = `Confirm the issue is ready for execution before moving it to in_progress.`;
       const body: Record<string, unknown> = {
         title: title.trim(),
@@ -336,6 +339,9 @@
         priority,
         sddSpec: derivedSpec,
         sddDesign: derivedDesign,
+        sddRisk: derivedRisk,
+        sddRollout: derivedRollout,
+        sddRollback: derivedRollback,
         sddValidation: derivedValidation,
       };
       if (description.trim()) body.description = description.trim();

@@ -1,6 +1,5 @@
-import { spawn, type ChildProcess } from "node:child_process";
-import { constants as fsConstants, promises as fs, type Dirent } from "node:fs";
-import path from "node:path";
+import { constants as fsConstants, promises as fs, type Dirent } from "fs";
+import path from "path";
 import type {
   AdapterSkillEntry,
   AdapterSkillSnapshot,
@@ -17,7 +16,12 @@ export interface RunProcessResult {
 }
 
 interface RunningProcess {
-  child: ChildProcess;
+  child: {
+    pid: number | null;
+    kill(signal?: string): void;
+    killed: boolean;
+    stdin: { write(chunk: string | Uint8Array): void; end(): void } | null;
+  };
   graceSec: number;
 }
 
@@ -25,14 +29,6 @@ interface SpawnTarget {
   command: string;
   args: string[];
 }
-
-type ChildProcessWithEvents = ChildProcess & {
-  on(event: "error", listener: (err: Error) => void): ChildProcess;
-  on(
-    event: "close",
-    listener: (code: number | null, signal: NodeJS.Signals | null) => void,
-  ): ChildProcess;
-};
 
 export const runningProcesses = new Map<string, RunningProcess>();
 export const MAX_CAPTURE_BYTES = 4 * 1024 * 1024;
@@ -330,6 +326,22 @@ async function resolveSpawnTarget(
   }
 
   return { command: executable, args };
+}
+
+async function readStreamText(stream: ReadableStream<Uint8Array> | null | undefined) {
+  if (!stream) return "";
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
 }
 
 export function ensurePathInEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
@@ -763,9 +775,7 @@ export async function runChildProcess(
   },
 ): Promise<RunProcessResult> {
   const onLogError = opts.onLogError ?? ((err, id, msg) => console.warn({ err, runId: id }, msg));
-
-  return new Promise<RunProcessResult>((resolve, reject) => {
-    const rawMerged: NodeJS.ProcessEnv = { ...process.env, ...opts.env };
+  const rawMerged: NodeJS.ProcessEnv = { ...process.env, ...opts.env };
 
     // Strip Claude Code nesting-guard env vars so spawned `claude` processes
     // don't refuse to start with "cannot be launched inside another session".
@@ -783,91 +793,78 @@ export async function runChildProcess(
     }
 
     const mergedEnv = ensurePathInEnv(rawMerged);
-    void resolveSpawnTarget(command, args, opts.cwd, mergedEnv)
-      .then((target) => {
-        const child = spawn(target.command, target.args, {
-          cwd: opts.cwd,
-          env: mergedEnv,
-          shell: false,
-          stdio: [opts.stdin != null ? "pipe" : "ignore", "pipe", "pipe"],
-        }) as ChildProcessWithEvents;
-        const startedAt = new Date().toISOString();
+    const target = await resolveSpawnTarget(command, args, opts.cwd, mergedEnv);
+    const startedAt = new Date().toISOString();
+    const child = Bun.spawn({
+      cmd: [target.command, ...target.args],
+      cwd: opts.cwd,
+      env: mergedEnv,
+      stdin: opts.stdin != null ? "pipe" : "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const pid = child.pid ?? null;
+    const stdin = child.stdin ?? null;
+    const wrapper = {
+      pid,
+      stdin: stdin
+        ? {
+            write(chunk: string | Uint8Array) {
+              stdin.write(chunk);
+            },
+            end() {
+              stdin.end();
+            },
+          }
+        : null,
+      killed: false,
+      kill(signal?: string) {
+        wrapper.killed = true;
+        child.kill(signal as never);
+      },
+    };
+    runningProcesses.set(runId, { child: wrapper, graceSec: opts.graceSec });
 
-        if (opts.stdin != null && child.stdin) {
-          child.stdin.write(opts.stdin);
-          child.stdin.end();
-        }
+    if (opts.stdin != null && stdin) {
+      stdin.write(opts.stdin);
+      stdin.end();
+    }
 
-        if (typeof child.pid === "number" && child.pid > 0 && opts.onSpawn) {
-          void opts.onSpawn({ pid: child.pid, startedAt }).catch((err) => {
-            onLogError(err, runId, "failed to record child process metadata");
-          });
-        }
+    if (pid && opts.onSpawn) {
+      void opts.onSpawn({ pid, startedAt }).catch((err) => {
+        onLogError(err, runId, "failed to record child process metadata");
+      });
+    }
 
-        runningProcesses.set(runId, { child, graceSec: opts.graceSec });
+    let timedOut = false;
+    const timeout = opts.timeoutSec > 0
+      ? setTimeout(() => {
+          timedOut = true;
+          wrapper.kill("SIGTERM");
+          setTimeout(() => {
+            wrapper.kill("SIGKILL");
+          }, Math.max(1, opts.graceSec) * 1000);
+        }, opts.timeoutSec * 1000)
+      : null;
 
-        let timedOut = false;
-        let stdout = "";
-        let stderr = "";
-        let logChain: Promise<void> = Promise.resolve();
-
-        const timeout =
-          opts.timeoutSec > 0
-            ? setTimeout(() => {
-                timedOut = true;
-                child.kill("SIGTERM");
-                setTimeout(() => {
-                  if (!child.killed) {
-                    child.kill("SIGKILL");
-                  }
-                }, Math.max(1, opts.graceSec) * 1000);
-              }, opts.timeoutSec * 1000)
-            : null;
-
-        child.stdout?.on("data", (chunk: unknown) => {
-          const text = String(chunk);
-          stdout = appendWithCap(stdout, text);
-          logChain = logChain
-            .then(() => opts.onLog("stdout", text))
-            .catch((err) => onLogError(err, runId, "failed to append stdout log chunk"));
-        });
-
-        child.stderr?.on("data", (chunk: unknown) => {
-          const text = String(chunk);
-          stderr = appendWithCap(stderr, text);
-          logChain = logChain
-            .then(() => opts.onLog("stderr", text))
-            .catch((err) => onLogError(err, runId, "failed to append stderr log chunk"));
-        });
-
-        child.on("error", (err: Error) => {
-          if (timeout) clearTimeout(timeout);
-          runningProcesses.delete(runId);
-          const errno = (err as NodeJS.ErrnoException).code;
-          const pathValue = mergedEnv.PATH ?? mergedEnv.Path ?? "";
-          const msg =
-            errno === "ENOENT"
-              ? `Failed to start command "${command}" in "${opts.cwd}". Verify adapter command, working directory, and PATH (${pathValue}).`
-              : `Failed to start command "${command}" in "${opts.cwd}": ${err.message}`;
-          reject(new Error(msg));
-        });
-
-        child.on("close", (code: number | null, signal: NodeJS.Signals | null) => {
-          if (timeout) clearTimeout(timeout);
-          runningProcesses.delete(runId);
-          void logChain.finally(() => {
-            resolve({
-              exitCode: code,
-              signal,
-              timedOut,
-              stdout,
-              stderr,
-              pid: child.pid ?? null,
-              startedAt,
-            });
-          });
-        });
-      })
-      .catch(reject);
-  });
+    const [stdout, stderr, closeCode] = await Promise.all([
+      readStreamText(child.stdout),
+      readStreamText(child.stderr),
+      child.exited.then((code: number) => code),
+    ]);
+    if (timeout) clearTimeout(timeout);
+    runningProcesses.delete(runId);
+    const stdoutText = stdout;
+    const stderrText = stderr;
+    await opts.onLog("stdout", stdoutText).catch((err) => onLogError(err, runId, "failed to append stdout log chunk"));
+    await opts.onLog("stderr", stderrText).catch((err) => onLogError(err, runId, "failed to append stderr log chunk"));
+    return {
+      exitCode: closeCode,
+      signal: null,
+      timedOut,
+      stdout: stdoutText,
+      stderr: stderrText,
+      pid,
+      startedAt,
+    };
 }

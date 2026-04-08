@@ -70,5 +70,7 @@ Notes:
 - Session statistics are available via \`opencode stats\`.
 - Built-in agents: build, compaction, explore, general, plan, summary, title.
 - Plugin support is managed via \`opencode plugin\`.
+- Command surface exposed by \`opencode --help\` includes: \`acp\`, \`mcp\`, \`providers\` / \`auth\`, \`agent\`, \`upgrade\`, \`uninstall\`, \`serve\`, \`web\`, \`models\`, \`stats\`, \`export\`, \`import\`, \`github\`, \`pr\`, \`session\`, \`plugin\` / \`plug\`, and \`db\`.
+- \`opencode run\`, \`--format json\`, \`--model\`, \`--agent\`, \`--attach\`, \`--port\`, \`--pure\`, and \`--print-logs\` are the primary execution and control flags ClawDev maps into agent config.
 - ClawDev requires an explicit \`model\` value for \`opencode_local\` agents.
 `;

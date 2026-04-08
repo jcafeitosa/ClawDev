@@ -1,6 +1,6 @@
-import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "node:fs";
-import { readFile, writeFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { existsSync, mkdirSync, readdirSync, statSync, unlinkSync } from "fs";
+import { readFile, writeFile } from "fs/promises";
+import { basename, resolve } from "path";
 import postgres from "postgres";
 
 export type RunDatabaseBackupOptions = {

@@ -1,4 +1,4 @@
-import net from "node:net";
+import net from "net";
 
 export function checkPort(port: number): Promise<{ available: boolean; error?: string }> {
   return new Promise((resolve) => {

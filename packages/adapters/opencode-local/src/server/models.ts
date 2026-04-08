@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import os from "node:os";
+import { createHash } from "crypto";
+import os from "os";
 import type { AdapterModel } from "@clawdev/adapter-utils";
 import {
   asString,

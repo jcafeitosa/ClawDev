@@ -3,14 +3,14 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev-runner.mjs watch",
-    "dev:watch": "node scripts/dev-runner.mjs watch",
-    "dev:once": "node scripts/dev-runner.mjs dev",
+    "dev": "bun scripts/dev-runner.mjs watch",
+    "dev:watch": "bun scripts/dev-runner.mjs watch",
+    "dev:once": "bun scripts/dev-runner.mjs dev",
     "dev:server": "pnpm --filter @clawdev/server dev",
     "dev:ui": "pnpm --filter @clawdev/svelte-ui dev",
     "dev:svelte": "pnpm --filter @clawdev/svelte-ui dev",
-    "chrome:debug": "node scripts/start-chrome-devtools-browser.mjs",
-    "chrome:smoke": "node scripts/chrome-cdp-smoke.mjs",
+    "chrome:debug": "bun scripts/start-chrome-devtools-browser.mjs",
+    "chrome:smoke": "bun scripts/chrome-cdp-smoke.mjs",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest",
@@ -25,14 +25,14 @@
     "db:migrate": "pnpm --filter @clawdev/db migrate",
     "secrets:migrate-inline-env": "tsx scripts/migrate-inline-env-secrets.ts",
     "db:backup": "./scripts/backup-db.sh",
-    "clawdev": "node cli/node_modules/tsx/dist/cli.mjs cli/src/index.ts",
+    "clawdev": "bun cli/src/index.ts",
     "build:npm": "./scripts/build-npm.sh",
     "release": "./scripts/release.sh",
     "release:canary": "./scripts/release.sh canary",
     "release:stable": "./scripts/release.sh stable",
     "release:github": "./scripts/create-github-release.sh",
     "release:rollback": "./scripts/rollback-latest.sh",
-    "check:tokens": "node scripts/check-forbidden-tokens.mjs",
+    "check:tokens": "bun scripts/check-forbidden-tokens.mjs",
     "docs:dev": "cd docs && npx mintlify dev",
     "smoke:openclaw-join": "./scripts/smoke/openclaw-join.sh",
     "smoke:openclaw-docker-ui": "./scripts/smoke/openclaw-docker-ui.sh",
@@ -44,25 +44,23 @@
     "test:release-smoke:headed": "npx playwright test --config tests/release-smoke/playwright.config.ts --headed"
   },
   "devDependencies": {
-    "@playwright/test": "^1.58.2",
+    "@playwright/test": "^1.59.1",
+    "bun-types": ">=1.0.0",
     "cross-env": "^10.1.0",
-    "esbuild": "^0.27.4",
-    "typescript": "^5.9.3",
-    "vitest": "^3.2.4"
+    "esbuild": "^0.28.0",
+    "typescript": "^6.0.2",
+    "vitest": "^4.1.3"
   },
   "engines": {
     "node": ">=20"
   },
   "packageManager": "pnpm@9.15.4",
   "pnpm": {
-    "patchedDependencies": {
-      "embedded-postgres@18.1.0-beta.16": "patches/embedded-postgres@18.1.0-beta.16.patch"
-    },
     "overrides": {
       "esbuild": ">=0.25.0",
       "defu": ">=6.1.6",
       "cookie": ">=0.7.0",
-      "@types/node": ">=24.0.0 <25.0.0"
+      "bun-types": ">=1.0.0"
     },
     "auditConfig": {
       "ignoreCves": [

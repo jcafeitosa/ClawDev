@@ -3,16 +3,35 @@
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
   import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
   import { api } from '$lib/api';
-  import { onMount } from 'svelte';
+  import { onMount, onDestroy } from 'svelte';
   import {
     Card, CardContent, CardHeader, CardTitle, CardDescription, Badge, Button, Skeleton,
   } from '$lib/components/ui/index.js';
-  import { ShieldCheck, Check, X, Clock, User, ChevronRight } from 'lucide-svelte';
+  import { ShieldCheck, Check, X, Clock, User, ChevronRight, Zap, Timer } from 'lucide-svelte';
   import { PageLayout } from '$components/layout/index.js';
 
   let prefix = $derived($page.params.companyPrefix);
 
-  onMount(() => breadcrumbStore.set([{ label: 'Approvals' }]));
+  // ── Auto-approve countdown timer ──────────────────────────────────────────
+  const AUTO_APPROVE_SECONDS = 60;
+  let now = $state(Date.now());
+  let tickInterval: ReturnType<typeof setInterval> | undefined;
+
+  onMount(() => {
+    breadcrumbStore.set([{ label: 'Approvals' }]);
+    tickInterval = setInterval(() => { now = Date.now(); }, 1000);
+  });
+  onDestroy(() => { if (tickInterval) clearInterval(tickInterval); });
+
+  function autoApproveTimeLeft(createdAt: string | undefined): number {
+    if (!createdAt) return 0;
+    return Math.max(0, AUTO_APPROVE_SECONDS - Math.floor((now - new Date(createdAt).getTime()) / 1000));
+  }
+
+  function isAutoApproved(approval: any): boolean {
+    return approval.status === 'approved' &&
+      (approval.decidedByUserId?.startsWith('ceo:') || approval.decidedByUserId?.startsWith('system:auto'));
+  }
 
   // ── Approval label helpers (mirrors original ApprovalPayload.tsx) ──────────
   const TYPE_LABEL: Record<string, string> = {
@@ -103,6 +122,12 @@
 </script>
 
 <PageLayout title="Approvals" description="Review and approve pending requests">
+  <!-- Auto-approve info banner -->
+  <div class="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 p-3 mb-4 flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+    <Zap class="h-4 w-4 shrink-0" />
+    <span>Hire approvals are auto-approved by the CEO after 1 minute if no action is taken.</span>
+  </div>
+
   <!-- Tabs -->
   <div class="flex items-center border-b border-border">
     <button
@@ -202,6 +227,25 @@
                       <Badge class={statusVariant(approval.status)}>
                         {approval.status}
                       </Badge>
+                      {#if approval.status === 'pending' && (approval.type === 'hire_agent' || approval.kind === 'hire_agent')}
+                        {@const timeLeft = autoApproveTimeLeft(approval.createdAt)}
+                        {#if timeLeft > 0}
+                          <Badge class="bg-amber-500/15 text-amber-500 border-amber-500/30">
+                            <Timer class="h-3 w-3 mr-1" />
+                            Auto-approves in {timeLeft}s
+                          </Badge>
+                        {:else}
+                          <Badge class="bg-blue-500/15 text-blue-500 border-blue-500/30">
+                            <Zap class="h-3 w-3 mr-1" />
+                            CEO auto-approving...
+                          </Badge>
+                        {/if}
+                      {:else if isAutoApproved(approval)}
+                        <Badge class="bg-blue-500/15 text-blue-500 border-blue-500/30">
+                          <Zap class="h-3 w-3 mr-1" />
+                          Auto-approved
+                        </Badge>
+                      {/if}
                     </div>
 
                     <div class="flex items-center gap-4 text-xs text-muted-foreground">

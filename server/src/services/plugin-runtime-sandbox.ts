@@ -1,6 +1,6 @@
-import { existsSync, readFileSync, realpathSync } from "node:fs";
-import path from "node:path";
-import vm from "node:vm";
+import { existsSync, readFileSync, realpathSync } from "fs";
+import path from "path";
+import vm from "vm";
 import type { ClawDevPluginManifestV1 } from "@clawdev/shared";
 import type { PluginCapabilityValidator } from "./plugin-capability-validator.js";
 

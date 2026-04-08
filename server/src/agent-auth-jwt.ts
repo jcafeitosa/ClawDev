@@ -1,5 +1,3 @@
-import { createHmac, timingSafeEqual } from "node:crypto";
-
 interface JwtHeader {
   alg: string;
   typ?: string;
@@ -45,10 +43,6 @@ function base64UrlDecode(value: string) {
   return Buffer.from(value, "base64url").toString("utf8");
 }
 
-function signPayload(secret: string, signingInput: string) {
-  return createHmac("sha256", secret).update(signingInput).digest("base64url");
-}
-
 function parseJson(value: string): Record<string, unknown> | null {
   try {
     const parsed = JSON.parse(value);
@@ -58,14 +52,31 @@ function parseJson(value: string): Record<string, unknown> | null {
   }
 }
 
-function safeCompare(a: string, b: string) {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  if (left.length !== right.length) return false;
-  return timingSafeEqual(left, right);
+async function hmacSha256Base64Url(secret: string, signingInput: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign", "verify"],
+  );
+  const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(signingInput));
+  return Buffer.from(signature).toString("base64url");
 }
 
-export function createLocalAgentJwt(agentId: string, companyId: string, adapterType: string, runId: string) {
+async function verifyHmacSha256Base64Url(secret: string, signingInput: string, signatureBase64Url: string) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["verify"],
+  );
+  const signature = Buffer.from(signatureBase64Url, "base64url");
+  return crypto.subtle.verify("HMAC", key, signature, new TextEncoder().encode(signingInput));
+}
+
+export async function createLocalAgentJwt(agentId: string, companyId: string, adapterType: string, runId: string) {
   const config = jwtConfig();
   if (!config) return null;
 
@@ -87,12 +98,12 @@ export function createLocalAgentJwt(agentId: string, companyId: string, adapterT
   };
 
   const signingInput = `${base64UrlEncode(JSON.stringify(header))}.${base64UrlEncode(JSON.stringify(claims))}`;
-  const signature = signPayload(config.secret, signingInput);
+  const signature = await hmacSha256Base64Url(config.secret, signingInput);
 
   return `${signingInput}.${signature}`;
 }
 
-export function verifyLocalAgentJwt(token: string): LocalAgentJwtClaims | null {
+export async function verifyLocalAgentJwt(token: string): Promise<LocalAgentJwtClaims | null> {
   if (!token) return null;
   const config = jwtConfig();
   if (!config) return null;
@@ -105,8 +116,8 @@ export function verifyLocalAgentJwt(token: string): LocalAgentJwtClaims | null {
   if (!header || header.alg !== JWT_ALGORITHM) return null;
 
   const signingInput = `${headerB64}.${claimsB64}`;
-  const expectedSig = signPayload(config.secret, signingInput);
-  if (!safeCompare(signature, expectedSig)) return null;
+  const verified = await verifyHmacSha256Base64Url(config.secret, signingInput, signature);
+  if (!verified) return null;
 
   const claims = parseJson(base64UrlDecode(claimsB64));
   if (!claims) return null;

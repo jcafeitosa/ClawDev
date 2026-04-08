@@ -3,7 +3,12 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node", "react"]
+    "types": [
+      "bun-types",
+      "react"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }

@@ -13,8 +13,8 @@ import {
   ensurePathInEnv,
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
-import fs from "node:fs/promises";
-import path from "node:path";
+import fs from "fs/promises";
+import path from "path";
 import { parseCodexJsonl } from "./parse.js";
 import { codexHomeDir, readCodexAuthInfo } from "./quota.js";
 
@@ -48,6 +48,27 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
   const clean = raw.replace(/\s+/g, " ").trim();
   const max = 240;
   return clean.length > max ? `${clean.slice(0, max - 1)}…` : clean;
+}
+
+function parseCodexHelpCommands(stdout: string, stderr: string): string[] {
+  const text = `${stdout}\n${stderr}`;
+  const commands: string[] = [];
+  let inCommands = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/^Commands:$/i.test(line)) {
+      inCommands = true;
+      continue;
+    }
+    if (inCommands && /^[A-Z][A-Za-z0-9 -]+:/.test(line)) break;
+    if (!inCommands) continue;
+    const match = line.match(/^([a-z][a-z0-9-]*)\b/i);
+    if (!match) continue;
+    const name = match[1]!.toLowerCase();
+    if (!commands.includes(name)) commands.push(name);
+  }
+  return commands;
 }
 
 const CODEX_AUTH_REQUIRED_RE =
@@ -141,6 +162,32 @@ export async function testEnvironment(
         hint: "Use the `codex` CLI command to run the automatic login and installation probe.",
       });
     } else {
+      try {
+        const helpProbe = await runChildProcess(
+          `codex-help-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          ["help"],
+          {
+            cwd,
+            env,
+            timeoutSec: 10,
+            graceSec: 3,
+            onLog: async () => {},
+          },
+        );
+        const helpCommands = parseCodexHelpCommands(helpProbe.stdout, helpProbe.stderr);
+        if (helpCommands.length > 0) {
+          checks.push({
+            code: "codex_command_surface",
+            level: "info",
+            message: "Codex CLI command surface detected",
+            detail: helpCommands.join(", "),
+          });
+        }
+      } catch {
+        // Help probe failed — skip silently
+      }
+
       const model = asString(config.model, "").trim();
       const modelReasoningEffort = asString(
         config.modelReasoningEffort,

@@ -1,8 +1,7 @@
-FROM node:lts-trixie-slim AS base
+FROM oven/bun:1-trixie AS base
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates curl git \
   && rm -rf /var/lib/apt/lists/*
-RUN corepack enable
 
 FROM base AS deps
 WORKDIR /app
@@ -38,10 +37,10 @@ RUN test -f server/dist/index.js || (echo "ERROR: server build output missing" &
 
 FROM base AS production
 WORKDIR /app
-COPY --chown=node:node --from=build /app /app
-RUN npm install --global --omit=dev @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
+COPY --chown=bun:bun --from=build /app /app
+RUN bun add --global @anthropic-ai/claude-code@latest @openai/codex@latest opencode-ai \
   && mkdir -p /clawdev \
-  && chown node:node /clawdev
+  && chown bun:bun /clawdev
 
 ENV NODE_ENV=production \
   HOME=/clawdev \
@@ -57,5 +56,5 @@ ENV NODE_ENV=production \
 VOLUME ["/clawdev"]
 EXPOSE 3100
 
-USER node
-CMD ["node", "--import", "./server/node_modules/tsx/dist/loader.mjs", "server/dist/index.js"]
+USER bun
+CMD ["bun", "server/dist/index.js"]

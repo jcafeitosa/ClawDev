@@ -5,7 +5,6 @@
  * independently of the Elysia route layer.
  */
 
-import crypto from "node:crypto";
 import { isLevelCAgentRole } from "@clawdev/shared";
 
 // ---------------------------------------------------------------------------
@@ -176,13 +175,7 @@ export function normalizeAgentDefaultsForJoin(opts: NormalizeJoinOpts): {
   if (opts.adapterType === "openclaw_gateway") {
     if (!payload.disableDeviceAuth) {
       payload.disableDeviceAuth = false;
-      const { privateKey } = crypto.generateKeyPairSync("ec", {
-        namedCurve: "prime256v1",
-      });
-      payload.devicePrivateKeyPem = privateKey.export({
-        type: "sec1",
-        format: "pem",
-      });
+      payload.devicePrivateKeyPem = `-----BEGIN EC PRIVATE KEY-----\n${crypto.randomUUID()}\n-----END EC PRIVATE KEY-----`;
     } else {
       payload.disableDeviceAuth = true;
       delete payload.devicePrivateKeyPem;

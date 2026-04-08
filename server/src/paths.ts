@@ -1,5 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
+import path from "path";
+import fs from "fs";
 import { resolveDefaultConfigPath } from "./home-paths.js";
 
 const CLAWDEV_CONFIG_BASENAME = "config.json";
@@ -28,7 +28,6 @@ function findConfigFileFromAncestors(startDir: string): string | null {
 
 export function resolveClawDevConfigPath(overridePath?: string): string {
   if (overridePath) return path.resolve(overridePath);
-  if (process.env.CLAWDEV_CONFIG) return path.resolve(process.env.CLAWDEV_CONFIG);
   if (process.env.CLAWDEV_CONFIG) return path.resolve(process.env.CLAWDEV_CONFIG);
   return findConfigFileFromAncestors(process.cwd()) ?? resolveDefaultConfigPath();
 }

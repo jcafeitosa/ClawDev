@@ -1,6 +1,6 @@
-import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync, existsSync, chmodSync } from "node:fs";
-import path from "node:path";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypto";
+import { promises as fsPromises } from "fs";
+import path from "path";
 import type { SecretProviderModule, StoredSecretVersionMaterial } from "./types.js";
 import { badRequest } from "../errors.js";
 
@@ -38,7 +38,7 @@ function decodeMasterKey(raw: string): Buffer | null {
   return null;
 }
 
-function loadOrCreateMasterKey(): Buffer {
+async function loadOrCreateMasterKey(): Promise<Buffer> {
   const envKeyRaw = process.env.CLAWDEV_SECRETS_MASTER_KEY;
   if (envKeyRaw && envKeyRaw.trim().length > 0) {
     const fromEnv = decodeMasterKey(envKeyRaw);
@@ -51,8 +51,8 @@ function loadOrCreateMasterKey(): Buffer {
   }
 
   const keyPath = resolveMasterKeyFilePath();
-  if (existsSync(keyPath)) {
-    const raw = readFileSync(keyPath, "utf8");
+  if (await Bun.file(keyPath).exists()) {
+    const raw = await Bun.file(keyPath).text();
     const decoded = decodeMasterKey(raw);
     if (!decoded) {
       throw badRequest(`Invalid secrets master key at ${keyPath}`);
@@ -61,14 +61,9 @@ function loadOrCreateMasterKey(): Buffer {
   }
 
   const dir = path.dirname(keyPath);
-  mkdirSync(dir, { recursive: true });
+  await fsPromises.mkdir(dir, { recursive: true });
   const generated = randomBytes(32);
-  writeFileSync(keyPath, generated.toString("base64"), { encoding: "utf8", mode: 0o600 });
-  try {
-    chmodSync(keyPath, 0o600);
-  } catch {
-    // best effort
-  }
+  await Bun.write(keyPath, generated.toString("base64"));
   return generated;
 }
 
@@ -121,7 +116,7 @@ export const localEncryptedProvider: SecretProviderModule = {
     requiresExternalRef: false,
   },
   async createVersion(input) {
-    const masterKey = loadOrCreateMasterKey();
+    const masterKey = await loadOrCreateMasterKey();
     return {
       material: encryptValue(masterKey, input.value),
       valueSha256: sha256Hex(input.value),
@@ -129,7 +124,7 @@ export const localEncryptedProvider: SecretProviderModule = {
     };
   },
   async resolveVersion(input) {
-    const masterKey = loadOrCreateMasterKey();
+    const masterKey = await loadOrCreateMasterKey();
     return decryptValue(masterKey, asLocalEncryptedMaterial(input.material));
   },
 };

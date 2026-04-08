@@ -9,7 +9,7 @@
   import { PluginLauncherOutlet, PluginRenderer } from "$lib/components/plugins/index.js";
   import { PageLayout } from "$components/layout/index.js";
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, PriorityIcon, TimeAgo, EmptyState } from "$components/index.js";
-  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Input } from "$components/ui/index.js";
+  import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Input, Textarea } from "$components/ui/index.js";
   import { Pencil, Trash2, Plus, X, List, LayoutGrid, ChevronRight, Search } from "lucide-svelte";
   import { ISSUE_STATUS_ORDER, ISSUE_STATUS_VISUALS } from '$lib/constants/visual';
   import KanbanBoard from '$lib/components/board/kanban-board.svelte';
@@ -18,6 +18,9 @@
     getHierarchyPresetDefinition,
     getHierarchyPresetDepartments,
     getHierarchyPresetOperatingRules,
+    parseStructuredSddDescription,
+    composeStructuredSddDescription,
+    validateStructuredSddInput,
     type HierarchyPreset,
   } from "@clawdev/shared";
 
@@ -157,6 +160,12 @@
   let settingsGoalToAdd = $state("");
   let settingsRepoUrl = $state("");
   let settingsLocalFolder = $state("");
+  let settingsSddSpec = $state("");
+  let settingsSddDesign = $state("");
+  let settingsSddRisk = $state("");
+  let settingsSddRollout = $state("");
+  let settingsSddRollback = $state("");
+  let settingsSddValidation = $state("");
   let policyEnabled = $state(false);
   let policyDefaultMode = $state("shared_workspace");
   let policyBaseRef = $state("");
@@ -326,7 +335,16 @@
 
   $effect(() => {
     if (!project) return;
-    settingsDescription = project.description ?? "";
+    const parsed = parseStructuredSddDescription(project.description);
+    const hasParsedStructuredSections =
+      Boolean(parsed.spec || parsed.design || parsed.risk || parsed.rollout || parsed.rollback || parsed.validation);
+    settingsDescription = parsed.summary || (!hasParsedStructuredSections ? project.description || "" : "");
+    settingsSddSpec = parsed.spec;
+    settingsSddDesign = parsed.design;
+    settingsSddRisk = parsed.risk;
+    settingsSddRollout = parsed.rollout;
+    settingsSddRollback = parsed.rollback;
+    settingsSddValidation = parsed.validation;
     settingsStatus = project.status ?? "backlog";
     settingsTargetDate = project.targetDate ? project.targetDate.slice(0, 10) : "";
     settingsRepoUrl = project.codebase?.repoUrl ?? "";
@@ -548,8 +566,22 @@
     savingSettings = true;
     try {
       const nextGoalIds = Array.from(new Set(goals.map((g) => g.id)));
+      const structuredSddInput = {
+        spec: settingsSddSpec.trim(),
+        design: settingsSddDesign.trim(),
+        risk: settingsSddRisk.trim(),
+        rollout: settingsSddRollout.trim(),
+        rollback: settingsSddRollback.trim(),
+        validation: settingsSddValidation.trim(),
+      };
+      const hasStructuredDraft = Object.values(structuredSddInput).some((value) => value.length > 0);
+      if (hasStructuredDraft) {
+        const sddIssues = validateStructuredSddInput(structuredSddInput);
+        if (sddIssues.length > 0) {
+          throw new Error(sddIssues.join(" "));
+        }
+      }
       const projectBody: Record<string, unknown> = {
-        description: settingsDescription.trim() || null,
         status: settingsStatus,
         targetDate: settingsTargetDate ? new Date(settingsTargetDate).toISOString() : null,
         goalIds: nextGoalIds,
@@ -571,6 +603,13 @@
           },
         },
       };
+      projectBody.description = hasStructuredDraft
+        ? composeStructuredSddDescription({
+            subjectLabel: `Project: ${project.name}`,
+            summary: settingsDescription.trim() || null,
+            ...structuredSddInput,
+          })
+        : (settingsDescription.trim() || null);
       const projectRes = await api(`/api/projects/${projectUuid}`, {
         method: "PATCH",
         body: JSON.stringify(projectBody),
@@ -688,6 +727,9 @@
     const projectName = project?.name ?? "this project";
     const issueSpec = `Implement "${title}" within ${projectName}. Keep the issue scoped to the selected status "${status}".`;
     const issueDesign = `Use the project execution model for ${projectName}. Keep the change small, reviewable, and owned by a single agent.`;
+    const issueRisk = `The main risk is scope drift inside ${projectName}, so keep the issue narrow and check dependencies before execution.`;
+    const issueRollout = `Roll out the change as a single issue slice, confirm the first safe checkpoint, and stop if the project context changes.`;
+    const issueRollback = `If the change is unsafe, revert the work, reset the issue status, and reopen it for a fresh execution pass.`;
     const issueValidation = `Verify the work satisfies the issue title, the selected project context, and the expected status transition before marking it done.`;
     const res = await api(`/api/companies/${companyId}/issues`, {
       method: 'POST',
@@ -699,6 +741,9 @@
         description: `Quick issue created from ${projectName}.`,
         sddSpec: issueSpec,
         sddDesign: issueDesign,
+        sddRisk: issueRisk,
+        sddRollout: issueRollout,
+        sddRollback: issueRollback,
         sddValidation: issueValidation,
       }),
     });
@@ -1462,13 +1507,51 @@
                 </CardHeader>
                 <CardContent class="space-y-4">
                   <div>
-                    <label for="project-description" class="block text-xs font-medium text-muted-foreground mb-1">Description</label>
-                    <textarea
+                    <label for="project-description" class="block text-xs font-medium text-muted-foreground mb-1">Overview</label>
+                    <Textarea
                       id="project-description"
                       bind:value={settingsDescription}
-                      rows="3"
-                      class="w-full rounded-md border border-border bg-background px-3 py-2 text-sm text-foreground focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
-                    ></textarea>
+                      rows={3}
+                      class="min-h-[88px]"
+                      placeholder="High-level project summary that appears above the structured delivery sections."
+                    />
+                    <p class="mt-1 text-xs text-muted-foreground">
+                      When the structured fields below are filled, this overview becomes the `Overview` section in the composed project description.
+                    </p>
+                  </div>
+                  <div class="rounded-lg border border-border/70 bg-muted/20 p-4 space-y-4">
+                    <div class="space-y-1">
+                      <p class="text-sm font-medium text-foreground">Structured delivery</p>
+                      <p class="text-xs text-muted-foreground">
+                        Fill all six sections to preserve the SDD contract. Partial drafts are blocked to avoid rewriting the project into an inconsistent state.
+                      </p>
+                    </div>
+                    <div class="grid gap-3">
+                      <div>
+                        <label for="project-sdd-spec" class="block text-xs font-medium text-muted-foreground mb-1">Spec</label>
+                        <Textarea id="project-sdd-spec" bind:value={settingsSddSpec} rows={3} class="min-h-[88px]" placeholder="What is being built, by whom, and how acceptance is judged." />
+                      </div>
+                      <div>
+                        <label for="project-sdd-design" class="block text-xs font-medium text-muted-foreground mb-1">Design</label>
+                        <Textarea id="project-sdd-design" bind:value={settingsSddDesign} rows={3} class="min-h-[88px]" placeholder="Architecture, decomposition, dependencies, and user-facing behavior." />
+                      </div>
+                      <div>
+                        <label for="project-sdd-risk" class="block text-xs font-medium text-muted-foreground mb-1">Risk</label>
+                        <Textarea id="project-sdd-risk" bind:value={settingsSddRisk} rows={3} class="min-h-[88px]" placeholder="Failure modes, blast radius, and what could block delivery." />
+                      </div>
+                      <div>
+                        <label for="project-sdd-rollout" class="block text-xs font-medium text-muted-foreground mb-1">Rollout</label>
+                        <Textarea id="project-sdd-rollout" bind:value={settingsSddRollout} rows={3} class="min-h-[88px]" placeholder="How the change ships safely and incrementally." />
+                      </div>
+                      <div>
+                        <label for="project-sdd-rollback" class="block text-xs font-medium text-muted-foreground mb-1">Rollback</label>
+                        <Textarea id="project-sdd-rollback" bind:value={settingsSddRollback} rows={3} class="min-h-[88px]" placeholder="How to revert quickly if the rollout fails." />
+                      </div>
+                      <div>
+                        <label for="project-sdd-validation" class="block text-xs font-medium text-muted-foreground mb-1">Validation</label>
+                        <Textarea id="project-sdd-validation" bind:value={settingsSddValidation} rows={3} class="min-h-[88px]" placeholder="What must be verified before the change is considered safe." />
+                      </div>
+                    </div>
                   </div>
                   <div class="grid gap-3 sm:grid-cols-2">
                     <div>

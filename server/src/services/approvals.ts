@@ -8,6 +8,8 @@ import { budgetService } from "./budgets.js";
 import { notifyHireApproved } from "./hire-hook.js";
 import { instanceSettingsService } from "./instance-settings.js";
 import { channelService } from "./channels.js";
+import { companies } from "@clawdev/db";
+import { C_LEVEL_DEPARTMENT_CHANNELS, getDepartmentsForRole, type HierarchyPreset } from "@clawdev/shared";
 
 export function approvalService(db: Db) {
   const agentsSvc = agentService(db);
@@ -157,8 +159,8 @@ export function approvalService(db: Db) {
               const fixedRootPath = rootPath.replace(/\/agents\/[0-9a-f-]{36}\//, `/agents/${hireApprovedAgentId}/`);
               if (fixedFilePath !== filePath) {
                 // Move files from old path to new path
-                const fs = await import("node:fs/promises");
-                const path = await import("node:path");
+                const fs = await import("fs/promises");
+                const path = await import("path");
                 const oldDir = rootPath;
                 const newDir = fixedRootPath;
                 try {
@@ -204,11 +206,39 @@ export function approvalService(db: Db) {
             sourceId: id,
             approvedAt: now,
           }).catch(() => {});
-          // Auto-join hired agent to #general channel
+          // Auto-join hired agent to #general channel + department channel
           const ch = channelService(db);
-          void ch.getOrCreateGeneral(updated.companyId).then((general) =>
-            ch.join(general.id, { agentId: hireApprovedAgentId!, role: "member" }),
-          ).catch(() => {});
+          void (async () => {
+            try {
+              const general = await ch.getOrCreateGeneral(updated.companyId);
+              await ch.join(general.id, { agentId: hireApprovedAgentId!, role: "member" });
+
+              // Auto-create department channel based on agent role
+              const agentRole = String(payload.role ?? "");
+              const cLevelDept = C_LEVEL_DEPARTMENT_CHANNELS[agentRole];
+              if (cLevelDept) {
+                const deptChannel = await ch.getOrCreateDepartmentChannel(
+                  updated.companyId, agentRole, cLevelDept.name, cLevelDept.description,
+                );
+                if (deptChannel) await ch.join(deptChannel.id, { agentId: hireApprovedAgentId!, role: "owner" });
+              } else {
+                // Fallback: use hierarchy preset departments
+                const [company] = await db
+                  .select({ hierarchyPreset: companies.hierarchyPreset })
+                  .from(companies)
+                  .where(eq(companies.id, updated.companyId));
+                if (company?.hierarchyPreset) {
+                  const departments = getDepartmentsForRole(company.hierarchyPreset as HierarchyPreset, agentRole);
+                  for (const dept of departments) {
+                    const deptCh = await ch.getOrCreateDepartmentChannel(
+                      updated.companyId, dept.key, dept.label, dept.description,
+                    );
+                    if (deptCh) await ch.join(deptCh.id, { agentId: hireApprovedAgentId!, role: "member" });
+                  }
+                }
+              }
+            } catch { /* non-fatal */ }
+          })();
         }
       }
 

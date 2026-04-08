@@ -1,6 +1,6 @@
 import { readConfigFile } from "./config-file.js";
-import { existsSync, realpathSync } from "node:fs";
-import { resolve } from "node:path";
+import { existsSync, realpathSync } from "fs";
+import { resolve } from "path";
 import { config as loadDotenv } from "dotenv";
 import { resolveClawDevEnvPath } from "./paths.js";
 import { maybeRepairLegacyWorktreeConfigAndEnvFiles } from "./worktree-config.js";

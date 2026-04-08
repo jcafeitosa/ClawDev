@@ -48,9 +48,17 @@ Describe the product or platform problem in one or two paragraphs.
 - `pnpm build`
 - Smoke test or browser validation if user-visible
 
-## Rollout / Risks
+## Risks
 
 - Risk 1
 - Risk 2
+
+## Rollout
+
 - Rollout step 1
 - Rollout step 2
+
+## Rollback
+
+- Rollback step 1
+- Rollback step 2

@@ -1,5 +1,3 @@
-import os from "node:os";
-
 export const CURRENT_USER_REDACTION_TOKEN = "*";
 
 export interface CurrentUserRedactionOptions {
@@ -53,12 +51,6 @@ function defaultUserNames() {
     process.env.USERNAME,
   ];
 
-  try {
-    candidates.push(os.userInfo().username);
-  } catch {
-    // Some environments do not expose userInfo; env vars are enough fallback.
-  }
-
   return uniqueNonEmpty(candidates);
 }
 
@@ -67,12 +59,6 @@ function defaultHomeDirs(userNames: string[]) {
     process.env.HOME,
     process.env.USERPROFILE,
   ];
-
-  try {
-    candidates.push(os.homedir());
-  } catch {
-    // Ignore and fall back to env hints below.
-  }
 
   for (const userName of userNames) {
     candidates.push(`/Users/${userName}`);

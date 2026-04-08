@@ -6,12 +6,16 @@
  * 2. If @channel is used, wake all agents that are channel members
  * 3. If @here is used, wake all agents that are channel members
  * 4. Filter out the sender to avoid self-replies
+ * 5. Auto-create a board issue so every execution has kanban traceability
  */
 
-import { eq, and, isNull } from "drizzle-orm";
+import { eq, and, isNull, notInArray, sql } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
-import { channelMembers, agents } from "@clawdev/db";
+import { channelMembers, agents, issues, companies } from "@clawdev/db";
 import { logger } from "../middleware/logger.js";
+
+/** Agent statuses that should NOT be woken up. */
+const EXCLUDED_STATUSES = ["terminated", "paused", "pending_approval"];
 
 type WakeupTriggerDetail = "manual" | "ping" | "callback" | "system";
 type WakeupSource = "timer" | "assignment" | "on_demand" | "automation";
@@ -47,6 +51,65 @@ export interface ChannelMessageContext {
 }
 
 /**
+ * Create a board issue for a channel-message-triggered wakeup.
+ * Returns the issue ID (or null if creation fails).
+ */
+async function createBoardIssueForChannelMessage(
+  db: Db,
+  companyId: string,
+  agentId: string,
+  msg: ChannelMessageContext,
+): Promise<string | null> {
+  try {
+    // Derive a short title from the message body (max 80 chars)
+    const rawTitle = msg.body.replace(/\n/g, " ").trim();
+    const title = rawTitle.length > 80 ? rawTitle.slice(0, 77) + "..." : rawTitle || "Channel task";
+
+    // Generate issue identifier
+    const [company] = await db
+      .update(companies)
+      .set({ issueCounter: sql`${companies.issueCounter} + 1` })
+      .where(eq(companies.id, companyId))
+      .returning({ issueCounter: companies.issueCounter, issuePrefix: companies.issuePrefix });
+
+    if (!company) return null;
+
+    const identifier = `${company.issuePrefix}-${company.issueCounter}`;
+
+    const [issue] = await db
+      .insert(issues)
+      .values({
+        companyId,
+        title,
+        description: msg.body.length > 200
+          ? `From channel message (${msg.channelName ?? "DM"}):\n\n${msg.body}`
+          : null,
+        status: "in_progress",
+        priority: "medium",
+        assigneeAgentId: agentId,
+        originKind: "channel_message",
+        originId: msg.messageId,
+        issueNumber: company.issueCounter,
+        identifier,
+        createdByAgentId: msg.senderAgentId ?? null,
+        createdByUserId: msg.senderUserId ?? null,
+        startedAt: new Date(),
+      } as typeof issues.$inferInsert)
+      .returning();
+
+    logger.info(
+      { issueId: issue.id, identifier, agentId, channelId: msg.channelId },
+      `auto-created board issue ${identifier} for channel message`,
+    );
+
+    return issue.id;
+  } catch (err) {
+    logger.warn({ err, companyId, agentId }, "failed to auto-create board issue for channel message");
+    return null;
+  }
+}
+
+/**
  * Queue agent wakeups based on a new channel message.
  * Returns the list of agent IDs that were woken up.
  */
@@ -78,41 +141,59 @@ export async function queueChannelMessageWakeups(
     }
   }
 
-  // 3. If no explicit mentions but sender is a human, wake all channel members
-  //    so at least one agent can respond
+  // 3. If no explicit mentions but sender is a human, wake ONLY the CEO
+  //    (the orchestrator). Other agents only respond when @mentioned or
+  //    involved in an active task/delegation.
   if (
     agentIdsToWake.size === 0 &&
     msg.senderUserId &&
     !msg.senderAgentId
   ) {
-    const members = await db
-      .select({ agentId: channelMembers.agentId })
-      .from(channelMembers)
+    // Find the CEO agent for this company (any non-terminated/non-paused status)
+    const [ceoAgent] = await db
+      .select({ id: agents.id })
+      .from(agents)
       .where(
         and(
-          eq(channelMembers.channelId, msg.channelId),
-          isNull(channelMembers.leftAt),
+          eq(agents.companyId, msg.companyId),
+          eq(agents.role, "ceo"),
+          notInArray(agents.status, EXCLUDED_STATUSES),
         ),
-      );
+      )
+      .limit(1);
 
-    // If no members, try to find agents for this company and pick one
-    if (members.length > 0) {
-      for (const m of members) {
-        if (m.agentId) agentIdsToWake.add(m.agentId);
-      }
+    if (ceoAgent) {
+      agentIdsToWake.add(ceoAgent.id);
     } else {
-      // Fallback: pick the first active agent in the company
-      const [fallbackAgent] = await db
-        .select({ id: agents.id })
-        .from(agents)
+      // Fallback: if no CEO, check channel members
+      const members = await db
+        .select({ agentId: channelMembers.agentId })
+        .from(channelMembers)
         .where(
           and(
-            eq(agents.companyId, msg.companyId),
-            eq(agents.status, "active"),
+            eq(channelMembers.channelId, msg.channelId),
+            isNull(channelMembers.leftAt),
           ),
-        )
-        .limit(1);
-      if (fallbackAgent) agentIdsToWake.add(fallbackAgent.id);
+        );
+
+      if (members.length > 0) {
+        // Still only pick first member as fallback (not all)
+        const first = members[0];
+        if (first.agentId) agentIdsToWake.add(first.agentId);
+      } else {
+        // Last resort: pick the first available agent in the company
+        const [fallbackAgent] = await db
+          .select({ id: agents.id })
+          .from(agents)
+          .where(
+            and(
+              eq(agents.companyId, msg.companyId),
+              notInArray(agents.status, EXCLUDED_STATUSES),
+            ),
+          )
+          .limit(1);
+        if (fallbackAgent) agentIdsToWake.add(fallbackAgent.id);
+      }
     }
   }
 
@@ -123,10 +204,13 @@ export async function queueChannelMessageWakeups(
 
   if (agentIdsToWake.size === 0) return [];
 
-  // 5. Queue wakeups
+  // 5. Auto-create board issues and queue wakeups with issue context
   const wokenAgents: string[] = [];
   for (const agentId of agentIdsToWake) {
     try {
+      // Create a board issue for traceability — every agent run should be visible on the kanban
+      const issueId = await createBoardIssueForChannelMessage(db, msg.companyId, agentId, msg);
+
       await heartbeat.wakeup(agentId, {
         source: "automation",
         triggerDetail: "callback",
@@ -146,6 +230,8 @@ export async function queueChannelMessageWakeups(
           messageId: msg.messageId,
           threadId: msg.threadId ?? null,
           source: "channel_message",
+          // Link the run to the auto-created issue for kanban traceability
+          ...(issueId ? { issueId } : {}),
         },
       });
       wokenAgents.push(agentId);

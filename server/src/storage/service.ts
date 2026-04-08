@@ -1,5 +1,4 @@
-import { createHash, randomUUID } from "node:crypto";
-import path from "node:path";
+import path from "path";
 import type { StorageService, StorageProvider, PutFileInput, PutFileResult } from "./types.js";
 import { badRequest, forbidden, unprocessable } from "../errors.js";
 
@@ -53,8 +52,9 @@ function ensureCompanyPrefix(companyId: string, objectKey: string): void {
   }
 }
 
-function hashBuffer(input: Buffer): string {
-  return createHash("sha256").update(input).digest("hex");
+async function hashBuffer(input: Buffer): Promise<string> {
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(input));
+  return Buffer.from(digest).toString("hex");
 }
 
 function buildObjectKey(companyId: string, namespace: string, originalFilename: string | null): string {
@@ -64,7 +64,7 @@ function buildObjectKey(companyId: string, namespace: string, originalFilename: 
   const month = String(now.getUTCMonth() + 1).padStart(2, "0");
   const day = String(now.getUTCDate()).padStart(2, "0");
   const { stem, ext } = splitFilename(originalFilename);
-  const suffix = randomUUID();
+  const suffix = crypto.randomUUID();
   const filename = `${suffix}-${stem}${ext}`;
   return `${companyId}/${ns}/${year}/${month}/${day}/${filename}`;
 }
@@ -108,7 +108,7 @@ export function createStorageService(provider: StorageProvider): StorageService 
         objectKey,
         contentType,
         byteSize,
-        sha256: hashBuffer(input.body),
+        sha256: await hashBuffer(input.body),
         originalFilename: input.originalFilename,
       };
     },

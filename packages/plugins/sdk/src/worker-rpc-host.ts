@@ -34,9 +34,7 @@
  * @see PLUGIN_SPEC.md §14 — SDK Surface
  */
 
-import path from "node:path";
-import { createInterface, type Interface as ReadlineInterface } from "node:readline";
-import { fileURLToPath } from "node:url";
+import path from "path";
 
 import type { ClawDevPluginManifestV1 } from "@clawdev/shared";
 
@@ -111,13 +109,13 @@ export interface WorkerRpcHostOptions {
    * Input stream to read JSON-RPC messages from.
    * Defaults to `process.stdin`.
    */
-  stdin?: NodeJS.ReadableStream;
+  stdin?: RpcReadableStream;
 
   /**
    * Output stream to write JSON-RPC messages to.
    * Defaults to `process.stdout`.
    */
-  stdout?: NodeJS.WritableStream;
+  stdout?: RpcWritableStream;
 
   /**
    * Default timeout (ms) for worker→host RPC calls.
@@ -171,8 +169,19 @@ const DEFAULT_RPC_TIMEOUT_MS = 30_000;
  * and the host is started with these streams. Used by tests.
  */
 export interface RunWorkerOptions {
-  stdin?: NodeJS.ReadableStream;
-  stdout?: NodeJS.WritableStream;
+  stdin?: RpcReadableStream;
+  stdout?: RpcWritableStream;
+}
+
+interface RpcReadableStream {
+  on(event: "data", listener: (chunk: string | Uint8Array) => void): unknown;
+  on(event: "close" | "end", listener: () => void): unknown;
+  resume?(): unknown;
+}
+
+interface RpcWritableStream {
+  write(chunk: string | Uint8Array): unknown;
+  end?: () => unknown;
 }
 
 /**
@@ -209,7 +218,7 @@ export function runWorker(
   }
   const entry = process.argv[1];
   if (typeof entry !== "string") return;
-  const thisFile = path.resolve(fileURLToPath(moduleUrl));
+  const thisFile = path.resolve(new URL(moduleUrl).pathname);
   const entryPath = path.resolve(entry);
   if (thisFile === entryPath) {
     startWorkerRpcHost({ plugin });
@@ -927,10 +936,10 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
     }
 
     // Schedule cleanup after we send the response.
-    // Use setImmediate to let the response flush before exiting.
+    // Use a microtask to let the response flush before exiting.
     // Only call process.exit() when running with real process streams.
     // When custom streams are provided (tests), just clean up.
-    setImmediate(() => {
+    queueMicrotask(() => {
       cleanup();
       if (!options.stdin && !options.stdout) {
         process.exit(0);
@@ -1158,12 +1167,6 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   function cleanup(): void {
     running = false;
 
-    // Close readline
-    if (readline) {
-      readline.close();
-      readline = null;
-    }
-
     // Reject all pending outbound calls
     for (const [id, pending] of pendingRequests) {
       clearTimeout(pending.timer);
@@ -1183,15 +1186,24 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
   // Bootstrap: wire up stdin readline
   // -----------------------------------------------------------------------
 
-  let readline: ReadlineInterface | null = createInterface({
-    input: stdinStream as NodeJS.ReadableStream,
-    crlfDelay: Infinity,
+  let buffer = "";
+  const decodeChunk = (chunk: string | Uint8Array): string => (
+    typeof chunk === "string" ? chunk : new TextDecoder().decode(chunk)
+  );
+  const flushLines = () => {
+    let index = buffer.indexOf("\n");
+    while (index !== -1) {
+      const line = buffer.slice(0, index).replace(/\r$/, "");
+      buffer = buffer.slice(index + 1);
+      handleLine(line);
+      index = buffer.indexOf("\n");
+    }
+  };
+  stdinStream.on("data", (chunk: string | Uint8Array) => {
+    buffer += decodeChunk(chunk);
+    flushLines();
   });
-
-  readline.on("line", handleLine);
-
-  // If stdin closes, we should exit gracefully
-  readline.on("close", () => {
+  stdinStream.on("end", () => {
     if (running) {
       cleanup();
       if (!options.stdin && !options.stdout) {
@@ -1199,12 +1211,21 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       }
     }
   });
+  stdinStream.on("close", () => {
+    if (running) {
+      cleanup();
+      if (!options.stdin && !options.stdout) {
+        process.exit(0);
+      }
+    }
+  });
+  stdinStream.resume?.();
 
   // Handle uncaught errors in the worker process.
   // Only install these when using the real process streams (not in tests
   // where the caller provides custom streams).
   if (!options.stdin && !options.stdout) {
-    process.on("uncaughtException", (err) => {
+    process.on("uncaughtException", (err: Error) => {
       notifyHost("log", {
         level: "error",
         message: `Uncaught exception: ${err.message}`,
@@ -1214,7 +1235,7 @@ export function startWorkerRpcHost(options: WorkerRpcHostOptions): WorkerRpcHost
       setTimeout(() => process.exit(1), 100);
     });
 
-    process.on("unhandledRejection", (reason) => {
+    process.on("unhandledRejection", (reason: unknown) => {
       const message = reason instanceof Error ? reason.message : String(reason);
       const stack = reason instanceof Error ? reason.stack : undefined;
       notifyHost("log", {

@@ -141,7 +141,7 @@ next_stable_version() {
   node - "$release_date" "$@" <<'NODE'
 const input = process.argv[2];
 const packageNames = process.argv.slice(3);
-const { execSync } = require("node:child_process");
+const { execSync } = require("child_process");
 
 const date = input ? new Date(`${input}T00:00:00Z`) : new Date();
 if (Number.isNaN(date.getTime())) {
@@ -188,7 +188,7 @@ next_canary_version() {
   node - "$stable_version" "$@" <<'NODE'
 const stable = process.argv[2];
 const packageNames = process.argv.slice(3);
-const { execSync } = require("node:child_process");
+const { execSync } = require("child_process");
 
 const pattern = new RegExp(`^${stable.replace(/\./g, '\\.')}-canary\\.(\\d+)$`);
 let max = -1;

@@ -1,5 +1,8 @@
 import type { ServerAdapterModule } from "./types.js";
 import { getAdapterSessionManagement, type AdapterModel } from "@clawdev/adapter-utils";
+import { logger } from "../middleware/logger.js";
+
+const log = logger.child({ service: "adapter-registry" });
 import {
   execute as claudeExecute,
   listClaudeSkills,
@@ -62,6 +65,14 @@ import {
   agentConfigurationDoc as openclawGatewayAgentConfigurationDoc,
   models as openclawGatewayModels,
 } from "@clawdev/adapter-openclaw-gateway";
+import {
+  execute as openAICompatibleLocalExecute,
+  testEnvironment as openAICompatibleLocalTestEnvironment,
+  listOpenAICompatibleModels,
+} from "@clawdev/adapter-openai-compatible-local/server";
+import {
+  agentConfigurationDoc as openAICompatibleLocalAgentConfigurationDoc,
+} from "@clawdev/adapter-openai-compatible-local";
 import { listCodexModels } from "./codex-models.js";
 import { listCursorModels } from "./cursor-models.js";
 import {
@@ -90,6 +101,12 @@ const claudeLocalAdapter: ServerAdapterModule = {
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: claudeAgentConfigurationDoc,
   getQuotaWindows: claudeGetQuotaWindows,
+  readiness: {
+    minimumVersion: "0.0.0",
+    versionCommand: "claude --version",
+    installCommand: "curl -fsSL https://claude.ai/install | sh",
+    upgradeCommand: "claude update",
+  },
 };
 
 const codexLocalAdapter: ServerAdapterModule = {
@@ -105,6 +122,12 @@ const codexLocalAdapter: ServerAdapterModule = {
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: codexAgentConfigurationDoc,
   getQuotaWindows: codexGetQuotaWindows,
+  readiness: {
+    minimumVersion: "0.0.0",
+    versionCommand: "codex --version",
+    installCommand: "npm install -g @openai/codex",
+    upgradeCommand: "npm install -g @openai/codex@latest",
+  },
 };
 
 const copilotLocalAdapter: ServerAdapterModule = {
@@ -119,6 +142,12 @@ const copilotLocalAdapter: ServerAdapterModule = {
   listModels: listCopilotModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: copilotAgentConfigurationDoc,
+  readiness: {
+    minimumVersion: "0.0.0",
+    versionCommand: "copilot --version",
+    installCommand: "gh extension install github/copilot-cli",
+    upgradeCommand: "gh extension upgrade github/copilot-cli",
+  },
 };
 
 const cursorLocalAdapter: ServerAdapterModule = {
@@ -133,6 +162,12 @@ const cursorLocalAdapter: ServerAdapterModule = {
   listModels: listCursorModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: cursorAgentConfigurationDoc,
+  readiness: {
+    minimumVersion: "0.0.0",
+    versionCommand: "cursor-agent --version",
+    installCommand: "curl -fsSL https://cursor.com/install | sh",
+    upgradeCommand: "cursor-agent update",
+  },
 };
 
 const geminiLocalAdapter: ServerAdapterModule = {
@@ -146,6 +181,12 @@ const geminiLocalAdapter: ServerAdapterModule = {
   models: geminiModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: geminiAgentConfigurationDoc,
+  readiness: {
+    minimumVersion: "0.0.0",
+    versionCommand: "gemini --version",
+    installCommand: "npm install -g @google/gemini-cli",
+    upgradeCommand: "npm install -g @google/gemini-cli@latest",
+  },
 };
 
 const openclawGatewayAdapter: ServerAdapterModule = {
@@ -155,6 +196,16 @@ const openclawGatewayAdapter: ServerAdapterModule = {
   models: openclawGatewayModels,
   supportsLocalAgentJwt: false,
   agentConfigurationDoc: openclawGatewayAgentConfigurationDoc,
+};
+
+const openAICompatibleLocalAdapter: ServerAdapterModule = {
+  type: "openai_compatible_local",
+  execute: openAICompatibleLocalExecute,
+  testEnvironment: openAICompatibleLocalTestEnvironment,
+  models: [],
+  listModels: listOpenAICompatibleModels,
+  supportsLocalAgentJwt: false,
+  agentConfigurationDoc: openAICompatibleLocalAgentConfigurationDoc,
 };
 
 const openCodeLocalAdapter: ServerAdapterModule = {
@@ -169,6 +220,12 @@ const openCodeLocalAdapter: ServerAdapterModule = {
   listModels: listOpenCodeModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: openCodeAgentConfigurationDoc,
+  readiness: {
+    minimumVersion: "1.3.5",
+    versionCommand: "opencode --version",
+    installCommand: "npm install -g opencode",
+    upgradeCommand: "npm install -g opencode@latest",
+  },
 };
 
 const piLocalAdapter: ServerAdapterModule = {
@@ -183,6 +240,12 @@ const piLocalAdapter: ServerAdapterModule = {
   listModels: listPiModels,
   supportsLocalAgentJwt: true,
   agentConfigurationDoc: piAgentConfigurationDoc,
+  readiness: {
+    minimumVersion: "0.63.1",
+    versionCommand: "pi --version",
+    installCommand: "npm install -g pi",
+    upgradeCommand: "npm install -g pi@latest",
+  },
 };
 
 const adaptersByType = new Map<string, ServerAdapterModule>(
@@ -195,7 +258,8 @@ const adaptersByType = new Map<string, ServerAdapterModule>(
     cursorLocalAdapter,
     geminiLocalAdapter,
     openclawGatewayAdapter,
-    processAdapter,
+    openAICompatibleLocalAdapter,
+  processAdapter,
     httpAdapter,
   ].map((a) => [a.type, a]),
 );
@@ -217,7 +281,11 @@ export async function listAdapterModels(type: string): Promise<AdapterModel[]> {
       const discovered = await adapter.listModels();
       if (discovered.length > 0) return discovered;
     } catch (err) {
-      console.warn(`[registry] listModels for ${type} failed, using static fallback:`, err instanceof Error ? err.message : err);
+      const errMsg = err instanceof Error ? err.message : String(err);
+      log.warn(
+        { category: "adapter", adapterType: type, err: errMsg },
+        "listModels failed, using static fallback",
+      );
     }
   }
   return adapter.models ?? [];

@@ -62,7 +62,7 @@ export function sidebarBadgeRoutes(db: Db) {
 
           return badges;
         } catch (err) {
-          logger.error("GET /companies/:companyId/sidebar-badges error", err);
+          logger.error({ err: err }, "GET /companies/:companyId/sidebar-badges error");
           throw err;
         }
       },

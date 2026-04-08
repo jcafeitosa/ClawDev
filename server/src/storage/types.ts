@@ -1,5 +1,4 @@
 import type { StorageProvider as StorageProviderId } from "@clawdev/shared";
-import type { Readable } from "node:stream";
 
 export interface PutObjectInput {
   objectKey: string;
@@ -13,7 +12,7 @@ export interface GetObjectInput {
 }
 
 export interface GetObjectResult {
-  stream: Readable;
+  stream: ReadableStream<Uint8Array>;
   contentType?: string;
   contentLength?: number;
   etag?: string;

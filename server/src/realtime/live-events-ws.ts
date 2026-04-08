@@ -14,7 +14,7 @@
  * - Automatic connection cleanup
  */
 
-import { createHash, randomUUID } from "node:crypto";
+// Use built-in Web Crypto / global UUID support on Bun.
 import { Elysia, t } from "elysia";
 // Bun-native runtime — no adapter needed
 import type { Db } from "@clawdev/db";
@@ -27,8 +27,9 @@ import { subscribeCompanyLiveEvents } from "../services/live-events.js";
 
 const log = logger.child({ service: "live-events-ws" });
 
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
+async function hashToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Buffer.from(digest).toString("hex");
 }
 
 interface WsUpgradeContext {
@@ -113,7 +114,7 @@ export function liveEventsElysiaWs(
         }
 
         // Token-based auth (agent API key)
-        const tokenHash = hashToken(token);
+        const tokenHash = await hashToken(token);
         const key = await db
           .select()
           .from(agentApiKeys)
@@ -136,12 +137,12 @@ export function liveEventsElysiaWs(
         try {
           const companyId = ws.data?.params?.companyId;
           if (!companyId) {
-            log.warn({ wsId: randomUUID() }, "WebSocket opened without company context");
+            log.warn({ wsId: crypto.randomUUID() }, "WebSocket opened without company context");
             ws.close();
             return;
           }
 
-          const wsId = randomUUID();
+          const wsId = crypto.randomUUID();
           log.info({ companyId, wsId }, "WebSocket connected");
 
           // Subscribe to live events for this company

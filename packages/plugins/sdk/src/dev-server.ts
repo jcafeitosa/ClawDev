@@ -1,8 +1,6 @@
-import { createReadStream, existsSync, statSync, watch } from "node:fs";
-import { mkdir, readdir, stat } from "node:fs/promises";
-import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type { AddressInfo } from "node:net";
-import path from "node:path";
+import { existsSync } from "fs";
+import { mkdir, readdir, stat } from "fs/promises";
+import path from "path";
 
 export interface PluginDevServerOptions {
   /** Plugin project root. Defaults to `process.cwd()`. */
@@ -44,16 +42,14 @@ function normalizeFilePath(baseDir: string, reqPath: string): string {
   return absolute;
 }
 
-function send404(res: ServerResponse) {
-  res.statusCode = 404;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify({ error: "Not found" }));
-}
-
-function sendJson(res: ServerResponse, value: unknown) {
-  res.statusCode = 200;
-  res.setHeader("Content-Type", "application/json; charset=utf-8");
-  res.end(JSON.stringify(value));
+function sendJson(value: unknown, init?: ResponseInit): Response {
+  return new Response(JSON.stringify(value), {
+    status: init?.status ?? 200,
+    headers: {
+      "Content-Type": "application/json; charset=utf-8",
+      ...(init?.headers ?? {}),
+    },
+  });
 }
 
 async function ensureUiDir(uiDir: string): Promise<void> {
@@ -80,40 +76,61 @@ function snapshotSignature(rows: Array<{ file: string; mtimeMs: number }>): stri
 }
 
 async function startUiWatcher(uiDir: string, onReload: (filePath: string) => void): Promise<Closeable> {
-  try {
-    // macOS/Windows support recursive native watching.
-    const watcher = watch(uiDir, { recursive: true }, (_eventType, filename) => {
-      if (!filename) return;
-      onReload(path.join(uiDir, filename));
-    });
-    return watcher;
-  } catch {
-    // Linux may reject recursive watch. Fall back to polling snapshots.
-    let previous = snapshotSignature(
-      (await getUiBuildSnapshot(path.dirname(uiDir), path.basename(uiDir))).map((row) => ({
-        file: row.file,
-        mtimeMs: row.mtimeMs,
-      })),
-    );
+  let previous = snapshotSignature(
+    (await getUiBuildSnapshot(path.dirname(uiDir), path.basename(uiDir))).map((row) => ({
+      file: row.file,
+      mtimeMs: row.mtimeMs,
+    })),
+  );
 
-    const timer = setInterval(async () => {
-      try {
-        const nextRows = await getUiBuildSnapshot(path.dirname(uiDir), path.basename(uiDir));
-        const next = snapshotSignature(nextRows);
-        if (next === previous) return;
-        previous = next;
-        onReload("__snapshot__");
-      } catch {
-        // Ignore transient read errors while bundlers are writing files.
-      }
-    }, 500);
+  const timer = setInterval(async () => {
+    try {
+      const nextRows = await getUiBuildSnapshot(path.dirname(uiDir), path.basename(uiDir));
+      const next = snapshotSignature(nextRows);
+      if (next === previous) return;
+      previous = next;
+      onReload("__snapshot__");
+    } catch {
+      // Ignore transient read errors while bundlers are writing files.
+    }
+  }, 500);
 
-    return {
-      close() {
-        clearInterval(timer);
+  return {
+    close() {
+      clearInterval(timer);
+    },
+  };
+}
+
+function createSseResponse(onClose: (controller: ReadableStreamDefaultController<Uint8Array>) => void) {
+  const encoder = new TextEncoder();
+  let controllerRef: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controllerRef = controller;
+      controller.enqueue(encoder.encode(`event: connected\ndata: {"ok":true}\n\n`));
+      onClose(controller);
+    },
+    cancel() {
+      controllerRef = null;
+    },
+  });
+
+  return {
+    response: new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache, no-transform",
+        Connection: "keep-alive",
       },
-    };
-  }
+    }),
+    write(controller: ReadableStreamDefaultController<Uint8Array>, payload: string) {
+      controller.enqueue(encoder.encode(payload));
+    },
+    get controller() {
+      return controllerRef;
+    },
+  };
 }
 
 /**
@@ -132,77 +149,77 @@ export async function startPluginDevServer(options: PluginDevServerOptions = {})
 
   await ensureUiDir(uiDir);
 
-  const sseClients = new Set<ServerResponse>();
-
-  const handleRequest = async (req: IncomingMessage, res: ServerResponse) => {
-    const url = req.url ?? "/";
-
-    if (url === "/__clawdev__/health") {
-      sendJson(res, { ok: true, rootDir, uiDir });
-      return;
-    }
-
-    if (url === "/__clawdev__/events") {
-      res.writeHead(200, {
-        "Content-Type": "text/event-stream",
-        "Cache-Control": "no-cache, no-transform",
-        Connection: "keep-alive",
-      });
-      res.write(`event: connected\ndata: {"ok":true}\n\n`);
-      sseClients.add(res);
-      req.on("close", () => {
-        sseClients.delete(res);
-      });
-      return;
-    }
-
-    try {
-      const filePath = normalizeFilePath(uiDir, url);
-      if (!existsSync(filePath) || !statSync(filePath).isFile()) {
-        send404(res);
-        return;
-      }
-
-      res.statusCode = 200;
-      res.setHeader("Content-Type", contentType(filePath));
-      createReadStream(filePath).pipe(res);
-    } catch {
-      send404(res);
-    }
-  };
-
-  const server = createServer((req, res) => {
-    void handleRequest(req, res);
-  });
+  const sseClients = new Set<ReadableStreamDefaultController<Uint8Array>>();
+  const encoder = new TextEncoder();
 
   const notifyReload = (filePath: string) => {
     const rel = path.relative(uiDir, filePath);
     const payload = JSON.stringify({ type: "reload", file: rel, at: new Date().toISOString() });
     for (const client of sseClients) {
-      client.write(`event: reload\ndata: ${payload}\n\n`);
+      client.enqueue(encoder.encode(`event: reload\ndata: ${payload}\n\n`));
     }
   };
 
   const watcher = await startUiWatcher(uiDir, notifyReload);
 
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, host, () => resolve());
+  const server = Bun.serve({
+    hostname: host,
+    port,
+    idleTimeout: 0,
+    fetch(req: Request) {
+      const url = new URL(req.url);
+
+      if (url.pathname === "/__clawdev__/health") {
+        return sendJson({ ok: true, rootDir, uiDir });
+      }
+
+      if (url.pathname === "/__clawdev__/events") {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            sseClients.add(controller);
+            controller.enqueue(encoder.encode(`event: connected\ndata: {"ok":true}\n\n`));
+          },
+          cancel(controller) {
+            sseClients.delete(controller);
+          },
+        });
+        return new Response(stream, {
+          headers: {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-cache, no-transform",
+            Connection: "keep-alive",
+          },
+        });
+      }
+
+      try {
+        const filePath = normalizeFilePath(uiDir, url.pathname + url.search);
+        if (!existsSync(filePath)) {
+          return sendJson({ error: "Not found" }, { status: 404 });
+        }
+        const file = Bun.file(filePath);
+        if (!file.size) {
+          return sendJson({ error: "Not found" }, { status: 404 });
+        }
+        return new Response(file.stream(), {
+          headers: {
+            "Content-Type": contentType(filePath),
+          },
+        });
+      } catch {
+        return sendJson({ error: "Not found" }, { status: 404 });
+      }
+    },
   });
 
-  const address = server.address();
-  const actualPort = address && typeof address === "object" ? (address as AddressInfo).port : port;
-
   return {
-    url: `http://${host}:${actualPort}`,
+    url: `http://${host}:${server.port}`,
     async close() {
       watcher.close();
       for (const client of sseClients) {
-        client.end();
+        client.close();
       }
-      await new Promise<void>((resolve, reject) => {
-        server.close((err) => (err ? reject(err) : resolve()));
-      });
+      server.stop();
     },
   };
 }

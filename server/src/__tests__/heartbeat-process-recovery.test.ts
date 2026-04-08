@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { spawn, type ChildProcess } from "node:child_process";
+import { randomUUID } from "crypto";
+import { spawn, type ChildProcess } from "child_process";
 import { eq } from "drizzle-orm";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {

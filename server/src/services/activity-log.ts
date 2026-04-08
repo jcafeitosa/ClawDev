@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Db } from "@clawdev/db";
 import { activityLog } from "@clawdev/db";
 import { PLUGIN_EVENT_TYPES, type PluginEventType } from "@clawdev/shared";
@@ -71,7 +70,7 @@ export async function logActivity(db: Db, input: LogActivityInput) {
 
   if (_pluginEventBus && PLUGIN_EVENT_SET.has(input.action)) {
     const event: PluginEvent = {
-      eventId: randomUUID(),
+      eventId: crypto.randomUUID(),
       eventType: input.action as PluginEventType,
       occurredAt: new Date().toISOString(),
       actorId: input.actorId,

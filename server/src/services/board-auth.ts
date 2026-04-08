@@ -1,4 +1,3 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import { and, eq, isNull, sql } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import {
@@ -16,22 +15,30 @@ export const CLI_AUTH_CHALLENGE_TTL_MS = 10 * 60 * 1000;
 
 export type CliAuthChallengeStatus = "pending" | "approved" | "cancelled" | "expired";
 
-export function hashBearerToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
+export async function hashBearerToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Buffer.from(digest).toString("hex");
 }
 
 export function tokenHashesMatch(left: string, right: string) {
-  const leftBytes = Buffer.from(left, "utf8");
-  const rightBytes = Buffer.from(right, "utf8");
-  return leftBytes.length === rightBytes.length && timingSafeEqual(leftBytes, rightBytes);
+  if (left.length !== right.length) return false;
+  let diff = 0;
+  for (let i = 0; i < left.length; i += 1) {
+    diff |= left.charCodeAt(i)! ^ right.charCodeAt(i)!;
+  }
+  return diff === 0;
 }
 
 export function createBoardApiToken() {
-  return `pcp_board_${randomBytes(24).toString("hex")}`;
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return `pcp_board_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function createCliAuthSecret() {
-  return `pcp_cli_auth_${randomBytes(24).toString("hex")}`;
+  const bytes = new Uint8Array(24);
+  crypto.getRandomValues(bytes);
+  return `pcp_cli_auth_${Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")}`;
 }
 
 export function boardApiKeyExpiresAt(nowMs: number = Date.now()) {
@@ -127,7 +134,7 @@ export function boardAuthService(db: Db) {
   }
 
   async function findBoardApiKeyByToken(token: string) {
-    const tokenHash = hashBearerToken(token);
+    const tokenHash = await hashBearerToken(token);
     const now = new Date();
     return db
       .select()
@@ -173,12 +180,12 @@ export function boardAuthService(db: Db) {
     const created = await db
       .insert(cliAuthChallenges)
       .values({
-        secretHash: hashBearerToken(challengeSecret),
+      secretHash: await hashBearerToken(challengeSecret),
         command: input.command.trim(),
         clientName: input.clientName?.trim() || null,
         requestedAccess: input.requestedAccess,
         requestedCompanyId: input.requestedCompanyId?.trim() || null,
-        pendingKeyHash: hashBearerToken(pendingBoardToken),
+        pendingKeyHash: await hashBearerToken(pendingBoardToken),
         pendingKeyName,
         expiresAt,
       })
@@ -203,7 +210,7 @@ export function boardAuthService(db: Db) {
   async function getCliAuthChallengeBySecret(id: string, token: string) {
     const challenge = await getCliAuthChallenge(id);
     if (!challenge) return null;
-    if (!tokenHashesMatch(challenge.secretHash, hashBearerToken(token))) return null;
+    if (!tokenHashesMatch(challenge.secretHash, await hashBearerToken(token))) return null;
     return challenge;
   }
 
@@ -261,7 +268,7 @@ export function boardAuthService(db: Db) {
         .from(cliAuthChallenges)
         .where(eq(cliAuthChallenges.id, id))
         .then((rows) => rows[0] ?? null);
-      if (!challenge || !tokenHashesMatch(challenge.secretHash, hashBearerToken(token))) {
+      if (!challenge || !tokenHashesMatch(challenge.secretHash, await hashBearerToken(token))) {
         throw notFound("CLI auth challenge not found");
       }
 

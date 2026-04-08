@@ -25,7 +25,7 @@ export function instanceSettingsRoutes(db: Db) {
         assertCanManageInstanceSettings(ctx.actor);
         return await svc.getGeneral();
       } catch (err) {
-        logger.error("GET /instance/settings/general error", err);
+        logger.error({ err: err }, "GET /instance/settings/general error");
         throw err;
       }
     })
@@ -57,7 +57,7 @@ export function instanceSettingsRoutes(db: Db) {
           );
           return updated.general;
         } catch (err) {
-          logger.error("PATCH /instance/settings/general error", err);
+          logger.error({ err: err }, "PATCH /instance/settings/general error");
           throw err;
         }
       },
@@ -74,7 +74,7 @@ export function instanceSettingsRoutes(db: Db) {
         assertCanManageInstanceSettings(ctx.actor);
         return await svc.getExperimental();
       } catch (err) {
-        logger.error("GET /instance/settings/experimental error", err);
+        logger.error({ err: err }, "GET /instance/settings/experimental error");
         throw err;
       }
     })
@@ -106,7 +106,7 @@ export function instanceSettingsRoutes(db: Db) {
           );
           return updated.experimental;
         } catch (err) {
-          logger.error("PATCH /instance/settings/experimental error", err);
+          logger.error({ err: err }, "PATCH /instance/settings/experimental error");
           throw err;
         }
       },

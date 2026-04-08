@@ -61,6 +61,8 @@ Notes:
 - Output via --output-format stream-json.
 - Sessions resumed via --resume when stored session cwd matches the current cwd.
 - Auth via Google OAuth (gemini settings) or GEMINI_API_KEY / GOOGLE_API_KEY env var.
+- Command surface exposed by \`gemini --help\` includes: \`mcp\`, \`extensions\` / \`extension\`, \`skills\` / \`skill\`, \`hooks\` / \`hook\`, session listing/deletion, and \`--resume\`.
+- \`--approval-mode\`, \`--allowed-mcp-server-names\`, \`--include-directories\`, \`--acp\`, \`--output-format\`, and \`--screen-reader\` are the main execution and policy controls ClawDev maps into agent config.
 - Skills injected via symlinks into \`~/.gemini/skills/\` so the CLI can discover both credentials and skills in their natural location.
 - Approval mode defaults to "yolo" for unattended agent execution.
 `;

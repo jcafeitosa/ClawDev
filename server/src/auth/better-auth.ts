@@ -1,4 +1,4 @@
-import type { IncomingHttpHeaders } from "node:http";
+import type { IncomingHttpHeaders } from "http";
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { toNodeHandler } from "better-auth/node";
@@ -101,7 +101,7 @@ export function createBetterAuthInstance(db: Db, config: Config, trustedOrigins?
     delete (authConfig as { baseURL?: string }).baseURL;
   }
 
-  return betterAuth(authConfig);
+  return betterAuth(authConfig as Parameters<typeof betterAuth>[0]);
 }
 
 export async function resolveBetterAuthSessionFromHeaders(
@@ -134,4 +134,3 @@ export async function resolveBetterAuthSessionFromHeaders(
   if (!session || !user) return null;
   return { session, user };
 }
-

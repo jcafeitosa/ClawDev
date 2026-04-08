@@ -1,5 +1,5 @@
 import { and, eq, isNull, inArray, sql } from "drizzle-orm";
-import crypto from "node:crypto";
+import crypto from "crypto";
 import type { Db } from "@clawdev/db";
 import {
   companyMemberships,

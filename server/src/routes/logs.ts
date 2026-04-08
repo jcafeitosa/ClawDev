@@ -44,7 +44,7 @@ export function logsRoutes() {
               const tailer = new LogTailer();
 
               // Send initial batch of logs (last 100 lines)
-              const allLogs = tailer.readAll();
+              const allLogs = await tailer.readAll();
               const recentLogs = allLogs.slice(-100);
 
               for (const log of recentLogs) {

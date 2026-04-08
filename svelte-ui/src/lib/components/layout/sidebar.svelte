@@ -3,7 +3,7 @@
   import { goto } from "$app/navigation";
   import { PluginLauncherOutlet, PluginSlotOutlet } from "$lib/components/plugins/index.js";
   import { sidebarStore } from "$stores/sidebar.svelte.js";
-  import { companyStore, resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
+  import { companyStore, resolveCompanyIdFromPrefix, getCompanyPrefix } from "$stores/company.svelte.js";
   import { openNewIssueDialog } from "$components/new-issue-dialog.svelte";
   import { cn } from "$utils/index.js";
   import { slide } from "svelte/transition";
@@ -73,11 +73,12 @@
         (company) =>
           company.id === routePrefix ||
           company.slug === routePrefix ||
-          String(company.issuePrefix ?? "").trim().toUpperCase() === normalized,
+          String(company.issuePrefix ?? "").trim().toUpperCase() === normalized ||
+          getCompanyPrefix(company) === routePrefix,
       ) ?? null
     );
   });
-  const prefix = $derived(routePrefix || (routeCompany?.slug ?? companyStore.selectedCompany?.slug ?? companyStore.selectedCompanyId ?? ""));
+  const prefix = $derived(routePrefix || (routeCompany ? getCompanyPrefix(routeCompany) : (companyStore.selectedCompany ? getCompanyPrefix(companyStore.selectedCompany) : companyStore.selectedCompanyId ?? "")));
   const companyId = $derived(resolveCompanyIdFromPrefix(routePrefix) ?? routeCompany?.id ?? companyStore.selectedCompanyId ?? null);
   const companyName = $derived(routeCompany?.name ?? companyStore.selectedCompany?.name ?? "ClawDev");
   const companyBrandColor = $derived(
@@ -376,7 +377,7 @@
   function switchCompany(c: any) {
     companyStore.select(c.id, "manual");
     companySwitcherOpen = false;
-    goto(`/${c.slug ?? c.id}/dashboard`);
+    goto(`/${getCompanyPrefix(c)}/dashboard`);
   }
 
   // Close company switcher on outside click

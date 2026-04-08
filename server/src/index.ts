@@ -1,9 +1,8 @@
-import { existsSync, readFileSync, unlinkSync } from "node:fs";
-import { resolve } from "node:path";
-import { createServer } from "node:net";
-import { createInterface } from "node:readline/promises";
-import { stdin, stdout } from "node:process";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { existsSync, readFileSync, unlinkSync } from "fs";
+import { resolve } from "path";
+import { createInterface } from "readline/promises";
+import { stdin, stdout } from "process";
+import { fileURLToPath, pathToFileURL } from "url";
 import { and, eq } from "drizzle-orm";
 import {
   createDb,
@@ -87,15 +86,19 @@ type EmbeddedPostgresCtor = new (opts: {
 async function detectFreePort(port: number, hostname: string): Promise<number> {
   for (let candidate = Math.max(1, port); candidate <= 65535 && candidate < port + 20; candidate += 1) {
     const isFree = await new Promise<boolean>((resolve) => {
-      const server = createServer();
-      let settled = false;
-      const finish = (value: boolean) => {
-        if (settled) return;
-        settled = true;
-        server.close(() => resolve(value));
-      };
-      server.once("error", () => finish(false));
-      server.listen({ port: candidate, host: hostname }, () => finish(true));
+      try {
+        const server = Bun.serve({
+          hostname,
+          port: candidate,
+          fetch() {
+            return new Response("ok");
+          },
+        });
+        server.stop(true);
+        resolve(true);
+      } catch {
+        resolve(false);
+      }
     });
     if (isFree) return candidate;
   }
@@ -472,8 +475,8 @@ export async function startServer(): Promise<StartedServer> {
       }
     };
 
-    const startFreshEmbeddedPostgres = async (reason: string): Promise<number> => {
-      logger.warn(reason);
+    const startFreshEmbeddedPostgres = async (reason: string, level: "info" | "warn" = "warn"): Promise<number> => {
+      logger[level](reason);
       logger.info({ configuredPort, dataDir }, "Startup: starting fresh embedded PostgreSQL");
       const detectedPort = await detectFreePort(configuredPort, "127.0.0.1");
       if (detectedPort !== configuredPort) {
@@ -555,11 +558,11 @@ export async function startServer(): Promise<StartedServer> {
     const verifyExistingEmbeddedPostgres = async (): Promise<void> => {
       const configuredAdminConnectionString = `postgres://clawdev:clawdev@127.0.0.1:${configuredPort}/postgres`;
       const actualDataDir = await getPostgresDataDirectory(configuredAdminConnectionString);
-      if (
-        typeof actualDataDir !== "string" ||
-        resolve(actualDataDir) !== resolve(dataDir)
-      ) {
-        throw new Error("reachable postgres does not use the expected embedded data directory");
+      if (typeof actualDataDir !== "string") {
+        throw new Error(`no postgres reachable on port ${configuredPort}`);
+      }
+      if (resolve(actualDataDir) !== resolve(dataDir)) {
+        throw new Error(`reachable postgres uses data directory "${actualDataDir}" but expected "${dataDir}"`);
       }
       await ensurePostgresDatabase(configuredAdminConnectionString, "clawdev");
     };
@@ -594,9 +597,18 @@ export async function startServer(): Promise<StartedServer> {
           `Embedded PostgreSQL appears to already be reachable without a pid file; reusing existing server on configured port ${configuredPort}`,
         );
       } catch (err) {
-        port = await startFreshEmbeddedPostgres(
-          `Using embedded PostgreSQL because no DATABASE_URL set and the configured cluster was not reusable: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        const reason = err instanceof Error ? err.message : String(err);
+        const isUnreachable = reason.includes("no postgres reachable");
+        if (isUnreachable) {
+          port = await startFreshEmbeddedPostgres(
+            `Using embedded PostgreSQL because no DATABASE_URL set`,
+            "info",
+          );
+        } else {
+          port = await startFreshEmbeddedPostgres(
+            `Using embedded PostgreSQL because no DATABASE_URL set and the configured cluster was not reusable: ${reason}`,
+          );
+        }
       }
     }
   
@@ -1040,6 +1052,50 @@ export async function startServer(): Promise<StartedServer> {
     }, backupIntervalMs);
   }
   
+  // ── Hourly model discovery / probe cycle ──────────────────────────────
+  {
+    const { createModelCatalogService } = await import("./services/model-catalog.js");
+    const { createProviderStatusService } = await import("./services/provider-status.js");
+    const { createModelDiscoveryService } = await import("./services/model-discovery.js");
+    const catalog = createModelCatalogService(db as any);
+    const providerStatus = createProviderStatusService(db as any);
+    const discovery = createModelDiscoveryService(db as any, catalog, providerStatus);
+
+    const MODEL_DISCOVERY_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+    let discoveryInFlight = false;
+
+    const runScheduledDiscovery = async () => {
+      if (discoveryInFlight) return;
+      discoveryInFlight = true;
+      try {
+        const result = await discovery.runDiscoveryCycle();
+        logger.info(
+          { adaptersProbed: result.adaptersProbed, modelsDiscovered: result.modelsDiscovered, added: result.added, updated: result.updated },
+          "Scheduled model discovery cycle complete",
+        );
+      } catch (err) {
+        logger.error({ err }, "Scheduled model discovery cycle failed");
+      } finally {
+        discoveryInFlight = false;
+      }
+    };
+
+    // Run once at startup (after a short delay to let the server settle)
+    setTimeout(() => { void runScheduledDiscovery(); }, 10_000);
+    // Then repeat hourly
+    setInterval(() => { void runScheduledDiscovery(); }, MODEL_DISCOVERY_INTERVAL_MS);
+    logger.info("Model discovery scheduled every 1 hour");
+  }
+
+  // ── CEO auto-approval timer ─────────────────────────────────────────────
+  // When the owner does not approve a new hire within 1 minute, the CEO agent
+  // (or system) auto-approves the pending approval.
+  {
+    const { approvalAutoApproveService } = await import("./services/approval-auto-approve.js");
+    const autoApprove = approvalAutoApproveService(db as any);
+    autoApprove.start();
+  }
+
   // Start Elysia server (Bun native HTTP + WebSocket)
   const listenAttemptLimit = usePGliteRuntime ? 10 : 3;
   for (let attempt = 1; attempt <= listenAttemptLimit; attempt += 1) {
@@ -1082,7 +1138,7 @@ export async function startServer(): Promise<StartedServer> {
       });
   }
 
-  printStartupBanner({
+  await printStartupBanner({
     host: config.host,
     deploymentMode: config.deploymentMode,
     deploymentExposure: config.deploymentExposure,
@@ -1156,6 +1212,23 @@ export async function startServer(): Promise<StartedServer> {
 
   process.once("SIGINT", () => { void shutdown("SIGINT"); });
   process.once("SIGTERM", () => { void shutdown("SIGTERM"); });
+
+  // Catch unhandled exceptions and rejections
+  process.on("uncaughtException", (err) => {
+    logger.fatal(
+      { category: "system", err, stack: (err as any)?.stack },
+      "Uncaught exception — shutting down"
+    );
+    process.exit(1);
+  });
+
+  process.on("unhandledRejection", (reason) => {
+    logger.fatal(
+      { category: "system", reason },
+      "Unhandled rejection — shutting down"
+    );
+    process.exit(1);
+  });
 
   return {
     host: config.host,

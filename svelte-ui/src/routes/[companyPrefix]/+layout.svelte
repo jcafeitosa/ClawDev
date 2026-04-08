@@ -10,7 +10,7 @@
   import { themeStore } from "$stores/theme.svelte.js";
   import { liveEventsStore } from "$stores/live-events.svelte.js";
   import { keyboardShortcutsStore } from "$stores/keyboard-shortcuts.svelte.js";
-  import { resolveCompanyIdFromPrefix } from "$stores/company.svelte.js";
+  import { resolveCompanyIdFromPrefix, getCompanyPrefix } from "$stores/company.svelte.js";
   import { page } from "$app/stores";
   import { onMount, onDestroy } from "svelte";
 
@@ -52,7 +52,7 @@
     const prefix = $page.params.companyPrefix;
     if (prefix && companyStore.companies.length > 0) {
       const match = companyStore.companies.find(
-        (c) => c.slug === prefix || c.id === prefix,
+        (c) => c.slug === prefix || c.id === prefix || getCompanyPrefix(c) === prefix,
       );
       if (match && match.id !== companyStore.selectedCompanyId) {
         companyStore.select(match.id, "route_sync");

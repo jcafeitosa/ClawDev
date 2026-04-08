@@ -18,11 +18,11 @@
  *   EMBEDDING_DIMENSIONS=1024
  */
 
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { spawn, execSync } from "node:child_process";
-import os from "node:os";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+import { spawn, execSync } from "child_process";
+import os from "os";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");

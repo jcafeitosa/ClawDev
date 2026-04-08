@@ -1,5 +1,5 @@
-import { randomInt } from "node:crypto";
-import path from "node:path";
+import { randomInt } from "crypto";
+import path from "path";
 import type { ClawDevConfig } from "../config/schema.js";
 import { expandHomePrefix } from "../config/home.js";
 

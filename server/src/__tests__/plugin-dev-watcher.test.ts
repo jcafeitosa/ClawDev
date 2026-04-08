@@ -1,6 +1,6 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "fs";
+import os from "os";
+import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import { resolvePluginWatchTargets } from "../services/plugin-dev-watcher.js";
 

@@ -30,6 +30,39 @@ export interface CopilotParsedOutput {
   errorMessage: string | null;
 }
 
+export type CopilotErrorCode =
+  | "quota_exceeded"
+  | "auth_required"
+  | "session_not_found"
+  | "model_unavailable"
+  | "runtime_extract_failed"
+  | "rate_limited"
+  | null;
+
+export function classifyCopilotError(text: string): CopilotErrorCode {
+  const input = text.toLowerCase();
+  if (!input) return null;
+  if (input.includes("failed to extract bundled package") || (input.includes("eperm") && input.includes(".extracting-"))) {
+    return "runtime_extract_failed";
+  }
+  if (input.includes("quota") || input.includes("402") || input.includes("no quota")) {
+    return "quota_exceeded";
+  }
+  if (input.includes("rate limit") || input.includes("too many requests") || input.includes("429")) {
+    return "rate_limited";
+  }
+  if (input.includes("unauthorized") || input.includes("auth required") || input.includes("not authenticated")) {
+    return "auth_required";
+  }
+  if (input.includes("session not found") || input.includes("unknown session") || input.includes("invalid session")) {
+    return "session_not_found";
+  }
+  if (input.includes("not available") || input.includes("model not found") || input.includes("invalid model")) {
+    return "model_unavailable";
+  }
+  return null;
+}
+
 export function parseCopilotOutput(stdout: string): CopilotParsedOutput {
   let sessionId: string | null = null;
   const messages: string[] = [];

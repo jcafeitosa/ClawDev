@@ -46,10 +46,15 @@ let error = $state<string | null>(null);
 let loadedAt = $state<number | null>(null);
 let inFlight: Promise<PluginUiContribution[]> | null = null;
 
-async function fetchContributions(force = false) {
-  if (inFlight && !force) return inFlight;
+/** Minimum interval (ms) between non-forced fetches to prevent polling storms. */
+const CACHE_TTL_MS = 30_000;
 
-  if (contributions.length > 0 && loadedAt && !force) {
+async function fetchContributions(force = false) {
+  // Deduplicate concurrent calls
+  if (inFlight) return inFlight;
+
+  // Skip if cached data is still fresh (unless forced)
+  if (!force && loadedAt && Date.now() - loadedAt < CACHE_TTL_MS) {
     return Promise.resolve(contributions);
   }
 

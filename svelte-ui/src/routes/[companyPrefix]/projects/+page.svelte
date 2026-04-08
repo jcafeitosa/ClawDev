@@ -11,6 +11,7 @@
     getHierarchyPresetDefinition,
     getHierarchyPresetDepartments,
     getHierarchyPresetOperatingRules,
+    hasMeaningfulStructuredSddSection,
     type HierarchyPreset,
   } from '@clawdev/shared';
 
@@ -21,9 +22,12 @@
   let showCreate = $state(false);
   let newName = $state('');
   let newDescription = $state('');
-  let newSddSpec = $state('');
-  let newSddDesign = $state('');
-  let newSddValidation = $state('');
+  let newSddSpec = $state('Define the project scope, success criteria, and constraints for the first delivery slice.');
+  let newSddDesign = $state('Map the execution model, owners, and milestones so the project can be delivered safely.');
+  let newSddRisk = $state('The main risk is cross-team handoff drift, so keep the launch scope small and verify owners before execution.');
+  let newSddRollout = $state('Roll out in one controlled project slice, confirm the first milestone, and expand only after the plan is stable.');
+  let newSddRollback = $state('If the launch fails validation, pause execution, revert the incomplete work, and re-open the project for review.');
+  let newSddValidation = $state('Confirm the project can support execution, ownership, and handoff readiness before the first issue is created.');
   let creating = $state(false);
 
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
@@ -44,10 +48,17 @@
   const SDD_PROJECT_FLOW = [
     { label: 'Spec', description: 'Capture the project goal, boundaries, and success criteria.' },
     { label: 'Design', description: 'Define the structure, owners, and execution slices.' },
-    { label: 'Decompose', description: 'Split into safe milestones and issue-level work.' },
-    { label: 'Validate', description: 'Check risks, dependencies, and approval gates.' },
+    { label: 'Risk', description: 'Identify failure modes, dependencies, and mitigation paths.' },
+    { label: 'Rollout', description: 'Stage the launch in controlled slices with clear owners.' },
+    { label: 'Rollback', description: 'Define how to safely reverse the change if needed.' },
+    { label: 'Validate', description: 'Confirm the plan is safe, testable, and ready to execute.' },
     { label: 'Implement', description: 'Execute with clear ownership and review loops.' },
   ] as const;
+
+  const DEFAULT_PROJECT_SDD_RISK = 'The main risk is cross-team handoff drift, so keep the launch scope small and verify owners before execution.';
+  const DEFAULT_PROJECT_SDD_ROLLOUT = 'Roll out in one controlled project slice, confirm the first milestone, and expand only after the plan is stable.';
+  const DEFAULT_PROJECT_SDD_ROLLBACK = 'If the launch fails validation, pause execution, revert the incomplete work, and re-open the project for review.';
+  const DEFAULT_PROJECT_SDD_VALIDATION = 'Confirm the project can support execution, ownership, and handoff readiness before the first issue is created.';
 
   $effect(() => {
     if (!companyId) return;
@@ -72,16 +83,22 @@
           description: newDescription.trim() || undefined,
           sddSpec: newSddSpec.trim(),
           sddDesign: newSddDesign.trim(),
-          sddValidation: newSddValidation.trim() || undefined,
+          sddRisk: newSddRisk.trim(),
+          sddRollout: newSddRollout.trim(),
+          sddRollback: newSddRollback.trim(),
+          sddValidation: newSddValidation.trim(),
         }),
       });
       const p = await res.json();
       projects = [...projects, p];
       newName = '';
       newDescription = '';
-      newSddSpec = '';
-      newSddDesign = '';
-      newSddValidation = '';
+      newSddSpec = 'Define the project scope, success criteria, and constraints for the first delivery slice.';
+      newSddDesign = 'Map the execution model, owners, and milestones so the project can be delivered safely.';
+      newSddRisk = DEFAULT_PROJECT_SDD_RISK;
+      newSddRollout = DEFAULT_PROJECT_SDD_ROLLOUT;
+      newSddRollback = DEFAULT_PROJECT_SDD_ROLLBACK;
+      newSddValidation = DEFAULT_PROJECT_SDD_VALIDATION;
       showCreate = false;
     } catch (e) {
       console.error(e);
@@ -230,8 +247,40 @@
               ></textarea>
             </div>
           </div>
+          <div class="grid gap-4 lg:grid-cols-3">
+            <div>
+              <label for="proj-risk" class="block text-sm font-medium text-foreground mb-1">Risk *</label>
+              <textarea
+                id="proj-risk"
+                bind:value={newSddRisk}
+                rows="4"
+                placeholder="Describe the main delivery risks and mitigations."
+                class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+              ></textarea>
+            </div>
+            <div>
+              <label for="proj-rollout" class="block text-sm font-medium text-foreground mb-1">Rollout *</label>
+              <textarea
+                id="proj-rollout"
+                bind:value={newSddRollout}
+                rows="4"
+                placeholder="Explain the safe rollout path."
+                class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+              ></textarea>
+            </div>
+            <div>
+              <label for="proj-rollback" class="block text-sm font-medium text-foreground mb-1">Rollback *</label>
+              <textarea
+                id="proj-rollback"
+                bind:value={newSddRollback}
+                rows="4"
+                placeholder="Describe how to reverse the change safely."
+                class="w-full rounded-lg border border-border bg-accent/60 px-4 py-2 text-sm text-foreground placeholder-muted-foreground focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 resize-none"
+              ></textarea>
+            </div>
+          </div>
           <div>
-            <label for="proj-validation" class="block text-sm font-medium text-foreground mb-1">Validation</label>
+            <label for="proj-validation" class="block text-sm font-medium text-foreground mb-1">Validation *</label>
             <textarea
               id="proj-validation"
               bind:value={newSddValidation}
@@ -241,7 +290,19 @@
             ></textarea>
           </div>
           <div class="flex items-center gap-3">
-            <Button type="submit" disabled={creating || !newName.trim() || !newSddSpec.trim() || !newSddDesign.trim()}>
+            <Button
+              type="submit"
+              disabled={
+                creating ||
+                !newName.trim() ||
+                !hasMeaningfulStructuredSddSection(newSddSpec) ||
+                !hasMeaningfulStructuredSddSection(newSddDesign) ||
+                !hasMeaningfulStructuredSddSection(newSddRisk) ||
+                !hasMeaningfulStructuredSddSection(newSddRollout) ||
+                !hasMeaningfulStructuredSddSection(newSddRollback) ||
+                !hasMeaningfulStructuredSddSection(newSddValidation)
+              }
+            >
               {creating ? 'Creating...' : 'Create Project'}
             </Button>
             <Button variant="outline" type="button" onclick={() => (showCreate = false)}>

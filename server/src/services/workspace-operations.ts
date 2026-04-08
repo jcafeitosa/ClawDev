@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { Db } from "@clawdev/db";
 import { workspaceOperations } from "@clawdev/db";
 import type { WorkspaceOperation, WorkspaceOperationPhase, WorkspaceOperationStatus } from "@clawdev/shared";
@@ -111,7 +110,7 @@ export function workspaceOperationService(db: Db) {
             enabled: (await instanceSettings.getGeneral()).censorUsernameInLogs,
           };
           const startedAt = new Date();
-          const id = randomUUID();
+          const id = crypto.randomUUID();
           const handle = await logStore.begin({
             companyId: input.companyId,
             operationId: id,

@@ -75,9 +75,19 @@ Agent/Behavior fields:
 - agent (string, optional): custom agent name to use (--agent)
 - autopilot (boolean, optional): enable autopilot continuation in prompt mode
 - maxAutopilotContinues (number, optional): max continuation messages in autopilot
+- continueSession (boolean, optional): resume most recent session (--continue)
 - noAskUser (boolean, optional): disable ask_user tool — agent works autonomously
 - noCustomInstructions (boolean, optional): disable loading AGENTS.md and related files
 - experimental (boolean, optional): enable experimental features
+- disableParallelToolsExecution (boolean, optional): disable parallel tool execution
+- disallowTempDir (boolean, optional): prevent automatic temp directory access
+- enableReasoningSummaries (boolean, optional): request reasoning summaries for OpenAI models
+- stream (string, optional): streaming mode, "on" or "off"
+- sharePath (string, optional): write markdown share file after completion (--share)
+- shareGist (boolean, optional): upload transcript to secret gist (--share-gist)
+- logLevel (string, optional): cli log level (none|error|warning|info|debug|all|default)
+- logDir (string, optional): cli log directory path
+- pluginDirs (string[], optional): local plugin directories to load (--plugin-dir)
 
 MCP fields:
 - additionalMcpConfig (string, optional): JSON string or @filepath for additional MCP servers

@@ -1,7 +1,6 @@
-import { createHash } from "node:crypto";
-import { promises as fs } from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { promises as fs } from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 import { and, asc, eq } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import { companySkills } from "@clawdev/db";
@@ -203,7 +202,11 @@ export function normalizeGitHubSkillDirectory(
 }
 
 function hashSkillValue(value: string) {
-  return createHash("sha256").update(value).digest("hex").slice(0, 10);
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = Math.imul(31, hash) + value.charCodeAt(i);
+  }
+  return Math.abs(hash).toString(16).slice(0, 10);
 }
 
 function uniqueSkillSlug(baseSlug: string, usedSlugs: Set<string>) {

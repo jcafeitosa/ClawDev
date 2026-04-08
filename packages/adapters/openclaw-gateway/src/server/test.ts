@@ -4,7 +4,7 @@ import type {
   AdapterEnvironmentTestResult,
 } from "@clawdev/adapter-utils";
 import { asString, parseObject } from "@clawdev/adapter-utils/server-utils";
-import { randomUUID } from "node:crypto";
+import { randomUUID } from "crypto";
 import { WebSocket } from "ws";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {

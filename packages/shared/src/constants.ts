@@ -137,6 +137,21 @@ export const INBOX_MINE_ISSUE_STATUS_FILTER = INBOX_MINE_ISSUE_STATUSES.join(","
 export const ISSUE_PRIORITIES = ["critical", "high", "medium", "low"] as const;
 export type IssuePriority = (typeof ISSUE_PRIORITIES)[number];
 
+export const ISSUE_COMPLEXITIES = ["trivial", "low", "standard", "high", "critical"] as const;
+export type IssueComplexity = (typeof ISSUE_COMPLEXITIES)[number];
+
+export const MODEL_ROUTING_STRATEGIES = [
+  "pinned",
+  "cost_optimized",
+  "performance_optimized",
+  "availability_optimized",
+  "local_preferred",
+] as const;
+export type ModelRoutingStrategy = (typeof MODEL_ROUTING_STRATEGIES)[number];
+
+export const MODEL_ROUTING_CONSTRAINTS = ["any", "trivial", "low", "standard", "high", "critical"] as const;
+export type ModelRoutingConstraint = (typeof MODEL_ROUTING_CONSTRAINTS)[number];
+
 export const ISSUE_ORIGIN_KINDS = ["manual", "routine_execution"] as const;
 export type IssueOriginKind = (typeof ISSUE_ORIGIN_KINDS)[number];
 
@@ -350,6 +365,7 @@ export const LIVE_EVENT_TYPES = [
   "channel_member.joined",
   "channel_member.left",
   "channel.typing",
+  "agent.hook.fired",
 ] as const;
 export type LiveEventType = (typeof LIVE_EVENT_TYPES)[number];
 

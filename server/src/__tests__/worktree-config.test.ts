@@ -1,6 +1,6 @@
-import fs from "node:fs/promises";
-import os from "node:os";
-import path from "node:path";
+import fs from "fs/promises";
+import os from "os";
+import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   applyRuntimePortSelectionToConfig,
@@ -114,7 +114,7 @@ describe("worktree config repair", () => {
     delete process.env.CLAWDEV_CONFIG;
     delete process.env.CLAWDEV_CONTEXT;
 
-    const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
+    const result = await maybeRepairLegacyWorktreeConfigAndEnvFiles();
 
     expect(result).toEqual({
       repairedConfig: true,
@@ -198,7 +198,7 @@ describe("worktree config repair", () => {
     process.env.CLAWDEV_WORKTREE_NAME = "PAP-880-thumbs-capture-for-evals-feature";
     process.env.CLAWDEV_WORKTREES_DIR = isolatedHome;
 
-    const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
+    const result = await maybeRepairLegacyWorktreeConfigAndEnvFiles();
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
 
     expect(result.repairedConfig).toBe(true);
@@ -320,7 +320,7 @@ describe("worktree config repair", () => {
     process.env.CLAWDEV_WORKTREE_NAME = "PAP-884-ai-commits-component";
     process.env.CLAWDEV_WORKTREES_DIR = isolatedHome;
 
-    const result = maybeRepairLegacyWorktreeConfigAndEnvFiles();
+    const result = await maybeRepairLegacyWorktreeConfigAndEnvFiles();
     const repairedConfig = JSON.parse(await fs.readFile(configPath, "utf8"));
 
     expect(result.repairedConfig).toBe(true);
@@ -398,7 +398,7 @@ describe("worktree config repair", () => {
     process.env.CLAWDEV_INSTANCE_ID = "pap-878-create-a-mine-tab-in-inbox";
     process.env.CLAWDEV_CONFIG = configPath;
 
-    maybePersistWorktreeRuntimePorts({
+    await maybePersistWorktreeRuntimePorts({
       serverPort: 3103,
       databasePort: 54335,
     });

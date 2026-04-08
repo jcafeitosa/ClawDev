@@ -40,6 +40,27 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
   return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
 }
 
+function parseOpenCodeHelpCommands(stdout: string, stderr: string): string[] {
+  const text = `${stdout}\n${stderr}`;
+  const commands: string[] = [];
+  let inCommands = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/^Commands:$/i.test(line)) {
+      inCommands = true;
+      continue;
+    }
+    if (inCommands && /^Options:$/i.test(line)) break;
+    if (!inCommands) continue;
+    const match = line.match(/^opencode\s+([a-z][a-z0-9-]+)/i);
+    if (!match) continue;
+    const name = match[1]!.toLowerCase();
+    if (!commands.includes(name)) commands.push(name);
+  }
+  return commands;
+}
+
 function normalizeEnv(input: unknown): Record<string, string> {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return {};
   const env: Record<string, string> = {};
@@ -136,6 +157,34 @@ export async function testEnvironment(
 
     let modelValidationPassed = false;
     const configuredModel = asString(config.model, "").trim();
+
+    if (canRunProbe) {
+      try {
+        const helpResult = await runChildProcess(
+          `opencode-help-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          command,
+          ["--help"],
+          {
+            cwd,
+            env: runtimeEnv,
+            timeoutSec: 10,
+            graceSec: 3,
+            onLog: async () => {},
+          },
+        );
+        const helpCommands = parseOpenCodeHelpCommands(helpResult.stdout, helpResult.stderr);
+        if (helpCommands.length > 0) {
+          checks.push({
+            code: "opencode_command_surface",
+            level: "info",
+            message: "OpenCode CLI command surface detected",
+            detail: helpCommands.join(", "),
+          });
+        }
+      } catch {
+        // Help probe failed — skip silently
+      }
+    }
 
     if (canRunProbe && configuredModel) {
       try {

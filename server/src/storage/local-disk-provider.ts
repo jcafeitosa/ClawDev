@@ -1,5 +1,5 @@
-import { createReadStream, promises as fs } from "node:fs";
-import path from "node:path";
+import * as fs from "fs/promises";
+import path from "path";
 import type { StorageProvider, GetObjectResult, HeadObjectResult } from "./types.js";
 import { notFound, badRequest } from "../errors.js";
 
@@ -29,7 +29,8 @@ function resolveWithin(baseDir: string, objectKey: string): string {
 
 async function statOrNull(filePath: string) {
   try {
-    return await fs.stat(filePath);
+    const file = Bun.file(filePath);
+    return await file.exists() ? await file.stat() : null;
   } catch {
     return null;
   }
@@ -47,7 +48,7 @@ export function createLocalDiskStorageProvider(baseDir: string): StorageProvider
       await fs.mkdir(dir, { recursive: true });
 
       const tempPath = `${targetPath}.tmp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-      await fs.writeFile(tempPath, input.body);
+      await Bun.write(tempPath, input.body);
       await fs.rename(tempPath, targetPath);
     },
 
@@ -58,7 +59,7 @@ export function createLocalDiskStorageProvider(baseDir: string): StorageProvider
         throw notFound("Object not found");
       }
       return {
-        stream: createReadStream(filePath),
+        stream: Bun.file(filePath).stream(),
         contentLength: stat.size,
         lastModified: stat.mtime,
       };

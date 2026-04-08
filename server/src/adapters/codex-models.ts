@@ -2,9 +2,18 @@ import type { AdapterModel, AdapterModelStatus } from "./types.js";
 import { models as codexFallbackModels } from "@clawdev/adapter-codex-local";
 import { codexHomeDir } from "@clawdev/adapter-codex-local/server";
 import { readConfigFile } from "../config-file.js";
-import { runChildProcess } from "@clawdev/adapter-utils/server-utils";
-import fs from "node:fs/promises";
-import path from "node:path";
+import { runChildProcess, defaultPathForPlatform } from "@clawdev/adapter-utils/server-utils";
+import fs from "fs/promises";
+import path from "path";
+
+/** Build an env with a comprehensive PATH for CLI probe processes. */
+function probeEnv(): Record<string, string> {
+  const processPath = process.env.PATH ?? "";
+  const defaultPath = defaultPathForPlatform();
+  const homeBin = process.env.HOME ? `${process.env.HOME}/.local/bin:${process.env.HOME}/.bun/bin` : "";
+  const parts = new Set([...processPath.split(":"), ...defaultPath.split(":"), ...homeBin.split(":")].filter(Boolean));
+  return { PATH: [...parts].join(":") };
+}
 
 const OPENAI_MODELS_ENDPOINT = "https://api.openai.com/v1/models";
 const OPENAI_MODELS_TIMEOUT_MS = 5000;
@@ -115,7 +124,7 @@ async function probeCodexModel(modelId: string): Promise<ProbeResult> {
       ["exec", "--json", "--model", modelId, "--full-auto", "-"],
       {
         cwd: process.cwd(),
-        env: {},
+        env: probeEnv(),
         stdin: "hi",
         timeoutSec: CODEX_PROBE_TIMEOUT_SEC,
         graceSec: 2,
@@ -134,23 +143,19 @@ async function probeCodexModel(modelId: string): Promise<ProbeResult> {
       return { status: "unavailable", statusDetail: "Model not supported on this account" };
     }
 
-    // Check for successful response indicators
+    // Check for a real answer to the ping/pong test or a concrete model reply.
+    const hasPong = /pong/i.test(combined);
     const hasResponse =
       combined.includes("item.completed") ||
       combined.includes("turn.completed") ||
       combined.includes("assistant.") ||
       combined.includes('"type":"item.completed"');
 
-    if (hasResponse) {
+    if (hasPong || hasResponse) {
       return { status: "available", statusDetail: "Probe succeeded" };
     }
 
-    // Exit code 0 without errors is also a success
-    if ((proc.exitCode ?? 1) === 0) {
-      return { status: "available", statusDetail: "Probe succeeded" };
-    }
-
-    return { status: "unknown", statusDetail: combined.trim().slice(0, 200) || `exit code ${proc.exitCode}` };
+    return { status: "unknown", statusDetail: combined.trim().slice(0, 200) || `no response from model` };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     if (message.includes("timeout") || message.includes("TIMEOUT") || message.includes("timed out")) {

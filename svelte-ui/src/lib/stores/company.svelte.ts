@@ -10,6 +10,25 @@ export interface Company {
   [key: string]: unknown;
 }
 
+/** Derive a URL-friendly slug from a company name (e.g. "Acme Corp" → "acme-corp"). */
+function slugifyName(name: string): string {
+  return name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function matchesCompany(company: Company, prefix: string): boolean {
+  if (company.id === prefix) return true;
+  if (company.slug === prefix) return true;
+  const upperPrefix = prefix.toUpperCase();
+  if (String(company.issuePrefix ?? "").trim().toUpperCase() === upperPrefix) return true;
+  // Fallback: match by slugified company name (covers cases where slug column is absent)
+  if (slugifyName(company.name) === prefix) return true;
+  return false;
+}
+
 const STORAGE_KEY = "clawdev.selectedCompanyId";
 
 let companies = $state<Company[]>([]);
@@ -26,14 +45,7 @@ function resolveCompanyIdFromLocation(list: Company[]): string | null {
   const prefix = window.location.pathname.split("/").filter(Boolean)[0];
   if (!prefix) return null;
 
-  const normalizedPrefix = prefix.trim().toUpperCase();
-
-  const matchedCompanyId =
-    list.find((c) =>
-      c.id === prefix ||
-      c.slug === prefix ||
-      String(c.issuePrefix ?? "").trim().toUpperCase() === normalizedPrefix,
-    )?.id ?? null;
+  const matchedCompanyId = list.find((c) => matchesCompany(c, prefix))?.id ?? null;
   if (matchedCompanyId) return matchedCompanyId;
 
   // When we land directly on a UUID-prefixed company route before the
@@ -48,15 +60,15 @@ export function resolveCompanyIdFromPrefix(prefix: string | null | undefined): s
   const normalizedPrefix = String(prefix ?? "").trim();
   if (!normalizedPrefix) return null;
 
-  const upperPrefix = normalizedPrefix.toUpperCase();
   return (
-    companies.find(
-      (company) =>
-        company.id === normalizedPrefix ||
-        company.slug === normalizedPrefix ||
-        String(company.issuePrefix ?? "").trim().toUpperCase() === upperPrefix,
-    )?.id ?? (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedPrefix) ? normalizedPrefix : null)
+    companies.find((company) => matchesCompany(company, normalizedPrefix))?.id ??
+    (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(normalizedPrefix) ? normalizedPrefix : null)
   );
+}
+
+/** Returns the best URL prefix for a company (slug > slugified name > id). */
+export function getCompanyPrefix(company: Company): string {
+  return company.slug ?? (slugifyName(company.name) || company.id);
 }
 
 export const companyStore = {

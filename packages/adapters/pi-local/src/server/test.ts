@@ -40,6 +40,27 @@ function summarizeProbeDetail(stdout: string, stderr: string, parsedError: strin
   return clean.length > max ? `${clean.slice(0, max - 1)}...` : clean;
 }
 
+function parsePiHelpCommands(stdout: string, stderr: string): string[] {
+  const text = `${stdout}\n${stderr}`;
+  const commands: string[] = [];
+  let inCommands = false;
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (/^Commands:$/i.test(line)) {
+      inCommands = true;
+      continue;
+    }
+    if (inCommands && /^Options:$/i.test(line)) break;
+    if (!inCommands) continue;
+    const match = line.match(/^pi\s+([a-z][a-z0-9-]+)/i);
+    if (!match) continue;
+    const name = match[1]!.toLowerCase();
+    if (!commands.includes(name)) commands.push(name);
+  }
+  return commands;
+}
+
 function normalizeEnv(input: unknown): Record<string, string> {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return {};
   const env: Record<string, string> = {};
@@ -134,6 +155,28 @@ export async function testEnvironment(
 
   if (canRunProbe) {
     try {
+      const helpProbe = await runChildProcess(
+        `pi-help-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command,
+        ["--help"],
+        {
+          cwd,
+          env: runtimeEnv,
+          timeoutSec: 10,
+          graceSec: 3,
+          onLog: async () => {},
+        },
+      );
+      const helpCommands = parsePiHelpCommands(helpProbe.stdout, helpProbe.stderr);
+      if (helpCommands.length > 0) {
+        checks.push({
+          code: "pi_command_surface",
+          level: "info",
+          message: "Pi CLI command surface detected",
+          detail: helpCommands.join(", "),
+        });
+      }
+
       const discovered = await discoverPiModelsCached({ command, cwd, env: runtimeEnv });
       if (discovered.length > 0) {
         checks.push({

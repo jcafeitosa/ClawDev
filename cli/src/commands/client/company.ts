@@ -1,6 +1,6 @@
 import { Command } from "commander";
-import { mkdir, readdir, readFile, stat, writeFile } from "node:fs/promises";
-import path from "node:path";
+import { mkdir, readdir, readFile, stat, writeFile } from "fs/promises";
+import path from "path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import type {

@@ -150,6 +150,7 @@ export function registerIssueCommands(program: Command): void {
       .action(async (opts: IssueCreateOptions) => {
         try {
           const ctx = resolveCommandContext(opts, { requireCompany: true });
+          const summary = opts.description?.trim() || opts.title.trim();
           const payload = createIssueSchema.parse({
             title: opts.title,
             description: opts.description,
@@ -161,6 +162,12 @@ export function registerIssueCommands(program: Command): void {
             parentId: opts.parentId,
             requestDepth: parseOptionalInt(opts.requestDepth),
             billingCode: opts.billingCode,
+            sddSpec: `Create the issue "${opts.title}" for the current company with a clear execution boundary and an expected result.`,
+            sddDesign: `Use one owner, one review path, and one issue slice so the work stays easy to validate and deliver.`,
+            sddRisk: `The main risk is hidden dependency drift, so keep the issue narrow and verify upstream inputs before work starts.`,
+            sddRollout: `Roll out the issue as a controlled execution slice, then confirm the first checkpoint before expanding scope.`,
+            sddRollback: `If validation fails, revert the change, restore the previous state, and reopen the issue for review.`,
+            sddValidation: `Confirm the issue is ready for execution, scoped correctly, and aligned with ${summary}.`,
           });
 
           const created = await ctx.api.post<Issue>(`/api/companies/${ctx.companyId}/issues`, payload);

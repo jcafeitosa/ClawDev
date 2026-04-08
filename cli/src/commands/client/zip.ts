@@ -1,5 +1,5 @@
-import { inflateRawSync } from "node:zlib";
-import path from "node:path";
+import { inflateRawSync } from "zlib";
+import path from "path";
 import type { CompanyPortabilityFileEntry } from "@clawdev/shared";
 
 const textDecoder = new TextDecoder();

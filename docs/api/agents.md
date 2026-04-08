@@ -126,14 +126,16 @@ Returns the full organizational tree for the company.
 ## List Adapter Models
 
 ```
-GET /api/companies/{companyId}/adapters/{adapterType}/models
+GET /api/models?adapterType={adapterType}
 ```
 
-Returns selectable models for an adapter type.
+Returns the effective model list for an adapter type, composed from adapter discovery plus operational availability.
 
 - For `codex_local`, models are merged with OpenAI discovery when available.
 - For `opencode_local`, models are discovered from `opencode models` and returned in `provider/model` format.
-- `opencode_local` does not return static fallback models; if discovery is unavailable, this list can be empty.
+- For `pi_local`, models are discovered from `pi --list-models` and bridged providers are filtered to the adapters ClawDev does not already manage directly.
+- For `openai_compatible_local`, models are discovered from the OpenAI-compatible `/v1/models` endpoint.
+- The response includes only models the adapter reports as usable, plus server-side availability/cooldown normalization.
 
 ## Config Revisions
 

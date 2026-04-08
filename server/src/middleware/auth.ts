@@ -9,7 +9,6 @@
  * 5. Agent JWT (local adapter tokens)
  */
 
-import { createHash } from "node:crypto";
 import { Elysia } from "elysia";
 import { and, eq, isNull } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
@@ -21,8 +20,9 @@ import { logger } from "./logger.js";
 import { boardAuthService } from "../services/board-auth.js";
 import type { Actor } from "./authz.js";
 
-function hashToken(token: string) {
-  return createHash("sha256").update(token).digest("hex");
+async function hashToken(token: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(token));
+  return Buffer.from(digest).toString("hex");
 }
 
 export interface ActorMiddlewareOptions {
@@ -129,7 +129,7 @@ export function createActorResolver(db: Db, opts: ActorMiddlewareOptions) {
       }
 
       // Try agent API key (hashed)
-      const tokenHash = hashToken(token);
+      const tokenHash = await hashToken(token);
       const key = await db
         .select()
         .from(agentApiKeys)
@@ -138,7 +138,7 @@ export function createActorResolver(db: Db, opts: ActorMiddlewareOptions) {
 
       if (!key) {
         // Try local agent JWT
-        const claims = verifyLocalAgentJwt(token);
+        const claims = await verifyLocalAgentJwt(token);
         if (!claims) {
           return { actor };
         }

@@ -12,7 +12,7 @@ import { listServerAdapters } from "../adapters/index.js";
 import { agentService } from "../services/agents.js";
 import { assertBoard, type Actor } from "../middleware/authz.js";
 import { forbidden } from "../errors.js";
-import { logger } from "../logger.js";
+import { logger } from "../middleware/logger.js";
 
 function hasCreatePermission(agent: { role: string; permissions: Record<string, unknown> | null | undefined }) {
   if (isLevelCAgentRole(agent.role)) return true;
@@ -24,7 +24,9 @@ function hasCreatePermission(agent: { role: string; permissions: Record<string, 
  * Assert that the caller is either a board user or an agent with canCreateAgents.
  * LLM reflection endpoints are consumed by agents that need to discover configuration.
  */
-async function assertLlmAccess(actor: Actor, agentsSvc: ReturnType<typeof agentService>) {
+async function assertLlmAccess(actor: Actor | undefined, agentsSvc: ReturnType<typeof agentService>) {
+  // When mounted outside /api (e.g. /llms), actor may be undefined in local_trusted mode — allow access
+  if (!actor) return;
   if (actor.type === "board") return;
   if (actor.type === "agent" && actor.agentId) {
     const agent = await agentsSvc.getById(actor.agentId);
@@ -63,7 +65,7 @@ export function llmRoutes(db: Db) {
         set.headers["content-type"] = "text/plain; charset=utf-8";
         return lines.join("\n");
       } catch (error) {
-        logger.error("GET /agent-configuration.txt error", error);
+        logger.error({ err: error }, "GET /agent-configuration.txt error");
         throw error;
       }
     })
@@ -84,7 +86,7 @@ export function llmRoutes(db: Db) {
         set.headers["content-type"] = "text/plain; charset=utf-8";
         return lines.join("\n");
       } catch (error) {
-        logger.error("GET /agent-icons.txt error", error);
+        logger.error({ err: error }, "GET /agent-icons.txt error");
         throw error;
       }
     })
@@ -113,7 +115,7 @@ export function llmRoutes(db: Db) {
             `# ${adapterType} agent configuration\n\nNo adapter-specific documentation registered.`
           );
         } catch (error) {
-          logger.error("GET /agent-configuration/* error", error);
+          logger.error({ err: error }, "GET /agent-configuration/* error");
           throw error;
         }
       },

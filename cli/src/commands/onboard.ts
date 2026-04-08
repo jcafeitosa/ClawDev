@@ -1,5 +1,5 @@
 import * as p from "@clack/prompts";
-import path from "node:path";
+import path from "path";
 import pc from "picocolors";
 import {
   AUTH_BASE_URL_MODES,
@@ -421,7 +421,7 @@ export async function onboard(opts: OnboardOptions): Promise<void> {
     secrets,
   };
 
-  const keyResult = ensureLocalSecretsKeyFile(config, configPath);
+  const keyResult = await ensureLocalSecretsKeyFile(config, configPath);
   if (keyResult.status === "created") {
     p.log.success(`Created local secrets key file at ${pc.dim(keyResult.path)}`);
   } else if (keyResult.status === "existing") {

@@ -15,7 +15,8 @@
   // ---------------------------------------------------------------------------
   // Types
   // ---------------------------------------------------------------------------
-  interface Agent { id: string; name: string; }
+  interface Agent { id: string; name: string; role?: string; }
+  interface Project { id: string; name: string; status?: string; }
   interface IssueLabel { id: string; name: string; color?: string | null; }
   interface IssueActiveRun { id: string; status: string; agentId: string; }
   interface Issue {
@@ -28,9 +29,15 @@
     assigneeUserId?: string | null;
     assigneeName?: string | null;
     agentName?: string | null;
+    createdByAgentId?: string | null;
+    createdByUserId?: string | null;
     createdAt?: string;
     updatedAt?: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
     projectId?: string | null;
+    parentId?: string | null;
+    originKind?: string | null;
     labels?: IssueLabel[];
     activeRun?: IssueActiveRun | null;
     [key: string]: unknown;
@@ -40,9 +47,10 @@
     statuses: string[];
     priorities: string[];
     assignees: string[];
+    projects: string[];
     sortField: 'status' | 'priority' | 'title' | 'created' | 'updated';
     sortDir: 'asc' | 'desc';
-    groupBy: 'status' | 'priority' | 'assignee' | 'none';
+    groupBy: 'status' | 'priority' | 'assignee' | 'project' | 'none';
     viewMode: 'list' | 'board';
     collapsedGroups: string[];
   }
@@ -81,6 +89,7 @@
     { value: 'status', label: 'Status' },
     { value: 'priority', label: 'Priority' },
     { value: 'assignee', label: 'Assignee' },
+    { value: 'project', label: 'Project' },
     { value: 'none', label: 'None' },
   ] as const;
 
@@ -88,6 +97,7 @@
     statuses: [],
     priorities: [],
     assignees: [],
+    projects: [],
     sortField: 'updated',
     sortDir: 'desc',
     groupBy: 'none',
@@ -100,6 +110,7 @@
   // ---------------------------------------------------------------------------
   let issues = $state<Issue[]>([]);
   let agents = $state<Agent[]>([]);
+  let projects = $state<Project[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let searchQuery = $state('');
@@ -146,6 +157,12 @@
         return false;
       });
     }
+    if (viewState.projects.length > 0) {
+      list = list.filter(issue => {
+        if (viewState.projects.includes('__none') && !issue.projectId) return true;
+        return issue.projectId ? viewState.projects.includes(issue.projectId) : false;
+      });
+    }
     if (searchQuery.trim()) {
       const q = searchQuery.trim().toLowerCase();
       list = list.filter(i => (i.title ?? '').toLowerCase().includes(q) || (i.identifier ?? '').toLowerCase().includes(q));
@@ -172,6 +189,7 @@
       let key: string;
       if (viewState.groupBy === 'status') key = issue.status;
       else if (viewState.groupBy === 'priority') key = issue.priority ?? 'none';
+      else if (viewState.groupBy === 'project') key = issue.projectId ?? '__no_project';
       else key = issue.assigneeAgentId ?? (issue.assigneeUserId ? `__user:${issue.assigneeUserId}` : '__unassigned');
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(issue);
@@ -187,6 +205,8 @@
       if (viewState.groupBy === 'status') label = ALL_STATUSES.find(s => s.value === key)?.label ?? key;
       else if (viewState.groupBy === 'priority') label = ALL_PRIORITIES.find(p => p.value === key)?.label ?? (key === 'none' ? 'No Priority' : key);
       else if (key === '__unassigned') label = 'Unassigned';
+      else if (key === '__no_project') label = 'No Project';
+      else if (viewState.groupBy === 'project') label = projects.find(p => p.id === key)?.name ?? key.slice(0, 8);
       else label = agents.find(a => a.id === key)?.name ?? key.slice(0, 8);
       return { key, label, issues };
     });
@@ -195,7 +215,8 @@
   let activeFilterCount = $derived(
     (viewState.statuses.length > 0 ? 1 : 0) +
     (viewState.priorities.length > 0 ? 1 : 0) +
-    (viewState.assignees.length > 0 ? 1 : 0)
+    (viewState.assignees.length > 0 ? 1 : 0) +
+    (viewState.projects.length > 0 ? 1 : 0)
   );
 
   // ---------------------------------------------------------------------------
@@ -206,6 +227,7 @@
     void companyId;
     loadIssues();
     loadAgents();
+    loadProjects();
   });
 
   async function loadIssues() {
@@ -235,6 +257,17 @@
     } catch {}
   }
 
+  async function loadProjects() {
+    if (!companyId) return;
+    try {
+      const r = await api(`/api/companies/${companyId}/projects`);
+      if (r.ok) {
+        const d = await r.json();
+        projects = Array.isArray(d) ? d : d.projects ?? [];
+      }
+    } catch {}
+  }
+
   // ---------------------------------------------------------------------------
   // Helpers
   // ---------------------------------------------------------------------------
@@ -250,6 +283,17 @@
     const h = Math.floor(m / 60);
     if (h < 24) return `${h}h ago`;
     return `${Math.floor(h / 24)}d ago`;
+  }
+
+  function projectName(issue: Issue): string {
+    if (!issue.projectId) return '';
+    return projects.find(p => p.id === issue.projectId)?.name ?? '';
+  }
+
+  function createdByName(issue: Issue): string {
+    if (issue.createdByAgentId) return agents.find(a => a.id === issue.createdByAgentId)?.name ?? 'Agent';
+    if (issue.createdByUserId) return 'User';
+    return '';
   }
 
   function assigneeLabel(issue: Issue): string {
@@ -272,7 +316,7 @@
     return issue.activeRun != null && (issue.activeRun.status === 'queued' || issue.activeRun.status === 'running');
   }
 
-  function toggleFilter(field: 'statuses' | 'priorities' | 'assignees', value: string) {
+  function toggleFilter(field: 'statuses' | 'priorities' | 'assignees' | 'projects', value: string) {
     const arr = viewState[field];
     updateView({ [field]: arr.includes(value) ? arr.filter((v: string) => v !== value) : [...arr, value] } as Partial<ViewState>);
   }
@@ -387,6 +431,11 @@
       {/if}
     </span>
 
+    <!-- Project -->
+    <span class="hidden w-[100px] shrink-0 truncate text-xs text-muted-foreground lg:block">
+      {projectName(issue)}
+    </span>
+
     <!-- Assignee (clickable picker) -->
     <div class="relative hidden w-[100px] shrink-0 sm:block" data-popover>
       <button
@@ -431,6 +480,21 @@
         <Badge variant="outline" class="text-[10px] font-bold leading-none rounded px-1.5 py-0.5 {PRIORITY_VISUALS[issue.priority].badgeClass}">
           {PRIORITY_VISUALS[issue.priority].label}
         </Badge>
+      {/if}
+    </span>
+
+    <!-- Origin kind -->
+    <span class="hidden w-[80px] shrink-0 text-center md:flex items-center justify-center">
+      {#if issue.originKind === 'channel_message'}
+        <Badge variant="outline" class="text-[9px] px-1.5 py-0 border-blue-500/30 text-blue-400">Chat</Badge>
+      {:else if issue.originKind === 'routine'}
+        <Badge variant="outline" class="text-[9px] px-1.5 py-0 border-purple-500/30 text-purple-400">Routine</Badge>
+      {:else if issue.originKind === 'delegation'}
+        <Badge variant="outline" class="text-[9px] px-1.5 py-0 border-amber-500/30 text-amber-400">Delegated</Badge>
+      {:else if issue.originKind && issue.originKind !== 'manual'}
+        <Badge variant="outline" class="text-[9px] px-1.5 py-0 border-zinc-500/30 text-zinc-400">{issue.originKind}</Badge>
+      {:else}
+        <Badge variant="outline" class="text-[9px] px-1.5 py-0 border-zinc-500/20 text-zinc-500">Manual</Badge>
       {/if}
     </span>
 
@@ -498,7 +562,7 @@
                 <button
                   type="button"
                   class="text-xs text-muted-foreground hover:text-foreground"
-                  onclick={() => updateView({ statuses: [], priorities: [], assignees: [] })}
+                  onclick={() => updateView({ statuses: [], priorities: [], assignees: [], projects: [] })}
                 >Clear</button>
               {/if}
             </div>
@@ -589,6 +653,34 @@
                             class="rounded"
                           />
                           <span class="text-sm">{agent.name}</span>
+                        </label>
+                      {/each}
+                    </div>
+                  </div>
+                {/if}
+
+                {#if projects.length > 0}
+                  <div class="space-y-1">
+                    <span class="text-xs text-muted-foreground">Project</span>
+                    <div class="max-h-32 space-y-0.5 overflow-y-auto">
+                      <label class="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                        <input
+                          type="checkbox"
+                          checked={viewState.projects.includes('__none')}
+                          onchange={() => toggleFilter('projects', '__none')}
+                          class="rounded"
+                        />
+                        <span class="text-sm">No project</span>
+                      </label>
+                      {#each projects as project}
+                        <label class="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1 hover:bg-accent/50">
+                          <input
+                            type="checkbox"
+                            checked={viewState.projects.includes(project.id)}
+                            onchange={() => toggleFilter('projects', project.id)}
+                            class="rounded"
+                          />
+                          <span class="text-sm">{project.name}</span>
                         </label>
                       {/each}
                     </div>
@@ -736,8 +828,10 @@
         <span class="w-5 shrink-0"></span>
         <span class="w-20 shrink-0">ID</span>
         <span class="min-w-0 flex-1">Name</span>
+        <span class="hidden w-[100px] shrink-0 lg:block">Project</span>
         <span class="hidden w-[100px] shrink-0 sm:block">Assignee</span>
         <span class="hidden w-[80px] shrink-0 sm:block">Priority</span>
+        <span class="hidden w-[80px] shrink-0 md:block text-center">Origin</span>
         <span class="hidden w-[100px] shrink-0 text-right sm:block">Updated</span>
       </div>
 

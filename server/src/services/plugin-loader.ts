@@ -24,13 +24,10 @@
  * @see PLUGIN_SPEC.md §10 — Package Contract
  * @see PLUGIN_SPEC.md §12 — Process Model
  */
-import { existsSync } from "node:fs";
-import { readdir, readFile, rm, stat } from "node:fs/promises";
-import { execFile } from "node:child_process";
-import os from "node:os";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
+import { readdir, readFile, rm, stat } from "fs/promises";
+import os from "os";
+import path from "path";
+import { fileURLToPath } from "url";
 import type { Db } from "@clawdev/db";
 import type {
   ClawDevPluginManifestV1,
@@ -49,7 +46,6 @@ import type { PluginJobStore } from "./plugin-job-store.js";
 import type { PluginToolDispatcher } from "./plugin-tool-dispatcher.js";
 import type { PluginLifecycleManager } from "./plugin-lifecycle.js";
 
-const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 // ---------------------------------------------------------------------------
@@ -77,6 +73,43 @@ export const DEFAULT_LOCAL_PLUGIN_DIR = path.join(
 );
 
 const DEV_TSX_LOADER_PATH = path.resolve(__dirname, "../../../cli/node_modules/tsx/dist/loader.mjs");
+
+async function pathExists(filePath: string): Promise<boolean> {
+  return await Bun.file(filePath).exists();
+}
+
+async function readStreamText(stream: ReadableStream<Uint8Array> | null | undefined): Promise<string> {
+  if (!stream) return "";
+  const reader = stream.getReader();
+  const chunks: Uint8Array[] = [];
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value) chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return new TextDecoder().decode(Buffer.concat(chunks));
+}
+
+async function runCommand(command: string, args: string[], cwd?: string, env?: Record<string, string>) {
+  const proc = Bun.spawn({
+    cmd: [command, ...args],
+    cwd,
+    env,
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    readStreamText(proc.stdout),
+    readStreamText(proc.stderr),
+    proc.exited,
+  ]);
+  return { stdout, stderr, exitCode };
+}
 
 // ---------------------------------------------------------------------------
 // Discovery result types
@@ -523,7 +556,7 @@ async function readPackageJson(
   dir: string,
 ): Promise<Record<string, unknown> | null> {
   const pkgPath = path.join(dir, "package.json");
-  if (!existsSync(pkgPath)) return null;
+  if (!(await pathExists(pkgPath))) return null;
 
   try {
     const raw = await readFile(pkgPath, "utf-8");
@@ -541,10 +574,10 @@ async function readPackageJson(
  *
  * @see PLUGIN_SPEC.md §10 — Package Contract
  */
-function resolveManifestPath(
+async function resolveManifestPath(
   packageRoot: string,
   pkgJson: Record<string, unknown>,
-): string | null {
+): Promise<string | null> {
   const clawdevPlugin = pkgJson["clawdevPlugin"];
   if (
     clawdevPlugin !== null &&
@@ -557,20 +590,20 @@ function resolveManifestPath(
     if (typeof manifestRelPath === "string") {
       // NOTE: the resolved path is returned as-is even if the file does not yet
       // exist on disk (e.g. the package has not been built).  Callers MUST guard
-      // with existsSync() before passing the path to loadManifestFromPath().
+      // with pathExists() before passing the path to loadManifestFromPath().
       return path.resolve(packageRoot, manifestRelPath);
     }
   }
 
   // Fallback: look for dist/manifest.js as a convention
   const conventionalPath = path.join(packageRoot, "dist", "manifest.js");
-  if (existsSync(conventionalPath)) {
+  if (await pathExists(conventionalPath)) {
     return conventionalPath;
   }
 
   // Fallback: look for manifest.js at package root
   const rootManifestPath = path.join(packageRoot, "manifest.js");
-  if (existsSync(rootManifestPath)) {
+  if (await pathExists(rootManifestPath)) {
     return rootManifestPath;
   }
 
@@ -805,7 +838,7 @@ export function pluginLoader(
     if (localPath) {
       // Local path install — validate the directory exists
       const absLocalPath = path.resolve(localPath);
-      if (!existsSync(absLocalPath)) {
+      if (!(await pathExists(absLocalPath))) {
         throw new Error(`Local plugin path does not exist: ${absLocalPath}`);
       }
       resolvedPackagePath = absLocalPath;
@@ -832,11 +865,13 @@ export function pluginLoader(
         // Use execFile (not exec) to avoid shell injection from package name/version.
         // --ignore-scripts prevents preinstall/install/postinstall hooks from
         // executing arbitrary code on the host before manifest validation.
-        await execFileAsync(
+        const installResult = await runCommand(
           "npm",
           ["install", spec, "--prefix", targetInstallDir, "--save", "--ignore-scripts"],
-          { timeout: 120_000 }, // 2 minute timeout for npm install
         );
+        if (installResult.exitCode !== 0) {
+          throw new Error(installResult.stderr.trim() || `npm install failed for ${spec}`);
+        }
       } catch (err) {
         throw new Error(`npm install failed for ${spec}: ${String(err)}`);
       }
@@ -853,7 +888,7 @@ export function pluginLoader(
         resolvedPackagePath = path.join(nodeModulesPath, resolvedPackageName);
       }
 
-      if (!existsSync(resolvedPackagePath)) {
+      if (!(await pathExists(resolvedPackagePath))) {
         throw new Error(
           `Package directory not found after installation: ${resolvedPackagePath}`,
         );
@@ -865,8 +900,8 @@ export function pluginLoader(
     const pkgJson = await readPackageJson(resolvedPackagePath);
     if (!pkgJson) throw new Error(`Missing package.json at ${resolvedPackagePath}`);
 
-    const manifestPath = resolveManifestPath(resolvedPackagePath, pkgJson);
-    if (!manifestPath || !existsSync(manifestPath)) {
+    const manifestPath = await resolveManifestPath(resolvedPackagePath, pkgJson);
+    if (!manifestPath || !(await pathExists(manifestPath))) {
       throw new Error(
         `Package ${resolvedPackageName} at ${resolvedPackagePath} does not appear to be a ClawDev plugin (no manifest found).`,
       );
@@ -961,8 +996,8 @@ export function pluginLoader(
       return null;
     }
 
-    const manifestPath = resolveManifestPath(packagePath, pkgJson);
-    if (!manifestPath || !existsSync(manifestPath)) {
+    const manifestPath = await resolveManifestPath(packagePath, pkgJson);
+    if (!manifestPath || !(await pathExists(manifestPath))) {
       // Found a potential plugin package but no manifest entry point — treat
       // as a discovery-only result with no manifest
       return {
@@ -1055,7 +1090,7 @@ export function pluginLoader(
       const discovered: DiscoveredPlugin[] = [];
       const errors: Array<{ packagePath: string; packageName: string; error: string }> = [];
 
-      if (!existsSync(scanDir)) {
+      if (!(await pathExists(scanDir))) {
         log.debug(
           { dir: scanDir },
           "plugin-loader: local plugin directory does not exist, skipping",
@@ -1148,12 +1183,12 @@ export function pluginLoader(
         const cwdNodeModules = path.join(process.cwd(), "node_modules");
         const localNodeModules = path.join(localPluginDir, "node_modules");
 
-        if (existsSync(cwdNodeModules)) dirsToSearch.push(cwdNodeModules);
-        if (existsSync(localNodeModules)) dirsToSearch.push(localNodeModules);
+        if (await pathExists(cwdNodeModules)) dirsToSearch.push(cwdNodeModules);
+        if (await pathExists(localNodeModules)) dirsToSearch.push(localNodeModules);
       }
 
       for (const nodeModulesDir of dirsToSearch) {
-        if (!existsSync(nodeModulesDir)) continue;
+        if (!(await pathExists(nodeModulesDir))) continue;
 
         let entries: string[];
         try {
@@ -1239,8 +1274,8 @@ export function pluginLoader(
         return null;
       }
 
-      const manifestPath = resolveManifestPath(packagePath, pkgJson);
-      if (!manifestPath || !existsSync(manifestPath)) return null;
+      const manifestPath = await resolveManifestPath(packagePath, pkgJson);
+    if (!manifestPath || !(await pathExists(manifestPath))) return null;
 
       return loadManifestFromPath(manifestPath);
     },
@@ -1396,13 +1431,15 @@ export function pluginLoader(
       }
 
       const packageJsonPath = path.join(localPluginDir, "package.json");
-      if (existsSync(packageJsonPath)) {
+      if (await pathExists(packageJsonPath)) {
         try {
-          await execFileAsync(
+          const uninstallResult = await runCommand(
             "npm",
             ["uninstall", plugin.packageName, "--prefix", localPluginDir, "--ignore-scripts"],
-            { timeout: 120_000 },
           );
+          if (uninstallResult.exitCode !== 0) {
+            throw new Error(uninstallResult.stderr.trim() || `npm uninstall failed for ${plugin.packageName}`);
+          }
         } catch (err) {
           log.warn(
             {
@@ -1417,7 +1454,7 @@ export function pluginLoader(
       }
 
       for (const target of managedTargets) {
-        if (!existsSync(target)) continue;
+        if (!(await pathExists(target))) continue;
         await rm(target, { recursive: true, force: true });
       }
     },
@@ -1700,7 +1737,7 @@ export function pluginLoader(
       // ------------------------------------------------------------------
       // 1. Resolve worker entrypoint
       // ------------------------------------------------------------------
-      const workerEntrypoint = resolveWorkerEntrypoint(plugin, localPluginDir);
+      const workerEntrypoint = await resolveWorkerEntrypoint(plugin, localPluginDir);
 
       // ------------------------------------------------------------------
       // 2. Build host handlers for this plugin
@@ -1737,7 +1774,7 @@ export function pluginLoader(
       // Repo-local plugin installs can resolve workspace TS sources at runtime
       // (for example @clawdev/shared exports). Run those workers through
       // the tsx loader so first-party example plugins work in development.
-      if (plugin.packagePath && existsSync(DEV_TSX_LOADER_PATH)) {
+      if (plugin.packagePath && (await pathExists(DEV_TSX_LOADER_PATH))) {
         workerOptions.execArgv = ["--import", DEV_TSX_LOADER_PATH];
       }
 
@@ -1881,17 +1918,17 @@ export function pluginLoader(
  *
  * @see PLUGIN_SPEC.md §10 — Package Contract
  */
-function resolveWorkerEntrypoint(
+async function resolveWorkerEntrypoint(
   plugin: PluginRecord & { packagePath?: string | null },
   localPluginDir: string,
-): string {
+): Promise<string> {
   const manifest = plugin.manifestJson;
   const workerRelPath = manifest.entrypoints.worker;
 
   // For local-path installs we persist the resolved package path; use it first
-  if (plugin.packagePath && existsSync(plugin.packagePath)) {
+  if (plugin.packagePath && (await pathExists(plugin.packagePath))) {
     const entrypoint = path.resolve(plugin.packagePath, workerRelPath);
-    if (entrypoint.startsWith(path.resolve(plugin.packagePath)) && existsSync(entrypoint)) {
+    if (entrypoint.startsWith(path.resolve(plugin.packagePath)) && (await pathExists(entrypoint))) {
       return entrypoint;
     }
   }
@@ -1921,14 +1958,14 @@ function resolveWorkerEntrypoint(
       continue;
     }
 
-    if (existsSync(entrypoint)) {
+    if (await pathExists(entrypoint)) {
       return entrypoint;
     }
   }
 
   // Fallback: try the worker path as-is (absolute or relative to cwd)
   // ONLY if it's already an absolute path and we trust the manifest (which we've already validated)
-  if (path.isAbsolute(workerRelPath) && existsSync(workerRelPath)) {
+  if (path.isAbsolute(workerRelPath) && (await pathExists(workerRelPath))) {
     return workerRelPath;
   }
 

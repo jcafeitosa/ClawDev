@@ -50,10 +50,17 @@ This change was validated against the live dashboard and the main navigation smo
 - `pnpm --filter @clawdev/svelte-ui build`
 - `pnpm exec playwright test tests/e2e/full-navigation.spec.ts --config tests/e2e/playwright.config.ts`
 
-## Rollout / Risks
+## Risks
+
+- If future ECharts updates change module paths, update the chunk split accordingly.
+
+## Rollout
 
 - Roll out with the existing build pipeline.
-- If future ECharts updates change module paths, update the chunk split accordingly.
+
+## Rollback
+
+- Restore the previous chunking approach if the split causes regressions in build time or runtime loading.
 
 ## Bundle Baseline
 

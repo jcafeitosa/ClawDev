@@ -7,7 +7,27 @@
   import { PageSkeleton, PropertiesPanel, PropertyRow, StatusBadge, TimeAgo, EmptyState } from "$components/index.js";
   import { Button, Badge, Card, CardHeader, CardTitle, CardContent, Separator, Tabs, TabsList, TabsTrigger, TabsContent, Textarea } from "$components/ui/index.js";
   import CommentThread from "$lib/components/comment-thread.svelte";
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { Zap, Timer } from "lucide-svelte";
+
+  // ---------------------------------------------------------------------------
+  // Auto-approve countdown
+  // ---------------------------------------------------------------------------
+  const AUTO_APPROVE_SECONDS = 60;
+  let now = $state(Date.now());
+  let tickInterval: ReturnType<typeof setInterval> | undefined;
+
+  function autoApproveTimeLeft(createdAt: string | undefined): number {
+    if (!createdAt) return 0;
+    return Math.max(0, AUTO_APPROVE_SECONDS - Math.floor((now - new Date(createdAt).getTime()) / 1000));
+  }
+
+  function isAutoApproved(a: Approval | null): boolean {
+    if (!a) return false;
+    return a.status === "approved" && Boolean(
+      a.decidedByUserId?.startsWith("ceo:") || a.decidedByUserId?.startsWith("system:auto"),
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Types
@@ -223,7 +243,10 @@
     loadApproval();
     loadComments();
     loadLinkedIssues();
+    tickInterval = setInterval(() => { now = Date.now(); }, 1000);
   });
+
+  onDestroy(() => { if (tickInterval) clearInterval(tickInterval); });
 
   // ---------------------------------------------------------------------------
   // Helpers
@@ -266,6 +289,28 @@
         </Button>
       </div>
     {/snippet}
+
+    <!-- Auto-approve countdown for hire_agent -->
+    {#if isPending && approval.type === "hire_agent"}
+      {@const timeLeft = autoApproveTimeLeft(approval.createdAt)}
+      <div class="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800 p-3 mb-4 flex items-center gap-2 text-sm text-amber-700 dark:text-amber-300">
+        {#if timeLeft > 0}
+          <Timer class="h-4 w-4 shrink-0" />
+          <span>This hire approval will be auto-approved by the CEO in <strong>{timeLeft}s</strong> if no action is taken.</span>
+        {:else}
+          <Zap class="h-4 w-4 shrink-0" />
+          <span>Time expired. The CEO is auto-approving this request...</span>
+        {/if}
+      </div>
+    {/if}
+
+    <!-- Auto-approved badge for resolved approvals -->
+    {#if isAutoApproved(approval)}
+      <div class="rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-950/20 dark:border-blue-800 p-3 mb-4 flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+        <Zap class="h-4 w-4 shrink-0" />
+        <span>This approval was auto-approved by the CEO after the 1-minute timeout.</span>
+      </div>
+    {/if}
 
     <!-- Action bar (approve/reject) -->
     {#if isPending}
@@ -439,7 +484,14 @@
         {#if approval.decidedByUserId}
           <Separator />
           <PropertyRow label="Decided by">
-            <span class="text-xs font-mono">{approval.decidedByUserId}</span>
+            {#if approval.decidedByUserId.startsWith('ceo:') || approval.decidedByUserId.startsWith('system:auto')}
+              <Badge class="bg-blue-500/15 text-blue-500 border-blue-500/30 text-xs">
+                <Zap class="h-3 w-3 mr-1" />
+                Auto-approved (CEO)
+              </Badge>
+            {:else}
+              <span class="text-xs font-mono">{approval.decidedByUserId}</span>
+            {/if}
           </PropertyRow>
         {/if}
         {#if approval.decidedAt}

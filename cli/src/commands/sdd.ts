@@ -1,5 +1,5 @@
-import * as fs from "node:fs";
-import path from "node:path";
+import * as fs from "fs";
+import path from "path";
 import * as p from "@clack/prompts";
 import pc from "picocolors";
 import { printClawDevCliBanner } from "../utils/banner.js";
@@ -54,12 +54,20 @@ Describe the product or platform problem in one or two paragraphs.
 - \`pnpm build\`
 - Smoke test or browser validation if user-visible
 
-## Rollout / Risks
+## Risks
 
 - Risk 1
 - Risk 2
+
+## Rollout
+
 - Rollout step 1
 - Rollout step 2
+
+## Rollback
+
+- Rollback step 1
+- Rollback step 2
 `;
 
 export const DEFAULT_SDD_SPEC_TEMPLATE = `# <Feature / Product Change> — Spec

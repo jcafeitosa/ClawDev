@@ -61,9 +61,14 @@ export function inboxRoutes(db: Db) {
             joinRequests: joinRequestCount,
             unreadTouchedIssues,
           });
-          const summary = await dashboard.summary(params.companyId);
-          const alerts = Number(summary.agents.error > 0 && inboxBadges.failedRuns === 0) +
-            Number(summary.costs.monthBudgetCents > 0 && summary.costs.monthUtilizationPercent >= 80);
+          let alerts = 0;
+          try {
+            const summary = await dashboard.summary(params.companyId);
+            alerts = Number(summary.agents.error > 0 && inboxBadges.failedRuns === 0) +
+              Number(summary.costs.monthBudgetCents > 0 && summary.costs.monthUtilizationPercent >= 80);
+          } catch {
+            // Company may have been deleted — skip alert calculation
+          }
 
           const total = inboxBadges.inbox + alerts;
           return {
@@ -76,8 +81,8 @@ export function inboxRoutes(db: Db) {
             unreadTouchedIssues,
             alerts,
           };
-        } catch (error) {
-          logger.error({ error, companyId: ctx.params?.companyId }, "Error in GET /companies/:companyId/inbox");
+        } catch (error: any) {
+          logger.error({ err: error, companyId: ctx.params?.companyId }, "Error in GET /companies/:companyId/inbox");
           throw error;
         }
       },

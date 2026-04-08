@@ -41,6 +41,7 @@ Built-in adapters:
 - `opencode_local`: runs your local `opencode` CLI
 - `cursor`: runs Cursor in background mode
 - `pi_local`: runs an embedded Pi agent locally
+- `openai_compatible_local`: runs a local OpenAI-compatible endpoint such as Ollama, LM Studio, or llama.cpp
 - `openclaw_gateway`: connects to an OpenClaw gateway endpoint
 - `process`: generic shell command adapter
 - `http`: calls an external HTTP endpoint
@@ -174,7 +175,7 @@ Start with least privilege where possible, and avoid exposing secrets in broad r
 
 ## 10. Minimal setup checklist
 
-1. Choose adapter (e.g. `claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`, `cursor`, or `openclaw_gateway`).
+1. Choose adapter (e.g. `claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`, `cursor`, `pi_local`, `openai_compatible_local`, or `openclaw_gateway`).
 2. Set `cwd` to the target workspace (for local adapters).
 3. Optionally add a prompt template (`promptTemplate`) or use the managed instructions bundle.
 4. Configure heartbeat policy (timer and/or assignment wakeups).

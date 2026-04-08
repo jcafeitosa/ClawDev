@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-import { execFileSync } from "node:child_process";
-import fs from "node:fs";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { execFileSync } from "child_process";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const VALID_TEMPLATES = ["default", "connector", "workspace"] as const;
 type PluginTemplate = (typeof VALID_TEMPLATES)[number];
@@ -192,7 +192,6 @@ export function scaffoldPluginProject(options: ScaffoldPluginOptions): string {
       "@clawdev/plugin-sdk": sdkDependency,
       "@rollup/plugin-node-resolve": "^16.0.1",
       "@rollup/plugin-typescript": "^12.1.2",
-      "@types/node": "^24.6.0",
       "@types/react": "^19.0.8",
       esbuild: "^0.27.3",
       rollup: "^4.38.0",

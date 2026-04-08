@@ -1,5 +1,4 @@
-import os from "node:os";
-import path from "node:path";
+import path from "path";
 
 const DEFAULT_INSTANCE_ID = "default";
 const INSTANCE_ID_RE = /^[a-zA-Z0-9_-]+$/;
@@ -7,15 +6,16 @@ const PATH_SEGMENT_RE = /^[a-zA-Z0-9_-]+$/;
 const FRIENDLY_PATH_SEGMENT_RE = /[^a-zA-Z0-9._-]+/g;
 
 function expandHomePrefix(value: string): string {
-  if (value === "~") return os.homedir();
-  if (value.startsWith("~/")) return path.resolve(os.homedir(), value.slice(2));
+  const homeDir = process.env.HOME?.trim() || process.env.USERPROFILE?.trim() || "";
+  if (value === "~") return homeDir || value;
+  if (value.startsWith("~/")) return homeDir ? path.resolve(homeDir, value.slice(2)) : value;
   return value;
 }
 
 export function resolveClawDevHomeDir(): string {
   const envHome = process.env.CLAWDEV_HOME?.trim();
   if (envHome) return path.resolve(expandHomePrefix(envHome));
-  return path.resolve(os.homedir(), ".clawdev");
+  return path.resolve(expandHomePrefix("~"), ".clawdev");
 }
 
 export function resolveClawDevInstanceId(): string {

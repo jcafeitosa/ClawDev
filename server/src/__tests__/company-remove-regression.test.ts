@@ -1,6 +1,6 @@
-import fs from "node:fs";
-import os from "node:os";
-import path from "node:path";
+import fs from "fs";
+import os from "os";
+import path from "path";
 import { afterEach, describe, expect, it } from "vitest";
 import { eq } from "drizzle-orm";
 import { openPGliteDatabase, companies, agents, heartbeatRuns, costEvents } from "@clawdev/db";

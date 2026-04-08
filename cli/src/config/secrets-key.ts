@@ -1,6 +1,6 @@
-import { randomBytes } from "node:crypto";
-import fs from "node:fs";
-import path from "node:path";
+import { randomBytes } from "crypto";
+import fs from "fs";
+import path from "path";
 import type { ClawDevConfig } from "./schema.js";
 import { resolveRuntimeLikePath } from "../utils/path-resolver.js";
 
@@ -10,10 +10,10 @@ export type EnsureSecretsKeyResult =
   | { status: "skipped_env"; path: null }
   | { status: "skipped_provider"; path: null };
 
-export function ensureLocalSecretsKeyFile(
+export async function ensureLocalSecretsKeyFile(
   config: Pick<ClawDevConfig, "secrets">,
   configPath?: string,
-): EnsureSecretsKeyResult {
+): Promise<EnsureSecretsKeyResult> {
   if (config.secrets.provider !== "local_encrypted") {
     return { status: "skipped_provider", path: null };
   }
@@ -28,7 +28,7 @@ export function ensureLocalSecretsKeyFile(
     keyFileOverride && keyFileOverride.trim().length > 0
       ? keyFileOverride.trim()
       : config.secrets.localEncrypted.keyFilePath;
-  const keyFilePath = resolveRuntimeLikePath(configuredPath, configPath);
+  const keyFilePath = await resolveRuntimeLikePath(configuredPath, configPath);
 
   if (fs.existsSync(keyFilePath)) {
     return { status: "existing", path: keyFilePath };

@@ -10,9 +10,9 @@ import { companyIdParam } from "../middleware/index.js";
 import { assertCompanyAccess, getActorInfo, type Actor } from "../middleware/authz.js";
 import { logActivity } from "../services/index.js";
 import { agentDeliberationService } from "../services/agent-deliberations.js";
-import { getLogger } from "../logger.js";
+import { logger } from "../middleware/logger.js";
 
-const logger = getLogger("agent-deliberations");
+
 
 export function agentDeliberationRoutes(db: Db) {
   const deliberations = agentDeliberationService(db);
@@ -32,7 +32,7 @@ export function agentDeliberationRoutes(db: Db) {
             limit: query?.limit ? parseInt(query.limit) : undefined,
           });
         } catch (err) {
-          logger.error("Error listing deliberations", err);
+          logger.error({ err: err }, "Error listing deliberations");
           throw err;
         }
       },
@@ -68,7 +68,7 @@ export function agentDeliberationRoutes(db: Db) {
           set.status = 201;
           return delib;
         } catch (err) {
-          logger.error("Error creating deliberation", err);
+          logger.error({ err: err }, "Error creating deliberation");
           throw err;
         }
       },
@@ -88,7 +88,7 @@ export function agentDeliberationRoutes(db: Db) {
           }
           return result;
         } catch (err) {
-          logger.error("Error getting deliberation", err);
+          logger.error({ err: err }, "Error getting deliberation");
           throw err;
         }
       },
@@ -123,7 +123,7 @@ export function agentDeliberationRoutes(db: Db) {
           set.status = 201;
           return vote;
         } catch (err) {
-          logger.error("Error casting vote", err);
+          logger.error({ err: err }, "Error casting vote");
           throw err;
         }
       },
@@ -138,7 +138,7 @@ export function agentDeliberationRoutes(db: Db) {
           const { params } = ctx;
           return deliberations.listVotes(params.id);
         } catch (err) {
-          logger.error("Error listing votes", err);
+          logger.error({ err: err }, "Error listing votes");
           throw err;
         }
       },
@@ -171,7 +171,7 @@ export function agentDeliberationRoutes(db: Db) {
 
           return resolved;
         } catch (err) {
-          logger.error("Error resolving deliberation", err);
+          logger.error({ err: err }, "Error resolving deliberation");
           throw err;
         }
       },

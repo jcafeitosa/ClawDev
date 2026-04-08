@@ -1,6 +1,6 @@
-import { spawn } from "node:child_process";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
+import { spawn } from "child_process";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const serverRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 

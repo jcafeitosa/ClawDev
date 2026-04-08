@@ -279,6 +279,64 @@ export function channelService(db: Db) {
       return channel;
     },
 
+    async getOrCreateDepartmentChannel(
+      companyId: string,
+      departmentKey: string,
+      channelName: string,
+      description?: string,
+    ) {
+      const slug = slugify(channelName);
+
+      // Look for existing department channel by slug
+      const [existing] = await db
+        .select()
+        .from(channels)
+        .where(
+          and(
+            eq(channels.companyId, companyId),
+            eq(channels.slug, slug),
+            eq(channels.type, "department"),
+          ),
+        );
+
+      if (existing) return existing;
+
+      const [channel] = await db
+        .insert(channels)
+        .values({
+          companyId,
+          name: channelName,
+          slug,
+          type: "department",
+          description: description ?? null,
+          metadata: { departmentKey },
+        } as typeof channels.$inferInsert)
+        .onConflictDoNothing()
+        .returning();
+
+      // Handle race condition: if insert was a no-op, re-fetch
+      if (!channel) {
+        const [refetched] = await db
+          .select()
+          .from(channels)
+          .where(
+            and(
+              eq(channels.companyId, companyId),
+              eq(channels.slug, slug),
+            ),
+          );
+        return refetched;
+      }
+
+      publishLiveEvent({
+        companyId,
+        type: "channel.created",
+        payload: { channelId: channel.id, name: channel.name, type: channel.type },
+      });
+
+      return channel;
+    },
+
     async getOrCreateTeamChannel(companyId: string, teamId: string, teamName: string) {
       const [existing] = await db
         .select()

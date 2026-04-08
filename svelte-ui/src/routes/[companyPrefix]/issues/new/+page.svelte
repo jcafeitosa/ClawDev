@@ -12,6 +12,7 @@
     getHierarchyPresetDefinition,
     getHierarchyPresetDepartments,
     getHierarchyPresetOperatingRules,
+    hasMeaningfulStructuredSddSection,
     type HierarchyPreset,
   } from '@clawdev/shared';
 
@@ -22,9 +23,12 @@
 
   let title = $state('');
   let description = $state('');
-  let sddSpec = $state('');
-  let sddDesign = $state('');
-  let sddValidation = $state('');
+  let sddSpec = $state('State the issue scope, the expected outcome, and the acceptance criteria for delivery.');
+  let sddDesign = $state('Assign one owner and one execution slice so the change stays reviewable and easy to deliver.');
+  let sddRisk = $state('The main risk is hidden dependency drift, so verify all upstream inputs before execution begins.');
+  let sddRollout = $state('Roll out as a single owner execution slice and confirm the first safe checkpoint before expanding.');
+  let sddRollback = $state('If the change is unsafe, revert the issue immediately and reopen it for a fresh validation pass.');
+  let sddValidation = $state('Confirm the issue is ready for execution, scoped correctly, and aligned with the target project.');
   let status = $state('todo');
   let priority = $state('medium');
   let creating = $state(false);
@@ -53,9 +57,17 @@
   const SDD_ISSUE_FLOW = [
     { label: 'Spec', description: 'State the problem and the expected result.' },
     { label: 'Design', description: 'Link the issue to the right project, owner, and impact.' },
+    { label: 'Risk', description: 'Call out failure modes, blockers, and dependency drift.' },
+    { label: 'Rollout', description: 'Describe the safe execution path for the issue.' },
+    { label: 'Rollback', description: 'Define how to reverse the change if validation fails.' },
     { label: 'Validate', description: 'Confirm dependencies, priority, and acceptance criteria.' },
     { label: 'Implement', description: 'Only after the issue is ready for execution.' },
   ] as const;
+
+  const DEFAULT_ISSUE_SDD_RISK = 'The main risk is hidden dependency drift, so verify all upstream inputs before execution begins.';
+  const DEFAULT_ISSUE_SDD_ROLLOUT = 'Roll out as a single owner execution slice and confirm the first safe checkpoint before expanding.';
+  const DEFAULT_ISSUE_SDD_ROLLBACK = 'If the change is unsafe, revert the issue immediately and reopen it for a fresh validation pass.';
+  const DEFAULT_ISSUE_SDD_VALIDATION = 'Confirm the issue is ready for execution, scoped correctly, and aligned with the target project.';
 
   $effect(() => {
     if (!companyId) return;
@@ -109,7 +121,10 @@
         description: description.trim() || undefined,
         sddSpec: sddSpec.trim(),
         sddDesign: sddDesign.trim(),
-        sddValidation: sddValidation.trim() || undefined,
+        sddRisk: sddRisk.trim(),
+        sddRollout: sddRollout.trim(),
+        sddRollback: sddRollback.trim(),
+        sddValidation: sddValidation.trim(),
         status,
         priority,
       };
@@ -207,24 +222,42 @@
             class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30"></textarea>
         </div>
 
-        <div class="grid gap-4 lg:grid-cols-2">
-          <div>
-            <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Spec *</Label>
-            <textarea bind:value={sddSpec} rows={4} placeholder="State the problem and the success criteria."
-              class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
+          <div class="grid gap-4 lg:grid-cols-2">
+            <div>
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Spec *</Label>
+              <textarea bind:value={sddSpec} rows={4} placeholder="State the problem and the success criteria."
+                class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
           </div>
           <div>
             <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Design *</Label>
             <textarea bind:value={sddDesign} rows={4} placeholder="Map the owners, execution slices, and dependencies."
+                class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
+            </div>
+          </div>
+
+          <div class="grid gap-4 lg:grid-cols-3">
+            <div>
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Risk *</Label>
+              <textarea bind:value={sddRisk} rows={4} placeholder="Describe the main delivery risks and mitigations."
+                class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
+            </div>
+            <div>
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Rollout *</Label>
+              <textarea bind:value={sddRollout} rows={4} placeholder="Describe the safe execution path."
+                class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
+            </div>
+            <div>
+              <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Rollback *</Label>
+              <textarea bind:value={sddRollback} rows={4} placeholder="Describe how to reverse the change safely."
+                class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
+            </div>
+          </div>
+
+          <div>
+            <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Validation *</Label>
+            <textarea bind:value={sddValidation} rows={3} placeholder="Describe how to verify it is safe to implement."
               class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
           </div>
-        </div>
-
-        <div>
-          <Label class="text-xs font-medium text-muted-foreground mb-1.5 block">Validation</Label>
-          <textarea bind:value={sddValidation} rows={3} placeholder="Describe how to verify it is safe to implement."
-            class="flex w-full min-w-0 rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs transition-colors placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] focus-visible:outline-none dark:bg-input/30 resize-none"></textarea>
-        </div>
 
         <Separator />
 
@@ -304,7 +337,20 @@
       </form>
     </CardContent>
     <CardFooter class="flex items-center gap-3 pt-0">
-      <Button class="flex-1 cursor-pointer" disabled={creating || !title.trim() || !sddSpec.trim() || !sddDesign.trim()} onclick={() => create()}>
+      <Button
+        class="flex-1 cursor-pointer"
+        disabled={
+          creating ||
+          !title.trim() ||
+          !hasMeaningfulStructuredSddSection(sddSpec) ||
+          !hasMeaningfulStructuredSddSection(sddDesign) ||
+          !hasMeaningfulStructuredSddSection(sddRisk) ||
+          !hasMeaningfulStructuredSddSection(sddRollout) ||
+          !hasMeaningfulStructuredSddSection(sddRollback) ||
+          !hasMeaningfulStructuredSddSection(sddValidation)
+        }
+        onclick={() => create()}
+      >
         {creating ? 'Creating...' : 'Create Issue'}
       </Button>
       <Button variant="outline" class="cursor-pointer" href="/{$page.params.companyPrefix}/issues">

@@ -49,7 +49,14 @@ The browser smoke tests already work, but they had repeated boilerplate for coll
 - `pnpm exec playwright test tests/e2e/full-navigation.spec.ts --config tests/e2e/playwright.config.ts`
 - `pnpm exec playwright test tests/e2e/inbox-retry.spec.ts --config tests/e2e/playwright.config.ts`
 
-## Rollout / Risks
+## Risks
+
+- If future smokes need extra filters, add them only when the same harmless noise is proven across multiple files.
+
+## Rollout
 
 - Roll out by keeping the smoke tests functionally identical while consolidating the shared logic.
-- If future smokes need extra filters, add them only when the same harmless noise is proven across multiple files.
+
+## Rollback
+
+- Restore the previous smoke definitions if the shared logic introduces divergent behavior.
