@@ -12,10 +12,8 @@
     getHierarchyPresetDefinition,
     getHierarchyPresetDepartments,
     getHierarchyPresetOperatingRules,
-    getHierarchyPresetSeedAgents,
     listHierarchyPresetDefinitions,
     type HierarchyPreset,
-    type HierarchySeedBlueprint,
   } from "@clawdev/shared";
 
   const TOTAL_STEPS = 4;
@@ -92,8 +90,8 @@
   let selectedProviderModelsRequestId = 0;
 
   // Step 3: Task
-  let taskTitle = $state("Hire your first engineer and create a hiring plan");
-  let taskDescription = $state("Use SDD to turn the company plan into action.\n\n- confirm the spec and acceptance criteria\n- break the roadmap into concrete workstreams\n- delegate execution to the right department and validate the result");
+  let taskTitle = $state("Hire the first team according to the selected hierarchy");
+  let taskDescription = $state("Use SDD to turn the company plan into action.\n\n- confirm the selected hierarchy and acceptance criteria\n- break the hiring roadmap into concrete workstreams\n- delegate execution to the right department and validate the result");
   let taskSpec = $state("Define the first actionable work item for the company launch plan and make it clear enough to execute.");
   let taskDesign = $state("Map the work into a single-owner execution slice that can be completed without cross-team ambiguity.");
   let taskRisk = $state("The main risk is startup scope drift, so keep the task narrow and verify ownership before execution.");
@@ -414,8 +412,6 @@
     }
   }
 
-  let createdSeedAgents = $state<Array<{ key: string; id: string; name: string; role: string }>>([]);
-
   async function handleAgentStep() {
     if (!createdCompany || loading) return;
     // If agent already created, just advance to step 3
@@ -449,45 +445,6 @@
       createdAgent = ceoAgent;
       createdAgentTitle = selectedHierarchyPresetDefinition()?.rootTitle ?? "Chief Executive Officer";
 
-      // 2. Create seed agents from the hierarchy preset
-      const seedBlueprints = getHierarchyPresetSeedAgents(hierarchyPreset);
-      if (seedBlueprints.length > 0) {
-        // Map blueprint keys to real agent IDs: CEO key → ceoAgent.id
-        const keyToId: Record<string, string> = { ceo: ceoAgent.id };
-
-        // Sort by dependency — create managers before their reports
-        const sorted = topologicalSortSeeds(seedBlueprints, "ceo");
-
-        for (const seed of sorted) {
-          const reportsToId = keyToId[seed.reportsToKey] ?? ceoAgent.id;
-          try {
-            const seedRes = await api(`/api/companies/${companyId}/agents`, {
-              method: "POST",
-              body: JSON.stringify({
-                name: seed.name,
-                role: seed.role,
-                adapterType,
-                title: seed.title,
-                reportsTo: reportsToId,
-                status: "idle",
-              }),
-            });
-            if (seedRes.ok) {
-              const seedAgent = await seedRes.json();
-              keyToId[seed.key] = seedAgent.id;
-              createdSeedAgents = [...createdSeedAgents, {
-                key: seed.key,
-                id: seedAgent.id,
-                name: seed.name,
-                role: seed.role,
-              }];
-            }
-          } catch {
-            // Non-blocking — seed agent creation failure shouldn't stop onboarding
-          }
-        }
-      }
-
       markCompleted(2);
       currentStep = 3;
     } catch (err) {
@@ -495,31 +452,6 @@
     } finally {
       loading = false;
     }
-  }
-
-  /** Topological sort: parents before children, skip the CEO key (already created). */
-  function topologicalSortSeeds(seeds: HierarchySeedBlueprint[], ceoKey: string): HierarchySeedBlueprint[] {
-    const byKey = new Map(seeds.map((s) => [s.key, s]));
-    const sorted: HierarchySeedBlueprint[] = [];
-    const visited = new Set<string>();
-    visited.add(ceoKey); // CEO already exists
-
-    function visit(key: string) {
-      if (visited.has(key)) return;
-      const seed = byKey.get(key);
-      if (!seed) return;
-      // Visit parent first
-      if (seed.reportsToKey !== ceoKey && !visited.has(seed.reportsToKey)) {
-        visit(seed.reportsToKey);
-      }
-      visited.add(key);
-      sorted.push(seed);
-    }
-
-    for (const seed of seeds) {
-      visit(seed.key);
-    }
-    return sorted;
   }
 
   // Store created entities for launch summary
@@ -815,8 +747,8 @@
               <Bot class="h-5 w-5 text-gray-500" />
             </div>
             <div>
-              <h3 class="font-medium text-gray-900">Create your first agent</h3>
-              <p class="text-xs text-gray-500">Choose how this agent will run tasks.</p>
+              <h3 class="font-medium text-gray-900">Create your CEO</h3>
+              <p class="text-xs text-gray-500">The CEO will wake up first and hire the rest of the hierarchy later.</p>
             </div>
           </div>
 
@@ -904,7 +836,7 @@
               {selectedHierarchyPresetDefinition()?.rootTitle ?? "Chief Executive Officer"}
             </div>
             <p class="text-[10px] text-gray-400 mt-1">
-              The first agent anchors the selected hierarchy preset.
+              This bootstrap step creates only the CEO. The rest of the hierarchy is hired later by the CEO.
             </p>
           </div>
 
@@ -1024,7 +956,7 @@
           <p class="text-sm text-gray-500">
             {createdCompany?.name ?? "Your company"} is set up and ready to go.
             {#if createdAgent}
-              {createdAgent.name} is standing by as your CEO{createdSeedAgents.length > 0 ? ` with ${createdSeedAgents.length} team members` : ""}.
+              {createdAgent.name} is standing by as your CEO and will hire the rest of the hierarchy after wakeup.
             {/if}
             {#if createdIssue?.identifier}
               Your first task <strong>{createdIssue.identifier}</strong> is assigned and the agent is being woken up.
@@ -1049,16 +981,6 @@
                   {#if createdAgentTitle}
                     <span class="text-xs text-gray-500"> · {createdAgentTitle}</span>
                   {/if}
-                </span>
-                <Check class="h-4 w-4 text-green-500" />
-              </div>
-            {/if}
-            {#if createdSeedAgents.length > 0}
-              <div class="flex items-center gap-3 px-4 py-3">
-                <Bot class="h-4 w-4 text-gray-400" />
-                <span class="text-xs text-gray-500">Team</span>
-                <span class="text-sm font-medium text-gray-900 ml-auto">
-                  {createdSeedAgents.length} agent{createdSeedAgents.length !== 1 ? "s" : ""} created
                 </span>
                 <Check class="h-4 w-4 text-green-500" />
               </div>
