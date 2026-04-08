@@ -433,6 +433,30 @@ describe("agent skill routes", () => {
     );
   });
 
+  it("materializes the bundled default instruction set for Cursor agents with no prompt template", async () => {
+    const res = await req(createApp(),
+      "POST", "/api/companies/company-1/agents",
+      {
+        name: "Cursor Engineer",
+        role: "engineer",
+        adapterType: "cursor",
+        adapterConfig: {},
+      });
+
+    expect(res.status, JSON.stringify(res.body)).toBe(201);
+    expect(mockAgentInstructionsService.materializeManagedBundle).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "11111111-1111-4111-8111-111111111111",
+        role: "engineer",
+        adapterType: "cursor",
+      }),
+      expect.objectContaining({
+        "AGENTS.md": expect.stringContaining("Keep the work moving until it's done."),
+      }),
+      { entryFile: "AGENTS.md", replaceExisting: false },
+    );
+  });
+
   it("includes canonical desired skills in hire approvals", async () => {
     const db = createDb(true);
 

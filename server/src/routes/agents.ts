@@ -56,7 +56,7 @@ import { forbidden, unprocessable } from "../errors.js";
 import { channelService } from "../services/channels.js";
 import { resolveDefaultAgentInstructionsBundleRole } from "../services/default-agent-instructions.js";
 
-const LOCAL_ADAPTERS = new Set(["claude_local", "codex_local", "gemini_local", "opencode_local"]);
+const LOCAL_ADAPTERS = new Set(["claude_local", "codex_local", "cursor", "gemini_local", "opencode_local"]);
 
 /**
  * Auto-create a department channel for the agent's role and join them.
