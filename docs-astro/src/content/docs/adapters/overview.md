@@ -25,7 +25,7 @@ When a heartbeat fires, ClawDev:
 | GitHub Copilot Local | `copilot_local` | Runs GitHub Copilot CLI locally |
 | Cursor | `cursor` | Runs Cursor in background mode |
 | Pi Local | `pi_local` | Runs an embedded Pi agent locally |
-| OpenClaw Gateway | `openclaw_gateway` | Connects to an OpenClaw gateway endpoint |
+| OpenClaw Gateway | `openclaw_gateway` | Connects to an OpenClaw gateway over WebSocket with gateway auth, device auth, and session routing |
 | [Process](/adapters/process) | `process` | Executes arbitrary shell commands |
 | [HTTP](/adapters/http) | `http` | Sends webhooks to external agents |
 
@@ -58,7 +58,8 @@ Three registries consume these modules:
 
 ## Choosing an Adapter
 
-- **Need a coding agent?** Use `claude_local`, `codex_local`, `copilot_local`, `gemini_local`, or `opencode_local`
+- **Need a coding agent?** Use `claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`, or `pi_local`
 - **Need to run a script or command?** Use `process`
+- **Need to connect to OpenClaw natively?** Use `openclaw_gateway`
 - **Need to call an external service?** Use `http`
 - **Need something custom?** [Create your own adapter](/adapters/creating-an-adapter)

@@ -43,12 +43,17 @@ Built-in adapters:
 - `gemini_local`: runs your local Gemini CLI
 - `opencode_local`: runs your local `opencode` CLI
 - `cursor`: runs Cursor in background mode
-- `pi_local`: runs an embedded Pi agent locally
-- `openclaw_gateway`: connects to an OpenClaw gateway endpoint
+- `pi_local`: runs Pi locally as a multi-provider bridge for `provider/model` execution
+- `openclaw_gateway`: connects to an OpenClaw gateway over WebSocket with gateway auth and session routing
 - `process`: generic shell command adapter
 - `http`: calls an external HTTP endpoint
 
-For local CLI adapters (`claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`), ClawDev assumes the CLI is already installed and authenticated on the host machine.
+For local CLI adapters (`claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`, `pi_local`), ClawDev assumes the CLI is already installed and authenticated on the host machine.
+
+Adapter-specific notes:
+
+- `pi_local` is best used for providers that do not already have a dedicated adapter in ClawDev. It supports router-managed `auto` selection as well as explicit `provider/model` values.
+- `openclaw_gateway` is the native OpenClaw path. Configure `url`, shared auth, and usually keep `sessionKeyStrategy=issue` so issue-scoped work stays sticky across heartbeats.
 
 ## 3.2 Runtime behavior
 
@@ -69,6 +74,13 @@ For local adapters, set:
 - `graceSec` (time before force-kill after timeout/cancel)
 - optional env vars and extra CLI args
 - use **Test environment** in agent configuration to run adapter-specific diagnostics before saving
+
+For `openclaw_gateway`, set:
+
+- `url` to the gateway `ws://` or `wss://` endpoint
+- `authToken` or gateway auth headers
+- optional `role` and `scopes` for gateway identity
+- session strategy and device-auth settings if you need stable pairing across restarts
 
 ## 3.4 Prompt templates
 

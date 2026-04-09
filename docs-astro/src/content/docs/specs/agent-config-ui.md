@@ -5,7 +5,7 @@ title: "Agent Configuration & Activity UI"
 
 ## Context
 
-Agents are the employees of a ClawDev company. Each agent has an adapter type (`claude_local`, `codex_local`, `process`, `http`) that determines how it runs, a position in the org chart (who it reports to), a heartbeat policy (how/when it wakes up), and a budget. The UI at `/agents` needs to support creating and configuring agents, viewing their org hierarchy, and inspecting what they've been doing -- their run history, live logs, and accumulated costs.
+Agents are the employees of a ClawDev company. Each agent has an adapter type (`claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`, `cursor`, `pi_local`, `openclaw_gateway`, `process`, `http`) that determines how it runs, a position in the org chart (who it reports to), a heartbeat policy (how/when it wakes up), and a budget. The UI at `/agents` needs to support creating and configuring agents, viewing their org hierarchy, and inspecting what they've been doing -- their run history, live logs, and accumulated costs.
 
 This spec covers three surfaces:
 
@@ -35,11 +35,11 @@ Follows the existing `NewIssueDialog` / `NewProjectDialog` pattern: a `Dialog` c
 
 | Field | Control | Default | Notes |
 |-------|---------|---------|-------|
-| Adapter Type | Chip popover (select) | `claude_local` | `claude_local`, `codex_local`, `process`, `http` |
+| Adapter Type | Chip popover (select) | `claude_local` | `claude_local`, `codex_local`, `copilot_local`, `gemini_local`, `opencode_local`, `cursor`, `pi_local`, `openclaw_gateway`, `process`, `http` |
 | Test environment | Button | -- | Runs adapter-specific diagnostics and returns pass/warn/fail checks for current unsaved config |
 | CWD | Text input | -- | Working directory for local adapters |
 | Prompt Template | Textarea | -- | Supports `{{ agent.id }}`, `{{ agent.name }}` etc. |
-| Model | Text input | -- | Optional model override |
+| Model | Text input | -- | Optional model override; local adapters can expose live model discovery |
 
 **Adapter-specific fields (shown/hidden based on adapter type):**
 
@@ -67,6 +67,29 @@ Follows the existing `NewIssueDialog` / `NewProjectDialog` pattern: a `Dialog` c
 | URL | Text input | -- |
 | Method | Select | POST |
 | Headers | Key-value pairs | -- |
+
+*openclaw_gateway:*
+| Field | Control | Default |
+|-------|---------|---------|
+| Gateway URL | Text input | `wss://` |
+| Auth Token | Password input | -- |
+| Shared Password | Password input | -- |
+| Handshake Headers | JSON textarea | `{}` |
+| Client ID | Text input | `gateway-client` |
+| Client Mode | Text input | `backend` |
+| Client Version | Text input | -- |
+| Role | Text input | `operator` |
+| Scopes | Text input | `operator.admin` |
+| Session Key Strategy | Select | `issue` |
+| Fixed Session Key | Text input | -- |
+| Agent ID | Text input | -- |
+| Paperclip API URL | Text input | -- |
+| Timeout / Wait Timeout | Number inputs | `120` / `120000` |
+| Payload Template | JSON textarea | -- |
+| Disable Device Auth | Toggle | false |
+| Auto-pair on First Connect | Toggle | true |
+| Device Family | Text input | -- |
+| Device Private Key PEM | Textarea | -- |
 
 **Runtime (collapsible section, default collapsed):**
 

@@ -16,7 +16,7 @@ pnpm smoke:openclaw-join
 The harness automates:
 
 - invite creation (`allowedJoinTypes=agent`)
-- OpenClaw agent join request (`adapterType=openclaw`)
+- OpenClaw agent join request (`adapterType=openclaw_gateway`)
 - board approval
 - one-time API key claim (including invalid/replay claim checks)
 - wakeup callback delivery to a dockerized OpenClaw-style webhook receiver
@@ -49,6 +49,7 @@ What this command does:
 - waits for health and prints:
   - `http://127.0.0.1:18789/#token=...`
 - disables Control UI device pairing by default for local smoke ergonomics
+- keeps ClawDev on the supported `openclaw_gateway` path instead of the legacy webhook adapter shape
 
 Environment knobs:
 
@@ -95,6 +96,31 @@ Then restart ClawDev and rerun the smoke script.
 ```bash
 pnpm clawdev allowed-hostname <host>
 ```
+
+## ClawDev Agent Config for OpenClaw Gateway
+
+When creating the agent in ClawDev, use `adapterType=openclaw_gateway`.
+
+Core fields:
+
+- `url`: WebSocket gateway URL (`ws://` or `wss://`)
+- `authToken` or `headers.x-openclaw-token`: shared gateway auth
+- `sessionKeyStrategy`: usually `issue` for issue-scoped continuity
+- `role` and `scopes`: gateway identity defaults are `operator` and `operator.admin`
+
+Common operational fields:
+
+- `password`: shared gateway password when token auth is not the only auth factor
+- `agentId`: fixed OpenClaw agent id to invoke
+- `timeoutSec` and `waitTimeoutMs`: execution and wait timeouts
+- `paperclipApiUrl`: explicit ClawDev base URL advertised back into wake context
+- `payloadTemplate`: JSON object merged into gateway agent params
+
+Device-auth fields:
+
+- `disableDeviceAuth=false` is the normal path
+- persist `devicePrivateKeyPem` if you want approvals/pairing to survive restarts
+- `autoPairOnFirstConnect=true` lets the adapter approve and retry once when shared auth is valid
 
 ## Prerequisites
 

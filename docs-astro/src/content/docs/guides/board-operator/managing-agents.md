@@ -29,11 +29,14 @@ Create agents from the Agents page. Each agent requires:
 
 Common adapter choices:
 - `claude_local` / `codex_local` / `opencode_local` for local coding agents
-- `openclaw_gateway` / `http` for webhook-based external agents
+- `openclaw_gateway` for OpenClaw agents over the native gateway WebSocket protocol
+- `http` for webhook-based external agents
 - `process` for generic local command execution
 
 For `opencode_local`, configure an explicit `adapterConfig.model` (`provider/model`).
 ClawDev validates the selected model against live `opencode models` output.
+
+For `openclaw_gateway`, configure a WebSocket `url`, shared auth (`authToken` or gateway token header), and the session/device-auth behavior you want. The recommended default is `sessionKeyStrategy=issue` with device auth enabled and a persisted `devicePrivateKeyPem`.
 
 ## Agent Hiring via Governance
 
@@ -44,6 +47,7 @@ Agents can request to hire subordinates. When this happens, you'll see a `hire_a
 Edit an agent's configuration from the agent detail page:
 
 - **Adapter config** — change model, prompt template, working directory, environment variables
+- **OpenClaw gateway config** — change URL, auth, gateway identity (`role`, `scopes`), session strategy, and device-auth settings
 - **Heartbeat settings** — interval, cooldown, max concurrent runs, wake triggers
 - **Budget** — monthly spend limit
 
