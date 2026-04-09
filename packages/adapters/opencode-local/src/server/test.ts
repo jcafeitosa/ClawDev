@@ -74,6 +74,74 @@ function normalizeEnv(input: unknown): Record<string, string> {
 const OPENCODE_AUTH_REQUIRED_RE =
   /(?:auth(?:entication)?\s+required|api\s*key|invalid\s*api\s*key|not\s+logged\s+in|opencode\s+auth\s+login|free\s+usage\s+exceeded)/i;
 
+const OPENCODE_MODEL_UNAVAILABLE_RE =
+  /ProviderModelNotFoundError|model\s+not\s+found|unknown\s+model|unsupported\s+model/i;
+
+function isPingPongProbeSuccessful(summary: string, stdout: string, stderr: string): boolean {
+  return /\bPONG\b/i.test(`${summary}\n${stdout}\n${stderr}`);
+}
+
+function buildModelProbeCheck(
+  modelId: string,
+  probe: {
+    timedOut: boolean;
+    exitCode: number | null;
+    stdout: string;
+    stderr: string;
+    errorMessage: string | null;
+  },
+): AdapterEnvironmentCheck {
+  const evidence = `${probe.errorMessage ?? ""}\n${probe.stdout}\n${probe.stderr}`.trim();
+  const detail = summarizeProbeDetail(probe.stdout, probe.stderr, probe.errorMessage);
+
+  if (probe.timedOut) {
+    return {
+      code: "opencode_model_probe_timed_out",
+      level: "warn",
+      message: `OpenCode probe timed out for model ${modelId}.`,
+      ...(detail ? { detail } : {}),
+      hint: "Retry the probe. If this persists, run OpenCode manually for this model in the same working directory.",
+    };
+  }
+
+  if ((probe.exitCode ?? 1) === 0 && !probe.errorMessage && isPingPongProbeSuccessful(probe.stdout, probe.stdout, probe.stderr)) {
+    return {
+      code: "opencode_model_probe_passed",
+      level: "info",
+      message: `OpenCode model probe passed: ${modelId}`,
+      ...(detail ? { detail } : {}),
+    };
+  }
+
+  if (/ProviderModelNotFoundError/i.test(evidence) || OPENCODE_MODEL_UNAVAILABLE_RE.test(evidence)) {
+    return {
+      code: "opencode_model_probe_unavailable",
+      level: "warn",
+      message: `OpenCode model unavailable: ${modelId}`,
+      ...(detail ? { detail } : {}),
+      hint: "Run `opencode models` and choose an available provider/model ID.",
+    };
+  }
+
+  if (OPENCODE_AUTH_REQUIRED_RE.test(evidence)) {
+    return {
+      code: "opencode_model_probe_auth_required",
+      level: "warn",
+      message: `OpenCode auth required for model ${modelId}.`,
+      ...(detail ? { detail } : {}),
+      hint: "Run `opencode auth login` or set provider credentials, then retry the probe.",
+    };
+  }
+
+  return {
+    code: "opencode_model_probe_failed",
+    level: "error",
+    message: `OpenCode model probe failed for ${modelId}.`,
+    ...(detail ? { detail } : {}),
+    hint: "Run `opencode run --format json` manually for this model with the PING/PONG prompt to debug.",
+  };
+}
+
 export async function testEnvironment(
   ctx: AdapterEnvironmentTestContext,
 ): Promise<AdapterEnvironmentTestResult> {
@@ -156,8 +224,8 @@ export async function testEnvironment(
     const canRunProbe =
       checks.every((check) => check.code !== "opencode_cwd_invalid" && check.code !== "opencode_command_unresolvable");
 
-    let modelValidationPassed = false;
     const configuredModel = asString(config.model, "").trim();
+    let discoveredModels: Awaited<ReturnType<typeof discoverOpenCodeModels>> = [];
 
     if (canRunProbe) {
       try {
@@ -187,14 +255,15 @@ export async function testEnvironment(
       }
     }
 
-    if (canRunProbe && configuredModel) {
+    if (canRunProbe) {
       try {
-        const discovered = await discoverOpenCodeModels({ command, cwd, env: runtimeEnv });
-        if (discovered.length > 0) {
+        discoveredModels = await discoverOpenCodeModels({ command, cwd, env: runtimeEnv });
+        if (discoveredModels.length > 0) {
           checks.push({
             code: "opencode_models_discovered",
             level: "info",
-            message: `Discovered ${discovered.length} model(s) from OpenCode providers.`,
+            message: `Discovered ${discoveredModels.length} model(s) from OpenCode providers.`,
+            detail: discoveredModels.slice(0, 10).map((entry) => entry.id).join(", ") + (discoveredModels.length > 10 ? ", ..." : ""),
           });
         } else {
           checks.push({
@@ -223,35 +292,6 @@ export async function testEnvironment(
           });
         }
       }
-    } else if (canRunProbe && !configuredModel) {
-      try {
-        const discovered = await discoverOpenCodeModels({ command, cwd, env: runtimeEnv });
-        if (discovered.length > 0) {
-          checks.push({
-            code: "opencode_models_discovered",
-            level: "info",
-            message: `Discovered ${discovered.length} model(s) from OpenCode providers.`,
-          });
-        }
-      } catch (err) {
-        const errMsg = err instanceof Error ? err.message : String(err);
-        if (/ProviderModelNotFoundError/i.test(errMsg)) {
-          checks.push({
-            code: "opencode_hello_probe_model_unavailable",
-            level: "warn",
-            message: "The configured model was not found by the provider.",
-            detail: errMsg,
-            hint: "Run `opencode models` and choose an available provider/model ID.",
-          });
-        } else {
-          checks.push({
-            code: "opencode_models_discovery_failed",
-            level: "warn",
-            message: errMsg || "OpenCode model discovery failed (best-effort, no model configured).",
-            hint: "Run `opencode models` manually to verify provider auth and config.",
-          });
-        }
-      }
     }
 
     const modelUnavailable = checks.some((check) => check.code === "opencode_hello_probe_model_unavailable");
@@ -270,7 +310,6 @@ export async function testEnvironment(
           level: "info",
           message: `Configured model: ${configuredModel}`,
         });
-        modelValidationPassed = true;
       } catch (err) {
         checks.push({
           code: "opencode_model_invalid",
@@ -281,94 +320,69 @@ export async function testEnvironment(
       }
     }
 
-    if (canRunProbe && modelValidationPassed) {
+    const probeOpenCodeModel = async (modelId: string) => {
       const extraArgs = (() => {
         const fromExtraArgs = asStringArray(config.extraArgs);
         if (fromExtraArgs.length > 0) return fromExtraArgs;
         return asStringArray(config.args);
       })();
       const variant = asString(config.variant, "").trim();
-      const probeModel = configuredModel;
-
-      const args = ["run", "--format", "json"];
-      args.push("--model", probeModel);
+      const args = ["run", "--format", "json", "--model", modelId];
       if (variant) args.push("--variant", variant);
       if (extraArgs.length > 0) args.push(...extraArgs);
 
-      try {
-        const probe = await runChildProcess(
-          `opencode-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
-          command,
-          args,
-          {
-            cwd,
-            env: runtimeEnv,
-            timeoutSec: 60,
-            graceSec: 5,
-            stdin: PROBE_PROMPT,
-            onLog: async () => {},
-          },
-        );
+      const probe = await runChildProcess(
+        `opencode-envtest-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        command,
+        args,
+        {
+          cwd,
+          env: runtimeEnv,
+          timeoutSec: 60,
+          graceSec: 5,
+          stdin: PROBE_PROMPT,
+          onLog: async () => {},
+        },
+      );
 
-        const parsed = parseOpenCodeJsonl(probe.stdout);
-        const detail = summarizeProbeDetail(probe.stdout, probe.stderr, parsed.errorMessage);
-        const authEvidence = `${parsed.errorMessage ?? ""}\n${probe.stdout}\n${probe.stderr}`.trim();
+      const parsed = parseOpenCodeJsonl(probe.stdout);
+      return buildModelProbeCheck(modelId, {
+        timedOut: probe.timedOut,
+        exitCode: probe.exitCode,
+        stdout: probe.stdout,
+        stderr: `${probe.stderr}\n${parsed.errorMessage ?? ""}`.trim(),
+        errorMessage: parsed.errorMessage,
+      });
+    };
 
-        if (probe.timedOut) {
+    if (canRunProbe && discoveredModels.length > 0) {
+      const modelsToProbe = configuredModel
+        ? discoveredModels.filter((entry) => entry.id === configuredModel)
+        : discoveredModels;
+
+      for (const discoveredModel of modelsToProbe) {
+        try {
+          checks.push(await probeOpenCodeModel(discoveredModel.id));
+        } catch (err) {
           checks.push({
-            code: "opencode_hello_probe_timed_out",
-            level: "warn",
-            message: "OpenCode PING/PONG probe timed out.",
-            hint: "Retry the probe. If this persists, run OpenCode manually in this working directory.",
-          });
-        } else if ((probe.exitCode ?? 1) === 0 && !parsed.errorMessage) {
-          const summary = parsed.summary.trim();
-          const hasHello = /\bhello\b/i.test(summary);
-          checks.push({
-            code: hasHello ? "opencode_hello_probe_passed" : "opencode_hello_probe_unexpected_output",
-            level: hasHello ? "info" : "warn",
-            message: hasHello
-              ? "OpenCode PING/PONG probe succeeded."
-              : "OpenCode probe ran but did not return `PONG` as expected.",
-            ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
-            ...(hasHello
-              ? {}
-              : {
-                  hint: "Run `opencode run --format json` manually and prompt the PING/PONG question to inspect output.",
-                }),
-          });
-        } else if (/ProviderModelNotFoundError/i.test(authEvidence)) {
-          checks.push({
-            code: "opencode_hello_probe_model_unavailable",
-            level: "warn",
-            message: "The configured model was not found by the provider.",
-            ...(detail ? { detail } : {}),
-            hint: "Run `opencode models` and choose an available provider/model ID.",
-          });
-        } else if (OPENCODE_AUTH_REQUIRED_RE.test(authEvidence)) {
-          checks.push({
-            code: "opencode_hello_probe_auth_required",
-            level: "warn",
-            message: "OpenCode is installed, but provider authentication is not ready.",
-            ...(detail ? { detail } : {}),
-            hint: "Run `opencode auth login` or set provider credentials, then retry the probe.",
-          });
-        } else {
-          checks.push({
-            code: "opencode_hello_probe_failed",
+            code: "opencode_model_probe_failed",
             level: "error",
-            message: "OpenCode PING/PONG probe failed.",
-            ...(detail ? { detail } : {}),
-            hint: "Run `opencode run --format json` manually in this working directory with the PING/PONG question to debug.",
+            message: `OpenCode model probe failed for ${discoveredModel.id}.`,
+            detail: err instanceof Error ? err.message : String(err),
+            hint: "Run `opencode run --format json --model <provider/model>` manually with the PING/PONG question to debug.",
           });
         }
+      }
+    } else if (canRunProbe && configuredModel) {
+      try {
+        checks.push(await probeOpenCodeModel(configuredModel));
       } catch (err) {
         checks.push({
-          code: "opencode_hello_probe_failed",
+          code: "opencode_model_probe_failed",
           level: "error",
-          message: "OpenCode PING/PONG probe failed.",
+          message: `OpenCode model probe failed for ${configuredModel}.`,
           detail: err instanceof Error ? err.message : String(err),
-          hint: "Run `opencode run --format json` manually in this working directory with the PING/PONG question to debug.",
+          hint: "Run `opencode run --format json --model <provider/model>` manually with the PING/PONG question to debug.",
         });
       }
     }

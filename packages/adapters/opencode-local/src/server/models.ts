@@ -7,7 +7,7 @@ import {
   runChildProcess,
 } from "@clawdev/adapter-utils/server-utils";
 
-const MODELS_CACHE_TTL_MS = 60_000;
+const MODELS_CACHE_TTL_MS = 10_000;
 const MODELS_DISCOVERY_TIMEOUT_MS = 20_000;
 
 function resolveOpenCodeCommand(input: unknown): string {
@@ -54,24 +54,96 @@ function firstNonEmptyLine(text: string): string {
   );
 }
 
+function pushModel(
+  parsed: AdapterModel[],
+  input: {
+    provider: string;
+    model: string;
+    label?: string;
+    status?: AdapterModel["status"];
+    statusDetail?: string;
+  },
+) {
+  const provider = input.provider.trim();
+  const model = input.model.trim();
+  if (!provider || !model) return;
+  const id = model.includes("/") ? model : `${provider}/${model}`;
+  parsed.push({
+    id,
+    label: input.label?.trim() || model,
+    status: input.status ?? "available",
+    statusDetail: input.statusDetail?.trim() || undefined,
+    provider,
+    probedAt: new Date().toISOString(),
+  });
+}
+
+function parseJsonModels(stdout: string): AdapterModel[] {
+  const parsed: AdapterModel[] = [];
+  const trimmed = stdout.trim();
+  if (!trimmed.startsWith("[") && !trimmed.startsWith("{")) return parsed;
+  let value: unknown;
+  try {
+    value = JSON.parse(trimmed);
+  } catch {
+    return parsed;
+  }
+
+  const items = Array.isArray(value)
+    ? value
+    : Array.isArray((value as Record<string, unknown> | null)?.models)
+      ? ((value as Record<string, unknown>).models as unknown[])
+      : Array.isArray((value as Record<string, unknown> | null)?.data)
+        ? ((value as Record<string, unknown>).data as unknown[])
+        : [];
+
+  for (const item of items) {
+    if (typeof item !== "object" || item === null || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const provider =
+      asString(record.provider, "").trim() ||
+      asString(record.providerID, "").trim() ||
+      asString(record.providerId, "").trim();
+    const rawModel =
+      asString(record.model, "").trim() ||
+      asString(record.modelID, "").trim() ||
+      asString(record.modelId, "").trim() ||
+      asString(record.id, "").trim();
+    const label = asString(record.label, "").trim() || asString(record.name, "").trim();
+    const status = asString(record.status, "available").trim() as AdapterModel["status"];
+    const statusDetail = asString(record.statusDetail, "").trim() || asString(record.detail, "").trim();
+    if (!provider || !rawModel) continue;
+    const model = rawModel.includes("/") ? rawModel.slice(rawModel.indexOf("/") + 1) : rawModel;
+    pushModel(parsed, { provider, model: rawModel, label: label || model, status, statusDetail });
+  }
+
+  return parsed;
+}
+
 function parseModelsOutput(stdout: string): AdapterModel[] {
   const parsed: AdapterModel[] = [];
-  const probedAt = new Date().toISOString();
+  const jsonModels = parseJsonModels(stdout);
+  if (jsonModels.length > 0) {
+    return dedupeModels(jsonModels);
+  }
   for (const raw of stdout.split(/\r?\n/)) {
     const line = raw.trim();
     if (!line) continue;
     const firstToken = line.split(/\s+/)[0]?.trim() ?? "";
-    if (!firstToken.includes("/")) continue;
-    const provider = firstToken.slice(0, firstToken.indexOf("/")).trim();
-    const model = firstToken.slice(firstToken.indexOf("/") + 1).trim();
+    if (firstToken.includes("/")) {
+      const provider = firstToken.slice(0, firstToken.indexOf("/")).trim();
+      const model = firstToken.slice(firstToken.indexOf("/") + 1).trim();
+      if (!provider || !model) continue;
+      pushModel(parsed, { provider, model, label: model });
+      continue;
+    }
+    const parts = line.split(/\s{2,}|\t+|\s+/).filter(Boolean);
+    if (parts.length < 2) continue;
+    const provider = parts[0]?.trim() ?? "";
+    const model = parts[1]?.trim() ?? "";
     if (!provider || !model) continue;
-    parsed.push({
-      id: `${provider}/${model}`,
-      label: `${provider}/${model}`,
-      status: "available",
-      provider,
-      probedAt,
-    });
+    if (provider === "provider" && model === "model") continue;
+    pushModel(parsed, { provider, model, label: model });
   }
   return dedupeModels(parsed);
 }
