@@ -2,6 +2,7 @@
   import { page } from '$app/stores';
   import { breadcrumbStore } from '$stores/breadcrumb.svelte.js';
   import { companyStore, resolveCompanyIdFromPrefix } from '$stores/company.svelte.js';
+  import { toastStore } from '$stores/toast.svelte.js';
   import { api } from '$lib/api';
   import { onMount, onDestroy } from 'svelte';
   import { Skeleton, Badge, Input, Button } from '$lib/components/ui/index.js';
@@ -9,6 +10,7 @@
   import { Tabs, TabsList, TabsTrigger, TabsContent } from '$lib/components/ui/index.js';
   import ProviderIcon from '$lib/components/providers/provider-icon.svelte';
   import TimeAgo from '$lib/components/time-ago.svelte';
+  import { PI_BRIDGE_PROVIDER_PRESETS } from '@clawdev/shared';
   import {
     RefreshCw,
     Search,
@@ -40,6 +42,10 @@
     authConfigurable: boolean;
     totalModels: number;
     authMethods: Array<'api' | 'oauth' | 'custom'>;
+  }
+
+  interface BridgeProviderCard extends ProviderSummary {
+    configuredCredential: boolean;
   }
 
   interface Model {
@@ -80,6 +86,43 @@
     models: ModelStatus[];
   }
 
+  interface RoutingLogEntry {
+    id?: string;
+    requestedAdapterType?: string | null;
+    requestedModelId?: string | null;
+    resolvedAdapterType: string;
+    resolvedModelId: string;
+    resolution: string;
+    fallbackDepth: number;
+    reason?: string | null;
+    outcome?: string | null;
+    authProfileKey?: string | null;
+    occurredAt?: string | null;
+  }
+
+  interface RoutingAgentOption {
+    id: string;
+    name: string;
+    role: string;
+    adapterType: string;
+    status: string;
+  }
+
+  interface RoutingPolicyOption {
+    id?: string;
+    name: string;
+    role?: string | null;
+    complexity?: string | null;
+    routingStrategy?: string | null;
+  }
+
+  interface CompanySecret {
+    id: string;
+    name: string;
+    provider?: string | null;
+    description?: string | null;
+  }
+
   interface CredentialProviderCard {
     provider: string;
     displayName: string;
@@ -112,6 +155,7 @@
 
   // Provider summary
   let providerSummaries = $state<ProviderSummary[]>([]);
+  let companySecrets = $state<CompanySecret[]>([]);
 
   // Models tab
   let models = $state<Model[]>([]);
@@ -131,6 +175,27 @@
   // Status tab
   let providerStatuses = $state<ProviderStatus[]>([]);
   let statusLoading = $state(true);
+  let actionKey = $state<string | null>(null);
+
+  // Routing tab
+  let routingLoading = $state(false);
+  let routingEntries = $state<RoutingLogEntry[]>([]);
+  let routingAgents = $state<RoutingAgentOption[]>([]);
+  let routingPolicies = $state<RoutingPolicyOption[]>([]);
+  let routingPreviewRunning = $state(false);
+  let routingPreviewError = $state<string | null>(null);
+  let routingPreviewResult = $state<any | null>(null);
+  let selectedRoutingAgentId = $state('');
+  let selectedRoutingPolicyName = $state('');
+  let routingPreview = $state({
+    agentId: 'preview-agent',
+    adapterType: 'codex_local',
+    modelId: 'auto',
+    role: 'engineer',
+    taskComplexity: 'standard',
+    taskPriority: 'medium',
+    requiredCapabilities: 'code',
+  });
 
   // Adapter readiness
   let adapterReadiness = $state<AdapterReadiness[]>([]);
@@ -151,82 +216,41 @@
   let routeCompanyId = $derived(resolveCompanyIdFromPrefix($page.params.companyPrefix));
   let companyId = $derived(routeCompanyId);
   let prefix = $derived($page.params.companyPrefix);
-  const HIDDEN_ADAPTERS = ['process', 'http', 'openclaw_gateway', 'pi_local', 'openai_compatible_local'];
-  const CREDENTIAL_PROVIDER_CARDS: CredentialProviderCard[] = [
-    {
-      provider: 'groq',
-      displayName: 'Groq',
-      authMethod: 'api',
-      envVars: ['GROQ_API_KEY'],
-      description: 'Fast hosted inference with OpenAI-compatible responses.',
-      sampleModel: 'groq/qwen-qwq-32b',
-    },
-    {
-      provider: 'xai',
-      displayName: 'xAI',
-      authMethod: 'api',
-      envVars: ['XAI_API_KEY'],
-      description: 'Grok models routed through Pi.',
-      sampleModel: 'xai/grok-4',
-    },
-    {
-      provider: 'mistral',
-      displayName: 'Mistral',
-      authMethod: 'api',
-      envVars: ['MISTRAL_API_KEY'],
-      description: 'Mistral code and chat models bridged by Pi.',
-      sampleModel: 'mistral/devstral-medium-latest',
-    },
-    {
-      provider: 'cerebras',
-      displayName: 'Cerebras',
-      authMethod: 'api',
-      envVars: ['CEREBRAS_API_KEY'],
-      description: 'High-throughput hosted models for fast loops.',
-      sampleModel: 'cerebras/llama-3.1-70b',
-    },
-    {
-      provider: 'openrouter',
-      displayName: 'OpenRouter',
-      authMethod: 'api',
-      envVars: ['OPENROUTER_API_KEY'],
-      description: 'Model router with broad provider coverage.',
-      sampleModel: 'openrouter/anthropic/claude-3.7-sonnet',
-    },
-    {
-      provider: 'minimax',
-      displayName: 'MiniMax',
-      authMethod: 'api',
-      envVars: ['MINIMAX_API_KEY'],
-      description: 'Chinese-language and multimodal model access.',
-      sampleModel: 'minimax/abab6.5s',
-    },
-    {
-      provider: 'kimi-coding',
-      displayName: 'Kimi Coding',
-      authMethod: 'api',
-      envVars: ['KIMI_CODING_API_KEY'],
-      description: 'Coding-oriented Kimi models via Pi.',
-      sampleModel: 'kimi-coding/kimi-k2',
-    },
-    {
-      provider: 'azure',
-      displayName: 'Azure OpenAI',
-      authMethod: 'api',
-      envVars: ['AZURE_OPENAI_API_KEY', 'AZURE_OPENAI_ENDPOINT'],
-      description: 'Azure-hosted OpenAI-compatible deployments.',
-      sampleModel: 'azure/gpt-4.1',
-    },
-  ];
+  const HIDDEN_ADAPTERS = ['process', 'http', 'openclaw_gateway'];
+  const BRIDGE_PROVIDER_NAMES = new Set(PI_BRIDGE_PROVIDER_PRESETS.map((preset) => preset.provider));
+
+  const configuredSecretNames = $derived(
+    new Set(companySecrets.map((secret) => secret.name.trim().toUpperCase()).filter(Boolean)),
+  );
+
+  const credentialProviderStats = $derived.by(() => {
+    const stats = new Map<string, { available: number; cooldown: number; unavailable: number; total: number }>();
+    for (const model of models) {
+      const provider = (model.providerName ?? '').trim();
+      if (!provider) continue;
+      const current = stats.get(provider) ?? { available: 0, cooldown: 0, unavailable: 0, total: 0 };
+      const status = normalizeModelStatus(model.status);
+      current.total += 1;
+      if (status === 'available') current.available += 1;
+      else if (status === 'cooldown') current.cooldown += 1;
+      else current.unavailable += 1;
+      stats.set(provider, current);
+    }
+    return stats;
+  });
+
+  function hasConfiguredCredential(envVars: string[]): boolean {
+    return envVars.some((envVar) => configuredSecretNames.has(envVar.trim().toUpperCase()));
+  }
 
   let providerCards = $derived.by(() => {
     if (providerSummaries.length > 0) {
-      return providerSummaries.filter((p) => !HIDDEN_ADAPTERS.includes(p.adapterType));
+      return providerSummaries.filter((p) => !HIDDEN_ADAPTERS.includes(p.adapterType) && !BRIDGE_PROVIDER_NAMES.has(p.adapterType));
     }
 
     const byAdapter = new Map<string, ProviderSummary>();
     for (const model of models) {
-      if (HIDDEN_ADAPTERS.includes(model.adapterType)) continue;
+      if (HIDDEN_ADAPTERS.includes(model.adapterType) || BRIDGE_PROVIDER_NAMES.has(model.adapterType)) continue;
       const current = byAdapter.get(model.adapterType);
       const normalizedStatus = normalizeModelStatus(model.status);
       const isAvailable = normalizedStatus === 'available';
@@ -257,12 +281,41 @@
     return [...byAdapter.values()].sort((a, b) => a.displayName.localeCompare(b.displayName));
   });
 
+  let bridgeProviderCards = $derived.by(() => {
+    const cardMap = new Map(providerCards.map((card) => [card.adapterType, card]));
+    return PI_BRIDGE_PROVIDER_PRESETS.map((preset) => {
+      const existing = cardMap.get(preset.provider);
+      const configuredCredential = hasConfiguredCredential(preset.envVars);
+      const stats = credentialProviderStats.get(preset.provider) ?? { available: 0, cooldown: 0, unavailable: 0, total: 0 };
+      return {
+        adapterType: preset.provider,
+        displayName: existing?.displayName ?? preset.label,
+        available: existing?.available ?? stats.available,
+        cooldown: existing?.cooldown ?? stats.cooldown,
+        unavailable: existing?.unavailable ?? stats.unavailable,
+        free: existing?.free ?? 0,
+        billingType: existing?.billingType ?? 'paid',
+        authConfigurable: existing?.authConfigurable ?? false,
+        totalModels: existing?.totalModels ?? stats.total,
+        authMethods: existing?.authMethods?.length ? existing.authMethods : ['api'],
+        configuredCredential,
+      } satisfies BridgeProviderCard;
+    });
+  });
+
+  let cliProviderCards = $derived.by(() =>
+    providerCards.filter((provider) => !BRIDGE_PROVIDER_NAMES.has(provider.adapterType)),
+  );
+
   let runtimeOverview = $derived.by(() => {
-    const providerCount = providerCards.length;
+    const providerCount = providerCards.length + bridgeProviderCards.length;
     const modelCount = models.length;
-    const availableCount = models.filter((m) => m.status === 'available').length;
-    const cooldownCount = models.filter((m) => m.status === 'cooldown').length;
-    const unavailableCount = models.filter((m) => m.status === 'unavailable' || m.status === 'unknown').length;
+    const availableCount = models.filter((m) => normalizeModelStatus(m.status) === 'available').length;
+    const cooldownCount = models.filter((m) => normalizeModelStatus(m.status) === 'cooldown').length;
+    const unavailableCount = models.filter((m) => {
+      const status = normalizeModelStatus(m.status);
+      return status !== 'available' && status !== 'cooldown';
+    }).length;
     const freeCount = models.filter((m) => m.isFree).length;
     const authMethods = new Set(providerSummaries.flatMap((p) => p.authMethods ?? []));
     return {
@@ -279,9 +332,8 @@
   // ── Derived: filtered models ─────────────────────────────────────
   let filteredModels = $derived.by(() => {
     let result = models;
-    // Hide unavailable models by default
     if (hideUnavailable) {
-      result = result.filter((m) => m.status !== 'unavailable');
+      result = result.filter((m) => normalizeModelStatus(m.status) === 'available');
     }
     if (modelSearch) {
       const q = modelSearch.toLowerCase();
@@ -327,11 +379,20 @@
     }
   }
 
+  async function fetchJson<T>(url: string, init?: RequestInit): Promise<T> {
+    const res = await api(url, init);
+    const payload = await res.json().catch(() => null);
+    if (!res.ok) {
+      throw new Error(payload?.error ?? payload?.message ?? `Request failed (${res.status})`);
+    }
+    return payload as T;
+  }
+
   // ── Data loading ──────────────────────────────────────────────────
   async function loadProviderSummaries() {
     if (!companyId) return;
     try {
-      const data = await safeFetch<any>(`/api/providers/summary`, []);
+      const data = await safeFetch<any>(`/api/providers/summary?companyId=${encodeURIComponent(companyId)}`, []);
       const raw = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
       const filtered = raw.filter((p: any) => !HIDDEN_ADAPTERS.includes(p.adapterType));
 
@@ -355,11 +416,27 @@
     }
   }
 
+  async function loadCompanySecrets() {
+    if (!companyId) return;
+    try {
+      const data = await safeFetch<any>(`/api/companies/${companyId}/secrets`, []);
+      const raw = Array.isArray(data) ? data : data?.secrets ?? data?.items ?? [];
+      companySecrets = raw.map((secret: any) => ({
+        id: secret.id ?? '',
+        name: secret.name ?? '',
+        provider: secret.provider ?? null,
+        description: secret.description ?? null,
+      }));
+    } catch {
+      companySecrets = [];
+    }
+  }
+
   async function loadModels() {
     if (!companyId) return;
     modelsLoading = true;
     try {
-      const data = await safeFetch<any>(`/api/models`, []);
+      const data = await safeFetch<any>(`/api/models?companyId=${encodeURIComponent(companyId)}`, []);
       const raw = Array.isArray(data) ? data : data?.data ?? data?.models ?? data?.items ?? [];
       models = raw.map((m: any) => ({
         id: m.id ?? m.modelId,
@@ -389,7 +466,7 @@
     statusLoading = true;
     try {
       // Use the providers list to fetch status per provider
-      const data = await safeFetch<any>(`/api/providers/summary`, []);
+      const data = await safeFetch<any>(`/api/providers/summary?companyId=${encodeURIComponent(companyId)}`, []);
       const raw = Array.isArray(data) ? data : data?.data ?? data?.providers ?? data?.items ?? [];
       const filtered = raw.filter((p: any) => !HIDDEN_ADAPTERS.includes(p.adapterType));
 
@@ -410,7 +487,7 @@
           consecutiveFailures: m.failureCount ?? m.consecutiveFailures ?? 0,
           lastProbed: m.lastProbed ?? m.lastHealthCheck ?? m.lastProbeAt ?? null,
         })),
-      }));
+      })).filter((provider: ProviderStatus) => !BRIDGE_PROVIDER_NAMES.has(provider.adapterType));
     } catch {
       providerStatuses = [];
     } finally {
@@ -441,21 +518,112 @@
     }
   }
 
+  async function loadRoutingLog() {
+    if (!companyId) return;
+    routingLoading = true;
+    try {
+      const data = await safeFetch<any>(
+        `/api/companies/${companyId}/model-routing-log?limit=25`,
+        { entries: [] },
+      );
+      const raw = Array.isArray(data) ? data : data?.entries ?? [];
+      routingEntries = raw.map((entry: any) => ({
+        id: entry.id ?? `${entry.occurredAt ?? ''}:${entry.resolvedAdapterType ?? ''}:${entry.resolvedModelId ?? ''}`,
+        requestedAdapterType: entry.requestedAdapterType ?? null,
+        requestedModelId: entry.requestedModelId ?? null,
+        resolvedAdapterType: entry.resolvedAdapterType ?? '',
+        resolvedModelId: entry.resolvedModelId ?? '',
+        resolution: entry.resolution ?? entry.resolutionType ?? 'unknown',
+        fallbackDepth: entry.fallbackDepth ?? 0,
+        reason: entry.reason ?? null,
+        outcome: entry.outcome ?? null,
+        authProfileKey: entry.authProfileKey ?? null,
+        occurredAt: entry.occurredAt ?? entry.timestamp ?? null,
+      }));
+    } catch {
+      routingEntries = [];
+    } finally {
+      routingLoading = false;
+    }
+  }
+
+  async function loadRoutingContext() {
+    if (!companyId) return;
+    try {
+      const [agentsData, policiesData] = await Promise.all([
+        safeFetch<any>(`/api/companies/${companyId}/agents`, []),
+        safeFetch<any>(`/api/companies/${companyId}/model-routing-policies`, { policies: [] }),
+      ]);
+
+      const rawAgents = Array.isArray(agentsData) ? agentsData : agentsData?.agents ?? [];
+      routingAgents = rawAgents
+        .map((agent: any) => ({
+          id: String(agent.id ?? ''),
+          name: String(agent.name ?? ''),
+          role: String(agent.role ?? 'general'),
+          adapterType: String(agent.adapterType ?? ''),
+          status: String(agent.status ?? 'unknown'),
+        }))
+        .filter((agent: RoutingAgentOption) => agent.id && agent.name)
+        .sort((a: RoutingAgentOption, b: RoutingAgentOption) => a.name.localeCompare(b.name));
+
+      const rawPolicies = Array.isArray(policiesData) ? policiesData : policiesData?.policies ?? [];
+      routingPolicies = rawPolicies
+        .map((policy: any) => ({
+          id: typeof policy.id === 'string' ? policy.id : undefined,
+          name: String(policy.name ?? 'Unnamed policy'),
+          role: typeof policy.role === 'string' ? policy.role : null,
+          complexity: typeof policy.complexity === 'string' ? policy.complexity : null,
+          routingStrategy: typeof policy.routingStrategy === 'string' ? policy.routingStrategy : null,
+        }))
+        .filter((policy: RoutingPolicyOption) => policy.name);
+    } catch {
+      routingAgents = [];
+      routingPolicies = [];
+    }
+  }
+
   // ── Load on companyId change ──────────────────────────────────────
   $effect(() => {
     if (!companyId) return;
     loading = true;
     loadProviderSummaries();
+    loadCompanySecrets();
     loadModels();
     loadAdapterReadiness();
+  });
+
+  $effect(() => {
+    if (!companyId || activeTab !== 'routing') return;
+    loadRoutingContext();
+    loadRoutingLog();
+  });
+
+  $effect(() => {
+    if (!selectedRoutingAgentId) return;
+    const agent = routingAgents.find((candidate) => candidate.id === selectedRoutingAgentId);
+    if (!agent) return;
+    routingPreview.agentId = agent.id;
+    routingPreview.adapterType = agent.adapterType || routingPreview.adapterType;
+    routingPreview.role = agent.role || routingPreview.role;
+  });
+
+  $effect(() => {
+    if (!selectedRoutingPolicyName) return;
+    const policy = routingPolicies.find((candidate) => candidate.name === selectedRoutingPolicyName);
+    if (!policy) return;
+    if (policy.role) routingPreview.role = policy.role;
+    if (policy.complexity && policy.complexity !== 'any') routingPreview.taskComplexity = policy.complexity;
   });
 
   onMount(() => {
     refreshInterval = setInterval(() => {
       if (companyId) {
         loadProviderSummaries();
+        loadCompanySecrets();
         if (activeTab === 'models') loadModels();
         if (activeTab === 'status') loadProviderStatuses();
+        if (activeTab === 'routing') loadRoutingLog();
         loadAdapterReadiness();
       }
     }, 30_000);
@@ -471,6 +639,124 @@
     const mins = Math.floor(remaining / 60000);
     const secs = Math.floor((remaining % 60000) / 1000);
     return `${mins}:${secs.toString().padStart(2, '0')}`;
+  }
+
+  async function refreshCurrentTab() {
+    if (!companyId) return;
+    await loadProviderSummaries();
+    if (activeTab === 'models') await loadModels();
+    if (activeTab === 'status') await loadProviderStatuses();
+    if (activeTab === 'routing') await loadRoutingLog();
+  }
+
+  async function probeProvider(adapterType: string) {
+    if (!companyId) return;
+    actionKey = `probe:${adapterType}`;
+    try {
+      await fetchJson(`/api/providers/${encodeURIComponent(adapterType)}/probe`, {
+        method: 'POST',
+      });
+      toastStore.push({ title: `${adapterType} probed`, tone: 'success' });
+      await refreshCurrentTab();
+    } catch (err: any) {
+      toastStore.push({ title: 'Probe failed', body: err?.message, tone: 'error' });
+    } finally {
+      actionKey = null;
+    }
+  }
+
+  async function applyCooldown(adapterType: string, modelId: string, durationMinutes = 10) {
+    if (!companyId) return;
+    actionKey = `cooldown:${adapterType}:${modelId}`;
+    try {
+      await fetchJson(
+        `/api/providers/${encodeURIComponent(adapterType)}/models/${encodeURIComponent(modelId)}/cooldown?companyId=${encodeURIComponent(companyId)}`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ durationMinutes, reason: 'manual_cooldown' }),
+        },
+      );
+      toastStore.push({ title: 'Cooldown applied', body: `${modelId} for ${durationMinutes} minutes`, tone: 'success' });
+      await Promise.all([loadProviderSummaries(), loadModels(), loadProviderStatuses()]);
+    } catch (err: any) {
+      toastStore.push({ title: 'Cooldown failed', body: err?.message, tone: 'error' });
+    } finally {
+      actionKey = null;
+    }
+  }
+
+  async function clearCooldown(adapterType: string, modelId: string) {
+    if (!companyId) return;
+    actionKey = `clear:${adapterType}:${modelId}`;
+    try {
+      await fetchJson(
+        `/api/providers/${encodeURIComponent(adapterType)}/models/${encodeURIComponent(modelId)}/cooldown?companyId=${encodeURIComponent(companyId)}`,
+        {
+          method: 'DELETE',
+        },
+      );
+      toastStore.push({ title: 'Cooldown cleared', body: modelId, tone: 'success' });
+      await Promise.all([loadProviderSummaries(), loadModels(), loadProviderStatuses()]);
+    } catch (err: any) {
+      toastStore.push({ title: 'Clear failed', body: err?.message, tone: 'error' });
+    } finally {
+      actionKey = null;
+    }
+  }
+
+  async function clearExpiredCooldowns() {
+    if (!companyId) return;
+    actionKey = 'clear-expired';
+    try {
+      const data = await fetchJson<{ cleared: number }>(
+        `/api/providers/clear-expired-cooldowns?companyId=${encodeURIComponent(companyId)}`,
+        { method: 'POST' },
+      );
+      toastStore.push({
+        title: data.cleared > 0 ? 'Expired cooldowns cleared' : 'No expired cooldowns',
+        body: `${data.cleared} row${data.cleared === 1 ? '' : 's'} updated`,
+        tone: data.cleared > 0 ? 'success' : 'info',
+      });
+      await Promise.all([loadProviderSummaries(), loadModels(), loadProviderStatuses()]);
+    } catch (err: any) {
+      toastStore.push({ title: 'Cleanup failed', body: err?.message, tone: 'error' });
+    } finally {
+      actionKey = null;
+    }
+  }
+
+  async function previewRouting() {
+    if (!companyId) return;
+    routingPreviewRunning = true;
+    routingPreviewError = null;
+    routingPreviewResult = null;
+    try {
+      const requiredCapabilities = routingPreview.requiredCapabilities
+        .split(',')
+        .map((value) => value.trim())
+        .filter(Boolean);
+      routingPreviewResult = await fetchJson(
+        `/api/companies/${encodeURIComponent(companyId)}/model-resolve`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            agentId: routingPreview.agentId,
+            adapterType: routingPreview.adapterType,
+            modelId: routingPreview.modelId || 'auto',
+            role: routingPreview.role || undefined,
+            taskComplexity: routingPreview.taskComplexity || undefined,
+            taskPriority: routingPreview.taskPriority || undefined,
+            requiredCapabilities,
+          }),
+        },
+      );
+    } catch (err: any) {
+      routingPreviewError = err?.message ?? 'Routing preview failed';
+    } finally {
+      routingPreviewRunning = false;
+    }
   }
 
   // ── Formatters ────────────────────────────────────────────────────
@@ -661,95 +947,66 @@
   <div class="rounded-xl border border-border bg-card p-4">
     <div class="flex items-center justify-between gap-3">
       <div>
-        <h2 class="text-sm font-semibold text-foreground">Integrated adapters</h2>
-        <p class="text-xs text-muted-foreground">These adapters stay active as runtime integrations: Claude, Codex, Gemini, Copilot, and OpenCode.</p>
+        <h2 class="text-sm font-semibold text-foreground">Bridge providers</h2>
+        <p class="text-xs text-muted-foreground">Provider credentials mapped into the Pi bridge so non-dedicated vendors still show up with live catalog status.</p>
       </div>
       <Badge variant="outline" class="text-[10px] uppercase tracking-[0.18em]">
-        CLI adapters
+        {bridgeProviderCards.length} providers
       </Badge>
-    </div>
-    <div class="mt-3 flex flex-wrap gap-2">
-      {#each ['claude_local', 'codex_local', 'copilot_local', 'cursor', 'gemini_local', 'opencode_local'] as adapterType}
-        <span class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium border-emerald-500/40 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">
-          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
-          <ProviderIcon adapterType={adapterType} size={16} />
-          <span class="capitalize">{adapterType.replaceAll('_', ' ')}</span>
-        </span>
-      {/each}
-    </div>
-  </div>
-
-  <div class="rounded-xl border border-border bg-card p-4">
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <h2 class="text-sm font-semibold text-foreground">Adapter readiness</h2>
-        <p class="text-xs text-muted-foreground">Install or update adapters from the declared commands.</p>
-      </div>
-      {#if readinessLoading}
-        <span class="text-xs text-muted-foreground">Refreshing...</span>
-      {/if}
-    </div>
-      <div class="mt-3 flex flex-wrap gap-2">
-        {#each adapterReadiness.filter((entry) => !HIDDEN_ADAPTERS.includes(entry.adapterType)) as entry (entry.adapterType)}
-          <div class="flex flex-wrap items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium {getAdapterReadinessStyle(entry)}">
-            <span class="h-1.5 w-1.5 rounded-full {entry.needsInstall ? 'bg-red-500' : entry.needsUpdate ? 'bg-yellow-500' : 'bg-emerald-500'}"></span>
-            <span>{entry.adapterType}</span>
-          {#if entry.needsInstall}
-            <span>install required</span>
-          {:else if entry.needsUpdate}
-            <span>update required</span>
-          {:else}
-            <span>ready</span>
-          {/if}
-        </div>
-      {/each}
-    </div>
-  </div>
-
-  <div class="rounded-xl border border-border bg-card p-4">
-    <div class="flex items-center justify-between gap-3">
-      <div>
-        <h2 class="text-sm font-semibold text-foreground">Provider directory</h2>
-        <p class="text-xs text-muted-foreground">Authenticate the provider, then use the `provider/model` format in the runtime.</p>
-      </div>
-      <Badge variant="outline" class="text-[10px] uppercase tracking-[0.18em]">
-        {CREDENTIAL_PROVIDER_CARDS.length} providers
-      </Badge>
-    </div>
-    <div class="mt-4 grid grid-cols-1 gap-3 md:grid-cols-3">
-      <div class="rounded-xl border border-border bg-muted/30 p-4">
-        <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">1. Authenticate</p>
-        <p class="mt-2 text-sm text-foreground">Add the API key or sign in with OAuth for the provider.</p>
-      </div>
-      <div class="rounded-xl border border-border bg-muted/30 p-4">
-        <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">2. Select model</p>
-        <p class="mt-2 text-sm text-foreground">Pick the model using the provider/model format.</p>
-      </div>
-      <div class="rounded-xl border border-border bg-muted/30 p-4">
-        <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">3. Runtime monitors</p>
-        <p class="mt-2 text-sm text-foreground">Only tested models enter the available set.</p>
-      </div>
     </div>
     <div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-      {#each CREDENTIAL_PROVIDER_CARDS as provider (provider.provider)}
+      {#each bridgeProviderCards as provider (provider.adapterType)}
+        {@const preset = PI_BRIDGE_PROVIDER_PRESETS.find((entry) => entry.provider === provider.adapterType)}
+        {@const total = provider.available + provider.cooldown + provider.unavailable}
+        {@const barTotal = total || 1}
+        {@const sampleModel = provider.available > 0
+          ? (providerStatuses.find((entry) => entry.adapterType === provider.adapterType)?.models.find((model) => model.status === 'available')?.modelId ?? preset?.sampleModel ?? 'auto')
+          : (providerStatuses.find((entry) => entry.adapterType === provider.adapterType)?.models?.[0]?.modelId ?? preset?.sampleModel ?? 'auto')}
         <div class="rounded-xl border border-border bg-card p-5 transition-all hover:shadow-md">
           <div class="flex items-start gap-3">
             <div class="shrink-0 rounded-lg bg-muted p-2.5">
-              <ProviderIcon adapterType={provider.provider} size={22} />
+              <ProviderIcon adapterType={provider.adapterType} size={22} />
             </div>
             <div class="min-w-0 flex-1">
               <h3 class="text-sm font-semibold text-foreground truncate">{provider.displayName}</h3>
-              <p class="text-xs text-muted-foreground">{provider.provider}</p>
+              <p class="text-xs text-muted-foreground">{provider.adapterType}</p>
             </div>
-            <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide {AUTH_STYLES[provider.authMethod]}">
-              {provider.authMethod}
-            </span>
+            {#if provider.authMethods?.length}
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide {AUTH_STYLES[provider.authMethods[0]]}">
+                {provider.authMethods[0]}
+              </span>
+            {/if}
           </div>
 
-          <p class="mt-3 text-xs leading-5 text-muted-foreground">{provider.description}</p>
+          <div class="mt-3 flex flex-wrap items-center gap-2">
+            {#if provider.configuredCredential}
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                Active
+              </span>
+            {:else if provider.available > 0}
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                Models live
+              </span>
+            {:else if provider.cooldown > 0}
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-yellow-500/15 text-yellow-600 dark:text-yellow-400">
+                Cooldown
+              </span>
+            {:else}
+              <span class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide bg-muted text-muted-foreground">
+                No live models
+              </span>
+            {/if}
+            {#if provider.totalModels > 0}
+              <span class="text-[10px] text-muted-foreground">
+                {provider.available} available · {provider.cooldown} cooldown · {provider.unavailable} unavailable
+              </span>
+            {:else}
+              <span class="text-[10px] text-muted-foreground">No live models discovered yet</span>
+            {/if}
+          </div>
 
           <div class="mt-3 flex flex-wrap gap-1.5">
-            {#each provider.envVars as envVar}
+            {#each (preset?.envVars ?? []) as envVar}
               <span class="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
                 {envVar}
               </span>
@@ -757,19 +1014,51 @@
           </div>
 
           <div class="mt-3 rounded-lg border border-border/70 bg-card/80 p-3">
-            <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Model</p>
-            <p class="mt-1 font-mono text-xs text-foreground">{provider.sampleModel}</p>
-            <p class="mt-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Credential</p>
-            <p class="mt-1 font-mono text-xs text-foreground">{provider.envVars[0]}</p>
+            <p class="text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Sample model</p>
+            <p class="mt-1 font-mono text-xs text-foreground">
+              {sampleModel}
+            </p>
+            <p class="mt-2 text-[10px] uppercase tracking-[0.18em] text-muted-foreground">Catalog</p>
+            <p class="mt-1 font-mono text-xs text-foreground">{provider.totalModels} models</p>
           </div>
 
           <div class="mt-4 flex items-center justify-between gap-2">
-            <span class="text-[10px] text-muted-foreground">Add the API key to enable this provider.</span>
-            <Button size="sm" variant="outline" onclick={() => openCredentialSecretConfig(provider)}>
-              Add API key
+            <span class="text-[10px] text-muted-foreground">
+              {provider.configuredCredential ? 'Ready for agent routing.' : provider.available > 0 ? 'Models discovered, but credentials are not configured.' : 'Configure credentials to unlock models.'}
+            </span>
+            <Button size="sm" variant="outline" onclick={() => openCredentialSecretConfig({
+              provider: provider.adapterType,
+              displayName: provider.displayName,
+              authMethod: (provider.authMethods?.[0] ?? 'api') as 'api' | 'oauth' | 'custom',
+              envVars: preset?.envVars ?? [],
+              description: preset?.resource ?? '',
+              sampleModel: preset?.sampleModel ?? 'auto',
+            })}>
+              Configure
             </Button>
           </div>
         </div>
+      {/each}
+    </div>
+  </div>
+
+  <div class="rounded-xl border border-border bg-card p-4">
+    <div class="flex items-center justify-between gap-3">
+      <div>
+        <h2 class="text-sm font-semibold text-foreground">Runtime adapters</h2>
+        <p class="text-xs text-muted-foreground">These adapters are active runtime integrations, including dedicated CLIs, Pi bridge execution, and OpenAI-compatible local endpoints.</p>
+      </div>
+      <Badge variant="outline" class="text-[10px] uppercase tracking-[0.18em]">
+        {cliProviderCards.length} adapters
+      </Badge>
+    </div>
+    <div class="mt-3 flex flex-wrap gap-2">
+      {#each cliProviderCards as provider (provider.adapterType)}
+        <span class="inline-flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium border-emerald-500/40 bg-emerald-500/5 text-emerald-600 dark:text-emerald-400">
+          <span class="h-1.5 w-1.5 rounded-full bg-emerald-500"></span>
+          <ProviderIcon adapterType={provider.adapterType} size={16} />
+          <span class="capitalize">{provider.adapterType.replaceAll('_', ' ')}</span>
+        </span>
       {/each}
     </div>
   </div>
@@ -916,6 +1205,18 @@
               ></div>
             {/if}
           </div>
+
+          <div class="mt-4 flex items-center justify-between gap-2">
+            <span class="text-[11px] text-muted-foreground">Probe adapter and refresh scoped status.</span>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={actionKey === `probe:${provider.adapterType}`}
+              onclick={() => probeProvider(provider.adapterType)}
+            >
+              {#if actionKey === `probe:${provider.adapterType}`}Refreshing...{:else}Probe{/if}
+            </Button>
+          </div>
         </div>
       {/each}
       </div>
@@ -932,6 +1233,10 @@
       <TabsTrigger value="status">
         <Activity class="h-4 w-4" />
         Status
+      </TabsTrigger>
+      <TabsTrigger value="routing">
+        <CircleDot class="h-4 w-4" />
+        Routing
       </TabsTrigger>
     </TabsList>
 
@@ -1128,6 +1433,21 @@
 
     <!-- ── Tab 2: Status ───────────────────────────────────────────── -->
     <TabsContent value="status" class="mt-4 space-y-4">
+      <div class="flex items-center justify-between gap-3 rounded-xl border border-border bg-card p-4">
+        <div>
+          <h3 class="text-sm font-semibold text-foreground">Scoped status operations</h3>
+          <p class="text-xs text-muted-foreground">Manual cooldown actions apply only to the current company context.</p>
+        </div>
+        <Button
+          size="sm"
+          variant="outline"
+          disabled={actionKey === 'clear-expired'}
+          onclick={clearExpiredCooldowns}
+        >
+          {#if actionKey === 'clear-expired'}Clearing...{:else}Clear expired cooldowns{/if}
+        </Button>
+      </div>
+
       {#if statusLoading}
         <div class="space-y-4">
           {#each Array(3) as _}
@@ -1147,7 +1467,7 @@
           <p class="text-sm text-muted-foreground">No provider status data available.</p>
         </div>
       {:else}
-        {#each providerStatuses.filter((p) => !HIDDEN_ADAPTERS.includes(p.adapterType) && (!hideUnavailable || p.models.some((m) => m.status !== 'unavailable'))) as provider (provider.adapterType)}
+        {#each providerStatuses.filter((p) => !HIDDEN_ADAPTERS.includes(p.adapterType) && (!hideUnavailable || p.models.some((m) => normalizeModelStatus(m.status) === 'available'))) as provider (provider.adapterType)}
           <div class="rounded-xl border border-border bg-card overflow-hidden">
             <div class="flex items-center gap-3 px-5 pt-5 pb-3">
               <ProviderIcon adapterType={provider.adapterType} size={20} />
@@ -1170,10 +1490,11 @@
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Error Rate</th>
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Failures</th>
                       <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Last Probed</th>
+                      <th class="px-5 py-2 text-right text-xs font-semibold uppercase tracking-wider text-muted-foreground">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {#each provider.models as model (model.modelId)}
+                    {#each (hideUnavailable ? provider.models.filter((model) => normalizeModelStatus(model.status) === 'available') : provider.models) as model (model.modelId)}
                       {@const statusStyle = getStatusStyle(model.status)}
                       <tr class="border-b border-border last:border-b-0 hover:bg-muted/30 transition-colors">
                         <td class="px-5 py-3">
@@ -1226,6 +1547,29 @@
                         <td class="px-5 py-3 text-right">
                           <TimeAgo date={model.lastProbed} class="text-xs" />
                         </td>
+                        <td class="px-5 py-3">
+                          <div class="flex items-center justify-end gap-2">
+                            {#if normalizeModelStatus(model.status) === 'cooldown'}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={actionKey === `clear:${provider.adapterType}:${model.modelId}`}
+                                onclick={() => clearCooldown(provider.adapterType, model.modelId)}
+                              >
+                                {#if actionKey === `clear:${provider.adapterType}:${model.modelId}`}Clearing...{:else}Clear{/if}
+                              </Button>
+                            {:else}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={actionKey === `cooldown:${provider.adapterType}:${model.modelId}`}
+                                onclick={() => applyCooldown(provider.adapterType, model.modelId)}
+                              >
+                                {#if actionKey === `cooldown:${provider.adapterType}:${model.modelId}`}Applying...{:else}Cooldown 10m{/if}
+                              </Button>
+                            {/if}
+                          </div>
+                        </td>
                       </tr>
                     {/each}
                   </tbody>
@@ -1237,7 +1581,134 @@
       {/if}
     </TabsContent>
 
-    <!-- routing and routing-log sections removed to keep this page runtime-only -->
+    <TabsContent value="routing" class="mt-4 space-y-4">
+      <div class="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,360px)_minmax(0,1fr)]">
+        <div class="rounded-xl border border-border bg-card p-4">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <h3 class="text-sm font-semibold text-foreground">Routing preview</h3>
+              <p class="text-xs text-muted-foreground">Preview the company router decision before execution.</p>
+            </div>
+          </div>
+          <div class="mt-4 space-y-3">
+            <div class="grid grid-cols-1 gap-3">
+              <select
+                bind:value={selectedRoutingAgentId}
+                class="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+              >
+                <option value="">Custom agent context</option>
+                {#each routingAgents as agent}
+                  <option value={agent.id}>{agent.name} · {agent.role} · {agent.adapterType}</option>
+                {/each}
+              </select>
+              <select
+                bind:value={selectedRoutingPolicyName}
+                class="h-9 rounded-md border border-input bg-background px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-ring/50"
+              >
+                <option value="">No policy preset</option>
+                {#each routingPolicies as policy}
+                  <option value={policy.name}>{policy.name}{policy.routingStrategy ? ` · ${policy.routingStrategy}` : ''}</option>
+                {/each}
+              </select>
+            </div>
+            <Input bind:value={routingPreview.agentId} placeholder="Agent ID" />
+            <Input bind:value={routingPreview.adapterType} placeholder="Adapter type" />
+            <Input bind:value={routingPreview.modelId} placeholder="Model ID or auto" />
+            <Input bind:value={routingPreview.role} placeholder="Role" />
+            <div class="grid grid-cols-2 gap-3">
+              <Input bind:value={routingPreview.taskComplexity} placeholder="Complexity" />
+              <Input bind:value={routingPreview.taskPriority} placeholder="Priority" />
+            </div>
+            <Input bind:value={routingPreview.requiredCapabilities} placeholder="Capabilities (comma-separated)" />
+            <Button class="w-full" disabled={routingPreviewRunning} onclick={previewRouting}>
+              {#if routingPreviewRunning}Resolving...{:else}Preview routing{/if}
+            </Button>
+          </div>
+
+          {#if routingPreviewError}
+            <div class="mt-4 rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-600 dark:text-red-400">
+              {routingPreviewError}
+            </div>
+          {/if}
+
+          {#if routingPreviewResult}
+            <div class="mt-4 rounded-lg border border-border bg-muted/30 p-3">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-xs font-semibold uppercase tracking-[0.18em] text-muted-foreground">Resolved</span>
+                <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium {getStatusStyle('available').bg} {getStatusStyle('available').text}">
+                  {routingPreviewResult.resolution}
+                </span>
+              </div>
+              <p class="mt-2 text-sm font-medium text-foreground">{routingPreviewResult.resolvedAdapterType ?? routingPreviewResult.adapterType} / {routingPreviewResult.resolvedModelId ?? routingPreviewResult.modelId}</p>
+              <p class="mt-1 text-xs text-muted-foreground">{routingPreviewResult.reason ?? 'No reason provided'}</p>
+              <p class="mt-2 text-[11px] text-muted-foreground">Fallback depth: {routingPreviewResult.fallbackDepth ?? 0}</p>
+            </div>
+          {/if}
+        </div>
+
+        <div class="rounded-xl border border-border bg-card overflow-hidden">
+          <div class="flex items-center justify-between gap-3 px-5 py-4 border-b border-border">
+            <div>
+              <h3 class="text-sm font-semibold text-foreground">Routing audit log</h3>
+              <p class="text-xs text-muted-foreground">Recent routing decisions recorded for this company.</p>
+            </div>
+            <Button size="sm" variant="outline" disabled={routingLoading} onclick={loadRoutingLog}>
+              {#if routingLoading}Refreshing...{:else}Refresh{/if}
+            </Button>
+          </div>
+
+          {#if routingLoading}
+            <div class="p-5 space-y-3">
+              {#each Array(5) as _}
+                <Skeleton class="h-16 w-full rounded-lg" />
+              {/each}
+            </div>
+          {:else if routingEntries.length === 0}
+            <div class="p-8 text-center">
+              <CircleDot class="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
+              <p class="text-sm text-muted-foreground">No routing decisions recorded yet.</p>
+            </div>
+          {:else}
+            <div class="divide-y divide-border">
+              {#each routingEntries as entry (entry.id)}
+                <div class="p-4">
+                  <div class="flex items-start justify-between gap-4">
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-foreground">
+                        {entry.resolvedAdapterType} / <span class="font-mono">{entry.resolvedModelId}</span>
+                      </p>
+                      <p class="mt-1 text-xs text-muted-foreground">
+                        Requested {entry.requestedAdapterType ?? 'unknown'} / <span class="font-mono">{entry.requestedModelId ?? 'auto'}</span>
+                      </p>
+                      <p class="mt-2 text-xs text-muted-foreground">{entry.reason ?? 'No reason provided'}</p>
+                    </div>
+                    <div class="text-right">
+                      <div class="flex items-center justify-end gap-2">
+                        <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                          {entry.resolution}
+                        </span>
+                        {#if entry.outcome}
+                          <span class="inline-flex rounded-full px-2 py-0.5 text-[10px] font-medium {entry.outcome === 'succeeded' ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : entry.outcome === 'failed' ? 'bg-red-500/10 text-red-600 dark:text-red-400' : 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400'}">
+                            {entry.outcome}
+                          </span>
+                        {/if}
+                      </div>
+                      <p class="mt-2 text-[11px] text-muted-foreground">Fallback {entry.fallbackDepth ?? 0}</p>
+                      <p class="mt-1 text-[11px] text-muted-foreground"><TimeAgo date={entry.occurredAt} class="text-[11px]" /></p>
+                    </div>
+                  </div>
+                  {#if entry.authProfileKey}
+                    <p class="mt-2 text-[11px] text-muted-foreground">
+                      Auth profile <span class="font-mono">{entry.authProfileKey.slice(0, 12)}...</span>
+                    </p>
+                  {/if}
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </div>
+    </TabsContent>
   </Tabs>
 </div>
 </PageLayout>
