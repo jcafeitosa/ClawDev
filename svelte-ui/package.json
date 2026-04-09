@@ -13,6 +13,7 @@
     "clean": "rm -rf .svelte-kit build"
   },
   "dependencies": {
+    "@clawdev/adapter-pi-local": "workspace:*",
     "@clawdev/server": "workspace:*",
     "@clawdev/shared": "workspace:*",
     "@elysiajs/eden": "^1.4.9",

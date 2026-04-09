@@ -38,6 +38,64 @@
   <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #FF6B35">
     <path fill-rule="evenodd" d="M0 0h24v24H0V0Zm3 3v18h18V3H3Zm3.5 8.5h11V21h-11v-9.5Z"/>
   </svg>
+{:else if adapterType === 'groq'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #FF8A00">
+    <circle cx="12" cy="12" r="10" fill="#FF8A00" opacity="0.15" />
+    <path d="M8 12a4 4 0 1 1 4 4h-1.2v-2H12a2 2 0 1 0-2-2H8Zm8.5-3.5h-1.5V8h-2v8h2v-3h1.5a2.5 2.5 0 0 0 0-5Z"/>
+  </svg>
+{:else if adapterType === 'xai'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #111827">
+    <rect x="4" y="4" width="16" height="16" rx="5" fill="#111827" opacity="0.1" />
+    <path d="M7 7h3.2l1.8 3 1.8-3H17l-3 5 3 5h-3.2l-1.8-3-1.8 3H7l3-5-3-5Zm8.6 0h1.9v10h-1.9z"/>
+  </svg>
+{:else if adapterType === 'mistral'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #F97316">
+    <path d="M3 5h4.2l4.8 7L16.8 5H21v14h-3V9.9l-4 6H10l-4-6V19H3z"/>
+  </svg>
+{:else if adapterType === 'cerebras'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #E11D48">
+    <path d="M12 2 3 7v10l9 5 9-5V7z" opacity="0.12"/>
+    <path d="M12 4.2 5.2 8v8L12 19.8l6.8-3.8V8zm0 2.8 4.2 2.4v5.2L12 17l-4.2-2.4V9.4z"/>
+  </svg>
+{:else if adapterType === 'openrouter'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #8B5CF6">
+    <path d="M4 12c0-4.4 3.6-8 8-8 2.8 0 5.2 1.4 6.6 3.6L16 10h4V6l-1.7 1.7A9 9 0 1 0 21 12h-2a7 7 0 1 1-7-7c1.9 0 3.6.8 4.9 2H13l4 4 4-4h-2c-1.7-2.7-4.6-4.5-8-4.5C7 2.5 2.5 7 2.5 12S7 21.5 12 21.5c3.4 0 6.3-1.8 8-4.5h-2c-1.3 1.2-3 2-4.9 2-4.4 0-8-3.6-8-8Z"/>
+  </svg>
+{:else if adapterType === 'minimax'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #0F172A">
+    <path d="M4 5h3l5 7 5-7h3v14h-3V9l-5 7-5-7v10H4z"/>
+  </svg>
+{:else if adapterType === 'kimi-coding'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #06B6D4">
+    <circle cx="12" cy="12" r="10" fill="#06B6D4" opacity="0.12" />
+    <path d="M7 7h2v4.2L13 7h3l-4.5 5L16 17h-3l-3-4-1 1.2V17H7z"/>
+  </svg>
+{:else if adapterType === 'azure'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #0078D4">
+    <path d="M13.8 3 6 9.2v9.8h6l5.9-4.7V3zM8 11l4.5-3.6v7.2L8 18z"/>
+  </svg>
+{:else if adapterType === 'cohere'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #8E44AD">
+    <path d="M12 3a9 9 0 1 0 9 9h-2a7 7 0 1 1-7-7V3Z"/>
+    <path d="M12 7a5 5 0 1 0 5 5h-2a3 3 0 1 1-3-3V7Z"/>
+  </svg>
+{:else if adapterType === 'fireworks'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #EF4444">
+    <path d="M12 2 7.2 9H3l3.6 4.6L4 22l8-4 8 4-2.6-8.4L21 9h-4.2z"/>
+  </svg>
+{:else if adapterType === 'together'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #2563EB">
+    <path d="M4 6h16v3H4zM4 11h10v3H4zM4 16h16v3H4z"/>
+  </svg>
+{:else if adapterType === 'deepseek'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #14B8A6">
+    <path d="M4 5h6.5a6.5 6.5 0 0 1 0 13H4V5Zm3 3v7h3.5a3.5 3.5 0 0 0 0-7H7Z"/>
+  </svg>
+{:else if adapterType === 'perplexity'}
+  <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #0EA5E9">
+    <path d="M4 5h16v3H4zM4 10h10v3H4zM4 15h16v3H4z"/>
+    <path d="M18 10h2v8h-2z"/>
+  </svg>
 {:else if adapterType === 'openclaw_gateway'}
   <!-- OpenClaw claw icon -->
   <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" width={size} height={size} class={className} style="color: #10B981">

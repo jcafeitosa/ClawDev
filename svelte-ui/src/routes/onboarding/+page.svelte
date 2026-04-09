@@ -320,7 +320,14 @@
       }
       const data = await res.json();
       const raw = Array.isArray(data?.models) ? data.models : [];
-      const models = filterAdapterModels(normalizeAdapterModels(raw).filter((model) => model.status === "available" || model.status === "cooldown"));
+      const models = filterAdapterModels(
+        normalizeAdapterModels(raw).filter(
+          (model) =>
+            model.status === "available" ||
+            model.status === "cooldown" ||
+            model.status === "unknown",
+        ),
+      );
       if (requestId !== selectedProviderModelsRequestId) return;
       selectedProviderModels = models;
       const currentModel = typeof adapterConfig.model === "string" ? adapterConfig.model.trim() : "";
@@ -432,6 +439,7 @@
           name: agentName,
           role: "ceo",
           adapterType,
+          adapterConfig,
           title: selectedHierarchyPresetDefinition()?.rootTitle ?? "Chief Executive Officer",
           status: "idle",
         }),
@@ -782,7 +790,7 @@
 
           {#if createdCompanyId && MODEL_DISCOVERY_ADAPTERS.has(adapterType)}
             <div class="rounded-lg border border-gray-200 bg-white/80 p-4">
-              <div class="mb-3">
+            <div class="mb-3">
                 <h4 class="text-sm font-medium text-gray-900">Model selector</h4>
                 <p class="text-xs text-gray-500">Pick the model from {getAdapterModelSourceLabel()}.</p>
               </div>
@@ -797,8 +805,21 @@
                   {selectedProviderModelsError}
                 </div>
               {:else if selectedProviderModels.length === 0}
-                <div class="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
-                  No models were discovered for this provider.
+                <div class="space-y-2">
+                  <label for="provider-model" class="text-xs text-gray-400 mb-1 block">Model</label>
+                  <div class="relative">
+                    <select
+                      id="provider-model"
+                      class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 text-gray-900"
+                      value={typeof adapterConfig.model === "string" && adapterConfig.model.trim() ? adapterConfig.model : "auto"}
+                      onchange={(e) => setAdapterConfigField("model", e.currentTarget.value)}
+                    >
+                      <option value="auto">Auto (managed)</option>
+                    </select>
+                  </div>
+                  <p class="text-[10px] text-gray-400">
+                    No models were discovered for this provider. Auto routing will pick a compatible model when available.
+                  </p>
                 </div>
               {:else}
                 <div class="space-y-2">
@@ -807,9 +828,10 @@
                     <select
                       id="provider-model"
                       class="w-full rounded-md border border-gray-300 bg-transparent px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-gray-400 text-gray-900"
-                      value={typeof adapterConfig.model === "string" ? adapterConfig.model : ""}
+                      value={typeof adapterConfig.model === "string" && adapterConfig.model.trim() ? adapterConfig.model : "auto"}
                       onchange={(e) => setAdapterConfigField("model", e.currentTarget.value)}
                     >
+                      <option value="auto">Auto (managed)</option>
                       {#each selectedProviderModels as model}
                         <option value={model.id}>
                           {model.label}{model.provider ? ` (${model.provider})` : ""}

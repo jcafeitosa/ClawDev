@@ -52,6 +52,8 @@ This plan coordinates the remaining work as a single SDD effort.
 - Verify each supported adapter package exposes the correct metadata, readiness, and discovery contract.
 - Use the shared PING/PONG probe prompt across CLI adapters and keep their failure classification consistent.
 - Confirm the new `openai_compatible_local` adapter is wired through server + UI.
+- Audit every adapter that is still showing stale or catalog-only model lists instead of consulting its CLI/runtime in real time.
+- Prioritize `pi_local` provider discovery so bridge providers only surface models actually returned by the live Pi CLI for the current credentials/profile.
 - Audit special-case adapters (`openclaw_gateway`, `embedding_local`) and keep them in their correct contract class.
 
 ### 3. UI
@@ -88,6 +90,8 @@ This plan coordinates the remaining work as a single SDD effort.
    - in progress
 5. Rodada 5: implementar ajustes UI/UX e configuração de providers
    - in progress
+   - TODO: auditar adapters que ainda mostram modelos errados por não consultarem o CLI/runtime em tempo real
+   - TODO: priorizar `pi_local` e seus providers bridge, garantindo que `/providers` e agent config usem descoberta viva do Pi CLI em vez de catálogo estático/stale
 6. Rodada 6: validar testes, build e runtime com cenários de fallback
    - completed
 7. Rodada 7: consolidar docs e entregar resumo final

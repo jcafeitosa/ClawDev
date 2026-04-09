@@ -20,6 +20,8 @@
     XCircle,
   } from "lucide-svelte";
   import { api } from "$lib/api";
+  import { Button } from "$components/ui/index.js";
+  import { PI_BRIDGE_PROVIDER_PRESETS } from "@clawdev/shared";
   import type {
     AdapterEnvironmentTestResult,
   } from "@clawdev/shared";
@@ -42,6 +44,13 @@
     statusDetail?: string;
     provider?: string;
     probedAt?: string;
+  }
+
+  interface CompanySecret {
+    id: string;
+    name: string;
+    provider?: string | null;
+    description?: string | null;
   }
 
   let { adapterType, companyId = null, config = $bindable({}), mode, showModelControls = true }: Props = $props();
@@ -103,64 +112,10 @@
     cursor: "All Providers",
     pi_local: "Pi",
   };
-  const PI_BRIDGE_PROVIDER_PRESETS = [
-    {
-      provider: "groq",
-      label: "Groq",
-      envVars: ["GROQ_API_KEY"],
-      sample: "groq/qwen-qwq-32b",
-      resource: "Fast OpenAI-style inference",
-    },
-    {
-      provider: "xai",
-      label: "xAI",
-      envVars: ["XAI_API_KEY"],
-      sample: "xai/grok-4",
-      resource: "Grok models through Pi",
-    },
-    {
-      provider: "mistral",
-      label: "Mistral",
-      envVars: ["MISTRAL_API_KEY"],
-      sample: "mistral/devstral-medium-latest",
-      resource: "General-purpose and coding models",
-    },
-    {
-      provider: "cerebras",
-      label: "Cerebras",
-      envVars: ["CEREBRAS_API_KEY"],
-      sample: "cerebras/llama-4-scout",
-      resource: "High-throughput local-like inference",
-    },
-    {
-      provider: "openrouter",
-      label: "OpenRouter",
-      envVars: ["OPENROUTER_API_KEY"],
-      sample: "openrouter/openai/gpt-5.4",
-      resource: "Access to many hosted models",
-    },
-    {
-      provider: "minimax",
-      label: "MiniMax",
-      envVars: ["MINIMAX_API_KEY"],
-      sample: "minimax/minimax-m2.5",
-      resource: "MiniMax coding models",
-    },
-    {
-      provider: "kimi-coding",
-      label: "Kimi Coding",
-      envVars: ["KIMI_API_KEY"],
-      sample: "kimi-coding/kimi-k2.5",
-      resource: "Kimi coding models",
-    },
-    {
-      provider: "azure",
-      label: "Azure OpenAI",
-      envVars: ["AZURE_OPENAI_API_KEY", "AZURE_OPENAI_BASE_URL", "AZURE_OPENAI_API_VERSION"],
-      sample: "azure/gpt-5.4",
-      resource: "Azure-hosted OpenAI deployments",
-    },
-  ] as const;
+  const PI_BRIDGE_PROVIDER_PRESETS_WITH_SAMPLE = PI_BRIDGE_PROVIDER_PRESETS.map((preset) => ({
+    ...preset,
+    sample: preset.sampleModel,
+  }));
   const isModelDiscoveryAdapter = $derived(Boolean(companyId) && MODEL_DISCOVERY_ADAPTERS.has(adapterType));
   const isEnvironmentTestableAdapter = $derived(Boolean(companyId) && TESTABLE_ADAPTERS.has(adapterType));
 
@@ -172,6 +127,13 @@
   let adapterEnvError = $state<string | null>(null);
   let adapterEnvLoading = $state(false);
   let unsetAnthropicLoading = $state(false);
+  let companySecrets = $state<CompanySecret[]>([]);
+  let companySecretsLoading = $state(false);
+  let companySecretsError = $state<string | null>(null);
+  let openClawHeadersText = $state("{}");
+  let openClawHeadersError = $state<string | null>(null);
+  let openClawPayloadTemplateText = $state("");
+  let openClawPayloadTemplateError = $state<string | null>(null);
 
   const filteredModels = $derived(
     adapterModels.filter((entry) => {
@@ -201,9 +163,9 @@
   }
 
   function normalizeClaudeModel(model: unknown): string {
-    if (typeof model !== "string") return "claude-sonnet-4-6";
+    if (typeof model !== "string") return "auto";
     const trimmed = model.trim();
-    return trimmed && trimmed !== "auto" ? trimmed : "claude-sonnet-4-6";
+    return trimmed || "auto";
   }
 
   function setField(key: string, value: any): void {
@@ -214,6 +176,65 @@
   function toggleField(key: string): void {
     config[key] = !config[key];
     config = config;
+  }
+
+  function setOptionalField(key: string, value: any): void {
+    if (
+      value === undefined ||
+      value === null ||
+      (typeof value === "string" && !value.trim()) ||
+      (typeof value === "object" && !Array.isArray(value) && value !== null && Object.keys(value).length === 0)
+    ) {
+      delete config[key];
+      config = config;
+      return;
+    }
+    setField(key, value);
+  }
+
+  function stringifyJsonObject(value: unknown, fallback = "{}"): string {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return fallback;
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return fallback;
+    }
+  }
+
+  function parseJsonObjectInput(text: string): Record<string, unknown> | null {
+    const trimmed = text.trim();
+    if (!trimmed) return null;
+    const parsed = JSON.parse(trimmed);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("Enter a JSON object.");
+    }
+    return parsed as Record<string, unknown>;
+  }
+
+  function handleOpenClawJsonFieldInput(
+    key: "headers" | "payloadTemplate",
+    text: string,
+  ): void {
+    if (key === "headers") {
+      openClawHeadersText = text;
+      try {
+        const parsed = parseJsonObjectInput(text);
+        openClawHeadersError = null;
+        setOptionalField("headers", parsed ?? {});
+      } catch (err) {
+        openClawHeadersError = err instanceof Error ? err.message : "Invalid JSON object.";
+      }
+      return;
+    }
+
+    openClawPayloadTemplateText = text;
+    try {
+      const parsed = parseJsonObjectInput(text);
+      openClawPayloadTemplateError = null;
+      setOptionalField("payloadTemplate", parsed);
+    } catch (err) {
+      openClawPayloadTemplateError = err instanceof Error ? err.message : "Invalid JSON object.";
+    }
   }
 
   function filterAdapterModels(models: AdapterModel[]): AdapterModel[] {
@@ -256,12 +277,143 @@
     } else if (!config.model.includes("/")) {
       setField("model", `${provider}/${config.model}`);
     }
+    autoBindPiProviderSecrets(provider);
+  }
+
+  function getCompanyEnvBindings(): Record<string, any> {
+    const env = typeof config.env === "object" && config.env !== null && !Array.isArray(config.env)
+      ? (config.env as Record<string, any>)
+      : {};
+    return { ...env };
+  }
+
+  function setCompanyEnvBinding(envVar: string, secretId: string | null): void {
+    const env = getCompanyEnvBindings();
+    if (!secretId) {
+      delete env[envVar];
+      setField("env", env);
+      return;
+    }
+    env[envVar] = { type: "secret_ref", secretId, version: "latest" };
+    setField("env", env);
+  }
+
+  function findSecretByName(name: string): CompanySecret | null {
+    const target = name.trim().toUpperCase();
+    if (!target) return null;
+    return companySecrets.find((secret) => secret.name.trim().toUpperCase() === target) ?? null;
+  }
+
+  function getPiBridgePreset(provider: string | null | undefined) {
+    const selected = typeof provider === "string" ? provider.trim() : "";
+    if (!selected) return null;
+    return PI_BRIDGE_PROVIDER_PRESETS_WITH_SAMPLE.find((preset) => preset.provider === selected) ?? null;
+  }
+
+  function autoBindPiProviderSecrets(provider: string): void {
+    const preset = getPiBridgePreset(provider);
+    if (!preset) return;
+    const env = getCompanyEnvBindings();
+    for (const envVar of preset.envVars) {
+      const existing = findSecretByName(envVar);
+      if (existing) {
+        env[envVar] = { type: "secret_ref", secretId: existing.id, version: "latest" };
+      }
+    }
+    setField("env", env);
+  }
+
+  function updatePiEnvBinding(envVar: string, value: string): void {
+    const env = getCompanyEnvBindings();
+    if (!value) {
+      delete env[envVar];
+      setField("env", env);
+      return;
+    }
+    env[envVar] = { type: "secret_ref", secretId: value, version: "latest" };
+    setField("env", env);
+  }
+
+  function getPiEnvBindingSecretId(envVar: string): string {
+    const env = getCompanyEnvBindings();
+    const binding = env[envVar];
+    if (typeof binding === "string") return "";
+    if (binding && typeof binding === "object" && binding.type === "secret_ref" && typeof binding.secretId === "string") {
+      return binding.secretId;
+    }
+    return "";
+  }
+
+  function getPiEnvBindingSecretName(envVar: string): string {
+    const secretId = getPiEnvBindingSecretId(envVar);
+    if (!secretId) return "";
+    return companySecrets.find((secret) => secret.id === secretId)?.name ?? "";
+  }
+
+  function loadCompanySecrets(): void {
+    if (!companyId) {
+      companySecrets = [];
+      companySecretsError = null;
+      companySecretsLoading = false;
+      return;
+    }
+    companySecretsLoading = true;
+    companySecretsError = null;
+    void api(`/api/companies/${companyId}/secrets`)
+      .then(async (res) => {
+        if (!res.ok) {
+          const body = await res.json().catch(() => null);
+          throw new Error(body?.message ?? `Failed to load company secrets (${res.status})`);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        const raw = Array.isArray(data) ? data : data?.secrets ?? [];
+        companySecrets = raw.map((secret: any) => ({
+          id: String(secret.id ?? ""),
+          name: String(secret.name ?? ""),
+          provider: typeof secret.provider === "string" ? secret.provider : null,
+          description: typeof secret.description === "string" ? secret.description : null,
+        })).filter((secret: CompanySecret) => secret.id && secret.name);
+      })
+      .catch((err) => {
+        companySecrets = [];
+        companySecretsError = err instanceof Error ? err.message : "Failed to load company secrets";
+      })
+      .finally(() => {
+        companySecretsLoading = false;
+      });
   }
 
   // Initialize defaults when adapter changes
   $effect(() => {
     void adapterType;
     initDefaults();
+  });
+
+  $effect(() => {
+    void companyId;
+    if (!companyId) {
+      companySecrets = [];
+      companySecretsError = null;
+      companySecretsLoading = false;
+      return;
+    }
+    if (adapterType === "pi_local") {
+      loadCompanySecrets();
+    }
+  });
+
+  $effect(() => {
+    void adapterType;
+    void config.headers;
+    void config.payloadTemplate;
+    if (adapterType !== "openclaw_gateway") return;
+
+    openClawHeadersText = stringifyJsonObject(config.headers, "{}");
+    openClawPayloadTemplateText = config.payloadTemplate ? stringifyJsonObject(config.payloadTemplate, "{}") : "";
+    openClawHeadersError = null;
+    openClawPayloadTemplateError = null;
   });
 
   function initDefaults(): void {
@@ -276,7 +428,7 @@
         break;
       case "codex_local":
         ensure("cwd");
-        ensure("model", "gpt-5.4-mini");
+        ensure("model", "auto");
         ensure("modelReasoningEffort", "medium");
         ensure("search", false);
         ensure("dangerouslyBypassApprovalsAndSandbox", false);
@@ -284,7 +436,7 @@
         break;
       case "copilot_local":
         ensure("cwd");
-        ensure("model");
+        ensure("model", "auto");
         ensure("effort", "medium");
         ensure("command", "copilot");
         ensure("configDir");
@@ -296,7 +448,7 @@
         break;
       case "gemini_local":
         ensure("cwd");
-        ensure("model", "gemini-2.5-pro");
+        ensure("model", "auto");
         ensure("sandbox", false);
         break;
       case "pi_local":
@@ -306,10 +458,11 @@
         break;
       case "opencode_local":
         ensure("cwd");
+        ensure("model", "auto");
         break;
       case "openai_compatible_local":
         ensure("baseUrl", "http://localhost:11434/v1");
-        ensure("model");
+        ensure("model", "auto");
         ensure("apiKey");
         ensure("temperature", 0.2);
         ensure("maxTokens", 1024);
@@ -317,6 +470,13 @@
       case "openclaw_gateway":
         ensure("url", "wss://");
         ensure("authToken");
+        ensure("clientId", "gateway-client");
+        ensure("clientMode", "backend");
+        ensure("role", "operator");
+        ensure("scopes", "operator.admin");
+        ensure("timeoutSec", 120);
+        ensure("waitTimeoutMs", 120000);
+        ensure("autoPairOnFirstConnect", true);
         ensure("sessionKeyStrategy", "issue");
         break;
       case "process":
@@ -355,9 +515,7 @@
       }
       const data = await res.json();
       const rawModels = Array.isArray(data?.models) ? data.models : [];
-      adapterModels = filterAdapterModels(
-        rawModels.filter((model: any) => model.circuitState === "available" || model.circuitState === "cooldown"),
-      );
+      adapterModels = filterAdapterModels(rawModels);
     } catch (err) {
       adapterModels = [];
       adapterModelsError = err instanceof Error ? err.message : "Failed to load adapter models";
@@ -526,6 +684,7 @@
                 value={normalizeClaudeModel(config.model)}
                 onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
               >
+                <option value="auto">Auto (managed)</option>
                 {#if adapterModels.length > 0}
                   {#each adapterModels as m (m.id)}
                     <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>{m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
@@ -588,9 +747,10 @@
               <select
                 id="cfg-model"
                 class={selectCls}
-                value={config.model ?? ""}
+                value={typeof config.model === "string" && config.model.trim() ? config.model : "auto"}
                 onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
               >
+                <option value="auto">Auto (managed)</option>
                 {#if adapterModels.length > 0}
                   {#each adapterModels as m (m.id)}
                     <option value={m.id} disabled={m.status === 'unavailable' || m.status === 'error'}>{m.status === 'available' ? '✅' : m.status === 'quota_exceeded' ? '⏳' : m.status === 'unavailable' ? '❌' : '⚪'} {m.label || m.id}{m.provider ? ` (${m.provider})` : ''}</option>
@@ -619,9 +779,10 @@
                 <select
                   id="cfg-model"
                   class={selectCls}
-                  value={config.model ?? ""}
+                  value={typeof config.model === "string" && config.model.trim() ? config.model : "auto"}
                   onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
                 >
+                  <option value="auto">Auto (managed)</option>
                   <option value="">Select model...</option>
                   {#each grouped as [provider, models]}
                     <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
@@ -843,14 +1004,13 @@
 
       <!-- pi_local -->
       {:else if adapterType === "pi_local"}
-        {#if showModelControls}
-          <fieldset>
+        <fieldset>
             <div class="flex items-center justify-between gap-3">
               <legend class={labelCls}>Bridge Provider</legend>
               <span class="text-xs text-muted-foreground">Pick the provider backing Pi’s `provider/model` routing</span>
             </div>
             <div class="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              {#each PI_BRIDGE_PROVIDER_PRESETS as preset}
+              {#each PI_BRIDGE_PROVIDER_PRESETS_WITH_SAMPLE as preset}
                 <button
                   type="button"
                   class="rounded-xl border border-border bg-card/70 p-3 text-left transition hover:border-primary/40 hover:bg-card"
@@ -871,8 +1031,112 @@
               {/each}
             </div>
             <p class={helpCls}>Pi supports all bridge providers here plus dedicated CLI providers handled elsewhere. Set the matching API key in the provider env fields before testing.</p>
-          </fieldset>
+        </fieldset>
 
+        <div class="rounded-lg border border-border bg-background/70 p-4">
+          <div class="mb-3 flex items-start justify-between gap-3">
+            <div>
+              <h4 class="text-sm font-medium text-foreground">Provider secrets</h4>
+              <p class="text-xs text-muted-foreground">
+                Map each Pi provider API key to an existing company secret. The backend resolves these bindings at runtime.
+              </p>
+            </div>
+            {#if companySecretsLoading}
+              <Loader2 size={14} class="animate-spin text-muted-foreground" />
+            {/if}
+          </div>
+
+          {#if companySecretsError}
+            <div class="mb-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-700">
+              {companySecretsError}
+            </div>
+          {/if}
+
+          {#if getPiBridgePreset(typeof config.provider === "string" ? config.provider : "")}
+            {@const selectedPreset = getPiBridgePreset(typeof config.provider === "string" ? config.provider : "")}
+            <div class="space-y-3">
+              <div class="flex flex-wrap gap-2">
+                {#if selectedPreset}
+                  <span class="rounded-full border border-border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    {selectedPreset.label}
+                  </span>
+                  <span class="rounded-full border border-border px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    {selectedPreset.provider}
+                  </span>
+                {/if}
+              </div>
+
+              <div class="grid gap-3">
+                {#each (selectedPreset?.envVars ?? []) as envVar}
+                  <div class="rounded-md border border-border/70 bg-card/50 p-3">
+                    <div class="mb-2 flex items-center justify-between gap-3">
+                      <div>
+                        <label for={`pi-env-${envVar}`} class="text-xs font-medium text-foreground">{envVar}</label>
+                        <p class="text-[10px] text-muted-foreground">Secret binding for {selectedPreset?.label ?? "Pi provider"}</p>
+                      </div>
+                      {#if getPiEnvBindingSecretName(envVar)}
+                        <span class="rounded-full bg-green-500/15 px-2 py-0.5 text-[10px] font-semibold text-green-600">
+                          Bound
+                        </span>
+                      {:else}
+                        <span class="rounded-full bg-zinc-500/15 px-2 py-0.5 text-[10px] font-semibold text-zinc-500">
+                          Unbound
+                        </span>
+                      {/if}
+                    </div>
+                    <div class="grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                      <select
+                        id={`pi-env-${envVar}`}
+                        class={selectCls}
+                        value={getPiEnvBindingSecretId(envVar)}
+                        onchange={(e) => updatePiEnvBinding(envVar, e.currentTarget.value)}
+                      >
+                        <option value="">Select an existing secret...</option>
+                        {#each companySecrets as secret}
+                          <option value={secret.id}>
+                            {secret.name}{secret.provider ? ` (${secret.provider})` : ""}
+                          </option>
+                        {/each}
+                      </select>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        onclick={() => {
+                          const match = findSecretByName(envVar);
+                          if (match) setCompanyEnvBinding(envVar, match.id);
+                        }}
+                      >
+                        Match by name
+                      </Button>
+                    </div>
+                    <p class="mt-2 text-[10px] text-muted-foreground">
+                      {#if getPiEnvBindingSecretName(envVar)}
+                        Bound to: {getPiEnvBindingSecretName(envVar)}
+                      {:else}
+                        You can match by exact secret name or choose a stored secret manually.
+                      {/if}
+                    </p>
+                  </div>
+                {/each}
+              </div>
+
+              <div class="flex items-center justify-between gap-3 rounded-md border border-border/70 bg-muted/20 px-3 py-2">
+                <div class="text-xs text-muted-foreground">
+                  Auto-bind any company secrets whose names match the provider env vars.
+                </div>
+                <Button type="button" variant="secondary" onclick={() => autoBindPiProviderSecrets(typeof config.provider === "string" ? config.provider : "")}>
+                  Auto-bind
+                </Button>
+              </div>
+            </div>
+          {:else}
+            <p class="text-xs text-muted-foreground">
+              Select a bridge provider to expose its API key bindings here.
+            </p>
+          {/if}
+        </div>
+
+        {#if showModelControls}
           <div>
             <div class="flex items-center gap-2">
               <label for="cfg-model" class={labelCls}>
@@ -884,12 +1148,13 @@
             <div class="relative mt-1.5">
               {#if adapterModels.length > 0}
                 {@const piGrouped = Object.entries(adapterModels.reduce((acc, m) => { const p = m.provider ?? m.id.split('/')[0] ?? "other"; (acc[p] ??= []).push(m); return acc; }, {} as Record<string, typeof adapterModels>))}
-                <select
-                  id="cfg-model"
-                  class={selectCls}
-                  value={config.model ?? ""}
-                  onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
-                >
+              <select
+                id="cfg-model"
+                class={selectCls}
+                value={typeof config.model === "string" && config.model.trim() ? config.model : "auto"}
+                onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
+              >
+                  <option value="auto">Auto (managed)</option>
                   <option value="">Select model...</option>
                   {#each piGrouped as [provider, models]}
                     <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>
@@ -1036,6 +1301,97 @@
         </div>
 
         <div>
+          <label for="cfg-password" class={labelCls}>Shared Password</label>
+          <input
+            id="cfg-password"
+            type="password"
+            class="{inputCls} mt-1.5"
+            value={config.password ?? ""}
+            oninput={(e) => setOptionalField("password", e.currentTarget.value)}
+            placeholder="Optional shared gateway password"
+            autocomplete="off"
+          />
+          <p class={helpCls}>Optional gateway password used by some OpenClaw deployments.</p>
+        </div>
+
+        <div>
+          <label for="cfg-headers-openclaw" class={labelCls}>Handshake Headers (JSON)</label>
+          <textarea
+            id="cfg-headers-openclaw"
+            rows={4}
+            class="{inputCls} mt-1.5 font-mono text-xs"
+            value={openClawHeadersText}
+            oninput={(e) => handleOpenClawJsonFieldInput("headers", e.currentTarget.value)}
+            placeholder={"{\u0022x-openclaw-token\u0022: \u0022...\u0022}"}
+            spellcheck="false"
+          ></textarea>
+          <p class={helpCls}>Optional WebSocket headers. Use when auth is passed via header instead of `authToken`.</p>
+          {#if openClawHeadersError}
+            <p class="mt-1 text-xs text-red-500">{openClawHeadersError}</p>
+          {/if}
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <div>
+            <label for="cfg-clientId" class={labelCls}>Client ID</label>
+            <input
+              id="cfg-clientId"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.clientId ?? "gateway-client"}
+              oninput={(e) => setField("clientId", e.currentTarget.value)}
+              placeholder="gateway-client"
+            />
+          </div>
+          <div>
+            <label for="cfg-clientMode" class={labelCls}>Client Mode</label>
+            <input
+              id="cfg-clientMode"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.clientMode ?? "backend"}
+              oninput={(e) => setField("clientMode", e.currentTarget.value)}
+              placeholder="backend"
+            />
+          </div>
+          <div>
+            <label for="cfg-clientVersion" class={labelCls}>Client Version</label>
+            <input
+              id="cfg-clientVersion"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.clientVersion ?? ""}
+              oninput={(e) => setOptionalField("clientVersion", e.currentTarget.value)}
+              placeholder="clawdev"
+            />
+          </div>
+          <div>
+            <label for="cfg-role-openclaw" class={labelCls}>Gateway Role</label>
+            <input
+              id="cfg-role-openclaw"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.role ?? "operator"}
+              oninput={(e) => setField("role", e.currentTarget.value)}
+              placeholder="operator"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label for="cfg-scopes-openclaw" class={labelCls}>Scopes</label>
+          <input
+            id="cfg-scopes-openclaw"
+            type="text"
+            class="{inputCls} mt-1.5"
+            value={Array.isArray(config.scopes) ? config.scopes.join(", ") : (config.scopes ?? "operator.admin")}
+            oninput={(e) => setField("scopes", e.currentTarget.value)}
+            placeholder="operator.admin, operator.pairing"
+          />
+          <p class={helpCls}>Comma-separated gateway scopes. Default is `operator.admin`.</p>
+        </div>
+
+        <div>
           <label for="cfg-sessionKey" class={labelCls}>Session Key Strategy</label>
           <div class="relative mt-1.5">
             <select
@@ -1052,6 +1408,161 @@
           </div>
           <p class={helpCls}>How session keys are generated: per issue, fixed, or per run.</p>
         </div>
+
+        {#if (config.sessionKeyStrategy ?? "issue") === "fixed"}
+          <div>
+            <label for="cfg-sessionKeyFixed" class={labelCls}>Fixed Session Key</label>
+            <input
+              id="cfg-sessionKeyFixed"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.sessionKey ?? ""}
+              oninput={(e) => setOptionalField("sessionKey", e.currentTarget.value)}
+              placeholder="clawdev"
+            />
+            <p class={helpCls}>Used only when the strategy is `fixed`.</p>
+          </div>
+        {/if}
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <div>
+            <label for="cfg-agentId-openclaw" class={labelCls}>Gateway Agent ID</label>
+            <input
+              id="cfg-agentId-openclaw"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.agentId ?? ""}
+              oninput={(e) => setOptionalField("agentId", e.currentTarget.value)}
+              placeholder="agent.default"
+            />
+            <p class={helpCls}>Optional target agent id to invoke on the gateway.</p>
+          </div>
+          <div>
+            <label for="cfg-paperclipApiUrl" class={labelCls}>Paperclip API URL</label>
+            <input
+              id="cfg-paperclipApiUrl"
+              type="text"
+              class="{inputCls} mt-1.5"
+              value={config.paperclipApiUrl ?? ""}
+              oninput={(e) => setOptionalField("paperclipApiUrl", e.currentTarget.value)}
+              placeholder="https://paperclip.example.com"
+            />
+            <p class={helpCls}>Advertised back into wake payload context when needed.</p>
+          </div>
+        </div>
+
+        <div class="grid gap-3 md:grid-cols-2">
+          <div>
+            <label for="cfg-timeoutSec-openclaw" class={labelCls}>Timeout (sec)</label>
+            <input
+              id="cfg-timeoutSec-openclaw"
+              type="number"
+              min="1"
+              class="{inputCls} mt-1.5"
+              value={config.timeoutSec ?? 120}
+              oninput={(e) => setField("timeoutSec", Math.max(1, parseInt(e.currentTarget.value, 10) || 120))}
+            />
+          </div>
+          <div>
+            <label for="cfg-waitTimeoutMs-openclaw" class={labelCls}>Wait Timeout (ms)</label>
+            <input
+              id="cfg-waitTimeoutMs-openclaw"
+              type="number"
+              min="1"
+              class="{inputCls} mt-1.5"
+              value={config.waitTimeoutMs ?? 120000}
+              oninput={(e) => setField("waitTimeoutMs", Math.max(1, parseInt(e.currentTarget.value, 10) || 120000))}
+            />
+          </div>
+        </div>
+
+        <div>
+          <label for="cfg-payloadTemplate-openclaw" class={labelCls}>Payload Template (JSON)</label>
+          <textarea
+            id="cfg-payloadTemplate-openclaw"
+            rows={6}
+            class="{inputCls} mt-1.5 font-mono text-xs"
+            value={openClawPayloadTemplateText}
+            oninput={(e) => handleOpenClawJsonFieldInput("payloadTemplate", e.currentTarget.value)}
+            placeholder={"{\u0022priority\u0022: \u0022high\u0022}"}
+            spellcheck="false"
+          ></textarea>
+          <p class={helpCls}>Additional gateway agent params merged into the outbound request.</p>
+          {#if openClawPayloadTemplateError}
+            <p class="mt-1 text-xs text-red-500">{openClawPayloadTemplateError}</p>
+          {/if}
+        </div>
+
+        <div class="space-y-4 rounded-lg border border-border/70 bg-muted/20 px-4 py-3">
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <span class="text-sm font-medium text-muted-foreground/90">Disable Device Auth</span>
+              <p class="text-xs text-muted-foreground mt-0.5">Skip signed device identity during gateway connect.</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={config.disableDeviceAuth ?? false}
+              aria-label="Disable device auth"
+              title="Disable device auth"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {config.disableDeviceAuth ? 'bg-amber-500' : 'bg-accent'}"
+              onclick={() => toggleField('disableDeviceAuth')}
+            >
+              <span
+                class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 {config.disableDeviceAuth ? 'translate-x-5' : 'translate-x-0'}"
+              ></span>
+            </button>
+          </div>
+
+          <div class="flex items-center justify-between gap-3">
+            <div>
+              <span class="text-sm font-medium text-muted-foreground/90">Auto-pair on First Connect</span>
+              <p class="text-xs text-muted-foreground mt-0.5">Approve the first device automatically when shared auth is available.</p>
+            </div>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={config.autoPairOnFirstConnect ?? true}
+              aria-label="Auto-pair on first connect"
+              title="Auto-pair on first connect"
+              class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 {(config.autoPairOnFirstConnect ?? true) ? 'bg-[#2563EB]' : 'bg-accent'}"
+              onclick={() => toggleField('autoPairOnFirstConnect')}
+            >
+              <span
+                class="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-sm ring-0 transition-transform duration-200 {(config.autoPairOnFirstConnect ?? true) ? 'translate-x-5' : 'translate-x-0'}"
+              ></span>
+            </button>
+          </div>
+        </div>
+
+        {#if !(config.disableDeviceAuth ?? false)}
+          <div class="grid gap-3 md:grid-cols-2">
+            <div>
+              <label for="cfg-deviceFamily-openclaw" class={labelCls}>Device Family</label>
+              <input
+                id="cfg-deviceFamily-openclaw"
+                type="text"
+                class="{inputCls} mt-1.5"
+                value={config.deviceFamily ?? ""}
+                oninput={(e) => setOptionalField("deviceFamily", e.currentTarget.value)}
+                placeholder="clawdev"
+              />
+            </div>
+            <div>
+              <label for="cfg-devicePrivateKeyPem-openclaw" class={labelCls}>Device Private Key PEM</label>
+              <textarea
+                id="cfg-devicePrivateKeyPem-openclaw"
+                rows={5}
+                class="{inputCls} mt-1.5 font-mono text-xs"
+                value={config.devicePrivateKeyPem ?? ""}
+                oninput={(e) => setOptionalField("devicePrivateKeyPem", e.currentTarget.value)}
+                placeholder="-----BEGIN PRIVATE KEY-----"
+                spellcheck="false"
+              ></textarea>
+              <p class={helpCls}>Leave empty to use an ephemeral key pair.</p>
+            </div>
+          </div>
+        {/if}
 
       <!-- process -->
       {:else if adapterType === "process"}
@@ -1198,9 +1709,10 @@
             <select
               id="cfg-discovery-model"
               class={selectCls}
-              value={typeof config.model === 'string' ? config.model : ''}
+              value={typeof config.model === 'string' && config.model.trim() ? config.model : 'auto'}
               onchange={(e) => handleModelChangeWithAutoTest(e.currentTarget.value)}
             >
+              <option value="auto">Auto (managed)</option>
               <option value="">Select model...</option>
               {#each discoveryGrouped as [provider, models]}
                 <optgroup label={provider.charAt(0).toUpperCase() + provider.slice(1)}>

@@ -168,6 +168,7 @@ export {
 } from "./company-hierarchy.js";
 export * from "./types/model-routing.js";
 export * from "./types/adapter-readiness.js";
+export * from "./pi-providers.js";
 export {
   STRUCTURED_SDD_MIN_SECTION_LENGTH,
   STRUCTURED_SDD_MIN_SECTION_WORDS,
