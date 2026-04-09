@@ -456,6 +456,14 @@ type ResumeSessionRow = {
   lastRunId: string | null;
 };
 
+type SessionModelPin = {
+  adapterType: string;
+  modelId: string;
+  pinnedAt: string;
+  authProfileKey?: string | null;
+  source?: string;
+};
+
 export function buildExplicitResumeSessionOverride(input: {
   resumeFromRunId: string;
   resumeRunSessionIdBefore: string | null;
@@ -872,6 +880,21 @@ function normalizeSessionParams(params: Record<string, unknown> | null | undefin
   return Object.keys(params).length > 0 ? params : null;
 }
 
+export function readSessionModelPin(stateJson: Record<string, unknown> | null | undefined): SessionModelPin | null {
+  const record = parseObject(stateJson);
+  const pin = parseObject(record.sessionModelPin);
+  const adapterType = readNonEmptyString(pin.adapterType);
+  const modelId = readNonEmptyString(pin.modelId);
+  if (!adapterType || !modelId) return null;
+  return {
+    adapterType,
+    modelId,
+    pinnedAt: readNonEmptyString(pin.pinnedAt) ?? new Date(0).toISOString(),
+    authProfileKey: readNonEmptyString(pin.authProfileKey) ?? null,
+    source: readNonEmptyString(pin.source) ?? undefined,
+  };
+}
+
 function resolveNextSessionState(input: {
   codec: AdapterSessionCodec;
   adapterResult: AdapterExecutionResult;
@@ -970,6 +993,30 @@ export function heartbeatService(db: Db) {
       .from(agentRuntimeState)
       .where(eq(agentRuntimeState.agentId, agentId))
       .then((rows) => rows[0] ?? null);
+  }
+
+  async function persistSessionModelPin(
+    agent: typeof agents.$inferSelect,
+    pin: SessionModelPin | null,
+  ) {
+    const runtimeState = await getRuntimeState(agent.id);
+    if (!runtimeState) return;
+    const stateJson = parseObject(runtimeState.stateJson);
+    if (pin) {
+      stateJson.sessionModelPin = {
+        ...pin,
+        authProfileKey: pin.authProfileKey ?? null,
+      };
+    } else {
+      delete stateJson.sessionModelPin;
+    }
+    await db
+      .update(agentRuntimeState)
+      .set({
+        stateJson,
+        updatedAt: new Date(),
+      })
+      .where(eq(agentRuntimeState.agentId, agent.id));
   }
 
   async function getTaskSession(
@@ -2147,6 +2194,7 @@ export function heartbeatService(db: Db) {
     }
 
     const runtime = await ensureRuntimeState(agent);
+    const runtimeStatePin = readSessionModelPin(runtime.stateJson);
     const context = parseObject(run.contextSnapshot);
     const taskKey = deriveTaskKeyWithHeartbeatFallback(context, null);
     const sessionCodec = getAdapterSessionCodec(agent.adapterType);
@@ -2268,7 +2316,7 @@ export function heartbeatService(db: Db) {
       : persistedWorkspaceManagedConfig;
     const configSnapshot = buildExecutionWorkspaceConfigSnapshot(mergedConfig);
     const executionRunConfig = stripWorkspaceRuntimeFromExecutionRunConfig(mergedConfig);
-    const { config: resolvedConfig, secretKeys } = await secretsSvc.resolveAdapterConfigForRuntime(
+    const { config: resolvedConfig, secretKeys, authProfileKey } = await secretsSvc.resolveAdapterConfigForRuntime(
       agent.companyId,
       executionRunConfig,
     );
@@ -2748,6 +2796,13 @@ export function heartbeatService(db: Db) {
         typeof (runtimeConfig as Record<string, unknown>).model === "string"
           ? ((runtimeConfig as Record<string, unknown>).model as string)
           : undefined;
+      const requestedModelForRouting =
+        requestedModel && requestedModel !== "auto"
+          ? requestedModel
+          : runtimeStatePin?.adapterType === agent.adapterType &&
+              (!runtimeStatePin.authProfileKey || !authProfileKey || runtimeStatePin.authProfileKey === authProfileKey)
+            ? runtimeStatePin.modelId
+            : undefined;
       let modelResolution: import("./model-router.js").ModelResolution | null = null;
       const providerStatusSvc = createProviderStatusService(db);
       let runtimeConfigForExecution: Record<string, unknown> = runtimeConfig;
@@ -2758,9 +2813,10 @@ export function heartbeatService(db: Db) {
           agent.companyId,
           agent.id,
           agent.adapterType,
-          requestedModel,
+          requestedModelForRouting,
           {
             lockAdapterType: true,
+            authProfileKey: authProfileKey ?? null,
             routingContext: {
               companyId: agent.companyId,
               agentId: agent.id,
@@ -2831,6 +2887,7 @@ export function heartbeatService(db: Db) {
             undefined, // let router pick best available
             {
               lockAdapterType: true,
+              authProfileKey: authProfileKey ?? null,
               routingContext: {
                 companyId: agent.companyId,
                 agentId: agent.id,
@@ -2941,7 +2998,13 @@ export function heartbeatService(db: Db) {
 
         if (outcome === "succeeded") {
           // Record successful probe
-          await providerStatusSvc.recordProbeResult(agent.adapterType, executedModel, true);
+          await providerStatusSvc.recordProbeResult(
+            agent.adapterType,
+            executedModel,
+            true,
+            undefined,
+            { companyId: agent.companyId, authProfileKey: authProfileKey ?? null },
+          );
         } else if (outcome === "failed") {
           // Handle execution error — may trigger cooldown
           await providerStatusSvc.handleExecutionError(
@@ -2949,8 +3012,15 @@ export function heartbeatService(db: Db) {
             executedModel,
             adapterResult.errorCode,
             adapterResult.errorMessage,
+            { companyId: agent.companyId, authProfileKey: authProfileKey ?? null },
           );
-          await providerStatusSvc.recordProbeResult(agent.adapterType, executedModel, false);
+          await providerStatusSvc.recordProbeResult(
+            agent.adapterType,
+            executedModel,
+            false,
+            undefined,
+            { companyId: agent.companyId, authProfileKey: authProfileKey ?? null },
+          );
         }
 
         // Log routing decision
@@ -2962,6 +3032,8 @@ export function heartbeatService(db: Db) {
             run.id,
             { adapterType: agent.adapterType, modelId: requestedModel },
             modelResolution,
+            outcome,
+            authProfileKey ?? null,
           );
         }
       } catch (statusErr) {
@@ -3093,6 +3165,15 @@ export function heartbeatService(db: Db) {
       }
 
       if (finalizedRun) {
+        if (outcome === "succeeded" && modelResolution) {
+          await persistSessionModelPin(agent, {
+            adapterType: modelResolution.adapterType,
+            modelId: modelResolution.modelId,
+            pinnedAt: new Date().toISOString(),
+            authProfileKey: authProfileKey ?? null,
+            source: modelResolution.resolution,
+          });
+        }
         await updateRuntimeState(agent, finalizedRun, adapterResult, {
           legacySessionId: nextSessionState.legacySessionId,
         }, normalizedUsage);

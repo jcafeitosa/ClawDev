@@ -206,7 +206,9 @@ export function createModelCatalogService(db: Db) {
      * and free-text search across modelId and label.
      */
     async listModels(filters?: ModelCatalogFilters): Promise<ModelCatalogEntry[]> {
-      const conditions: ReturnType<typeof eq>[] = [];
+      const conditions: ReturnType<typeof eq>[] = [
+        sql`${modelCatalog.source} IS DISTINCT FROM 'bridge_seed'` as any,
+      ];
 
       if (filters?.adapterType) {
         conditions.push(eq(modelCatalog.adapterType, filters.adapterType));
@@ -259,7 +261,9 @@ export function createModelCatalogService(db: Db) {
             eq(modelCatalog.modelId, modelId),
           ),
         );
-      return rows[0] ?? null;
+      const row = rows[0] ?? null;
+      if (!row || row.source === "bridge_seed") return null;
+      return row;
     },
 
     /**
@@ -305,6 +309,23 @@ export function createModelCatalogService(db: Db) {
         );
       }
       return row;
+    },
+
+    /**
+     * Remove legacy Pi bridge seed rows that were synthesized from static
+     * metadata. Live discovery should be the sole source of truth.
+     */
+    async purgeBridgeSeedModels(): Promise<number> {
+      const result = await db
+        .delete(modelCatalog)
+        .where(
+          and(
+            eq(modelCatalog.adapterType, "pi_local"),
+            eq(modelCatalog.source, "bridge_seed"),
+          ),
+        )
+        .returning({ id: modelCatalog.id });
+      return result.length;
     },
 
     /**

@@ -15,6 +15,8 @@ const mockProviderStatus = vi.hoisted(() => ({
   markCooldown: vi.fn(),
   updateStatus: vi.fn(),
   clearExpiredCooldowns: vi.fn(),
+  clearExpiredCooldownsForScope: vi.fn(),
+  listEffectiveStatuses: vi.fn(),
 }));
 
 const mockDiscovery = vi.hoisted(() => ({
@@ -44,9 +46,15 @@ const mockListServerAdapters = vi.hoisted(() =>
 const mockListAdapterModels = vi.hoisted(() => vi.fn(async () => [
   { id: "gpt-5", label: "GPT-5" },
 ]));
+const mockResolveAdapterConfigForRuntime = vi.hoisted(() =>
+  vi.fn(async (_companyId: string, config: Record<string, unknown>) => ({ config })),
+);
+const mockDiscoverPiModelsCached = vi.hoisted(() => vi.fn(async () => []));
+const mockListOpenAICompatibleModels = vi.hoisted(() => vi.fn(async () => []));
 
 function createDbStub() {
   let preferenceRow: Record<string, unknown> | null = null;
+  let agentRows: Array<Record<string, unknown>> = [];
   let providerStatusRows: Array<Record<string, unknown>> = [
     {
       adapterType: "codex_local",
@@ -76,6 +84,7 @@ function createDbStub() {
             })()
           : null;
         const isPreferences = baseName === "company_model_preferences";
+        const isAgents = baseName === "agents";
         if (fields === undefined) {
           const result: any = {
             where: () => result,
@@ -84,6 +93,8 @@ function createDbStub() {
               Promise.resolve(resolve(
                 isPreferences
                   ? (preferenceRow ? [preferenceRow] : [])
+                  : isAgents
+                    ? agentRows
                   : baseName === "model_routing_policies"
                     ? policyRowsState
                     : providerStatusRows,
@@ -95,7 +106,7 @@ function createDbStub() {
           where: () => result,
           limit: () => result,
           then: (resolve: (rows: Array<Record<string, unknown>>) => unknown) =>
-            Promise.resolve(resolve(preferenceRow ? [preferenceRow] : [])),
+            Promise.resolve(resolve(isAgents ? agentRows : (preferenceRow ? [preferenceRow] : []))),
         };
         return result;
       },
@@ -145,6 +156,9 @@ function createDbStub() {
   }
 
   return {
+    __setAgentRows(rows: Array<Record<string, unknown>>) {
+      agentRows = rows;
+    },
     select: vi.fn((fields?: unknown) => makeSelectChain(fields)),
     update: vi.fn(() => makeMutateChain("update")),
     insert: vi.fn(() => makeMutateChain("insert")),
@@ -178,8 +192,23 @@ vi.mock("../adapters/registry.js", () => ({
   listAdapterModels: mockListAdapterModels,
 }));
 
+vi.mock("../services/secrets.js", () => ({
+  secretService: () => ({
+    resolveAdapterConfigForRuntime: mockResolveAdapterConfigForRuntime,
+  }),
+}));
+
+vi.mock("@clawdev/adapter-pi-local/server", () => ({
+  discoverPiModelsCached: mockDiscoverPiModelsCached,
+}));
+
+vi.mock("@clawdev/adapter-openai-compatible-local/server", () => ({
+  listOpenAICompatibleModels: mockListOpenAICompatibleModels,
+}));
+
 function createApp() {
-  return new Elysia({ prefix: "/api" })
+  const db = createDbStub() as any;
+  const app = new Elysia({ prefix: "/api" })
     .onError(({ error, set }) => {
       set.status = 500;
       return { error: error instanceof Error ? error.message : String(error) };
@@ -193,7 +222,8 @@ function createApp() {
         isInstanceAdmin: true,
       },
     }))
-    .use(modelRoutes(createDbStub() as any));
+    .use(modelRoutes(db));
+  return { app, db };
 }
 
 async function req(app: Elysia, method: string, path: string, body?: unknown) {
@@ -255,6 +285,22 @@ describe("model routes", () => {
     mockProviderStatus.markCooldown.mockResolvedValue(undefined);
     mockProviderStatus.updateStatus.mockResolvedValue(undefined);
     mockProviderStatus.clearExpiredCooldowns.mockResolvedValue(0);
+    mockProviderStatus.clearExpiredCooldownsForScope.mockResolvedValue(0);
+    mockProviderStatus.listEffectiveStatuses.mockResolvedValue([
+      {
+        adapterType: "codex_local",
+        modelId: "gpt-5",
+        status: "unknown",
+        avgLatencyMs: null,
+        p95LatencyMs: null,
+        errorRatePercent: null,
+        consecutiveFailures: 0,
+        cooldownUntil: null,
+        cooldownReason: null,
+        lastProbeStatus: null,
+        lastProbeAt: null,
+      },
+    ]);
     mockDiscovery.runDiscoveryCycle.mockResolvedValue({ ok: true });
     mockDiscovery.probeAdapter.mockResolvedValue({ ok: true });
     mockReadiness.mockResolvedValue([
@@ -300,10 +346,13 @@ describe("model routes", () => {
         reason: "default",
       },
     ]);
+    mockResolveAdapterConfigForRuntime.mockImplementation(async (_companyId, config) => ({ config }));
+    mockDiscoverPiModelsCached.mockResolvedValue([]);
+    mockListOpenAICompatibleModels.mockResolvedValue([]);
   });
 
   it("covers the providers and routing endpoints used by the frontend", async () => {
-    const app = createApp();
+    const { app } = createApp();
 
     const readinessRes = await req(app, "GET", "/api/adapters/readiness");
     expect(readinessRes.status).toBe(200);
@@ -317,7 +366,7 @@ describe("model routes", () => {
       ]),
     });
 
-    const modelsRes = await req(app, "GET", "/api/models");
+    const modelsRes = await req(app, "GET", `/api/models?companyId=${COMPANY_ID}`);
     expect(modelsRes.status).toBe(200);
     expect(modelsRes.body).toEqual({
       models: expect.arrayContaining([
@@ -330,7 +379,7 @@ describe("model routes", () => {
       ]),
     });
 
-    const providersRes = await req(app, "GET", "/api/providers/summary");
+    const providersRes = await req(app, "GET", `/api/providers/summary?companyId=${COMPANY_ID}`);
     expect(providersRes.status).toBe(200);
     expect(providersRes.body).toEqual({
       providers: expect.arrayContaining([
@@ -441,7 +490,7 @@ describe("model routes", () => {
     expect(syncRes.status).toBe(200);
     expect(mockDiscovery.runDiscoveryCycle).toHaveBeenCalled();
 
-    const cooldownRes = await req(app, "POST", "/api/providers/codex_local/models/gpt-5/cooldown", {
+    const cooldownRes = await req(app, "POST", `/api/providers/codex_local/models/gpt-5/cooldown?companyId=${COMPANY_ID}`, {
       durationMinutes: 10,
       reason: "manual",
     });
@@ -451,15 +500,126 @@ describe("model routes", () => {
       "gpt-5",
       expect.any(Date),
       "manual",
+      { companyId: COMPANY_ID },
     );
 
-    const clearCooldownRes = await req(app, "DELETE", "/api/providers/codex_local/models/gpt-5/cooldown");
+    const clearCooldownRes = await req(app, "DELETE", `/api/providers/codex_local/models/gpt-5/cooldown?companyId=${COMPANY_ID}`);
     expect(clearCooldownRes.status).toBe(200);
     expect(mockProviderStatus.updateStatus).toHaveBeenCalledWith(
       "codex_local",
       "gpt-5",
       "available",
       "cooldown cleared manually",
+      { companyId: COMPANY_ID },
     );
+
+    const clearExpiredRes = await req(app, "POST", `/api/providers/clear-expired-cooldowns?companyId=${COMPANY_ID}`);
+    expect(clearExpiredRes.status).toBe(200);
+    expect(clearExpiredRes.body).toEqual({ cleared: 0, companyId: COMPANY_ID });
+    expect(mockProviderStatus.clearExpiredCooldownsForScope).toHaveBeenCalledWith({ companyId: COMPANY_ID });
+  });
+
+  it("uses company-scoped pi_local runtime config for live discovery", async () => {
+    const { app, db } = createApp();
+    db.__setAgentRows([
+      {
+        adapterConfig: {
+          command: "pi",
+          cwd: "/tmp/company-a",
+          env: {
+            OPENAI_API_KEY: "company-openai-key",
+          },
+        },
+      },
+    ]);
+    mockDiscoverPiModelsCached.mockResolvedValue([
+      { id: "openai/gpt-5.4", label: "GPT-5.4", provider: "openai", status: "available" },
+    ]);
+
+    const res = await req(app, "GET", `/api/providers/summary?companyId=${COMPANY_ID}`);
+
+    expect(res.status).toBe(200);
+    expect(mockDiscoverPiModelsCached).toHaveBeenCalledWith(expect.objectContaining({
+      command: "pi",
+      cwd: "/tmp/company-a",
+      env: expect.objectContaining({
+        OPENAI_API_KEY: "company-openai-key",
+        XAI_API_KEY: "",
+      }),
+    }));
+    expect((res.body as { providers: Array<Record<string, unknown>> }).providers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          adapterType: "codex_local",
+        }),
+      ]),
+    );
+  });
+
+  it("uses company-scoped openai-compatible config for live discovery", async () => {
+    const { app, db } = createApp();
+    db.__setAgentRows([
+      {
+        adapterConfig: {
+          baseUrl: "http://127.0.0.1:11434/v1",
+          apiKey: "local-token",
+        },
+      },
+    ]);
+    mockListServerAdapters.mockReturnValue([
+      {
+        type: "openai_compatible_local",
+        authMethods: ["api"],
+        agentConfigurationDoc: "# OpenAI Compatible Local",
+      },
+    ]);
+    mockProviderStatus.getProviderSummary.mockResolvedValue([
+      {
+        provider: "openai_compatible_local",
+        total: 1,
+        available: 1,
+        cooldown: 0,
+        unavailable: 0,
+      },
+    ]);
+    mockProviderStatus.listEffectiveStatuses.mockResolvedValue([
+      {
+        adapterType: "openai_compatible_local",
+        modelId: "llama3.2",
+        status: "available",
+        avgLatencyMs: null,
+        p95LatencyMs: null,
+        errorRatePercent: null,
+        consecutiveFailures: 0,
+        cooldownUntil: null,
+        cooldownReason: null,
+        lastProbeStatus: null,
+        lastProbeAt: null,
+      },
+    ]);
+    mockListOpenAICompatibleModels.mockResolvedValue([
+      { id: "llama3.2", label: "Llama 3.2", status: "available" },
+    ]);
+
+    const res = await req(
+      app,
+      "GET",
+      `/api/models?companyId=${COMPANY_ID}&adapterType=openai_compatible_local`,
+    );
+
+    expect(res.status).toBe(200);
+    expect(mockListOpenAICompatibleModels).toHaveBeenCalledWith({
+      baseUrl: "http://127.0.0.1:11434/v1",
+      apiKey: "local-token",
+    });
+    expect(res.body).toEqual({
+      models: expect.arrayContaining([
+        expect.objectContaining({
+          id: "llama3.2",
+          modelId: "llama3.2",
+          status: "available",
+        }),
+      ]),
+    });
   });
 });

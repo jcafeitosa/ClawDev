@@ -17,6 +17,7 @@ export interface DiscoveryCycleResult {
   modelsDiscovered: number;
   added: number;
   updated: number;
+  purgedSeedRows: number;
   errors: Array<{ adapterType: string; error: string }>;
 }
 
@@ -154,6 +155,14 @@ export function createModelDiscoveryService(
 
       // Sync all discovered models into the catalog
       const syncResult = await catalogService.syncFromAdapters(allModels);
+      const purgedSeedRows = await catalogService.purgeBridgeSeedModels().catch((err) => {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        log.warn(
+          { category: "adapter", err: errorMsg },
+          "Failed to purge legacy Pi bridge seed models",
+        );
+        return 0;
+      });
 
       // Update provider_model_status for each discovered model
       if (providerStatusService) {
@@ -170,6 +179,7 @@ export function createModelDiscoveryService(
                   model.id,
                   cooldownUntil,
                   model.statusDetail ?? "quota_exceeded during discovery",
+                  undefined,
                 );
               } else {
                 await providerStatusService.updateStatus(
@@ -177,6 +187,7 @@ export function createModelDiscoveryService(
                   model.id,
                   mappedStatus,
                   model.statusDetail,
+                  undefined,
                 );
               }
 
@@ -185,6 +196,8 @@ export function createModelDiscoveryService(
                 adapterType,
                 model.id,
                 mappedStatus === "available",
+                undefined,
+                undefined,
               );
             } catch (err) {
               const errorMsg = err instanceof Error ? err.message : String(err);
@@ -215,6 +228,7 @@ export function createModelDiscoveryService(
         modelsDiscovered: allModels.length,
         added: syncResult.added,
         updated: syncResult.updated,
+        purgedSeedRows,
         errors,
       };
     },
@@ -268,6 +282,7 @@ export function createModelDiscoveryService(
                   model.id,
                   cooldownUntil,
                   model.statusDetail ?? "quota_exceeded during discovery",
+                  undefined,
                 );
               } else {
                 await providerStatusService.updateStatus(
@@ -275,6 +290,7 @@ export function createModelDiscoveryService(
                   model.id,
                   mappedStatus,
                   model.statusDetail,
+                  undefined,
                 );
               }
 
@@ -282,6 +298,8 @@ export function createModelDiscoveryService(
                 adapterType,
                 model.id,
                 mappedStatus === "available",
+                undefined,
+                undefined,
               );
             } catch (err) {
               const errorMsg = err instanceof Error ? err.message : String(err);

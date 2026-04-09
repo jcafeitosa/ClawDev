@@ -1,3 +1,4 @@
+import { createHash } from "crypto";
 import { and, desc, eq } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import { companySecrets, companySecretVersions } from "@clawdev/db";
@@ -36,6 +37,27 @@ function canonicalizeBinding(binding: EnvBinding): CanonicalEnvBinding {
     secretId: binding.secretId,
     version: binding.version ?? "latest",
   };
+}
+
+export function deriveAuthProfileKeyFromEnvBindings(envValue: unknown): string | null {
+  const record = asRecord(envValue);
+  if (!record) return null;
+  const entries: string[] = [];
+  for (const [key, rawBinding] of Object.entries(record)) {
+    const parsed = envBindingSchema.safeParse(rawBinding);
+    if (!parsed.success) continue;
+    const binding = canonicalizeBinding(parsed.data as EnvBinding);
+    if (binding.type === "secret_ref") {
+      entries.push(`${key}:${binding.secretId}:${binding.version}`);
+      continue;
+    }
+    if (binding.type === "plain") {
+      entries.push(`${key}:plain`);
+    }
+  }
+  if (entries.length === 0) return null;
+  entries.sort();
+  return createHash("sha256").update(entries.join("\n")).digest("hex");
 }
 
 export function secretService(db: Db) {
@@ -334,16 +356,17 @@ export function secretService(db: Db) {
       return { env: resolved, secretKeys };
     },
 
-    resolveAdapterConfigForRuntime: async (companyId: string, adapterConfig: Record<string, unknown>): Promise<{ config: Record<string, unknown>; secretKeys: Set<string> }> => {
+    resolveAdapterConfigForRuntime: async (companyId: string, adapterConfig: Record<string, unknown>): Promise<{ config: Record<string, unknown>; secretKeys: Set<string>; authProfileKey: string | null }> => {
       const resolved = { ...adapterConfig };
       const secretKeys = new Set<string>();
+      const authProfileKey = deriveAuthProfileKeyFromEnvBindings(adapterConfig.env);
       if (!Object.prototype.hasOwnProperty.call(adapterConfig, "env")) {
-        return { config: resolved, secretKeys };
+        return { config: resolved, secretKeys, authProfileKey };
       }
       const record = asRecord(adapterConfig.env);
       if (!record) {
         resolved.env = {};
-        return { config: resolved, secretKeys };
+        return { config: resolved, secretKeys, authProfileKey };
       }
       const env: Record<string, string> = {};
       for (const [key, rawBinding] of Object.entries(record)) {
@@ -363,7 +386,7 @@ export function secretService(db: Db) {
         }
       }
       resolved.env = env;
-      return { config: resolved, secretKeys };
+      return { config: resolved, secretKeys, authProfileKey };
     },
   };
 }

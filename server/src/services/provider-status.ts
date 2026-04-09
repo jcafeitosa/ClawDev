@@ -1,4 +1,4 @@
-import { and, eq, lt, sql, isNull, or, inArray } from "drizzle-orm";
+import { and, eq, lt, sql, inArray } from "drizzle-orm";
 import type { Db } from "@clawdev/db";
 import { modelCatalog, providerModelStatus } from "@clawdev/db";
 
@@ -31,7 +31,65 @@ export function getCooldownDuration(adapterType: string): number {
   return (DEFAULT_COOLDOWN_MINUTES[adapterType] ?? 5) * 60 * 1000;
 }
 
+export interface ProviderStatusScope {
+  companyId?: string | null;
+  authProfileKey?: string | null;
+}
+
+function buildScopeKey(scope?: ProviderStatusScope): string {
+  if (scope?.companyId && scope?.authProfileKey) {
+    return `profile:${scope.companyId}:${scope.authProfileKey}`;
+  }
+  if (scope?.companyId) {
+    return `company:${scope.companyId}`;
+  }
+  return "global";
+}
+
+function normalizeScope(scope?: ProviderStatusScope) {
+  const companyId = scope?.companyId?.trim() || null;
+  const authProfileKey = companyId ? scope?.authProfileKey?.trim() || null : null;
+  return {
+    companyId,
+    authProfileKey,
+    scopeKey: buildScopeKey({ companyId, authProfileKey }),
+  };
+}
+
+function buildScopePrecedence(scope?: ProviderStatusScope): string[] {
+  const normalized = normalizeScope(scope);
+  const keys = [
+    normalized.authProfileKey && normalized.companyId
+      ? buildScopeKey({ companyId: normalized.companyId, authProfileKey: normalized.authProfileKey })
+      : null,
+    normalized.companyId
+      ? buildScopeKey({ companyId: normalized.companyId })
+      : null,
+    "global",
+  ].filter((value): value is string => Boolean(value));
+  return [...new Set(keys)];
+}
+
 export function createProviderStatusService(db: Db) {
+  async function loadRowForScope(
+    adapterType: string,
+    modelId: string,
+    scopeKey: string,
+  ) {
+    const rows = await db
+      .select()
+      .from(providerModelStatus)
+      .where(
+        and(
+          eq(providerModelStatus.adapterType, adapterType),
+          eq(providerModelStatus.modelId, modelId),
+          eq(providerModelStatus.scopeKey, scopeKey),
+        ),
+      )
+      .limit(1);
+    return rows[0] ?? null;
+  }
+
   return {
     /**
      * Upsert model status. When the status value changes, `statusChangedAt` is bumped.
@@ -41,20 +99,31 @@ export function createProviderStatusService(db: Db) {
       modelId: string,
       status: string,
       detail?: string,
+      scope?: ProviderStatusScope,
     ): Promise<void> {
+      const normalizedScope = normalizeScope(scope);
       await db
         .insert(providerModelStatus)
         .values({
           adapterType,
           modelId,
+          companyId: normalizedScope.companyId,
+          authProfileKey: normalizedScope.authProfileKey,
+          scopeKey: normalizedScope.scopeKey,
           status,
           statusDetail: detail ?? null,
           statusChangedAt: new Date(),
           updatedAt: new Date(),
         })
         .onConflictDoUpdate({
-          target: [providerModelStatus.adapterType, providerModelStatus.modelId],
+          target: [
+            providerModelStatus.adapterType,
+            providerModelStatus.modelId,
+            providerModelStatus.scopeKey,
+          ],
           set: {
+            companyId: normalizedScope.companyId,
+            authProfileKey: normalizedScope.authProfileKey,
             status,
             statusDetail: detail ?? null,
             // Only bump statusChangedAt when the status actually changes
@@ -78,7 +147,9 @@ export function createProviderStatusService(db: Db) {
       modelId: string,
       until?: Date,
       reason?: string,
+      scope?: ProviderStatusScope,
     ): Promise<void> {
+      const normalizedScope = normalizeScope(scope);
       const cooldownUntil = until ?? new Date(Date.now() + getCooldownDuration(adapterType));
       const cooldownReason = reason ?? "cooldown";
       await db
@@ -86,6 +157,9 @@ export function createProviderStatusService(db: Db) {
         .values({
           adapterType,
           modelId,
+          companyId: normalizedScope.companyId,
+          authProfileKey: normalizedScope.authProfileKey,
+          scopeKey: normalizedScope.scopeKey,
           status: "cooldown",
           cooldownUntil,
           cooldownReason,
@@ -93,8 +167,14 @@ export function createProviderStatusService(db: Db) {
           updatedAt: new Date(),
         })
         .onConflictDoUpdate({
-          target: [providerModelStatus.adapterType, providerModelStatus.modelId],
+          target: [
+            providerModelStatus.adapterType,
+            providerModelStatus.modelId,
+            providerModelStatus.scopeKey,
+          ],
           set: {
+            companyId: normalizedScope.companyId,
+            authProfileKey: normalizedScope.authProfileKey,
             status: "cooldown",
             cooldownUntil,
             cooldownReason,
@@ -134,6 +214,29 @@ export function createProviderStatusService(db: Db) {
       return result.length;
     },
 
+    async clearExpiredCooldownsForScope(scope?: ProviderStatusScope): Promise<number> {
+      const normalizedScope = normalizeScope(scope);
+      const result = await db
+        .update(providerModelStatus)
+        .set({
+          status: "available",
+          cooldownUntil: null,
+          cooldownReason: null,
+          statusChangedAt: new Date(),
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(providerModelStatus.status, "cooldown"),
+            lt(providerModelStatus.cooldownUntil, new Date()),
+            eq(providerModelStatus.scopeKey, normalizedScope.scopeKey),
+          ),
+        )
+        .returning({ id: providerModelStatus.id });
+
+      return result.length;
+    },
+
     /**
      * Check whether a model is available for routing.
      * A model is available only if its status is "available"
@@ -142,63 +245,41 @@ export function createProviderStatusService(db: Db) {
      * If the row has status "cooldown" but cooldownUntil has passed,
      * it is automatically cleared inline and treated as available.
      */
-    async isAvailable(adapterType: string, modelId: string): Promise<boolean> {
-      const rows = await db
-        .select({ id: providerModelStatus.id })
-        .from(providerModelStatus)
-        .where(
-          and(
-            eq(providerModelStatus.adapterType, adapterType),
-            eq(providerModelStatus.modelId, modelId),
-            eq(providerModelStatus.status, "available"),
-            or(
-              isNull(providerModelStatus.cooldownUntil),
-              lt(providerModelStatus.cooldownUntil, new Date()),
-            ),
-          ),
-        )
-        .limit(1);
+    async isAvailable(
+      adapterType: string,
+      modelId: string,
+      scope?: ProviderStatusScope,
+    ): Promise<boolean> {
+      for (const scopeKey of buildScopePrecedence(scope)) {
+        const row = await loadRowForScope(adapterType, modelId, scopeKey);
+        if (!row) continue;
 
-      // If there is no row at all the model has never been tracked — treat as available
-      if (rows.length > 0) return true;
+        if (
+          row.status === "available" &&
+          (!row.cooldownUntil || row.cooldownUntil < new Date())
+        ) {
+          return true;
+        }
 
-      const existsRows = await db
-        .select({
-          id: providerModelStatus.id,
-          status: providerModelStatus.status,
-          cooldownUntil: providerModelStatus.cooldownUntil,
-        })
-        .from(providerModelStatus)
-        .where(
-          and(
-            eq(providerModelStatus.adapterType, adapterType),
-            eq(providerModelStatus.modelId, modelId),
-          ),
-        )
-        .limit(1);
+        if (
+          row.status === "cooldown" &&
+          row.cooldownUntil &&
+          row.cooldownUntil < new Date()
+        ) {
+          await db
+            .update(providerModelStatus)
+            .set({
+              status: "available",
+              cooldownUntil: null,
+              cooldownReason: null,
+              statusChangedAt: new Date(),
+              updatedAt: new Date(),
+            })
+            .where(eq(providerModelStatus.id, row.id));
+          return true;
+        }
 
-      // No row in the table means the model is untracked — assume available
-      if (existsRows.length === 0) return true;
-
-      // Auto-clear expired cooldowns inline: if the row is in "cooldown" but
-      // cooldownUntil has already passed, transition it to "available" and return true.
-      const row = existsRows[0]!;
-      if (
-        row.status === "cooldown" &&
-        row.cooldownUntil &&
-        row.cooldownUntil < new Date()
-      ) {
-        await db
-          .update(providerModelStatus)
-          .set({
-            status: "available",
-            cooldownUntil: null,
-            cooldownReason: null,
-            statusChangedAt: new Date(),
-            updatedAt: new Date(),
-          })
-          .where(eq(providerModelStatus.id, row.id));
-        return true;
+        return false;
       }
 
       return false;
@@ -208,8 +289,43 @@ export function createProviderStatusService(db: Db) {
      * Return all models with status "available" that are not in cooldown.
      * Optionally filter by adapter type.
      */
+    async listEffectiveStatuses(
+      scope?: ProviderStatusScope,
+      adapterType?: string,
+    ): Promise<typeof providerModelStatus.$inferSelect[]> {
+      const scopeKeys = buildScopePrecedence(scope);
+      const conditions = [inArray(providerModelStatus.scopeKey, scopeKeys)];
+
+      if (adapterType) {
+        conditions.push(eq(providerModelStatus.adapterType, adapterType));
+      }
+
+      const rows = await db
+        .select()
+        .from(providerModelStatus)
+        .where(and(...conditions));
+
+      const scopeOrder = new Map(scopeKeys.map((scopeKey, index) => [scopeKey, index] as const));
+      const effective = new Map<string, typeof rows[number]>();
+
+      for (const row of rows.sort((a, b) => {
+        const scopeA = scopeOrder.get(a.scopeKey) ?? Number.MAX_SAFE_INTEGER;
+        const scopeB = scopeOrder.get(b.scopeKey) ?? Number.MAX_SAFE_INTEGER;
+        if (scopeA !== scopeB) return scopeA - scopeB;
+        return (b.updatedAt?.getTime?.() ?? 0) - (a.updatedAt?.getTime?.() ?? 0);
+      })) {
+        const key = `${row.adapterType}::${row.modelId}`;
+        if (!effective.has(key)) {
+          effective.set(key, row);
+        }
+      }
+
+      return Array.from(effective.values());
+    },
+
     async getAvailableModels(
       adapterType?: string,
+      scope?: ProviderStatusScope,
     ): Promise<
       Array<{
         adapterType: string;
@@ -218,27 +334,18 @@ export function createProviderStatusService(db: Db) {
         avgLatencyMs: number | null;
       }>
     > {
-      const conditions = [
-        eq(providerModelStatus.status, "available"),
-        or(
-          isNull(providerModelStatus.cooldownUntil),
-          lt(providerModelStatus.cooldownUntil, new Date()),
-        ),
-      ];
-
-      if (adapterType) {
-        conditions.push(eq(providerModelStatus.adapterType, adapterType));
-      }
-
-      return db
-        .select({
-          adapterType: providerModelStatus.adapterType,
-          modelId: providerModelStatus.modelId,
-          status: providerModelStatus.status,
-          avgLatencyMs: providerModelStatus.avgLatencyMs,
-        })
-        .from(providerModelStatus)
-        .where(and(...conditions));
+      const rows = await this.listEffectiveStatuses(scope, adapterType);
+      return rows
+        .filter((row) =>
+          row.status === "available" &&
+          (!row.cooldownUntil || row.cooldownUntil < new Date()),
+        )
+        .map((row) => ({
+          adapterType: row.adapterType,
+          modelId: row.modelId,
+          status: row.status,
+          avgLatencyMs: row.avgLatencyMs,
+        }));
     },
 
     /**
@@ -251,9 +358,11 @@ export function createProviderStatusService(db: Db) {
       modelId: string,
       success: boolean,
       latencyMs?: number,
+      scope?: ProviderStatusScope,
     ): Promise<void> {
       const now = new Date();
       const probeStatus = success ? "ok" : "fail";
+      const normalizedScope = normalizeScope(scope);
 
       if (success) {
         // Upsert with success: reset failures, update latency EMA
@@ -262,6 +371,9 @@ export function createProviderStatusService(db: Db) {
           .values({
             adapterType,
             modelId,
+            companyId: normalizedScope.companyId,
+            authProfileKey: normalizedScope.authProfileKey,
+            scopeKey: normalizedScope.scopeKey,
             status: "available",
             lastProbeStatus: probeStatus,
             lastProbeAt: now,
@@ -270,8 +382,14 @@ export function createProviderStatusService(db: Db) {
             updatedAt: now,
           })
           .onConflictDoUpdate({
-            target: [providerModelStatus.adapterType, providerModelStatus.modelId],
+            target: [
+              providerModelStatus.adapterType,
+              providerModelStatus.modelId,
+              providerModelStatus.scopeKey,
+            ],
             set: {
+              companyId: normalizedScope.companyId,
+              authProfileKey: normalizedScope.authProfileKey,
               lastProbeStatus: probeStatus,
               lastProbeAt: now,
               consecutiveFailures: 0,
@@ -295,6 +413,9 @@ export function createProviderStatusService(db: Db) {
           .values({
             adapterType,
             modelId,
+            companyId: normalizedScope.companyId,
+            authProfileKey: normalizedScope.authProfileKey,
+            scopeKey: normalizedScope.scopeKey,
             status: "unknown",
             lastProbeStatus: probeStatus,
             lastProbeAt: now,
@@ -302,8 +423,14 @@ export function createProviderStatusService(db: Db) {
             updatedAt: now,
           })
           .onConflictDoUpdate({
-            target: [providerModelStatus.adapterType, providerModelStatus.modelId],
+            target: [
+              providerModelStatus.adapterType,
+              providerModelStatus.modelId,
+              providerModelStatus.scopeKey,
+            ],
             set: {
+              companyId: normalizedScope.companyId,
+              authProfileKey: normalizedScope.authProfileKey,
               lastProbeStatus: probeStatus,
               lastProbeAt: now,
               consecutiveFailures: sql`${providerModelStatus.consecutiveFailures} + 1`,
@@ -323,6 +450,7 @@ export function createProviderStatusService(db: Db) {
       modelId: string,
       errorCode?: string | null,
       errorMessage?: string | null,
+      scope?: ProviderStatusScope,
     ): Promise<void> {
       const isRateLimited =
         errorCode === "quota_exceeded" ||
@@ -335,14 +463,14 @@ export function createProviderStatusService(db: Db) {
       if (isRateLimited) {
         const duration = getCooldownDuration(adapterType);
         const until = new Date(Date.now() + duration);
-        await this.markCooldown(adapterType, modelId, until, errorCode || "rate_limited");
+        await this.markCooldown(adapterType, modelId, until, errorCode || "rate_limited", scope);
       }
     },
 
     /**
      * Aggregate status counts per provider (adapter type).
      */
-    async getProviderSummary(): Promise<
+    async getProviderSummary(scope?: ProviderStatusScope): Promise<
       Array<{
         provider: string;
         total: number;
@@ -352,27 +480,46 @@ export function createProviderStatusService(db: Db) {
         unavailable: number;
       }>
     > {
-      return db
-        .select({
-          provider: providerModelStatus.adapterType,
-          total: sql<number>`count(*)::int`,
-          free: sql<number>`
-            count(*) FILTER (
-              WHERE EXISTS (
-                SELECT 1
-                FROM ${modelCatalog} mc
-                WHERE mc.adapter_type = ${providerModelStatus.adapterType}
-                  AND mc.model_id = ${providerModelStatus.modelId}
-                  AND mc.is_free = true
-              )
-            )::int
-          `,
-          available: sql<number>`count(*) FILTER (WHERE ${providerModelStatus.status} = 'available')::int`,
-          cooldown: sql<number>`count(*) FILTER (WHERE ${providerModelStatus.status} = 'cooldown')::int`,
-          unavailable: sql<number>`count(*) FILTER (WHERE ${providerModelStatus.status} IN ('unknown', 'unavailable', 'degraded', 'quota_exceeded', 'auth_required'))::int`,
-        })
-        .from(providerModelStatus)
-        .groupBy(providerModelStatus.adapterType);
+      const [statusRows, catalogRows] = await Promise.all([
+        this.listEffectiveStatuses(scope),
+        db
+          .select({
+            adapterType: modelCatalog.adapterType,
+            modelId: modelCatalog.modelId,
+            isFree: modelCatalog.isFree,
+          })
+          .from(modelCatalog),
+      ]);
+
+      const catalogFreeSet = new Set(
+        catalogRows
+          .filter((row) => Boolean(row.isFree))
+          .map((row) => `${row.adapterType}::${row.modelId}`),
+      );
+
+      const summaryByAdapter = new Map<
+        string,
+        { provider: string; total: number; free: number; available: number; cooldown: number; unavailable: number }
+      >();
+
+      for (const row of statusRows) {
+        const current = summaryByAdapter.get(row.adapterType) ?? {
+          provider: row.adapterType,
+          total: 0,
+          free: 0,
+          available: 0,
+          cooldown: 0,
+          unavailable: 0,
+        };
+        current.total += 1;
+        if (catalogFreeSet.has(`${row.adapterType}::${row.modelId}`)) current.free += 1;
+        if (row.status === "available") current.available += 1;
+        else if (row.status === "cooldown") current.cooldown += 1;
+        else current.unavailable += 1;
+        summaryByAdapter.set(row.adapterType, current);
+      }
+
+      return Array.from(summaryByAdapter.values());
     },
   };
 }

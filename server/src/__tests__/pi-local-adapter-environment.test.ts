@@ -18,10 +18,17 @@ console.log(JSON.stringify({ type: "session", version: 3, id: "session-1", times
 console.log(JSON.stringify({ type: "agent_start" }));
 console.log(JSON.stringify({ type: "turn_start" }));
 console.log(JSON.stringify({
+  type: "message_update",
+  assistantMessageEvent: {
+    type: "text_delta",
+    delta: "PONG"
+  }
+}));
+console.log(JSON.stringify({
   type: "turn_end",
   message: {
     role: "assistant",
-    content: [{ type: "text", text: "hello" }],
+    content: [{ type: "text", text: "PONG" }],
     usage: { input: 1, output: 1, cacheRead: 0, cost: { total: 0 } }
   },
   toolResults: []
@@ -39,7 +46,7 @@ process.exit(1);
 }
 
 describe("pi_local environment diagnostics", () => {
-  it("passes a hello probe when model discovery and execution succeed", async () => {
+  it("passes a PING/PONG probe when model discovery and execution succeed", async () => {
     const root = path.join(
       os.tmpdir(),
       `clawdev-pi-local-probe-${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -66,6 +73,39 @@ describe("pi_local environment diagnostics", () => {
 
     expect(result.status).toBe("pass");
     expect(result.checks.some((check) => check.code === "pi_models_discovered")).toBe(true);
+    expect(result.checks.some((check) => check.code === "pi_hello_probe_passed")).toBe(true);
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  it("supports router-managed model selection when only the provider is configured", async () => {
+    const root = path.join(
+      os.tmpdir(),
+      `clawdev-pi-local-provider-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    );
+    const binDir = path.join(root, "bin");
+    const cwd = path.join(root, "workspace");
+    await fs.mkdir(binDir, { recursive: true });
+    await fs.mkdir(cwd, { recursive: true });
+    await writeFakePiCommand(binDir, "success");
+
+    const result = await testEnvironment({
+      companyId: "company-1",
+      adapterType: "pi_local",
+      config: {
+        command: "pi",
+        cwd,
+        provider: "openai",
+        model: "auto",
+        env: {
+          OPENAI_API_KEY: "test-key",
+          HOME: root,
+          PATH: `${binDir}${path.delimiter}${process.env.PATH ?? ""}`,
+        },
+      },
+    });
+
+    expect(result.status).toBe("pass");
+    expect(result.checks.some((check) => check.code === "pi_provider_configured")).toBe(true);
     expect(result.checks.some((check) => check.code === "pi_hello_probe_passed")).toBe(true);
     await fs.rm(root, { recursive: true, force: true });
   });

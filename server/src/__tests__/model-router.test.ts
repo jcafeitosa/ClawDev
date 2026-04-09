@@ -48,10 +48,12 @@ function createDbStub(options?: {
   preferenceRow?: Record<string, unknown> | null;
   catalogRows?: Array<Record<string, unknown>>;
   statusRows?: Array<Record<string, unknown>>;
+  routingLogRows?: Array<Record<string, unknown>>;
 }) {
   const preferenceRow = options?.preferenceRow ?? null;
   const catalogRows = options?.catalogRows ?? [];
   const statusRows = options?.statusRows ?? [];
+  const routingLogRows = options?.routingLogRows ?? [];
 
   function filterRowsByAdapterHint(rows: Array<Record<string, unknown>>, condition: unknown) {
     let serialized = "";
@@ -98,6 +100,9 @@ function createDbStub(options?: {
           if (name === "provider_model_status") {
             return buildChain(statusRows);
           }
+          if (name === "model_routing_log") {
+            return buildChain(routingLogRows);
+          }
           return buildChain([]);
         },
       };
@@ -105,10 +110,18 @@ function createDbStub(options?: {
   };
 }
 
-function createProviderStatusStub(available: Set<string>) {
+function createProviderStatusStub(
+  available: Set<string>,
+  statusRows: Array<Record<string, unknown>> = [],
+) {
   return {
     isAvailable: vi.fn(async (adapterType: string, modelId: string) =>
       available.has(`${adapterType}::${modelId}`),
+    ),
+    listEffectiveStatuses: vi.fn(async (_scope?: unknown, adapterType?: string) =>
+      adapterType
+        ? statusRows.filter((row) => row.adapterType === adapterType)
+        : statusRows,
     ),
   };
 }
@@ -195,6 +208,11 @@ describe("model router", () => {
         "codex_local::gpt-5",
         "gemini_local::gemini-2.5-flash",
       ]),
+      [
+        { adapterType: "claude_local", modelId: "sonnet", avgLatencyMs: 500, consecutiveFailures: 2 },
+        { adapterType: "codex_local", modelId: "gpt-5", avgLatencyMs: 300, consecutiveFailures: 1 },
+        { adapterType: "gemini_local", modelId: "gemini-2.5-flash", avgLatencyMs: 250, consecutiveFailures: 0 },
+      ],
     );
     const router = createModelRouterService(db as any, providerStatus as any);
 
@@ -236,6 +254,11 @@ describe("model router", () => {
         "codex_local::gpt-5",
         "pi_local::openai/gpt-5.4",
       ]),
+      [
+        { adapterType: "claude_local", modelId: "sonnet", avgLatencyMs: 500, consecutiveFailures: 0 },
+        { adapterType: "codex_local", modelId: "gpt-5", avgLatencyMs: 300, consecutiveFailures: 0 },
+        { adapterType: "pi_local", modelId: "openai/gpt-5.4", avgLatencyMs: 50, consecutiveFailures: 0 },
+      ],
     );
     const router = createModelRouterService(db as any, providerStatus as any);
 
@@ -299,6 +322,91 @@ describe("model router", () => {
       adapterType: "codex_local",
       modelId: "gpt-5.4-mini",
       resolution: "routed",
+    });
+  });
+
+  it("reuses the most recent successful resolution for the same auth profile before generic fallback", async () => {
+    const db = createDbStub({
+      preferenceRow: null,
+      catalogRows: [
+        { adapterType: "codex_local", modelId: "gpt-5.4-mini", inputPriceMicro: 20, isFree: false, isLocal: true },
+        { adapterType: "gemini_local", modelId: "gemini-2.5-flash", inputPriceMicro: 10, isFree: true, isLocal: true },
+      ],
+      routingLogRows: [
+        {
+          companyId: COMPANY_ID,
+          agentId: "agent-1",
+          authProfileKey: "profile-a",
+          outcome: "succeeded",
+          resolvedAdapterType: "codex_local",
+          resolvedModelId: "gpt-5.4-mini",
+          occurredAt: new Date("2026-04-08T12:00:00.000Z"),
+        },
+      ],
+    } as any);
+    const providerStatus = createProviderStatusStub(
+      new Set([
+        "codex_local::gpt-5.4-mini",
+        "gemini_local::gemini-2.5-flash",
+      ]),
+    );
+    const router = createModelRouterService(db as any, providerStatus as any);
+
+    const result = await router.resolveModel(COMPANY_ID, "agent-1", "claude_local", undefined, {
+      authProfileKey: "profile-a",
+    });
+
+    expect(result).toMatchObject({
+      adapterType: "codex_local",
+      modelId: "gpt-5.4-mini",
+      resolution: "pinned",
+    });
+  });
+
+  it("does not reuse a recent successful resolution from another adapter when adapter type is locked", async () => {
+    const db = createDbStub({
+      preferenceRow: null,
+      catalogRows: [
+        { adapterType: "claude_local", modelId: "claude-sonnet-4-6", inputPriceMicro: 20, isFree: false, isLocal: true },
+        { adapterType: "codex_local", modelId: "gpt-5.4-mini", inputPriceMicro: 10, isFree: false, isLocal: true },
+      ],
+      routingLogRows: [
+        {
+          companyId: COMPANY_ID,
+          agentId: "agent-1",
+          authProfileKey: "profile-a",
+          outcome: "succeeded",
+          resolvedAdapterType: "codex_local",
+          resolvedModelId: "gpt-5.4-mini",
+          occurredAt: new Date("2026-04-08T12:00:00.000Z"),
+        },
+        {
+          companyId: COMPANY_ID,
+          agentId: "agent-1",
+          authProfileKey: "profile-a",
+          outcome: "failed",
+          resolvedAdapterType: "claude_local",
+          resolvedModelId: "claude-sonnet-4-6",
+          occurredAt: new Date("2026-04-08T12:01:00.000Z"),
+        },
+      ],
+    } as any);
+    const providerStatus = createProviderStatusStub(
+      new Set([
+        "claude_local::claude-sonnet-4-6",
+        "codex_local::gpt-5.4-mini",
+      ]),
+    );
+    const router = createModelRouterService(db as any, providerStatus as any);
+
+    const result = await router.resolveModel(COMPANY_ID, "agent-1", "claude_local", undefined, {
+      authProfileKey: "profile-a",
+      lockAdapterType: true,
+    });
+
+    expect(result).toMatchObject({
+      adapterType: "claude_local",
+      modelId: "claude-sonnet-4-6",
     });
   });
 });

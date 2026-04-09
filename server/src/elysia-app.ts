@@ -164,7 +164,7 @@ export function buildAuthGetSessionResponse(actor: Actor): Response | null {
   );
 }
 
-async function buildPluginDetailResponse(
+export async function buildPluginDetailResponse(
   registry: ReturnType<typeof pluginRegistryService>,
   workerManager: PluginWorkerManager | undefined,
   pluginId: string,

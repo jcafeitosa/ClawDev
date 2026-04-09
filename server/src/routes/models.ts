@@ -8,7 +8,7 @@
 
 import { Elysia, t } from "elysia";
 import type { Db } from "@clawdev/db";
-import { companyModelPreferences, providerModelStatus } from "@clawdev/db";
+import { agents, companyModelPreferences, providerModelStatus } from "@clawdev/db";
 import { modelRoutingPolicies } from "@clawdev/db";
 import { and, eq } from "drizzle-orm";
 import { createModelCatalogService } from "../services/model-catalog.js";
@@ -22,15 +22,182 @@ import { assertCompanyAccess, assertInstanceAdmin, getActorInfo, type Actor } fr
 import { badRequest, notFound } from "../errors.js";
 import { logger } from "../middleware/logger.js";
 import { modelRoutingPolicyInputSchema } from "@clawdev/shared";
+import { PI_BRIDGE_PROVIDER_PRESETS } from "@clawdev/shared";
 import { logActivity } from "../services/activity-log.js";
+import type { AdapterModel } from "@clawdev/adapter-utils";
+import { secretService } from "../services/secrets.js";
+import { discoverPiModelsCached } from "@clawdev/adapter-pi-local/server";
+import { listOpenAICompatibleModels } from "@clawdev/adapter-openai-compatible-local/server";
 
 const log = logger.child({ service: "models-routes" });
+const LIVE_DISCOVERY_ADAPTERS = new Set(["pi_local", "openai_compatible_local"]);
+const PI_BRIDGE_ENV_VARS = Array.from(
+  new Set(
+    PI_BRIDGE_PROVIDER_PRESETS.flatMap((preset) => preset.envVars).filter((value) => value.trim().length > 0),
+  ),
+);
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+  return value as Record<string, unknown>;
+}
+
+function normalizeEnv(value: unknown): Record<string, string> {
+  const record = asRecord(value);
+  if (!record) return {};
+  const env: Record<string, string> = {};
+  for (const [key, rawValue] of Object.entries(record)) {
+    if (typeof rawValue === "string") env[key] = rawValue;
+  }
+  return env;
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map((item) => stableStringify(item)).join(",")}]`;
+  if (value && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => `${JSON.stringify(key)}:${stableStringify(item)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+function dedupeAdapterModels(models: AdapterModel[]): AdapterModel[] {
+  const merged = new Map<string, AdapterModel>();
+  for (const model of models) {
+    const existing = merged.get(model.id);
+    if (!existing) {
+      merged.set(model.id, model);
+      continue;
+    }
+    merged.set(model.id, {
+      ...existing,
+      ...model,
+      statusDetail: model.statusDetail ?? existing.statusDetail,
+      probedAt: model.probedAt ?? existing.probedAt,
+    });
+  }
+  return [...merged.values()].sort((a, b) =>
+    a.id.localeCompare(b.id, "en", { numeric: true, sensitivity: "base" }),
+  );
+}
+
+async function listCompanyScopedAdapterModels(
+  db: Db,
+  companyId: string | undefined,
+  adapterType: string,
+): Promise<AdapterModel[]> {
+  if (!companyId || !LIVE_DISCOVERY_ADAPTERS.has(adapterType)) {
+    return listAdapterModels(adapterType);
+  }
+
+  const agentRows = await db
+    .select({
+      adapterConfig: agents.adapterConfig,
+    })
+    .from(agents)
+    .where(and(eq(agents.companyId, companyId), eq(agents.adapterType, adapterType)));
+
+  if (agentRows.length === 0) return [];
+
+  const secrets = secretService(db);
+  const configKeys = new Set<string>();
+  const runtimeConfigs: Array<Record<string, unknown>> = [];
+
+  for (const row of agentRows) {
+    const adapterConfig = asRecord(row.adapterConfig) ?? {};
+    const { config: runtimeConfig } = await secrets.resolveAdapterConfigForRuntime(
+      companyId,
+      adapterConfig,
+    );
+    const key = stableStringify(runtimeConfig);
+    if (configKeys.has(key)) continue;
+    configKeys.add(key);
+    runtimeConfigs.push(runtimeConfig);
+  }
+
+  const discovered: AdapterModel[] = [];
+  for (const runtimeConfig of runtimeConfigs) {
+    if (adapterType === "pi_local") {
+      const runtimeEnv = normalizeEnv(runtimeConfig.env);
+      const maskedBridgeEnv: Record<string, string> = {};
+      for (const envVar of PI_BRIDGE_ENV_VARS) {
+        maskedBridgeEnv[envVar] = "";
+      }
+      discovered.push(
+        ...(await discoverPiModelsCached({
+          command: runtimeConfig.command,
+          cwd: runtimeConfig.cwd,
+          env: { ...maskedBridgeEnv, ...runtimeEnv },
+        })),
+      );
+      continue;
+    }
+
+    if (adapterType === "openai_compatible_local") {
+      discovered.push(
+        ...(await listOpenAICompatibleModels({
+          baseUrl: runtimeConfig.baseUrl,
+          apiKey: runtimeConfig.apiKey,
+        })),
+      );
+      continue;
+    }
+  }
+
+  return dedupeAdapterModels(discovered);
+}
+
+function normalizePiLiveModels(
+  liveModels: AdapterModel[],
+  statusRows: Array<{
+    adapterType: string;
+    modelId: string;
+    status: string;
+    statusDetail: string | null;
+    avgLatencyMs: number | null;
+    errorRatePercent: number | null;
+    consecutiveFailures: number;
+    cooldownUntil: Date | null;
+    cooldownReason: string | null;
+    lastProbeAt: Date | null;
+  }>,
+) {
+  const statusMap = new Map(statusRows.map((row) => [`${row.adapterType}::${row.modelId}`, row] as const));
+  return liveModels.map((model) => {
+    const status = statusMap.get(`pi_local::${model.id}`);
+    return {
+      id: model.id,
+      modelId: model.id,
+      name: model.label,
+      circuitState: status?.status ?? model.status ?? "unknown",
+      status: status?.status ?? model.status ?? "unknown",
+      statusDetail: status?.statusDetail ?? model.statusDetail ?? null,
+      avgLatencyMs: status?.avgLatencyMs ?? null,
+      errorRate: status?.errorRatePercent ?? null,
+      failureCount: status?.consecutiveFailures ?? 0,
+      cooldownEndsAt: status?.cooldownUntil ?? null,
+      cooldownReason: status?.cooldownReason ?? null,
+      lastProbed: status?.lastProbeAt ?? model.probedAt ?? null,
+      lastHealthCheck: status?.lastProbeAt ?? model.probedAt ?? null,
+    };
+  });
+}
 
 function parseDateParam(value: unknown, label: string): Date | undefined {
   if (!value || typeof value !== "string") return undefined;
   const d = new Date(value);
   if (isNaN(d.getTime())) throw badRequest(`Invalid '${label}' date: ${value}`);
   return d;
+}
+
+function resolveProviderStatusScope(ctx: any): { companyId?: string } | undefined {
+  const companyId = typeof ctx.query?.companyId === "string" ? ctx.query.companyId : undefined;
+  if (!companyId) return undefined;
+  const actor = ctx.actor as Actor;
+  assertCompanyAccess(actor, companyId);
+  return { companyId };
 }
 
 export function modelRoutes(db: Db) {
@@ -172,8 +339,14 @@ export function modelRoutes(db: Db) {
     // ── List all models with filters ───────────────────────────────────
     .get(
       "/models",
-      async ({ query }) => {
+      async (ctx: any) => {
         try {
+          const { query } = ctx;
+          const actor = ctx.actor as Actor;
+          const companyId = typeof query.companyId === "string" ? query.companyId : undefined;
+          if (companyId) {
+            assertCompanyAccess(actor, companyId);
+          }
           const isFree =
             query.isFree === "true" ? true : query.isFree === "false" ? false : undefined;
           const isLocal =
@@ -188,15 +361,47 @@ export function modelRoutes(db: Db) {
             isLocal,
             search: query.search as string | undefined,
           });
+          const visibleCatalogModels = catalogModels.filter((model) => model.source !== "bridge_seed");
 
-          // Fetch all live status rows and build a lookup map
-          const statusRows = await db.select().from(providerModelStatus);
+          const shouldUseLivePiModels =
+            query.adapterType === "pi_local" ||
+            (typeof query.provider === "string" &&
+              PI_BRIDGE_PROVIDER_PRESETS.some((preset) => preset.provider === query.provider));
+
+          const shouldUseLiveOpenAICompatibleModels =
+            query.adapterType === "openai_compatible_local";
+
+          const livePiModels = shouldUseLivePiModels
+            ? await listCompanyScopedAdapterModels(db, companyId, "pi_local")
+            : [];
+          const liveOpenAICompatibleModels = shouldUseLiveOpenAICompatibleModels
+            ? await listCompanyScopedAdapterModels(db, companyId, "openai_compatible_local")
+            : [];
+
+          // Fetch effective status rows for the requested company context
+          const statusRows = await providerStatus.listEffectiveStatuses(
+            companyId ? { companyId } : undefined,
+          );
           const statusMap = new Map(
             statusRows.map((s) => [`${s.adapterType}::${s.modelId}`, s]),
           );
 
+          if (shouldUseLivePiModels) {
+            const liveStatusRows = statusRows.filter((row) => row.adapterType === "pi_local");
+            const models = normalizePiLiveModels(livePiModels, liveStatusRows);
+            return { models };
+          }
+
+          if (shouldUseLiveOpenAICompatibleModels) {
+            const liveStatusRows = statusRows.filter(
+              (row) => row.adapterType === "openai_compatible_local",
+            );
+            const models = normalizePiLiveModels(liveOpenAICompatibleModels, liveStatusRows);
+            return { models };
+          }
+
           // Enrich catalog models with live status data
-          const models = catalogModels.map((m) => {
+          const models = visibleCatalogModels.map((m) => {
             const status = statusMap.get(`${m.adapterType}::${m.modelId}`);
             return {
               ...m,
@@ -230,6 +435,7 @@ export function modelRoutes(db: Db) {
           isFree: t.Optional(t.String()),
           isLocal: t.Optional(t.String()),
           search: t.Optional(t.String()),
+          companyId: t.Optional(t.String()),
         }),
       },
     )
@@ -327,10 +533,17 @@ export function modelRoutes(db: Db) {
     // ── Aggregated status per provider/adapter ─────────────────────────
     .get(
       "/providers/summary",
-      async () => {
+      async (ctx: any) => {
         try {
+          const { query } = ctx;
+          const actor = ctx.actor as Actor;
+          const companyId = typeof query?.companyId === "string" ? query.companyId : undefined;
+          if (companyId) {
+            assertCompanyAccess(actor, companyId);
+          }
           const adapters = listServerAdapters();
-          const statusSummary = await providerStatus.getProviderSummary();
+          const scope = companyId ? { companyId } : undefined;
+          const statusSummary = await providerStatus.getProviderSummary(scope);
 
           // Build a lookup from the status summary keyed by adapterType
           const statusByAdapter = new Map(
@@ -339,6 +552,11 @@ export function modelRoutes(db: Db) {
 
           // Gather catalog models per adapter (for total count and model labels)
           const catalogModels = await catalog.listModels();
+          const piCatalogByModelId = new Map(
+            catalogModels
+              .filter((model) => model.adapterType === "pi_local" && model.source !== "bridge_seed")
+              .map((model) => [model.modelId, model]),
+          );
           const catalogByAdapter = new Map<string, typeof catalogModels>();
           for (const m of catalogModels) {
             const list = catalogByAdapter.get(m.adapterType) ?? [];
@@ -347,17 +565,36 @@ export function modelRoutes(db: Db) {
           }
 
           // Fetch all live status rows for per-model detail
-          const allStatusRows = await db.select().from(providerModelStatus);
+          const allStatusRows = await providerStatus.listEffectiveStatuses(scope);
           const statusRowsByAdapter = new Map<string, typeof allStatusRows>();
           for (const row of allStatusRows) {
             const list = statusRowsByAdapter.get(row.adapterType) ?? [];
             list.push(row);
             statusRowsByAdapter.set(row.adapterType, list);
           }
+          const livePiModels = await listCompanyScopedAdapterModels(db, companyId, "pi_local");
+          const liveOpenAICompatibleModels = await listCompanyScopedAdapterModels(
+            db,
+            companyId,
+            "openai_compatible_local",
+          );
 
           const summary = adapters.map((adapter) => {
             const status = statusByAdapter.get(adapter.type);
-            const adapterCatalog = catalogByAdapter.get(adapter.type) ?? [];
+            const liveAdapterModels =
+              adapter.type === "pi_local"
+                ? livePiModels
+                : adapter.type === "openai_compatible_local"
+                  ? liveOpenAICompatibleModels
+                  : [];
+            const adapterCatalog = liveAdapterModels.length > 0
+              ? liveAdapterModels.map((model) => ({
+                modelId: model.id,
+                label: model.label,
+                isFree: false,
+                lastProbedAt: model.probedAt ?? null,
+              }))
+              : (catalogByAdapter.get(adapter.type) ?? []);
             const adapterStatuses = statusRowsByAdapter.get(adapter.type) ?? [];
             const catalogTotal = adapterCatalog.length;
 
@@ -413,24 +650,93 @@ export function modelRoutes(db: Db) {
             };
           });
 
-          return { providers: summary };
+          const bridgeProviderGroups = new Map<string, typeof livePiModels>();
+          for (const model of livePiModels) {
+            const provider = model.provider ?? model.id.split("/")[0] ?? "unknown";
+            const current = bridgeProviderGroups.get(provider) ?? [];
+            current.push(model);
+            bridgeProviderGroups.set(provider, current);
+          }
+
+          const bridgeSummaries = PI_BRIDGE_PROVIDER_PRESETS.map((preset) => {
+            const adapterCatalog = bridgeProviderGroups.get(preset.provider) ?? [];
+            const adapterStatuses = allStatusRows.filter((row) =>
+              row.adapterType === "pi_local" && adapterCatalog.some((model) => model.id === row.modelId),
+            );
+            const statusByModelId = new Map(adapterStatuses.map((row) => [row.modelId, row]));
+
+            const models = adapterCatalog.map((cm) => {
+              const ms = statusByModelId.get(cm.id);
+              return {
+                id: cm.id,
+                modelId: cm.id,
+                name: cm.label ?? cm.id,
+                circuitState: ms?.status ?? cm.status ?? "unknown",
+                status: ms?.status ?? cm.status ?? "unknown",
+                statusDetail: ms?.statusDetail ?? cm.statusDetail ?? null,
+                avgLatencyMs: ms?.avgLatencyMs ?? null,
+                errorRate: ms?.errorRatePercent ?? null,
+                failureCount: ms?.consecutiveFailures ?? 0,
+                cooldownEndsAt: ms?.cooldownUntil ?? null,
+                cooldownReason: ms?.cooldownReason ?? null,
+                lastProbed: ms?.lastProbeAt ?? cm.probedAt ?? null,
+                lastHealthCheck: ms?.lastProbeAt ?? cm.probedAt ?? null,
+              };
+            });
+
+            const total = models.length;
+            const available = models.filter((model) => model.status === "available").length;
+            const cooldown = models.filter((model) => model.status === "cooldown").length;
+            const unavailable = models.filter((model) =>
+              ["unknown", "unavailable", "degraded", "quota_exceeded", "auth_required"].includes(model.status),
+            ).length;
+
+            return {
+              adapterType: preset.provider,
+              label: preset.label,
+              provider: preset.provider,
+              authMethods: ["api" as const],
+              billingType: inferProviderBillingType(["api"]),
+              authConfigurable: false,
+              totalCatalog: adapterCatalog.length,
+              total,
+              free: adapterCatalog.filter((model) => piCatalogByModelId.get(model.id)?.isFree).length,
+              available,
+              cooldown,
+              unavailable,
+              models,
+            };
+          });
+
+          return { providers: [...summary, ...bridgeSummaries] };
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           log.error({ category: "http.error", err: errMsg }, "Failed to get provider summary");
           throw err;
         }
       },
+      {
+        query: t.Object({
+          companyId: t.Optional(t.String()),
+        }),
+      },
     )
 
     // ── All model statuses for one adapter ─────────────────────────────
     .get(
       "/providers/:adapterType/status",
-      async ({ params }) => {
+      async (ctx: any) => {
         try {
-          const rows = await db
-            .select()
-            .from(providerModelStatus)
-            .where(eq(providerModelStatus.adapterType, params.adapterType));
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          const companyId = typeof query?.companyId === "string" ? query.companyId : undefined;
+          if (companyId) {
+            assertCompanyAccess(actor, companyId);
+          }
+          const rows = await providerStatus.listEffectiveStatuses(
+            companyId ? { companyId } : undefined,
+            params.adapterType,
+          );
 
           return { models: rows };
         } catch (err) {
@@ -441,26 +747,34 @@ export function modelRoutes(db: Db) {
       },
       {
         params: t.Object({ adapterType: t.String() }),
+        query: t.Object({ companyId: t.Optional(t.String()) }),
       },
     )
 
     // ── Live models from adapter (bypasses catalog) ────────────────────
     .get(
       "/providers/:adapterType/models",
-      async ({ params, set }) => {
+      async (ctx: any) => {
         try {
-          const models = await listAdapterModels(params.adapterType);
+          const { params, query } = ctx;
+          const actor = ctx.actor as Actor;
+          const companyId = typeof query?.companyId === "string" ? query.companyId : undefined;
+          if (companyId) {
+            assertCompanyAccess(actor, companyId);
+          }
+          const models = await listCompanyScopedAdapterModels(db, companyId, params.adapterType);
           return { adapterType: params.adapterType, models };
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           log.error({ category: "http.error", err: errMsg }, "Failed to list adapter models");
-          set.status = 502;
+          ctx.set.status = 502;
           const message = err instanceof Error ? err.message : String(err);
           return { error: `Failed to list models from adapter: ${message}` };
         }
       },
       {
         params: t.Object({ adapterType: t.String() }),
+        query: t.Object({ companyId: t.Optional(t.String()) }),
       },
     )
 
@@ -497,6 +811,7 @@ export function modelRoutes(db: Db) {
           const { params, body } = ctx;
           const actor = ctx.actor as Actor;
           assertInstanceAdmin(actor);
+          const scope = resolveProviderStatusScope(ctx);
           const durationMs = body.durationMinutes
             ? body.durationMinutes * 60 * 1000
             : getCooldownDuration(params.adapterType);
@@ -508,6 +823,7 @@ export function modelRoutes(db: Db) {
             params.modelId,
             until,
             reason,
+            scope,
           );
 
           return {
@@ -516,6 +832,7 @@ export function modelRoutes(db: Db) {
             status: "cooldown",
             cooldownUntil: until.toISOString(),
             reason,
+            companyId: scope?.companyId ?? null,
           };
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -527,6 +844,9 @@ export function modelRoutes(db: Db) {
         params: t.Object({
           adapterType: t.String(),
           modelId: t.String(),
+        }),
+        query: t.Object({
+          companyId: t.Optional(t.String()),
         }),
         body: t.Object({
           durationMinutes: t.Optional(t.Number()),
@@ -543,11 +863,13 @@ export function modelRoutes(db: Db) {
           const { params } = ctx;
           const actor = ctx.actor as Actor;
           assertInstanceAdmin(actor);
+          const scope = resolveProviderStatusScope(ctx);
           await providerStatus.updateStatus(
             params.adapterType,
             params.modelId,
             "available",
             "cooldown cleared manually",
+            scope,
           );
 
           // Also clear the cooldown fields
@@ -562,6 +884,9 @@ export function modelRoutes(db: Db) {
               and(
                 eq(providerModelStatus.adapterType, params.adapterType),
                 eq(providerModelStatus.modelId, params.modelId),
+                scope?.companyId
+                  ? eq(providerModelStatus.companyId, scope.companyId)
+                  : eq(providerModelStatus.scopeKey, "global"),
               ),
             );
 
@@ -570,6 +895,7 @@ export function modelRoutes(db: Db) {
             modelId: params.modelId,
             status: "available",
             cooldownUntil: null,
+            companyId: scope?.companyId ?? null,
           };
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
@@ -582,6 +908,9 @@ export function modelRoutes(db: Db) {
           adapterType: t.String(),
           modelId: t.String(),
         }),
+        query: t.Object({
+          companyId: t.Optional(t.String()),
+        }),
       },
     )
 
@@ -592,13 +921,21 @@ export function modelRoutes(db: Db) {
         try {
           const actor = ctx.actor as Actor;
           assertInstanceAdmin(actor);
-          const count = await providerStatus.clearExpiredCooldowns();
-          return { cleared: count };
+          const scope = resolveProviderStatusScope(ctx);
+          const count = scope
+            ? await providerStatus.clearExpiredCooldownsForScope(scope)
+            : await providerStatus.clearExpiredCooldowns();
+          return { cleared: count, companyId: scope?.companyId ?? null };
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);
           log.error({ category: "http.error", err: errMsg }, "Failed to clear expired cooldowns");
           throw err;
         }
+      },
+      {
+        query: t.Object({
+          companyId: t.Optional(t.String()),
+        }),
       },
     )
 

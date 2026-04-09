@@ -5,7 +5,6 @@ import {
   modelRoutingPolicies,
   modelRoutingLog,
   modelCatalog,
-  providerModelStatus,
 } from "@clawdev/db";
 import type { createProviderStatusService } from "./provider-status.js";
 import { listAdapterModels, listServerAdapters } from "../adapters/registry.js";
@@ -44,6 +43,11 @@ interface CachedPolicy {
   fetchedAt: number;
 }
 
+interface CachedRecentResolution {
+  data: ModelResolution | null;
+  fetchedAt: number;
+}
+
 const CACHE_TTL_MS = 60_000;
 
 // ---------------------------------------------------------------------------
@@ -56,6 +60,7 @@ export function createModelRouterService(
 ) {
   const preferencesCache = new Map<string, CachedPreferences>();
   const policyCache = new Map<string, CachedPolicy>();
+  const recentResolutionCache = new Map<string, CachedRecentResolution>();
 
   // -----------------------------------------------------------------------
   // Helpers
@@ -116,6 +121,61 @@ export function createModelRouterService(
     return data;
   }
 
+  async function loadRecentSuccessfulResolution(
+    companyId: string,
+    agentId: string,
+    options?: {
+      authProfileKey?: string | null;
+      requestedAdapterType?: string;
+      lockAdapterType?: boolean;
+    },
+  ) {
+    const authProfileKey = options?.authProfileKey ?? null;
+    const requestedAdapterType = options?.requestedAdapterType ?? null;
+    const lockAdapterType = Boolean(options?.lockAdapterType);
+    const cacheKey = [companyId, agentId, authProfileKey ?? "", requestedAdapterType ?? "", lockAdapterType ? "locked" : "any"].join("::");
+    const now = Date.now();
+    const cached = recentResolutionCache.get(cacheKey);
+    if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+      return cached.data;
+    }
+
+    const conditions = [
+      eq(modelRoutingLog.companyId, companyId),
+      eq(modelRoutingLog.agentId, agentId),
+      eq(modelRoutingLog.outcome, "succeeded"),
+    ];
+    if (authProfileKey) {
+      conditions.push(eq(modelRoutingLog.authProfileKey, authProfileKey));
+    }
+
+    const rows = await db
+      .select()
+      .from(modelRoutingLog)
+      .where(and(...conditions))
+      .orderBy(desc(modelRoutingLog.occurredAt))
+      .limit(20);
+
+    const latest = rows.find((row) =>
+      Boolean(row.resolvedAdapterType && row.resolvedModelId) &&
+      (!lockAdapterType || row.resolvedAdapterType === requestedAdapterType),
+    );
+    const data: ModelResolution | null = latest
+      ? ({
+          adapterType: latest.resolvedAdapterType,
+          modelId: latest.resolvedModelId,
+          resolution: "pinned" as const,
+          fallbackDepth: 0,
+          reason: authProfileKey
+            ? "recent successful resolution for same auth profile"
+            : "recent successful resolution",
+        } as ModelResolution)
+      : null;
+
+    recentResolutionCache.set(cacheKey, { data, fetchedAt: now });
+    return data;
+  }
+
   /**
    * Walk a fallback chain and return the first available model.
    * When `allowCrossProvider` is false, only models whose adapterType matches
@@ -125,13 +185,14 @@ export function createModelRouterService(
     chain: { adapterType: string; modelId: string }[],
     primaryAdapterType: string,
     allowCrossProvider: boolean,
+    scope?: { companyId?: string | null; authProfileKey?: string | null },
   ): Promise<{ entry: { adapterType: string; modelId: string }; depth: number } | null> {
     for (let i = 0; i < chain.length; i++) {
       const entry = chain[i]!;
       if (!allowCrossProvider && entry.adapterType !== primaryAdapterType) {
         continue;
       }
-      const available = await providerStatus.isAvailable(entry.adapterType, entry.modelId);
+      const available = await providerStatus.isAvailable(entry.adapterType, entry.modelId, scope);
       if (available) {
         return { entry, depth: i + 1 };
       }
@@ -149,7 +210,10 @@ export function createModelRouterService(
     isLocal: boolean;
   };
 
-  async function loadAvailableCandidates(adapterType?: string): Promise<CandidateModel[]> {
+  async function loadAvailableCandidates(
+    adapterType?: string,
+    scope?: { companyId?: string | null; authProfileKey?: string | null },
+  ): Promise<CandidateModel[]> {
     const catalogConditions = adapterType ? [eq(modelCatalog.adapterType, adapterType)] : [];
     const catalogRows = await db
       .select({
@@ -162,24 +226,14 @@ export function createModelRouterService(
       .from(modelCatalog)
       .where(catalogConditions.length > 0 ? and(...catalogConditions) : undefined);
 
-    const statusConditions = adapterType ? [eq(providerModelStatus.adapterType, adapterType)] : [];
-    const statusRows = await db
-      .select({
-        adapterType: providerModelStatus.adapterType,
-        modelId: providerModelStatus.modelId,
-        avgLatencyMs: providerModelStatus.avgLatencyMs,
-        consecutiveFailures: providerModelStatus.consecutiveFailures,
-      })
-      .from(providerModelStatus)
-      .where(statusConditions.length > 0 ? and(...statusConditions) : undefined);
-
+    const statusRows = await providerStatus.listEffectiveStatuses(scope, adapterType);
     const statusMap = new Map(
       statusRows.map((row) => [`${row.adapterType}::${row.modelId}`, row] as const),
     );
 
     const candidates: CandidateModel[] = [];
     for (const row of catalogRows) {
-      if (!(await providerStatus.isAvailable(row.adapterType, row.modelId))) {
+      if (!(await providerStatus.isAvailable(row.adapterType, row.modelId, scope))) {
         continue;
       }
       const status = statusMap.get(`${row.adapterType}::${row.modelId}`);
@@ -213,6 +267,7 @@ export function createModelRouterService(
   async function resolveFirstAvailableAdapterModel(
     primaryAdapterType: string,
     allowCrossProvider = true,
+    scope?: { companyId?: string | null; authProfileKey?: string | null },
   ): Promise<ModelResolution | null> {
     const adapterOrder = await resolveAdapterFallbackOrder(primaryAdapterType);
     const effectiveOrder = allowCrossProvider ? adapterOrder : [primaryAdapterType];
@@ -221,7 +276,7 @@ export function createModelRouterService(
       const adapterType = effectiveOrder[adapterIndex]!;
       const adapterModels = await listAdapterModels(adapterType);
       for (const model of adapterModels) {
-        if (!(await providerStatus.isAvailable(adapterType, model.id))) continue;
+        if (!(await providerStatus.isAvailable(adapterType, model.id, scope))) continue;
         return {
           adapterType,
           modelId: model.id,
@@ -294,8 +349,9 @@ export function createModelRouterService(
   async function cheapestAvailable(
     adapterType?: string,
     preferFreeModels = false,
+    scope?: { companyId?: string | null; authProfileKey?: string | null },
   ): Promise<ModelResolution | null> {
-    const candidates = await loadAvailableCandidates(adapterType);
+    const candidates = await loadAvailableCandidates(adapterType, scope);
     const selected = chooseCheapest(candidates, preferFreeModels);
     if (!selected) return null;
 
@@ -316,8 +372,9 @@ export function createModelRouterService(
    */
   async function localPreferred(
     adapterType?: string,
+    scope?: { companyId?: string | null; authProfileKey?: string | null },
   ): Promise<ModelResolution | null> {
-    const candidates = await loadAvailableCandidates(adapterType);
+    const candidates = await loadAvailableCandidates(adapterType, scope);
     const localCandidates = candidates.filter((candidate) => candidate.isLocal);
     const selected = chooseCheapest(localCandidates.length > 0 ? localCandidates : candidates, false);
     if (!selected) return null;
@@ -332,8 +389,9 @@ export function createModelRouterService(
 
   async function fastestAvailable(
     adapterType?: string,
+    scope?: { companyId?: string | null; authProfileKey?: string | null },
   ): Promise<ModelResolution | null> {
-    const candidates = await loadAvailableCandidates(adapterType);
+    const candidates = await loadAvailableCandidates(adapterType, scope);
     const selected = chooseFastest(candidates);
     if (!selected) return null;
     return {
@@ -347,8 +405,9 @@ export function createModelRouterService(
 
   async function mostAvailable(
     adapterType?: string,
+    scope?: { companyId?: string | null; authProfileKey?: string | null },
   ): Promise<ModelResolution | null> {
-    const candidates = await loadAvailableCandidates(adapterType);
+    const candidates = await loadAvailableCandidates(adapterType, scope);
     const selected = chooseMostAvailable(candidates);
     if (!selected) return null;
     return {
@@ -379,10 +438,16 @@ export function createModelRouterService(
       agentId: string,
       requestedAdapterType: string,
       requestedModelId?: string,
-      options: { lockAdapterType?: boolean; routingContext?: ModelRoutingContext } = {},
+      options: {
+        lockAdapterType?: boolean;
+        routingContext?: ModelRoutingContext;
+        authProfileKey?: string | null;
+      } = {},
     ): Promise<ModelResolution> {
       const lockAdapterType = Boolean(options.lockAdapterType);
       const routingContext = options.routingContext;
+      const authProfileKey = options.authProfileKey ?? null;
+      const availabilityScope = { companyId, authProfileKey };
       const taskComplexity = routingContext?.complexity ?? "standard";
       const taskPriority = routingContext?.taskPriority ?? "medium";
       const requiredCapabilities = routingContext?.requiredCapabilities ?? [];
@@ -405,6 +470,7 @@ export function createModelRouterService(
         const available = await providerStatus.isAvailable(
           requestedAdapterType,
           requestedModelId,
+          availabilityScope,
         );
         if (available) {
           return {
@@ -416,6 +482,28 @@ export function createModelRouterService(
           };
         }
         // Pinned model unavailable — load preferences for fallback
+      }
+
+      if (authProfileKey) {
+        const recentResolution = await loadRecentSuccessfulResolution(companyId, agentId, {
+          authProfileKey,
+          requestedAdapterType,
+          lockAdapterType,
+        });
+        if (recentResolution) {
+          const recentAvailable = await providerStatus.isAvailable(
+            recentResolution.adapterType,
+            recentResolution.modelId,
+            availabilityScope,
+          );
+          if (recentAvailable) {
+            return {
+              ...recentResolution,
+              resolution: "pinned" as const,
+              reason: "recent successful model reused for same auth profile",
+            } as ModelResolution;
+          }
+        }
       }
 
       // ---- Step 2: load company preferences ----
@@ -431,6 +519,7 @@ export function createModelRouterService(
           const available = await providerStatus.isAvailable(
             requestedAdapterType,
             requestedModelId,
+            availabilityScope,
           );
           if (available) {
             return {
@@ -444,12 +533,12 @@ export function createModelRouterService(
         }
 
         const fallback = prefersPerformance()
-          ? await fastestAvailable(lockAdapterType ? requestedAdapterType : undefined)
+          ? await fastestAvailable(lockAdapterType ? requestedAdapterType : undefined, availabilityScope)
           : prefersCost()
-            ? await cheapestAvailable(lockAdapterType ? requestedAdapterType : undefined, false)
+            ? await cheapestAvailable(lockAdapterType ? requestedAdapterType : undefined, false, availabilityScope)
             : lockAdapterType
-              ? await cheapestAvailable(requestedAdapterType, false)
-              : await cheapestAvailable(undefined, false);
+              ? await cheapestAvailable(requestedAdapterType, false, availabilityScope)
+              : await cheapestAvailable(undefined, false, availabilityScope);
         if (fallback) {
           return { ...fallback, reason: contextReason("no routing configured; selected best available model across providers") };
         }
@@ -457,6 +546,7 @@ export function createModelRouterService(
         const adapterFallback = await resolveFirstAvailableAdapterModel(
           requestedAdapterType,
           !lockAdapterType,
+          availabilityScope,
         );
         if (adapterFallback) {
           return {
@@ -487,6 +577,7 @@ export function createModelRouterService(
           const primaryAvailable = await providerStatus.isAvailable(
             primaryAdapterType,
             primaryModelId,
+            availabilityScope,
           );
           if (primaryAvailable) {
             return {
@@ -508,6 +599,7 @@ export function createModelRouterService(
           chain,
           primaryAdapterType,
           allowCrossProviderFallback,
+          availabilityScope,
         );
 
         if (fallbackResult) {
@@ -521,7 +613,11 @@ export function createModelRouterService(
         }
 
         // Nothing in chain was available
-        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        const adapterFallback = await resolveFirstAvailableAdapterModel(
+          primaryAdapterType,
+          allowCrossProviderFallback,
+          availabilityScope,
+        );
         if (adapterFallback) {
           return {
             ...adapterFallback,
@@ -534,13 +630,17 @@ export function createModelRouterService(
 
       if (strategy === "cost_optimized") {
         if (preferLocalModels) {
-          const localResult = await localPreferred(routingAdapterType);
+          const localResult = await localPreferred(routingAdapterType, availabilityScope);
           if (localResult) return localResult;
         }
-        const result = await cheapestAvailable(routingAdapterType, preferFreeModels);
+        const result = await cheapestAvailable(routingAdapterType, preferFreeModels, availabilityScope);
         if (result) return result;
 
-        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        const adapterFallback = await resolveFirstAvailableAdapterModel(
+          primaryAdapterType,
+          allowCrossProviderFallback,
+          availabilityScope,
+        );
         if (adapterFallback) {
           return {
             ...adapterFallback,
@@ -553,13 +653,17 @@ export function createModelRouterService(
 
       if (strategy === "performance_optimized") {
         if (preferLocalModels) {
-          const localResult = await localPreferred(routingAdapterType);
+          const localResult = await localPreferred(routingAdapterType, availabilityScope);
           if (localResult) return localResult;
         }
-        const result = await fastestAvailable(routingAdapterType);
+        const result = await fastestAvailable(routingAdapterType, availabilityScope);
         if (result) return result;
 
-        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        const adapterFallback = await resolveFirstAvailableAdapterModel(
+          primaryAdapterType,
+          allowCrossProviderFallback,
+          availabilityScope,
+        );
         if (adapterFallback) {
           return {
             ...adapterFallback,
@@ -572,13 +676,17 @@ export function createModelRouterService(
 
       if (strategy === "availability_optimized") {
         if (preferLocalModels) {
-          const localResult = await localPreferred(routingAdapterType);
+          const localResult = await localPreferred(routingAdapterType, availabilityScope);
           if (localResult) return localResult;
         }
-        const result = await mostAvailable(routingAdapterType);
+        const result = await mostAvailable(routingAdapterType, availabilityScope);
         if (result) return result;
 
-        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        const adapterFallback = await resolveFirstAvailableAdapterModel(
+          primaryAdapterType,
+          allowCrossProviderFallback,
+          availabilityScope,
+        );
         if (adapterFallback) {
           return {
             ...adapterFallback,
@@ -590,10 +698,14 @@ export function createModelRouterService(
       }
 
       if (strategy === "local_preferred") {
-        const result = await localPreferred(routingAdapterType);
+        const result = await localPreferred(routingAdapterType, availabilityScope);
         if (result) return result;
 
-        const adapterFallback = await resolveFirstAvailableAdapterModel(primaryAdapterType, allowCrossProviderFallback);
+        const adapterFallback = await resolveFirstAvailableAdapterModel(
+          primaryAdapterType,
+          allowCrossProviderFallback,
+          availabilityScope,
+        );
         if (adapterFallback) {
           return {
             ...adapterFallback,
@@ -605,7 +717,11 @@ export function createModelRouterService(
       }
 
       // Unknown strategy — pass through
-      const adapterFallback = await resolveFirstAvailableAdapterModel(requestedAdapterType, !lockAdapterType);
+      const adapterFallback = await resolveFirstAvailableAdapterModel(
+        requestedAdapterType,
+        !lockAdapterType,
+        availabilityScope,
+      );
       if (adapterFallback) {
         return {
           ...adapterFallback,
@@ -625,6 +741,8 @@ export function createModelRouterService(
       heartbeatRunId: string | null,
       requested: { adapterType: string; modelId?: string },
       resolved: ModelResolution,
+      outcome?: string | null,
+      authProfileKey?: string | null,
     ): Promise<void> {
       await db.insert(modelRoutingLog).values({
         companyId,
@@ -632,6 +750,8 @@ export function createModelRouterService(
         heartbeatRunId,
         requestedAdapterType: requested.adapterType,
         requestedModelId: requested.modelId ?? null,
+        authProfileKey: authProfileKey ?? null,
+        outcome: outcome ?? null,
         resolvedAdapterType: resolved.adapterType,
         resolvedModelId: resolved.modelId,
         resolution: resolved.resolution,
