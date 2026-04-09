@@ -1,3 +1,7 @@
+import { PI_BRIDGE_PROVIDER_PRESETS, PI_DEDICATED_PROVIDERS } from "./catalog.js";
+
+export { PI_BRIDGE_PROVIDER_PRESETS, PI_DEDICATED_PROVIDERS };
+
 export const type = "pi_local";
 export const label = "Pi Bridge (multi-provider)";
 
@@ -9,7 +13,7 @@ Adapter: pi_local
 
 Use when:
 - You want ClawDev to run Pi (the AI coding agent) locally as the agent runtime
-- You need a multi-provider bridge for providers not covered by dedicated adapters (groq, xai, mistral, cerebras, openrouter, minimax, kimi-coding, azure)
+- You need a multi-provider bridge for providers not covered by dedicated adapters (groq, xai, mistral, cerebras, openrouter, minimax, kimi-coding, azure, cohere, fireworks, together, deepseek, perplexity)
 - You want provider/model routing in Pi format (--provider <name> --model <id>)
 - You want Pi session resume across heartbeats via --session
 - You need Pi's tool set (read, bash, edit, write, grep, find, ls)
@@ -23,7 +27,7 @@ Don't use when:
 Core fields:
 - cwd (string, optional): working directory
 - model (string, optional): model pattern — supports "provider/id" format (e.g. "xai/grok-4", "mistral/devstral-medium-latest") and optional ":thinking" suffix (e.g. "groq/qwen-qwq-32b:high")
-- provider (string, optional): provider name — groq, xai, mistral, cerebras, openrouter, minimax, kimi-coding, azure. Note: anthropic, openai, google are handled by dedicated adapters
+- provider (string, optional): provider name — groq, xai, mistral, cerebras, openrouter, minimax, kimi-coding, azure, cohere, fireworks, together, deepseek, perplexity. Note: anthropic, openai, google are handled by dedicated adapters
 - thinking (string, optional): thinking level — off, minimal, low, medium, high, xhigh
 - apiKey (string, optional): API key (defaults to provider-specific env vars)
 - promptTemplate (string, optional): run prompt template
@@ -62,7 +66,7 @@ Notes:
 - Pi acts as a multi-provider bridge — use it for providers not covered by dedicated adapters.
 - Providers with dedicated adapters (anthropic, openai, google, github) should use those adapters instead.
 - BYOK: set provider-specific API keys via env field (e.g. { "GROQ_API_KEY": "...", "XAI_API_KEY": "..." }).
-- Available bridge providers: groq, xai, mistral, cerebras, openrouter, minimax, kimi-coding, azure.
+- Available bridge providers: ${PI_BRIDGE_PROVIDER_PRESETS.map((preset) => preset.provider).join(", ")}.
 - Model discovery via \`pi --list-models\` when API keys are configured.
 - Command surface exposed by \`pi --help\` includes: \`install\`, \`remove\`, \`uninstall\`, \`update\`, \`list\`, \`config\`, \`export\`, and \`--list-models\`.
 - \`--provider\`, \`--model\`, \`--api-key\`, \`--tools\`, \`--thinking\`, \`--extensions\`, \`--skills\`, \`--prompt-templates\`, \`--themes\`, \`--no-tools\`, \`--no-extensions\`, \`--no-skills\`, \`--no-prompt-templates\`, \`--no-themes\`, \`--resume\`, \`--continue\`, \`--fork\`, and \`--offline\` are the main runtime controls ClawDev maps into agent config.

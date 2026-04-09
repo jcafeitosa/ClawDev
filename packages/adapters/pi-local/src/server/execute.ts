@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import { inferOpenAiCompatibleBiller, type AdapterExecutionContext, type AdapterExecutionResult, type AdapterBillingType } from "@clawdev/adapter-utils";
@@ -23,11 +22,9 @@ import {
 } from "@clawdev/adapter-utils/server-utils";
 import { isPiUnknownSessionError, parsePiJsonl } from "./parse.js";
 import { ensurePiModelConfiguredAndAvailable } from "./models.js";
+import { normalizePiModelSelection, resolvePiPaths } from "./runtime-config.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
-
-const CLAWDEV_SESSIONS_DIR = path.join(os.homedir(), ".pi", "clawdevs");
-const PI_AGENT_SKILLS_DIR = path.join(os.homedir(), ".pi", "agent", "skills");
 
 function firstNonEmptyLine(text: string): string {
   return (
@@ -38,54 +35,41 @@ function firstNonEmptyLine(text: string): string {
   );
 }
 
-function parseModelProvider(model: string | null): string | null {
-  if (!model) return null;
-  const trimmed = model.trim();
-  if (!trimmed.includes("/")) return null;
-  return trimmed.slice(0, trimmed.indexOf("/")).trim() || null;
-}
-
-function parseModelId(model: string | null): string | null {
-  if (!model) return null;
-  const trimmed = model.trim();
-  if (!trimmed.includes("/")) return trimmed || null;
-  return trimmed.slice(trimmed.indexOf("/") + 1).trim() || null;
-}
-
 async function ensurePiSkillsInjected(
   onLog: AdapterExecutionContext["onLog"],
+  skillsDir: string,
   skillsEntries: Array<{ key: string; runtimeName: string; source: string }>,
   desiredSkillNames?: string[],
 ) {
   const desiredSet = new Set(desiredSkillNames ?? skillsEntries.map((entry) => entry.key));
   const selectedEntries = skillsEntries.filter((entry) => desiredSet.has(entry.key));
   if (selectedEntries.length === 0) return;
-  await fs.mkdir(PI_AGENT_SKILLS_DIR, { recursive: true });
+  await fs.mkdir(skillsDir, { recursive: true });
   const removedSkills = await removeMaintainerOnlySkillSymlinks(
-    PI_AGENT_SKILLS_DIR,
+    skillsDir,
     selectedEntries.map((entry) => entry.runtimeName),
   );
   for (const skillName of removedSkills) {
     await onLog(
       "stderr",
-      `[clawdev] Removed maintainer-only Pi skill "${skillName}" from ${PI_AGENT_SKILLS_DIR}\n`,
+      `[clawdev] Removed maintainer-only Pi skill "${skillName}" from ${skillsDir}\n`,
     );
   }
 
   for (const entry of selectedEntries) {
-    const target = path.join(PI_AGENT_SKILLS_DIR, entry.runtimeName);
+    const target = path.join(skillsDir, entry.runtimeName);
 
     try {
       const result = await ensureClawDevSkillSymlink(entry.source, target);
       if (result === "skipped") continue;
       await onLog(
         "stderr",
-        `[clawdev] ${result === "repaired" ? "Repaired" : "Injected"} Pi skill "${entry.runtimeName}" into ${PI_AGENT_SKILLS_DIR}\n`,
+        `[clawdev] ${result === "repaired" ? "Repaired" : "Injected"} Pi skill "${entry.runtimeName}" into ${skillsDir}\n`,
       );
     } catch (err) {
       await onLog(
         "stderr",
-        `[clawdev] Failed to inject Pi skill "${entry.runtimeName}" into ${PI_AGENT_SKILLS_DIR}: ${err instanceof Error ? err.message : String(err)}\n`,
+        `[clawdev] Failed to inject Pi skill "${entry.runtimeName}" into ${skillsDir}: ${err instanceof Error ? err.message : String(err)}\n`,
       );
     }
   }
@@ -102,6 +86,11 @@ const API_BILLING_PROVIDERS = new Set([
   "anthropic",
   "google",
   "mistral",
+  "cerebras",
+  "openrouter",
+  "minimax",
+  "kimi-coding",
+  "azure",
   "cohere",
   "fireworks",
   "together",
@@ -115,14 +104,14 @@ function inferBillingType(provider: string | null): AdapterBillingType {
   return "unknown";
 }
 
-async function ensureSessionsDir(): Promise<string> {
-  await fs.mkdir(CLAWDEV_SESSIONS_DIR, { recursive: true });
-  return CLAWDEV_SESSIONS_DIR;
+async function ensureSessionsDir(sessionsDir: string): Promise<string> {
+  await fs.mkdir(sessionsDir, { recursive: true });
+  return sessionsDir;
 }
 
-function buildSessionPath(agentId: string, timestamp: string): string {
+function buildSessionPath(sessionsDir: string, agentId: string, timestamp: string): string {
   const safeTimestamp = timestamp.replace(/[:.]/g, "-");
-  return path.join(CLAWDEV_SESSIONS_DIR, `${safeTimestamp}-${agentId}.jsonl`);
+  return path.join(sessionsDir, `${safeTimestamp}-${agentId}.jsonl`);
 }
 
 export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExecutionResult> {
@@ -133,8 +122,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     "You are agent {{agent.id}} ({{agent.name}}). Continue your ClawDev work.",
   );
   const command = asString(config.command, "pi");
-  const model = asString(config.model, "").trim();
-  const thinking = asString(config.thinking, "").trim();
 
   // Pi CLI v0.63.1 flags
   const systemPrompt = asString(config.systemPrompt, "");
@@ -154,10 +141,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const offline = config.offline === true;
   const apiKey = asString(config.apiKey, "");
 
-  // Parse model into provider and model id
-  const provider = parseModelProvider(model);
-  const modelId = parseModelId(model);
-
   const workspaceContext = parseObject(context.clawdevWorkspace);
   const workspaceCwd = asString(workspaceContext.cwd, "");
   const workspaceSource = asString(workspaceContext.source, "");
@@ -176,14 +159,6 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const cwd = effectiveWorkspaceCwd || configuredCwd || process.cwd();
   await ensureAbsoluteDirectory(cwd, { createIfMissing: true });
   
-  // Ensure sessions directory exists
-  await ensureSessionsDir();
-  
-  // Inject skills
-  const piSkillEntries = await readClawDevRuntimeSkillEntries(config, __moduleDir);
-  const desiredPiSkillNames = resolveClawDevDesiredSkillNames(config, piSkillEntries);
-  await ensurePiSkillsInjected(onLog, piSkillEntries, desiredPiSkillNames);
-
   // Build environment
   const envConfig = parseObject(config.env);
   const hasExplicitApiKey =
@@ -242,15 +217,31 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       (entry): entry is [string, string] => typeof entry[1] === "string",
     ),
   );
+  const piPaths = resolvePiPaths(runtimeEnv);
+  const selection = normalizePiModelSelection({
+    model: config.model,
+    provider: config.provider,
+    thinking: config.thinking,
+  });
+
+  await ensureSessionsDir(piPaths.sessionsDir);
+
+  const piSkillEntries = await readClawDevRuntimeSkillEntries(config, __moduleDir);
+  const desiredPiSkillNames = resolveClawDevDesiredSkillNames(config, piSkillEntries);
+  await ensurePiSkillsInjected(onLog, piPaths.skillsDir, piSkillEntries, desiredPiSkillNames);
   await ensureCommandResolvable(command, cwd, runtimeEnv);
 
   // Validate model is available before execution
-  await ensurePiModelConfiguredAndAvailable({
-    model,
-    command,
-    cwd,
-    env: runtimeEnv,
-  });
+  if (selection.hasExplicitModel) {
+    await ensurePiModelConfiguredAndAvailable({
+      model: selection.canonicalModel,
+      provider: selection.provider,
+      thinking: selection.thinking,
+      command,
+      cwd,
+      env: runtimeEnv,
+    });
+  }
 
   const timeoutSec = asNumber(config.timeoutSec, 0);
   const graceSec = asNumber(config.graceSec, 20);
@@ -267,7 +258,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const canResumeSession =
     runtimeSessionId.length > 0 &&
     (runtimeSessionCwd.length === 0 || path.resolve(runtimeSessionCwd) === path.resolve(cwd));
-  const sessionPath = canResumeSession ? runtimeSessionId : buildSessionPath(agent.id, new Date().toISOString());
+  const sessionPath = canResumeSession
+    ? runtimeSessionId
+    : buildSessionPath(piPaths.sessionsDir, agent.id, new Date().toISOString());
   
   if (runtimeSessionId && !canResumeSession) {
     await onLog(
@@ -400,9 +393,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       args.push("--append-system-prompt", renderedSystemPromptExtension);
     }
 
-    if (provider) args.push("--provider", provider);
-    if (modelId) args.push("--model", modelId);
-    if (thinking) args.push("--thinking", thinking);
+    if (selection.provider) args.push("--provider", selection.provider);
+    if (selection.modelId) args.push("--model", selection.modelId);
+    if (selection.thinking) args.push("--thinking", selection.thinking);
 
     // Tools
     if (noTools) args.push("--no-tools");
@@ -424,7 +417,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     if (noPromptTemplates) args.push("--no-prompt-templates");
 
     // Add ClawDev skills directory so Pi can load the clawdev skill
-    if (!noSkills) args.push("--skill", PI_AGENT_SKILLS_DIR);
+    if (!noSkills) args.push("--skill", piPaths.skillsDir);
 
     // Advanced
     if (verbose) args.push("--verbose");
@@ -538,10 +531,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       sessionId: resolvedSessionId,
       sessionParams: resolvedSessionParams,
       sessionDisplayId: resolvedSessionId,
-      provider: provider,
-      biller: resolvePiBiller(runtimeEnv, provider),
-      model: model,
-      billingType: inferBillingType(provider),
+      provider: selection.provider,
+      biller: resolvePiBiller(runtimeEnv, selection.provider),
+      model: selection.canonicalModel,
+      billingType: inferBillingType(selection.provider),
       costUsd: attempt.parsed.usage.costUsd,
       resultJson: {
         stdout: attempt.proc.stdout,
@@ -565,7 +558,7 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       "stdout",
       `[clawdev] Pi session "${runtimeSessionId}" is unavailable; retrying with a fresh session.\n`,
     );
-    const newSessionPath = buildSessionPath(agent.id, new Date().toISOString());
+    const newSessionPath = buildSessionPath(piPaths.sessionsDir, agent.id, new Date().toISOString());
     try {
       await fs.writeFile(newSessionPath, "", { flag: "wx" });
     } catch (err) {

@@ -1,23 +1,15 @@
 import { createHash } from "crypto";
 import type { AdapterModel } from "@clawdev/adapter-utils";
 import { asString, runChildProcess } from "@clawdev/adapter-utils/server-utils";
+import { PI_BRIDGE_PROVIDER_PRESETS } from "../catalog.js";
+import { normalizePiModelSelection } from "./runtime-config.js";
 
-const MODELS_CACHE_TTL_MS = 60_000;
-
-/** Providers that have dedicated adapters -- filter these out of Pi bridge results. */
-const DEDICATED_PROVIDERS = new Set(["anthropic", "openai", "google"]);
+const MODELS_CACHE_TTL_MS = 10_000;
 
 /** Bridge providers and their API key env vars. */
-const BRIDGE_PROVIDERS: Record<string, string> = {
-  groq: "GROQ_API_KEY",
-  xai: "XAI_API_KEY",
-  mistral: "MISTRAL_API_KEY",
-  cerebras: "CEREBRAS_API_KEY",
-  openrouter: "OPENROUTER_API_KEY",
-  minimax: "MINIMAX_API_KEY",
-  "kimi-coding": "KIMI_API_KEY",
-  azure: "AZURE_OPENAI_API_KEY",
-};
+const BRIDGE_PROVIDERS: Record<string, string> = Object.fromEntries(
+  PI_BRIDGE_PROVIDER_PRESETS.map((preset) => [preset.provider, preset.envVars[0] ?? ""] as const).filter(([, envVar]) => envVar.length > 0),
+);
 
 export { BRIDGE_PROVIDERS };
 
@@ -34,17 +26,6 @@ function firstNonEmptyLine(text: string): string {
  * Return the set of bridge provider names whose API key env var is present
  * in the current process environment.
  */
-function getActiveBridgeProviders(): Set<string> {
-  const active = new Set<string>();
-  for (const [provider, envVar] of Object.entries(BRIDGE_PROVIDERS)) {
-    const key = process.env[envVar];
-    if (key && key.trim().length > 0) {
-      active.add(provider);
-    }
-  }
-  return active;
-}
-
 /**
  * Parse `pi --list-models` columnar output into AdapterModel entries.
  * Returns ALL models without filtering so that internal callers (testEnvironment,
@@ -232,13 +213,24 @@ export async function discoverPiModelsCached(input: {
 
 export async function ensurePiModelConfiguredAndAvailable(input: {
   model?: unknown;
+  provider?: unknown;
+  thinking?: unknown;
   command?: unknown;
   cwd?: unknown;
   env?: unknown;
 }): Promise<AdapterModel[]> {
-  const model = asString(input.model, "").trim();
-  if (!model) {
-    throw new Error("Pi requires `adapterConfig.model` in provider/model format.");
+  const selection = normalizePiModelSelection({
+    model: input.model,
+    provider: input.provider,
+    thinking: input.thinking,
+  });
+  const model = selection.canonicalModel;
+  if (!selection.hasExplicitModel) {
+    return discoverPiModelsCached({
+      command: input.command,
+      cwd: input.cwd,
+      env: input.env,
+    });
   }
 
   const models = await discoverPiModelsCached({
@@ -251,10 +243,10 @@ export async function ensurePiModelConfiguredAndAvailable(input: {
     throw new Error("Pi returned no models. Run `pi --list-models` and verify provider auth.");
   }
 
-  if (!models.some((entry) => entry.id === model)) {
+  if (!model || !models.some((entry) => entry.id === model)) {
     const sample = models.slice(0, 12).map((entry) => entry.id).join(", ");
     throw new Error(
-      `Configured Pi model is unavailable: ${model}. Available models: ${sample}${models.length > 12 ? ", ..." : ""}`,
+      `Configured Pi model is unavailable: ${model ?? "unknown"}. Available models: ${sample}${models.length > 12 ? ", ..." : ""}`,
     );
   }
 

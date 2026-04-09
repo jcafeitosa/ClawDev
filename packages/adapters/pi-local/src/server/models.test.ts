@@ -16,10 +16,11 @@ describe("pi models", () => {
     await expect(listPiModels()).resolves.toEqual([]);
   });
 
-  it("rejects when model is missing", async () => {
+  it("accepts router-managed selection when no explicit model is configured", async () => {
+    process.env.CLAWDEV_PI_COMMAND = "__clawdev_missing_pi_command__";
     await expect(
-      ensurePiModelConfiguredAndAvailable({ model: "" }),
-    ).rejects.toThrow("Pi requires `adapterConfig.model`");
+      ensurePiModelConfiguredAndAvailable({ model: "auto", provider: "openrouter" }),
+    ).rejects.toThrow();
   });
 
   it("rejects when discovery cannot run for configured model", async () => {

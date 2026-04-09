@@ -17,6 +17,7 @@ import {
 } from "@clawdev/adapter-utils/server-utils";
 import { discoverPiModelsCached } from "./models.js";
 import { parsePiJsonl } from "./parse.js";
+import { normalizePiModelSelection } from "./runtime-config.js";
 
 function summarizeStatus(checks: AdapterEnvironmentCheck[]): AdapterEnvironmentTestResult["status"] {
   if (checks.some((check) => check.level === "error")) return "fail";
@@ -202,15 +203,21 @@ export async function testEnvironment(
     }
   }
 
-  const configuredModel = asString(config.model, "").trim();
-  if (!configuredModel) {
+  const selection = normalizePiModelSelection({
+    model: config.model,
+    provider: config.provider,
+    thinking: config.thinking,
+  });
+  const configuredModel = selection.canonicalModel;
+  if (selection.provider && !configuredModel) {
     checks.push({
-      code: "pi_model_required",
-      level: "error",
-      message: "Pi requires a configured model in provider/model format.",
-      hint: "Set adapterConfig.model using an ID from `pi --list-models`.",
+      code: "pi_provider_configured",
+      level: "info",
+      message: `Configured provider: ${selection.provider}`,
     });
-  } else if (canRunProbe) {
+  }
+
+  if (configuredModel && canRunProbe) {
     // Verify model is in the list
     try {
       const discovered = await discoverPiModelsCached({ command, cwd, env: runtimeEnv });
@@ -239,15 +246,7 @@ export async function testEnvironment(
     }
   }
 
-  if (canRunProbe && configuredModel) {
-    // Parse model for probe
-    const provider = configuredModel.includes("/") 
-      ? configuredModel.slice(0, configuredModel.indexOf("/")) 
-      : "";
-    const modelId = configuredModel.includes("/")
-      ? configuredModel.slice(configuredModel.indexOf("/") + 1)
-      : configuredModel;
-    const thinking = asString(config.thinking, "").trim();
+  if (canRunProbe) {
     const extraArgs = (() => {
       const fromExtraArgs = asStringArray(config.extraArgs);
       if (fromExtraArgs.length > 0) return fromExtraArgs;
@@ -255,9 +254,9 @@ export async function testEnvironment(
     })();
 
     const args = ["-p", PROBE_PROMPT, "--mode", "json"];
-    if (provider) args.push("--provider", provider);
-    if (modelId) args.push("--model", modelId);
-    if (thinking) args.push("--thinking", thinking);
+    if (selection.provider) args.push("--provider", selection.provider);
+    if (selection.modelId) args.push("--model", selection.modelId);
+    if (selection.thinking) args.push("--thinking", selection.thinking);
     args.push("--tools", "read");
     if (extraArgs.length > 0) args.push(...extraArgs);
 
@@ -288,15 +287,15 @@ export async function testEnvironment(
         });
       } else if ((probe.exitCode ?? 1) === 0 && parsed.errors.length === 0) {
         const summary = (parsed.finalMessage || parsed.messages.join(" ")).trim();
-        const hasHello = /\bhello\b/i.test(summary);
+        const hasPong = /\bPONG\b/i.test(summary);
         checks.push({
-          code: hasHello ? "pi_hello_probe_passed" : "pi_hello_probe_unexpected_output",
-          level: hasHello ? "info" : "warn",
-          message: hasHello
+          code: hasPong ? "pi_hello_probe_passed" : "pi_hello_probe_unexpected_output",
+          level: hasPong ? "info" : "warn",
+          message: hasPong
             ? "Pi PING/PONG probe succeeded."
             : "Pi probe ran but did not return `PONG` as expected.",
           ...(summary ? { detail: summary.replace(/\s+/g, " ").trim().slice(0, 240) } : {}),
-          ...(hasHello
+          ...(hasPong
             ? {}
             : {
                 hint: "Run `pi --mode json` manually and prompt the PING/PONG question to inspect output.",

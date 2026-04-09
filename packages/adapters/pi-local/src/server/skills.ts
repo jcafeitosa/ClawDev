@@ -1,5 +1,4 @@
 import fs from "fs/promises";
-import os from "os";
 import path from "path";
 import { fileURLToPath } from "url";
 import type {
@@ -13,6 +12,7 @@ import {
   readInstalledSkillTargets,
   resolveClawDevDesiredSkillNames,
 } from "@clawdev/adapter-utils/server-utils";
+import { resolvePiPaths } from "./runtime-config.js";
 
 const __moduleDir = path.dirname(fileURLToPath(import.meta.url));
 
@@ -25,9 +25,10 @@ function resolvePiSkillsHome(config: Record<string, unknown>) {
     typeof config.env === "object" && config.env !== null && !Array.isArray(config.env)
       ? (config.env as Record<string, unknown>)
       : {};
+  const runtimeEnv: Record<string, string> = {};
   const configuredHome = asString(env.HOME);
-  const home = configuredHome ? path.resolve(configuredHome) : os.homedir();
-  return path.join(home, ".pi", "agent", "skills");
+  if (configuredHome) runtimeEnv.HOME = path.resolve(configuredHome);
+  return resolvePiPaths(runtimeEnv).skillsDir;
 }
 
 async function buildPiSkillSnapshot(config: Record<string, unknown>): Promise<AdapterSkillSnapshot> {

@@ -13,6 +13,8 @@ export const modelRoutingLog = pgTable(
     heartbeatRunId: uuid("heartbeat_run_id"),
     requestedModelId: text("requested_model_id"),
     requestedAdapterType: text("requested_adapter_type"),
+    authProfileKey: text("auth_profile_key"),
+    outcome: text("outcome"),
     resolvedModelId: text("resolved_model_id").notNull(),
     resolvedAdapterType: text("resolved_adapter_type").notNull(),
     resolution: text("resolution").notNull(),
