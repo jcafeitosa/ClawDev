@@ -154,6 +154,9 @@ function bunSpawn(options: BunSpawnOptions) {
         write() {},
         end() {},
       };
+  child.stdin?.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EPIPE") return;
+  });
 
   const exited = new Promise<number>((resolve) => {
     child.once("close", (code) => resolve(code ?? 0));
