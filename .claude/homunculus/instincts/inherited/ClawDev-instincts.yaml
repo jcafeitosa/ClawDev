@@ -1,0 +1,300 @@
+# Instincts generated from https://github.com/jcafeitosa/ClawDev
+# Generated: 2026-05-15T17:48:52.292Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: ClawDev-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/jcafeitosa/ClawDev
+---
+
+# ClawDev Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: chore
+
+## Evidence
+
+- 1 commits analyzed
+- Detected conventional commit pattern
+- Examples: chore(deps): bump better-auth from 1.6.0 to 1.6.2
+
+---
+id: ClawDev-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/jcafeitosa/ClawDev
+---
+
+# ClawDev Commit Length
+
+## Action
+
+Keep commit messages concise (~49 characters)
+
+## Evidence
+
+- Average commit message length: 49 chars
+- Based on 1 commits
+
+---
+id: ClawDev-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/jcafeitosa/ClawDev
+---
+
+# ClawDev Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: ClawDev-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/jcafeitosa/ClawDev
+---
+
+# ClawDev Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: ClawDev-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/jcafeitosa/ClawDev
+---
+
+# ClawDev Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: ClawDev-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/jcafeitosa/ClawDev
+---
+
+# ClawDev Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: clawdev-instinct-file-naming
+trigger: "When creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct File Naming
+
+## Action
+
+Name the file using camelCase
+
+## Evidence
+
+- Pattern in namingConventions.files
+
+---
+id: clawdev-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct Function Naming
+
+## Action
+
+Use camelCase for the function name
+
+## Evidence
+
+- Pattern in namingConventions.functions
+
+---
+id: clawdev-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct Class Naming
+
+## Action
+
+Use PascalCase for the class name
+
+## Evidence
+
+- Pattern in namingConventions.classes
+
+---
+id: clawdev-instinct-constant-naming
+trigger: "When declaring a constant"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for the constant name
+
+## Evidence
+
+- Pattern in namingConventions.constants
+
+---
+id: clawdev-instinct-import-style
+trigger: "When importing modules"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct Import Style
+
+## Action
+
+Use relative import paths
+
+## Evidence
+
+- Pattern in importStyle
+
+---
+id: clawdev-instinct-export-style
+trigger: "When exporting from a module"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle
+
+---
+id: clawdev-instinct-git-commit-prefix
+trigger: "When making a commit for dependency updates or maintenance"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct Git Commit Prefix
+
+## Action
+
+Use the 'chore' prefix in the commit message
+
+## Evidence
+
+- Seen in commit: chore(deps): bump better-auth from 1.6.0 to 1.6.2
+- Pattern in commits.prefixes
+
+---
+id: clawdev-instinct-git-commit-format
+trigger: "When writing a commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct Git Commit Format
+
+## Action
+
+Follow the conventional commit format: <type>(<scope>): <description>
+
+## Evidence
+
+- Seen in commit: chore(deps): bump better-auth from 1.6.0 to 1.6.2
+- Pattern in commits.type
+
+---
+id: clawdev-instinct-test-location
+trigger: "When adding new tests"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: jcafeitosa/ClawDev
+---
+
+# Clawdev Instinct Test Location
+
+## Action
+
+Place test files in a separate directory from source files
+
+## Evidence
+
+- Pattern in architecture.folderStructure.testLocation
+
