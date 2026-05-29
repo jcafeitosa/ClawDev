@@ -52,7 +52,7 @@
   "dependencies": {
     "@clawdev/adapter-utils": "workspace:*",
     "picocolors": "^1.1.1",
-    "ws": "^8.20.0"
+    "ws": "^8.20.1"
   },
   "devDependencies": {
     "@types/ws": "^8.18.1",
